@@ -3,7 +3,8 @@
 // contract: only a published ui-vX.Y.Z or api-vX.Y.Z release whose tag points
 // at a commit on main with a successful main CI run, and an image built from
 // that commit, may deploy; a repeated event for an already deployed artifact
-// is skipped. Any GitHub API failure is returned as an error so callers fail
+// is skipped. Full releases target production-<component>; prereleases target
+// staging only. Any GitHub API failure is returned as an error so callers fail
 // closed.
 package releasegate
 
@@ -103,9 +104,6 @@ func Evaluate(ctx context.Context, in Input, gh *Client) (Decision, error) {
 	if ev.Release.Draft {
 		return deny("release %q is a draft", ev.Release.TagName), nil
 	}
-	if ev.Release.Prerelease {
-		return deny("release %q is a prerelease; production deploys only full releases (staging deploys main)", ev.Release.TagName), nil
-	}
 	tag := ev.Release.TagName
 	m := tagPattern.FindStringSubmatch(tag)
 	if m == nil {
@@ -152,6 +150,11 @@ func Evaluate(ctx context.Context, in Input, gh *Client) (Decision, error) {
 		ArtifactDigest: digest,
 		Environment:    "production-" + component,
 		APIContract:    "v1",
+	}
+	if ev.Release.Prerelease {
+		// Explicit routing: prereleases verify the release path on staging and
+		// never reach production.
+		manifest.Environment = "staging"
 	}
 	if component == "api" {
 		// Read from the verified commit through the API; the gate never runs

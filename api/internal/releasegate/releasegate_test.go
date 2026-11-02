@@ -167,7 +167,6 @@ func TestDeniedEventsNeverDeploy(t *testing.T) {
 		{"release created, not published", "release", releaseEventJSON("created", "api-v1.2.3", false, false), nil, "not a published release"},
 		{"release edited", "release", releaseEventJSON("edited", "api-v1.2.3", false, false), nil, "not a published release"},
 		{"draft release", "release", releaseEventJSON("published", "api-v1.2.3", true, false), nil, "draft"},
-		{"prerelease", "release", releaseEventJSON("published", "api-v1.2.3", false, true), nil, "prerelease"},
 		{"plain v tag", "release", releaseEventJSON("published", "v1.2.3", false, false), nil, "tag"},
 		{"unknown component", "release", releaseEventJSON("published", "web-v1.2.3", false, false), nil, "tag"},
 		{"incomplete version", "release", releaseEventJSON("published", "api-v1.2", false, false), nil, "tag"},
@@ -255,6 +254,20 @@ func TestAnnotatedUITagResolvesToCommitAndSelectsOnlyUI(t *testing.T) {
 	if m.Component != "ui" || m.CommitSHA != mainSHA || m.ArtifactDigest != uiDigest ||
 		m.Image != "ghcr.io/chichasasha/gk-cakes-ui" || m.Environment != "production-ui" || m.SchemaVersion != "" {
 		t.Fatalf("unexpected UI manifest: %+v", *m)
+	}
+}
+
+// TestPrereleaseRoutesToStaging: prereleases pass the same trust checks but
+// target the nonproduction staging environment, never production.
+func TestPrereleaseRoutesToStaging(t *testing.T) {
+	f := newFake()
+	d := evaluate(t, f, "release", releaseEventJSON("published", "api-v1.2.3", false, true))
+	if d.Action != ActionDeploy || d.Manifest.Environment != "staging" || d.Manifest.ArtifactDigest != apiDigest {
+		t.Fatalf("prerelease decision = %q (%s) manifest %+v; want deploy to staging", d.Action, d.Reason, d.Manifest)
+	}
+	f.runs[mainSHA][0].Conclusion = "failure"
+	if d := evaluate(t, f, "release", releaseEventJSON("published", "api-v1.2.3", false, true)); d.Action != ActionDeny {
+		t.Fatalf("prerelease with red main CI = %q, want deny", d.Action)
 	}
 }
 
