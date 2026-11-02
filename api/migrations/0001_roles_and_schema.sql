@@ -26,14 +26,16 @@ BEGIN
     RAISE EXCEPTION 'gk group roles must be NOLOGIN roles without elevated attributes';
   END IF;
 
+  -- Direct or indirect membership counts; runtime groups must not gain table
+  -- access outside the gateway through predefined data roles either.
   IF EXISTS (
     SELECT 1
-    FROM pg_catalog.pg_auth_members m
-    JOIN pg_catalog.pg_roles granted ON granted.oid = m.roleid
-    JOIN pg_catalog.pg_roles member ON member.oid = m.member
-    WHERE granted.rolname = 'gk_owner' AND member.rolname IN ('gk_api', 'gk_worker', 'gk_backup')
+    FROM unnest(ARRAY['gk_api', 'gk_worker', 'gk_backup']) AS g(name)
+    WHERE pg_catalog.pg_has_role(g.name, 'gk_owner', 'MEMBER')
+       OR pg_catalog.pg_has_role(g.name, 'pg_write_all_data', 'MEMBER')
+       OR (g.name <> 'gk_backup' AND pg_catalog.pg_has_role(g.name, 'pg_read_all_data', 'MEMBER'))
   ) THEN
-    RAISE EXCEPTION 'runtime and backup groups must not be members of gk_owner';
+    RAISE EXCEPTION 'runtime and backup groups must not inherit gk_owner or predefined data roles';
   END IF;
 END
 $$;

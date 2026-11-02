@@ -18,7 +18,7 @@ concurrency:
 jobs:
   api:
     name: api
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
@@ -48,7 +48,7 @@ jobs:
 
   api-postgres:
     name: api-postgres
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     services:
       postgres:
@@ -87,7 +87,7 @@ jobs:
 
   ui:
     name: ui
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
@@ -113,3 +113,14 @@ jobs:
         run: npm run test:bundle-secrets
       - name: Build
         run: npm run build
+      - name: Start the built server and check /healthz
+        run: |
+          PORT=3000 ORIGIN=http://127.0.0.1:3000 node build &
+          server=$!
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:3000/healthz >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:3000/healthz | grep -q '"status":"ok"'
+          kill -TERM "$server"
+          wait "$server"

@@ -162,6 +162,39 @@ func TestMigrateRefusesOlderBuildOnNewerDatabase(t *testing.T) {
 	}
 }
 
+// TestMigrateValidatesHistoryBeforeApplying covers a file inserted below the
+// newest applied migration: nothing may be applied, out of order or otherwise.
+func TestMigrateValidatesHistoryBeforeApplying(t *testing.T) {
+	ctx := context.Background()
+	conn := dbtest.New(t).MigratorConn(t)
+	file := func(sql string) *fstest.MapFile { return &fstest.MapFile{Data: []byte(sql)} }
+
+	first := fstest.MapFS{
+		"0001_a.sql": file("CREATE TABLE gk_meta.a (id integer);"),
+		"0003_c.sql": file("CREATE TABLE gk_meta.c (id integer);"),
+	}
+	if _, err := migrate.Run(ctx, conn, first); err != nil {
+		t.Fatal(err)
+	}
+	inserted := fstest.MapFS{
+		"0001_a.sql": first["0001_a.sql"],
+		"0002_b.sql": file("CREATE TABLE gk_meta.b (id integer);"),
+		"0003_c.sql": first["0003_c.sql"],
+		"0004_d.sql": file("CREATE TABLE gk_meta.d (id integer);"),
+	}
+	applied, err := migrate.Run(ctx, conn, inserted)
+	if err == nil || !strings.Contains(err.Error(), "numbered below") {
+		t.Fatalf("out-of-order migration: applied %v, err %v; want refusal", applied, err)
+	}
+	var b, d bool
+	if err := conn.QueryRow(ctx, "SELECT to_regclass('gk_meta.b') IS NOT NULL, to_regclass('gk_meta.d') IS NOT NULL").Scan(&b, &d); err != nil {
+		t.Fatal(err)
+	}
+	if b || d || len(applied) != 0 {
+		t.Fatalf("refused run still applied migrations: b=%v d=%v applied=%v", b, d, applied)
+	}
+}
+
 func TestFailedMigrationLeavesNoPartialSchema(t *testing.T) {
 	ctx := context.Background()
 	conn := dbtest.New(t).MigratorConn(t)

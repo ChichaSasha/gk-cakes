@@ -5,8 +5,10 @@ package jobs_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -245,8 +247,240 @@ func TestHandlerFailureSchedulesRetry(t *testing.T) {
 }
 
 func TestUnhandledJobIsRetriedNotDropped(t *testing.T) {
-	if err := jobs.Unhandled(context.Background(), jobs.Job{}); !errors.Is(err, jobs.ErrNoHandler) {
-		t.Fatalf("Unhandled = %v, want ErrNoHandler", err)
+	f := newFixture(t)
+	id := f.enqueue(t)
+	w := jobs.New(f.pool, jobs.Options{
+		Logger:          quietLogger(),
+		ShutdownTimeout: time.Second,
+		PollInterval:    50 * time.Millisecond,
+		Handler:         jobs.Unhandled,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := runWorker(ctx, w)
+	deadline := time.Now().Add(5 * time.Second)
+	for f.row(t, id).State != "retry" && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	if got := f.row(t, id); got.State != "retry" || got.Generation != 1 || got.NextAttempt < 50*time.Second {
+		t.Fatalf("unhandled job = %+v, want retry about 1m ahead", got)
+	}
+}
+
+// TestGenerationAloneFencesSameWorker isolates the generation predicate: the
+// same worker reclaims its own expired lease, so owner and state still match.
+func TestGenerationAloneFencesSameWorker(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	id := f.enqueue(t)
+	const worker = "44444444-4444-4444-8444-444444444444"
+	claim := func(lease string) int64 {
+		t.Helper()
+		var gen int64
+		if err := f.pool.QueryRow(ctx, "SELECT job_generation FROM business.job_claim($1::uuid, $2::interval)", worker, lease).Scan(&gen); err != nil {
+			t.Fatalf("claim: %v", err)
+		}
+		return gen
+	}
+	gen1 := claim("1 second")
+	time.Sleep(1200 * time.Millisecond)
+	gen2 := claim("60 seconds")
+	if gen2 != gen1+1 {
+		t.Fatalf("reclaimed generation %d, want %d", gen2, gen1+1)
+	}
+	var ok bool
+	for _, sql := range []string{
+		"SELECT business.job_heartbeat($1::uuid, $2::uuid, $3, interval '60 seconds') IS NOT NULL",
+		"SELECT business.job_release($1::uuid, $2::uuid, $3, interval '0')",
+		"SELECT business.job_complete($1::uuid, $2::uuid, $3)",
+	} {
+		if err := f.pool.QueryRow(ctx, sql, id, worker, gen1).Scan(&ok); err != nil || ok {
+			t.Errorf("same worker, stale generation: %q = %v, %v; want fenced false", sql, ok, err)
+		}
+	}
+	if err := f.pool.QueryRow(ctx, "SELECT business.job_complete($1::uuid, $2::uuid, $3)", id, worker, gen2).Scan(&ok); err != nil || !ok {
+		t.Fatalf("current generation complete = %v, %v; want true", ok, err)
+	}
+}
+
+func TestConcurrentClaimersNeverShareAJob(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	const jobsCount, claimers = 30, 10
+	for range jobsCount {
+		f.enqueue(t)
+	}
+	var mu sync.Mutex
+	seen := map[string]int{}
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := range claimers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			worker := fmt.Sprintf("55555555-5555-4555-8555-%012d", i)
+			<-start
+			for {
+				var id string
+				err := f.pool.QueryRow(ctx, "SELECT job_id::text FROM business.job_claim($1::uuid, interval '60 seconds')", worker).Scan(&id)
+				if errors.Is(err, pgx.ErrNoRows) {
+					return
+				}
+				if err != nil {
+					t.Errorf("claim: %v", err)
+					return
+				}
+				mu.Lock()
+				seen[id]++
+				mu.Unlock()
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	if len(seen) != jobsCount {
+		t.Fatalf("claimed %d distinct jobs, want %d", len(seen), jobsCount)
+	}
+	for id, n := range seen {
+		if n != 1 {
+			t.Errorf("job %s claimed %d times by concurrent workers", id, n)
+		}
+	}
+}
+
+func TestHeartbeatKeepsLongJobLeased(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	id := f.enqueue(t)
+	finished := make(chan struct{})
+	w := jobs.New(f.pool, jobs.Options{
+		Logger:          quietLogger(),
+		ShutdownTimeout: time.Second,
+		PollInterval:    50 * time.Millisecond,
+		Lease:           1500 * time.Millisecond,
+		Handler: func(ctx context.Context, _ jobs.Job) error {
+			defer close(finished)
+			select {
+			case <-time.After(3500 * time.Millisecond): // more than twice the lease
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		},
+	})
+	runCtx, cancel := context.WithCancel(ctx)
+	done := runWorker(runCtx, w)
+
+	thief := workerPool(t, f.db)
+	stolen := 0
+probe:
+	for {
+		select {
+		case <-finished:
+			break probe
+		case <-time.After(200 * time.Millisecond):
+			var n int
+			if err := thief.QueryRow(ctx, "SELECT count(*) FROM business.job_claim('66666666-6666-4666-8666-666666666666', interval '60 seconds')").Scan(&n); err != nil {
+				t.Fatal(err)
+			}
+			stolen += n
+		}
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for f.row(t, id).State == "running" && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	if stolen != 0 {
+		t.Fatalf("another worker claimed the job %d times while heartbeats were succeeding", stolen)
+	}
+	if got := f.row(t, id); got.State != "completed" || got.Generation != 1 {
+		t.Fatalf("long job = %+v, want completed at generation 1", got)
+	}
+}
+
+func TestLostLeaseCancelsHandlerWithoutFinalizing(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	id := f.enqueue(t)
+	started := make(chan struct{})
+	cancelled := make(chan struct{})
+	w := jobs.New(f.pool, jobs.Options{
+		Logger:          quietLogger(),
+		ShutdownTimeout: time.Second,
+		PollInterval:    50 * time.Millisecond,
+		Lease:           1500 * time.Millisecond,
+		Handler: func(ctx context.Context, _ jobs.Job) error {
+			close(started)
+			<-ctx.Done()
+			close(cancelled)
+			return ctx.Err()
+		},
+	})
+	runCtx, cancel := context.WithCancel(ctx)
+	done := runWorker(runCtx, w)
+	<-started
+
+	// Simulate another worker reclaiming the lease.
+	const other = "77777777-7777-4777-8777-777777777777"
+	if _, err := f.admin.Exec(ctx, "UPDATE business.job SET lease_owner = $2::uuid, generation = generation + 1 WHERE id = $1::uuid", id, other); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-cancelled:
+	case <-time.After(3 * time.Second):
+		t.Fatal("handler was not cancelled after the lease was lost")
+	}
+	cancel()
+	<-done
+	got := f.row(t, id)
+	if got.State != "running" || got.LeaseOwner == nil || *got.LeaseOwner != other || got.Generation != 2 {
+		t.Fatalf("job after lost lease = %+v, want untouched running lease of %s at generation 2", got, other)
+	}
+}
+
+func TestHeartbeatFailuresPastLeaseCancelHandler(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	id := f.enqueue(t)
+	started := make(chan struct{})
+	cancelled := make(chan time.Time, 1)
+	w := jobs.New(f.pool, jobs.Options{
+		Logger:          quietLogger(),
+		ShutdownTimeout: time.Second,
+		PollInterval:    50 * time.Millisecond,
+		Lease:           1500 * time.Millisecond,
+		Handler: func(ctx context.Context, _ jobs.Job) error {
+			close(started)
+			<-ctx.Done()
+			cancelled <- time.Now()
+			return ctx.Err()
+		},
+	})
+	runCtx, cancel := context.WithCancel(ctx)
+	done := runWorker(runCtx, w)
+	<-started
+	began := time.Now()
+
+	// Heartbeats now fail (as during a database outage) while the lease runs out.
+	if _, err := f.admin.Exec(ctx, "REVOKE EXECUTE ON FUNCTION business.job_heartbeat(uuid, uuid, bigint, interval) FROM gk_worker"); err != nil {
+		t.Fatal(err)
+	}
+	var at time.Time
+	select {
+	case at = <-cancelled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("handler kept running after heartbeats failed past the lease")
+	}
+	cancel()
+	<-done
+	if elapsed := at.Sub(began); elapsed < time.Second {
+		t.Errorf("handler cancelled after %v, before the lease could have expired", elapsed)
+	}
+	if got := f.row(t, id); got.State != "running" || got.Generation != 1 {
+		t.Fatalf("job = %+v, want unfinalized running lease left to expire", got)
 	}
 }
 

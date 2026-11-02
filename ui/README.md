@@ -34,4 +34,10 @@ both write `build/`.
 public site origin. Liveness: `GET /healthz`.
 
 Environment variables must be declared in `src/env.ts` (SvelteKit 3) before code
-can import them; only deliberately public values may be declared `public`.
+can import them; only deliberately public values may be declared `public`. None
+are declared yet: the public API origin and public auth settings arrive with the
+first features that use them (GK-021/GK-028).
+
+No browser test runner is configured yet; one is added when a runner is approved
+for the first interactive screens. CI starts the built server and checks
+`/healthz` instead.

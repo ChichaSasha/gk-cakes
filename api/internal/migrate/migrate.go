@@ -112,13 +112,24 @@ func RunTo(ctx context.Context, conn *pgx.Conn, fsys fs.FS, target string) (appl
 			return nil, fmt.Errorf("database has migration %s unknown to this build; refusing to run an older migration set", version)
 		}
 	}
-
+	// Validate the whole history before changing anything.
+	latest := ""
 	for _, m := range migrations {
 		if sum, ok := done[m.Version]; ok {
 			if sum != m.SHA256 {
-				return applied, fmt.Errorf("migration %s was modified after it was applied", m.Version)
+				return nil, fmt.Errorf("migration %s was modified after it was applied", m.Version)
 			}
-		} else {
+			latest = m.Version
+		}
+	}
+	for _, m := range migrations {
+		if _, ok := done[m.Version]; !ok && m.Version < latest {
+			return nil, fmt.Errorf("migration %s is numbered below already-applied %s; renumber it after the latest", m.Version, latest)
+		}
+	}
+
+	for _, m := range migrations {
+		if _, ok := done[m.Version]; !ok {
 			if err := apply(ctx, conn, m); err != nil {
 				return applied, err
 			}

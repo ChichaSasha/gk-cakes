@@ -34,7 +34,7 @@ var validLocalAPI = map[string]string{
 
 var validProductionAPI = map[string]string{
 	"APP_ENV":      "production",
-	"DATABASE_URL": "postgresql://gk_api:" + canary + "@db.example.supabase.co:5432/postgres?sslmode=verify-full&sslrootcert=/etc/gk/ca.pem",
+	"DATABASE_URL": "postgresql://gk_api:" + canary + "@db.example.supabase.co:5432/postgres?sslmode=verify-full",
 	"UI_ORIGIN":    "https://gkcake.com",
 }
 
@@ -78,6 +78,12 @@ func TestLoadAPIAcceptsValidConfiguration(t *testing.T) {
 	}
 	if !prod.Providers.PaymentSecret.IsSet() {
 		t.Error("PAYMENT_SECRET not loaded")
+	}
+
+	if _, err := LoadAPI(env(merge(validLocalAPI, map[string]string{
+		"DATABASE_URL": "postgres://u:" + canary + "@db.example.supabase.co/postgres?sslmode=verify-full",
+	}))); err != nil {
+		t.Errorf("local process on a remote database with verify-full rejected: %v", err)
 	}
 }
 
@@ -131,6 +137,16 @@ func TestLoadAPIRejectsUnsafeProductionTestMixing(t *testing.T) {
 		{"production with test payment key", merge(validProductionAPI, map[string]string{"PAYMENT_SECRET": "sk_test_" + canary}), "PAYMENT_SECRET"},
 		{"staging with live payment key", merge(staging, map[string]string{"PAYMENT_SECRET": "sk_live_" + canary}), "PAYMENT_SECRET"},
 		{"test with live restricted payment key", merge(validLocalAPI, map[string]string{"APP_ENV": "test", "PAYMENT_SECRET": "rk_live_" + canary}), "PAYMENT_SECRET"},
+		// pgx applies the last sslmode, the ssl alias, host= overrides and
+		// multi-host fallbacks; validation must follow what the client does.
+		{"duplicate sslmode disabling TLS", merge(validProductionAPI, map[string]string{"DATABASE_URL": "postgres://u:" + canary + "@db.example.supabase.co/postgres?sslmode=verify-full&sslmode=disable"}), "sslmode=verify-full"},
+		{"ssl alias skipping verification", merge(validProductionAPI, map[string]string{"DATABASE_URL": "postgres://u:" + canary + "@db.example.supabase.co/postgres?sslmode=verify-full&ssl=true"}), "sslmode=verify-full"},
+		{"host parameter overriding to loopback", merge(validProductionAPI, map[string]string{"DATABASE_URL": "postgres://u:" + canary + "@db.example.supabase.co/postgres?sslmode=verify-full&host=127.0.0.1"}), "local database"},
+		{"loopback fallback host", merge(validProductionAPI, map[string]string{"DATABASE_URL": "postgres://u:" + canary + "@db.example.supabase.co,127.0.0.1/postgres?sslmode=verify-full"}), "local database"},
+		{"unix socket host", merge(validProductionAPI, map[string]string{"DATABASE_URL": "postgres://u:" + canary + "@/postgres?host=/var/run/postgresql&sslmode=verify-full"}), "local database"},
+		{"prefer with plaintext fallback", merge(validProductionAPI, map[string]string{"DATABASE_URL": "postgres://u:" + canary + "@db.example.supabase.co/postgres?sslmode=prefer"}), "sslmode=verify-full"},
+		{"verify-ca without hostname check", merge(validProductionAPI, map[string]string{"DATABASE_URL": "postgres://u:" + canary + "@db.example.supabase.co/postgres?sslmode=verify-ca"}), "sslmode=verify-full"},
+		{"local process on a remote database without TLS", merge(validLocalAPI, map[string]string{"DATABASE_URL": "postgres://u:" + canary + "@db.example.supabase.co/postgres?sslmode=disable"}), "sslmode=verify-full"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

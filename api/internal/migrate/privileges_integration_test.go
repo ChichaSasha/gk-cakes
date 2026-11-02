@@ -4,6 +4,7 @@ package migrate_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/dbtest"
@@ -106,6 +107,47 @@ func TestRuntimeRolesCannotBypassGateway(t *testing.T) {
 	var state string
 	if err := worker.QueryRow(ctx, "SELECT state FROM business.job WHERE id = $1::uuid", jobID).Scan(&state); err != nil || state != "completed" {
 		t.Fatalf("job state = %q, %v; want completed", state, err)
+	}
+}
+
+// TestMigrationRefusesPreexistingPrivilegedGroups covers cluster-wide roles
+// that already exist with unsafe memberships, including indirect ones.
+func TestMigrationRefusesPreexistingPrivilegedGroups(t *testing.T) {
+	ctx := context.Background()
+	migrated(t) // ensure the group roles exist in this cluster
+	admin := dbtest.New(t).AdminConn(t)
+
+	cases := map[string][]string{
+		"indirect gk_owner membership": {
+			"CREATE ROLE gk_test_bridge NOLOGIN",
+			"GRANT gk_owner TO gk_test_bridge",
+			"GRANT gk_test_bridge TO gk_worker",
+		},
+		"predefined write role": {"GRANT pg_write_all_data TO gk_api"},
+	}
+	undo := map[string][]string{
+		"indirect gk_owner membership": {"REVOKE gk_test_bridge FROM gk_worker", "DROP ROLE IF EXISTS gk_test_bridge"},
+		"predefined write role":        {"REVOKE pg_write_all_data FROM gk_api"},
+	}
+	for name, setup := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Cleanup(func() {
+				for _, sql := range undo[name] {
+					if _, err := admin.Exec(ctx, sql); err != nil {
+						t.Errorf("cleanup %q: %v", sql, err)
+					}
+				}
+			})
+			for _, sql := range setup {
+				if _, err := admin.Exec(ctx, sql); err != nil {
+					t.Fatalf("setup %q: %v", sql, err)
+				}
+			}
+			_, err := migrate.Run(ctx, dbtest.New(t).MigratorConn(t), migrations.FS)
+			if err == nil || !strings.Contains(err.Error(), "must not inherit gk_owner or predefined data roles") {
+				t.Fatalf("migration with %s: err = %v, want refusal", name, err)
+			}
+		})
 	}
 }
 

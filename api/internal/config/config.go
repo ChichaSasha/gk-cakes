@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // Env identifies the deployment environment of a process.
@@ -32,6 +34,9 @@ const defaultShutdownTimeout = 20 * time.Second
 // Secret holds a sensitive value. Formatting and marshalling never reveal it;
 // call Reveal only where the value is handed to its consuming client.
 type Secret struct{ value string }
+
+// NewSecret wraps a value obtained outside environment loading.
+func NewSecret(value string) Secret { return Secret{value: value} }
 
 // Reveal returns the secret value.
 func (s Secret) Reveal() string { return s.value }
@@ -182,8 +187,12 @@ func (l *loader) duration(name string, def time.Duration) time.Duration {
 	return d
 }
 
-// databaseURL validates a PostgreSQL URL without ever echoing it: url.Parse
-// errors embed the raw input, so they are replaced with a fixed message.
+// databaseURL validates a PostgreSQL URL without ever echoing it (parser
+// errors embed the raw input, so they are replaced with fixed messages).
+// TLS and host rules are checked on the configuration pgx will actually use,
+// so duplicate parameters, the ssl alias, host= overrides and multi-host
+// fallbacks cannot bypass them. Any non-local database requires verify-full;
+// staging and production additionally forbid local targets.
 func (l *loader) databaseURL(name string, env Env) Secret {
 	raw := l.get(name)
 	if raw == "" {
@@ -199,13 +208,31 @@ func (l *loader) databaseURL(name string, env Env) Secret {
 		l.fail("%s must use the postgres:// or postgresql:// scheme", name)
 		return Secret{}
 	}
-	if env.deployed() {
-		if u.Query().Get("sslmode") != "verify-full" {
-			l.fail("%s must set sslmode=verify-full in %s", name, env)
+	parsed, err := pgconn.ParseConfig(raw)
+	if err != nil {
+		l.fail("%s is not a valid PostgreSQL URL, or its certificate files cannot be read", name)
+		return Secret{}
+	}
+	targets := append([]*pgconn.FallbackConfig{{Host: parsed.Host, Port: parsed.Port, TLSConfig: parsed.TLSConfig}}, parsed.Fallbacks...)
+	var local, remote, unverified bool
+	for _, t := range targets {
+		if isLoopback(t.Host) {
+			local = true
+		} else {
+			remote = true
 		}
-		if isLoopback(u.Hostname()) {
-			l.fail("%s must not target a local database in %s", name, env)
+		if t.TLSConfig == nil || t.TLSConfig.InsecureSkipVerify || t.TLSConfig.ServerName == "" {
+			unverified = true
 		}
+	}
+	switch {
+	case unverified && env.deployed():
+		l.fail("%s must use sslmode=verify-full with no plaintext or unverified fallback in %s", name, env)
+	case unverified && remote:
+		l.fail("%s must use sslmode=verify-full for a non-local database", name)
+	}
+	if local && env.deployed() {
+		l.fail("%s must not target a local database in %s", name, env)
 	}
 	return Secret{value: raw}
 }
@@ -253,8 +280,9 @@ func (l *loader) paymentSecret(name string, env Env) Secret {
 	return s
 }
 
+// isLoopback reports local targets: loopback names/addresses and Unix sockets.
 func isLoopback(host string) bool {
-	if host == "" || strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
+	if host == "" || strings.HasPrefix(host, "/") || strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
 		return true
 	}
 	ip := net.ParseIP(host)

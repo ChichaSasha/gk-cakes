@@ -85,6 +85,7 @@ func (w *Worker) Run(ctx context.Context) error {
 			log.Info("worker stopped")
 			return nil
 		}
+		claimedAt := time.Now()
 		job, ok, err := w.claim(ctx)
 		switch {
 		case err != nil && ctx.Err() != nil:
@@ -95,12 +96,16 @@ func (w *Worker) Run(ctx context.Context) error {
 		case !ok:
 			sleep(ctx, w.opts.PollInterval)
 		default:
-			w.process(ctx, log.With("job_id", job.ID, "generation", job.Generation), job)
+			w.process(ctx, log.With("job_id", job.ID, "generation", job.Generation), job, claimedAt.Add(w.opts.Lease))
 		}
 	}
 }
 
-func (w *Worker) process(ctx context.Context, log *slog.Logger, job Job) {
+// process runs one job. leaseDeadline is a conservative local estimate of
+// when the lease expires (measured from before the claim); if heartbeats keep
+// failing past it, the handler is cancelled because another worker may now
+// hold the job.
+func (w *Worker) process(ctx context.Context, log *slog.Logger, job Job, leaseDeadline time.Time) {
 	// The handler deliberately outlives ctx: shutdown starts a bounded drain
 	// (ShutdownTimeout) instead of interrupting work mid-way; cancelJob ends it.
 	jobCtx, cancelJob := context.WithCancel(context.WithoutCancel(ctx))
@@ -119,17 +124,25 @@ func (w *Worker) process(ctx context.Context, log *slog.Logger, job Job) {
 			w.finalize(log, job, err)
 			return
 		case <-heartbeat.C:
+			attempt := time.Now()
 			held, err := w.heartbeat(job)
-			if err != nil {
+			switch {
+			case err != nil && time.Now().Before(leaseDeadline):
 				log.Warn("heartbeat failed", "error", err)
 				continue
-			}
-			if !held {
+			case err != nil:
+				log.Error("heartbeats failed past the lease; abandoning job without finalizing", "error", err)
+			case !held:
 				log.Warn("lease lost; abandoning job without finalizing")
-				cancelJob()
-				waitAbandon(done)
-				return
+			default:
+				leaseDeadline = attempt.Add(w.opts.Lease)
+				continue
 			}
+			cancelJob()
+			if !waitAbandon(done) {
+				log.Error("handler ignored cancellation after losing its lease")
+			}
+			return
 		case <-shutdown:
 			shutdown = nil
 			drainDeadline = time.After(w.opts.ShutdownTimeout)

@@ -3,7 +3,8 @@
 -- Runtime roles never write business.job directly. The worker claims, extends,
 -- completes and releases leases only through the functions below; generation
 -- fences stale finalization after a lease is reclaimed. Retry counting,
--- attention escalation and dispatch journals belong to later owning tickets.
+-- attention escalation, dispatch journals and the K11 restore dispatch freeze
+-- belong to the owning tickets (GK-024, GK-034); nothing dispatches yet.
 
 SET LOCAL ROLE gk_owner;
 
