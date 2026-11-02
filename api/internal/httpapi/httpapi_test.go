@@ -124,6 +124,9 @@ func TestCORSAllowsOnlyTheConfiguredOrigin(t *testing.T) {
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
 		t.Errorf("foreign origin got Access-Control-Allow-Origin %q", got)
 	}
+	if got := rec.Header().Get("Vary"); got != "Origin" {
+		t.Errorf("foreign origin response Vary = %q, want Origin so caches key on it", got)
+	}
 
 	req = httptest.NewRequest(http.MethodOptions, "/api/v1/orders", nil)
 	req.Header.Set("Origin", "https://gkcake.com")

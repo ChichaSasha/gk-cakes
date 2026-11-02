@@ -101,6 +101,8 @@ func (w *Worker) Run(ctx context.Context) error {
 }
 
 func (w *Worker) process(ctx context.Context, log *slog.Logger, job Job) {
+	// The handler deliberately outlives ctx: shutdown starts a bounded drain
+	// (ShutdownTimeout) instead of interrupting work mid-way; cancelJob ends it.
 	jobCtx, cancelJob := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancelJob()
 	done := make(chan error, 1)

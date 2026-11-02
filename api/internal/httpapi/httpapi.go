@@ -115,13 +115,17 @@ func withDeadline(next http.Handler) http.Handler {
 
 func withCORS(origin string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if origin == "" || r.Header.Get("Origin") != origin {
+		if origin == "" {
 			next.ServeHTTP(w, r)
 			return
 		}
 		h := w.Header()
-		h.Set("Access-Control-Allow-Origin", origin)
 		h.Add("Vary", "Origin")
+		if r.Header.Get("Origin") != origin {
+			next.ServeHTTP(w, r)
+			return
+		}
+		h.Set("Access-Control-Allow-Origin", origin)
 		h.Set("Access-Control-Expose-Headers", "X-Request-Id")
 		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 			h.Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE")
