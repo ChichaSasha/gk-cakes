@@ -1,0 +1,114 @@
+# GK-034: component releases. A published release runs the release gate,
+# built from trusted main. Prereleases that pass deploy their exact digest to
+# staging; full releases target production, which stays disabled until Sasha
+# authorizes the first production release (GK-036). Nothing here holds
+# production credentials.
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ startsWith(github.event.release.tag_name, 'api-') && 'api' || 'ui' }}-${{ github.event.release.prerelease && 'staging' || 'production' }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: release-gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+      deployments: read
+    outputs:
+      decision: ${{ steps.gate.outputs.decision }}
+      component: ${{ steps.gate.outputs.component }}
+      environment: ${{ steps.gate.outputs.environment }}
+      image: ${{ steps.gate.outputs.image }}
+      digest: ${{ steps.gate.outputs.digest }}
+      commit_sha: ${{ steps.gate.outputs.commit_sha }}
+      version: ${{ steps.gate.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+      - name: Evaluate release
+        id: gate
+        working-directory: api
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          go run ./cmd/gk-release-gate -manifest "$RUNNER_TEMP/release-manifest.json" | tee "$RUNNER_TEMP/gate.txt"
+          code=${PIPESTATUS[0]}
+          set -e
+          { echo '```'; cat "$RUNNER_TEMP/gate.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$code"
+
+  deploy-staging:
+    name: deploy-staging
+    needs: gate
+    if: needs.gate.outputs.decision == 'deploy' && needs.gate.outputs.environment == 'staging'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: staging
+    permissions:
+      contents: read
+      deployments: write
+    env:
+      COMPONENT: ${{ needs.gate.outputs.component }}
+      IMAGE: ${{ needs.gate.outputs.image }}@${{ needs.gate.outputs.digest }}
+      SHA: ${{ needs.gate.outputs.commit_sha }}
+      VERSION: ${{ needs.gate.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+      - name: Record deployment
+        id: record
+        run: echo "id=$(.github/scripts/record-deployment.sh create staging "$SHA" "${IMAGE#*@}" "$COMPONENT-v$VERSION")" >> "$GITHUB_OUTPUT"
+      - name: Migrate once with the migration credential (API only)
+        if: needs.gate.outputs.component == 'api'
+        env:
+          MIGRATION_DATABASE_URL: ${{ secrets.STAGING_MIGRATION_DATABASE_URL }}
+        run: docker run --rm -e APP_ENV=staging -e MIGRATION_DATABASE_URL --entrypoint /usr/local/bin/gk-migrate "$IMAGE"
+      - name: Deploy the released image
+        working-directory: api
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
+          SERVICE_ID: ${{ needs.gate.outputs.component == 'api' && vars.RAILWAY_API_SERVICE_ID || vars.RAILWAY_UI_SERVICE_ID }}
+          HEALTHCHECK: ${{ needs.gate.outputs.component == 'api' && '/readyz' || '/healthz' }}
+        run: go run ./cmd/gk-railway-deploy -service "$SERVICE_ID" -environment "${{ vars.RAILWAY_ENVIRONMENT_ID }}" -image "$IMAGE" -healthcheck "$HEALTHCHECK"
+      - name: Record result
+        if: always() && steps.record.outputs.id != ''
+        run: .github/scripts/record-deployment.sh status "${{ steps.record.outputs.id }}" "${{ job.status == 'success' && 'success' || 'failure' }}" "$COMPONENT v$VERSION ${IMAGE#*@}"
+
+  production:
+    name: production-deploy
+    needs: gate
+    if: needs.gate.outputs.decision == 'deploy' && startsWith(needs.gate.outputs.environment, 'production-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Production deploys are not enabled
+        run: |
+          echo "Gate passed for ${{ needs.gate.outputs.environment }}, but production deploys are not configured." | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "Production credentials wait for Sasha's first authorized release (GK-036)." | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 1

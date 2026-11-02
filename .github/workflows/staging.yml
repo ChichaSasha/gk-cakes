@@ -1,0 +1,139 @@
+# GK-034: automatic staging deploy after green main CI.
+# Builds the API and UI images once from the exact verified main commit,
+# pushes them to ghcr.io, then deploys those digests to Railway staging:
+# API first (after migrations, when enabled), then UI. Deploys are serialized
+# and a running deploy is never cancelled.
+name: Staging
+
+on:
+  workflow_run:
+    workflows: [Components]
+    types: [completed]
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: publish-images
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    outputs:
+      sha: ${{ github.event.workflow_run.head_sha }}
+      api_image: ${{ steps.push.outputs.api_image }}
+      ui_image: ${{ steps.push.outputs.ui_image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Log in to GitHub Container Registry
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Build and push images for the verified commit
+        id: push
+        run: |
+          registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          for component in api ui; do
+            tag="$registry/gk-cakes-$component:sha-$SHA"
+            docker buildx build --platform linux/amd64 --provenance=false --sbom=false --push \
+              --label "org.opencontainers.image.revision=$SHA" --tag "$tag" "$component"
+            digest=$(docker buildx imagetools inspect "$tag" --format '{{json .Manifest}}' | jq -r .digest)
+            if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "unexpected registry digest for $tag: $digest" >&2
+              exit 1
+            fi
+            echo "${component}_image=$registry/gk-cakes-$component@$digest" >> "$GITHUB_OUTPUT"
+            echo "- $component: \`$registry/gk-cakes-$component@$digest\` (commit \`$SHA\`)" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+  deploy-api:
+    name: deploy-api
+    needs: publish
+    if: vars.STAGING_API_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: staging
+    permissions:
+      contents: read
+      deployments: write
+    env:
+      SHA: ${{ needs.publish.outputs.sha }}
+      IMAGE: ${{ needs.publish.outputs.api_image }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.publish.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+      - name: Record deployment
+        id: record
+        run: echo "id=$(.github/scripts/record-deployment.sh create staging "$SHA" "${IMAGE#*@}" "main-${SHA:0:12}")" >> "$GITHUB_OUTPUT"
+      - name: Migrate once with the migration credential (advisory lock)
+        env:
+          MIGRATION_DATABASE_URL: ${{ secrets.STAGING_MIGRATION_DATABASE_URL }}
+        run: docker run --rm -e APP_ENV=staging -e MIGRATION_DATABASE_URL --entrypoint /usr/local/bin/gk-migrate "$IMAGE"
+      - name: Deploy API image
+        working-directory: api
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
+        run: go run ./cmd/gk-railway-deploy -service "${{ vars.RAILWAY_API_SERVICE_ID }}" -environment "${{ vars.RAILWAY_ENVIRONMENT_ID }}" -image "$IMAGE" -healthcheck /readyz
+      - name: Record result
+        if: always() && steps.record.outputs.id != ''
+        run: .github/scripts/record-deployment.sh status "${{ steps.record.outputs.id }}" "${{ job.status == 'success' && 'success' || 'failure' }}" "api ${IMAGE#*@}"
+
+  deploy-ui:
+    name: deploy-ui
+    needs: [publish, deploy-api]
+    if: >-
+      !cancelled() && needs.publish.result == 'success' &&
+      (needs.deploy-api.result == 'success' || needs.deploy-api.result == 'skipped')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: staging
+    permissions:
+      contents: read
+      deployments: write
+    env:
+      SHA: ${{ needs.publish.outputs.sha }}
+      IMAGE: ${{ needs.publish.outputs.ui_image }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.publish.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+      - name: Record deployment
+        id: record
+        run: echo "id=$(.github/scripts/record-deployment.sh create staging "$SHA" "${IMAGE#*@}" "main-${SHA:0:12}")" >> "$GITHUB_OUTPUT"
+      - name: Deploy UI image
+        working-directory: api
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
+        run: go run ./cmd/gk-railway-deploy -service "${{ vars.RAILWAY_UI_SERVICE_ID }}" -environment "${{ vars.RAILWAY_ENVIRONMENT_ID }}" -image "$IMAGE" -healthcheck /healthz
+      - name: Record result
+        if: always() && steps.record.outputs.id != ''
+        run: .github/scripts/record-deployment.sh status "${{ steps.record.outputs.id }}" "${{ job.status == 'success' && 'success' || 'failure' }}" "ui ${IMAGE#*@}"

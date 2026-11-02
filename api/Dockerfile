@@ -12,6 +12,9 @@ LABEL org.opencontainers.image.source="https://github.com/ChichaSasha/gk-cakes" 
       org.opencontainers.image.description="GK Cakes API, worker and migration commands" \
       org.opencontainers.image.licenses="Apache-2.0"
 COPY --from=build /out/ /usr/local/bin/
+# Public Supabase Root 2021 CA for sslmode=verify-full
+# (DATABASE_URL ...&sslrootcert=/etc/gk/supabase-root-2021.crt).
+COPY certs/supabase-root-2021.crt /etc/gk/supabase-root-2021.crt
 USER nonroot:nonroot
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/gk-api"]
