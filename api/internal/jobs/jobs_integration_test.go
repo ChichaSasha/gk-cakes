@@ -407,15 +407,19 @@ func TestLostLeaseCancelsHandlerWithoutFinalizing(t *testing.T) {
 	id := f.enqueue(t)
 	started := make(chan struct{})
 	cancelled := make(chan struct{})
+	var once sync.Once
 	w := jobs.New(f.pool, jobs.Options{
 		Logger:          quietLogger(),
 		ShutdownTimeout: time.Second,
 		PollInterval:    50 * time.Millisecond,
 		Lease:           1500 * time.Millisecond,
 		Handler: func(ctx context.Context, _ jobs.Job) error {
-			close(started)
+			first := false
+			once.Do(func() { first = true; close(started) })
 			<-ctx.Done()
-			close(cancelled)
+			if first {
+				close(cancelled)
+			}
 			return ctx.Err()
 		},
 	})
@@ -425,7 +429,7 @@ func TestLostLeaseCancelsHandlerWithoutFinalizing(t *testing.T) {
 
 	// Simulate another worker reclaiming the lease.
 	const other = "77777777-7777-4777-8777-777777777777"
-	if _, err := f.admin.Exec(ctx, "UPDATE business.job SET lease_owner = $2::uuid, generation = generation + 1 WHERE id = $1::uuid", id, other); err != nil {
+	if _, err := f.admin.Exec(ctx, "UPDATE business.job SET lease_owner = $2::uuid, generation = generation + 1, lease_until = now() + interval '1 minute' WHERE id = $1::uuid", id, other); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -447,15 +451,21 @@ func TestHeartbeatFailuresPastLeaseCancelHandler(t *testing.T) {
 	id := f.enqueue(t)
 	started := make(chan struct{})
 	cancelled := make(chan time.Time, 1)
+	var once sync.Once
 	w := jobs.New(f.pool, jobs.Options{
 		Logger:          quietLogger(),
 		ShutdownTimeout: time.Second,
 		PollInterval:    50 * time.Millisecond,
 		Lease:           1500 * time.Millisecond,
 		Handler: func(ctx context.Context, _ jobs.Job) error {
-			close(started)
+			// Once the lease runs out the loop may reclaim the job before the
+			// test stops it; only the first run reports.
+			first := false
+			once.Do(func() { first = true; close(started) })
 			<-ctx.Done()
-			cancelled <- time.Now()
+			if first {
+				cancelled <- time.Now()
+			}
 			return ctx.Err()
 		},
 	})
@@ -479,8 +489,8 @@ func TestHeartbeatFailuresPastLeaseCancelHandler(t *testing.T) {
 	if elapsed := at.Sub(began); elapsed < time.Second {
 		t.Errorf("handler cancelled after %v, before the lease could have expired", elapsed)
 	}
-	if got := f.row(t, id); got.State != "running" || got.Generation != 1 {
-		t.Fatalf("job = %+v, want unfinalized running lease left to expire", got)
+	if got := f.row(t, id); got.State == "completed" {
+		t.Fatalf("job = %+v; a worker that lost its lease must not complete it", got)
 	}
 }
 

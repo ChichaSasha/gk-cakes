@@ -25,22 +25,29 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'gk group roles must be NOLOGIN roles without elevated attributes';
   END IF;
-
-  -- Direct or indirect membership counts; runtime groups must not gain table
-  -- access outside the gateway through predefined data roles either.
-  IF EXISTS (
-    SELECT 1
-    FROM unnest(ARRAY['gk_api', 'gk_worker', 'gk_backup']) AS g(name)
-    WHERE pg_catalog.pg_has_role(g.name, 'gk_owner', 'MEMBER')
-       OR pg_catalog.pg_has_role(g.name, 'pg_write_all_data', 'MEMBER')
-       OR (g.name <> 'gk_backup' AND pg_catalog.pg_has_role(g.name, 'pg_read_all_data', 'MEMBER'))
-  ) THEN
-    RAISE EXCEPTION 'runtime and backup groups must not inherit gk_owner or predefined data roles';
-  END IF;
 END
 $$;
 
 GRANT gk_owner TO CURRENT_USER WITH INHERIT FALSE, SET TRUE;
+
+-- Checked after the grant above, so a group that is a member of the migration
+-- credential is caught as an indirect gk_owner member. Runtime groups must not
+-- reach table access outside the gateway through predefined roles either.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM unnest(ARRAY['gk_api', 'gk_worker', 'gk_backup']) AS g(name)
+    WHERE pg_catalog.pg_has_role(g.name, 'gk_owner', 'MEMBER')
+       OR pg_catalog.pg_has_role(g.name, CURRENT_USER, 'MEMBER')
+       OR pg_catalog.pg_has_role(g.name, 'pg_write_all_data', 'MEMBER')
+       OR coalesce(pg_catalog.pg_has_role(g.name, pg_catalog.to_regrole('pg_maintain'), 'MEMBER'), false)
+       OR (g.name <> 'gk_backup' AND pg_catalog.pg_has_role(g.name, 'pg_read_all_data', 'MEMBER'))
+  ) THEN
+    RAISE EXCEPTION 'runtime and backup groups must not inherit gk_owner, the migration role or predefined data roles';
+  END IF;
+END
+$$;
 
 CREATE SCHEMA IF NOT EXISTS business AUTHORIZATION gk_owner;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;

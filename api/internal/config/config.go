@@ -280,11 +280,12 @@ func (l *loader) paymentSecret(name string, env Env) Secret {
 	return s
 }
 
-// isLoopback reports local targets: loopback names/addresses and Unix sockets.
+// isLoopback reports local targets: loopback or unspecified addresses,
+// localhost names and Unix sockets.
 func isLoopback(host string) bool {
 	if host == "" || strings.HasPrefix(host, "/") || strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
 		return true
 	}
 	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	return ip != nil && (ip.IsLoopback() || ip.IsUnspecified())
 }

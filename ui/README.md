@@ -41,3 +41,11 @@ first features that use them (GK-021/GK-028).
 No browser test runner is configured yet; one is added when a runner is approved
 for the first interactive screens. CI starts the built server and checks
 `/healthz` instead.
+
+## Dependency audit
+
+`npm audit` reports low/moderate advisories in development tooling only
+(eslint/minimatch, and deepmerge used by the Svelte Vite plugin at build time).
+None of these packages are present in `build/`, and npm's suggested fixes are
+major downgrades. CI therefore does not run `npm audit`; revisit when upstream
+releases fixes.

@@ -99,8 +99,25 @@ other privileged role (expect a single row, e.g. `gk_api`):
 ```sql
 SELECT r.rolname FROM pg_roles r
 WHERE pg_has_role('<login>', r.oid, 'MEMBER') AND r.rolname <> '<login>';
+
+-- expect every column false
+SELECT rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls
+FROM pg_roles WHERE rolname = '<login>';
 ```
 
 `gk-migrate` applies files once, in order, under an advisory lock. Applied files
 are immutable (checksummed), and an older build refuses to run against a database
 with newer migrations. Never add destructive down migrations.
+
+## Not yet verified
+
+These need scoped Supabase sandbox access, which the bootstrap did not have:
+
+- TLS `verify-full` against the real sandbox endpoint (CA provisioning via
+  `sslrootcert` if required). The client-side behaviour is tested locally.
+- Runtime-role denial and the gateway on the sandbox. They are proven on
+  PostgreSQL 17.11 only.
+- Server major version: migrations need PostgreSQL 16 or later
+  (`GRANT ... WITH INHERIT FALSE, SET TRUE`); 17 is assumed.
+- Whether Supabase's pooler forwards the `statement_timeout`/`lock_timeout`
+  startup parameters (direct connections do).

@@ -117,35 +117,56 @@ func TestMigrationRefusesPreexistingPrivilegedGroups(t *testing.T) {
 	migrated(t) // ensure the group roles exist in this cluster
 	admin := dbtest.New(t).AdminConn(t)
 
-	cases := map[string][]string{
-		"indirect gk_owner membership": {
-			"CREATE ROLE gk_test_bridge NOLOGIN",
-			"GRANT gk_owner TO gk_test_bridge",
-			"GRANT gk_test_bridge TO gk_worker",
+	cases := []struct {
+		name  string
+		setup []string
+		undo  []string
+		// asOperator runs the migration as the cluster superuser. A role that
+		// created the groups is automatically their admin member, so only a
+		// migration role that did not create them can have a group as member.
+		asOperator bool
+	}{
+		{
+			name:  "indirect gk_owner membership",
+			setup: []string{"CREATE ROLE gk_test_bridge NOLOGIN", "GRANT gk_owner TO gk_test_bridge", "GRANT gk_test_bridge TO gk_worker"},
+			undo:  []string{"REVOKE gk_test_bridge FROM gk_worker", "DROP ROLE IF EXISTS gk_test_bridge"},
 		},
-		"predefined write role": {"GRANT pg_write_all_data TO gk_api"},
+		{
+			name:  "predefined write role",
+			setup: []string{"GRANT pg_write_all_data TO gk_api"},
+			undo:  []string{"REVOKE pg_write_all_data FROM gk_api"},
+		},
+		{
+			name: "member of the migration role",
+			// Start from an operator that is not yet a gk_owner member, as on
+			// a first run; earlier operator migrations may have granted it.
+			setup:      []string{"REVOKE gk_owner FROM postgres", "GRANT postgres TO gk_api"},
+			undo:       []string{"REVOKE postgres FROM gk_api"},
+			asOperator: true,
+		},
 	}
-	undo := map[string][]string{
-		"indirect gk_owner membership": {"REVOKE gk_test_bridge FROM gk_worker", "DROP ROLE IF EXISTS gk_test_bridge"},
-		"predefined write role":        {"REVOKE pg_write_all_data FROM gk_api"},
-	}
-	for name, setup := range cases {
-		t.Run(name, func(t *testing.T) {
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
 			t.Cleanup(func() {
-				for _, sql := range undo[name] {
+				for _, sql := range tc.undo {
 					if _, err := admin.Exec(ctx, sql); err != nil {
 						t.Errorf("cleanup %q: %v", sql, err)
 					}
 				}
 			})
-			for _, sql := range setup {
+			for _, sql := range tc.setup {
 				if _, err := admin.Exec(ctx, sql); err != nil {
 					t.Fatalf("setup %q: %v", sql, err)
 				}
 			}
-			_, err := migrate.Run(ctx, dbtest.New(t).MigratorConn(t), migrations.FS)
-			if err == nil || !strings.Contains(err.Error(), "must not inherit gk_owner or predefined data roles") {
-				t.Fatalf("migration with %s: err = %v, want refusal", name, err)
+			db := dbtest.New(t)
+			conn := db.MigratorConn(t)
+			if tc.asOperator {
+				conn = db.AdminConn(t)
+			}
+			_, err := migrate.Run(ctx, conn, migrations.FS)
+			if err == nil || !strings.Contains(err.Error(), "must not inherit gk_owner, the migration role or predefined data roles") {
+				t.Fatalf("migration with %s: err = %v, want refusal", tc.name, err)
 			}
 		})
 	}

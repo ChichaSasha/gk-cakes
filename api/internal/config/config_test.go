@@ -143,6 +143,7 @@ func TestLoadAPIRejectsUnsafeProductionTestMixing(t *testing.T) {
 		{"ssl alias skipping verification", merge(validProductionAPI, map[string]string{"DATABASE_URL": "postgres://u:" + canary + "@db.example.supabase.co/postgres?sslmode=verify-full&ssl=true"}), "sslmode=verify-full"},
 		{"host parameter overriding to loopback", merge(validProductionAPI, map[string]string{"DATABASE_URL": "postgres://u:" + canary + "@db.example.supabase.co/postgres?sslmode=verify-full&host=127.0.0.1"}), "local database"},
 		{"loopback fallback host", merge(validProductionAPI, map[string]string{"DATABASE_URL": "postgres://u:" + canary + "@db.example.supabase.co,127.0.0.1/postgres?sslmode=verify-full"}), "local database"},
+		{"unspecified address host", merge(validProductionAPI, map[string]string{"DATABASE_URL": "postgres://u:" + canary + "@0.0.0.0/postgres?sslmode=verify-full"}), "local database"},
 		{"unix socket host", merge(validProductionAPI, map[string]string{"DATABASE_URL": "postgres://u:" + canary + "@/postgres?host=/var/run/postgresql&sslmode=verify-full"}), "local database"},
 		{"prefer with plaintext fallback", merge(validProductionAPI, map[string]string{"DATABASE_URL": "postgres://u:" + canary + "@db.example.supabase.co/postgres?sslmode=prefer"}), "sslmode=verify-full"},
 		{"verify-ca without hostname check", merge(validProductionAPI, map[string]string{"DATABASE_URL": "postgres://u:" + canary + "@db.example.supabase.co/postgres?sslmode=verify-ca"}), "sslmode=verify-full"},
