@@ -1,0 +1,3 @@
+# Placeholder site: no crawling until the storefront launches (GK-028/GK-036).
+User-agent: *
+Disallow: /
