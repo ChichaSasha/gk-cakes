@@ -45,3 +45,23 @@ func TestMissingTokenIsAnError(t *testing.T) {
 		t.Fatalf("exit code = %d, want %d", code, exitError)
 	}
 }
+
+func TestVerifyRejectsMalformedArtifactWithoutNetwork(t *testing.T) {
+	env := map[string]string{
+		"GITHUB_TOKEN":            "token",
+		"GITHUB_REPOSITORY":       "ChichaSasha/gk-cakes",
+		"GITHUB_REPOSITORY_OWNER": "ChichaSasha",
+		"GITHUB_API_URL":          "http://127.0.0.1:1",
+		"GK_REGISTRY_URL":         "http://127.0.0.1:1",
+	}
+	for _, args := range [][]string{
+		{"-verify", "-component", "web", "-commit", strings.Repeat("a", 40), "-digest", "sha256:" + strings.Repeat("b", 64)},
+		{"-verify", "-component", "ui", "-commit", "main", "-digest", "sha256:" + strings.Repeat("b", 64)},
+		{"-verify", "-component", "ui", "-commit", strings.Repeat("a", 40), "-digest", "latest"},
+	} {
+		var out bytes.Buffer
+		if code := run(context.Background(), args, func(k string) string { return env[k] }, &out); code != exitDenied {
+			t.Errorf("%v: exit %d, want %d; output %q", args, code, exitDenied, out.String())
+		}
+	}
+}

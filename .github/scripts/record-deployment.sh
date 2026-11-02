@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Records deployments in GitHub with the exact artifact digest, so the release
-# gate can recognise a replayed release. Requires GH_TOKEN with
+# gate can recognise a replayed release. Environments are per component:
+# staging-api, staging-ui, production-api, production-ui. Requires GH_TOKEN with
 # deployments:write and GITHUB_REPOSITORY.
 #   record-deployment.sh create <environment> <commit-sha> <digest> <version>   -> prints deployment id
 #   record-deployment.sh status <deployment-id> <success|failure|in_progress> <description>
@@ -19,8 +20,10 @@ create)
   ;;
 status)
   id=$2 state=$3 description=$4
+  # auto_inactive=false keeps each component's history intact; the release gate
+  # compares against the latest successful record per environment.
   gh api -X POST "repos/$GITHUB_REPOSITORY/deployments/$id/statuses" \
-    -f state="$state" -f description="$description" --jq .state >/dev/null
+    -f state="$state" -f description="$description" -F auto_inactive=false --jq .state >/dev/null
   ;;
 *)
   echo "usage: $0 create <environment> <sha> <digest> <version> | status <id> <state> <description>" >&2

@@ -47,6 +47,10 @@ type Deployer struct {
 // healthcheckTimeoutSeconds bounds how long Railway waits for the health path.
 const healthcheckTimeoutSeconds = 120
 
+// maxPollErrors is how many consecutive status-query failures are tolerated
+// before giving up; Railway keeps rolling out regardless.
+const maxPollErrors = 5
+
 const (
 	updateMutation = `mutation gkUpdate($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) {
   serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input)
@@ -55,7 +59,7 @@ const (
   serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId)
 }`
 	statusQuery = `query gkStatus($id: String!) {
-  deployment(id: $id) { id status }
+  deployment(id: $id) { id status meta }
 }`
 )
 
@@ -105,22 +109,35 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 
 	res := Result{DeploymentID: deployed.ID}
 	deadline := time.Now().Add(d.Timeout)
+	pollErrors := 0
 	for {
 		var st struct {
 			Deployment struct {
-				Status string `json:"status"`
+				Status string          `json:"status"`
+				Meta   json.RawMessage `json:"meta"`
 			} `json:"deployment"`
 		}
-		if err := d.call(ctx, statusQuery, map[string]any{"id": deployed.ID}, &st); err != nil {
-			return res, fmt.Errorf("railway: deployment %s status: %w", deployed.ID, err)
-		}
-		res.Status = st.Deployment.Status
+		err := d.call(ctx, statusQuery, map[string]any{"id": deployed.ID}, &st)
 		switch {
-		case res.Status == "SUCCESS":
-			return res, nil
-		case failed[res.Status]:
-			return res, fmt.Errorf("railway: deployment %s ended %s", deployed.ID, res.Status)
-		case time.Now().After(deadline):
+		case err != nil:
+			pollErrors++
+			if pollErrors >= maxPollErrors {
+				return res, fmt.Errorf("railway: deployment %s status (after %d attempts): %w", deployed.ID, pollErrors, err)
+			}
+		default:
+			pollErrors = 0
+			res.Status = st.Deployment.Status
+			if img := metaImage(st.Deployment.Meta); img != "" && img != req.Image {
+				return res, fmt.Errorf("railway: deployment %s runs image %q, not the requested %q", deployed.ID, img, req.Image)
+			}
+			switch {
+			case res.Status == "SUCCESS":
+				return res, nil
+			case failed[res.Status]:
+				return res, fmt.Errorf("railway: deployment %s ended %s", deployed.ID, res.Status)
+			}
+		}
+		if time.Now().After(deadline) {
 			return res, fmt.Errorf("railway: deployment %s timed out in status %s (left running)", deployed.ID, res.Status)
 		}
 		select {
@@ -129,6 +146,19 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 		case <-time.After(d.PollInterval):
 		}
 	}
+}
+
+// metaImage extracts the image Railway reports for a deployment, when its
+// metadata includes one. The metadata shape is not part of the published
+// examples, so absence is tolerated.
+func metaImage(raw json.RawMessage) string {
+	var meta struct {
+		Image string `json:"image"`
+	}
+	if len(raw) == 0 || json.Unmarshal(raw, &meta) != nil {
+		return ""
+	}
+	return meta.Image
 }
 
 func (d *Deployer) call(ctx context.Context, query string, vars map[string]any, out any) error {
@@ -159,6 +189,7 @@ func (d *Deployer) call(ctx context.Context, query string, vars map[string]any, 
 		Data   json.RawMessage `json:"data"`
 		Errors []struct {
 			Message    string `json:"message"`
+			TraceID    string `json:"traceId"`
 			Extensions struct {
 				Code    string `json:"code"`
 				TraceID string `json:"traceId"`
@@ -175,8 +206,12 @@ func (d *Deployer) call(ctx context.Context, query string, vars map[string]any, 
 			if e.Extensions.Code != "" {
 				msg += " [" + e.Extensions.Code + "]"
 			}
-			if e.Extensions.TraceID != "" {
-				msg += " (trace " + e.Extensions.TraceID + ")"
+			trace := e.TraceID
+			if trace == "" {
+				trace = e.Extensions.TraceID
+			}
+			if trace != "" {
+				msg += " (trace " + trace + ")"
 			}
 			msgs = append(msgs, msg)
 		}

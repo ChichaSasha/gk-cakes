@@ -30,6 +30,8 @@ type fakeRailway struct {
 	statuses  []string // returned by successive deployment status polls
 	polls     int
 	updateErr string
+	pollFails int    // first N status polls answer with a GraphQL error
+	metaImage string // image reported in deployment meta, if any
 }
 
 func (f *fakeRailway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -53,12 +55,21 @@ func (f *fakeRailway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.Contains(req.Query, "serviceInstanceDeployV2"):
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"serviceInstanceDeployV2": "dep-123"}})
 	case strings.Contains(req.Query, "deployment("):
+		if f.pollFails > 0 {
+			f.pollFails--
+			_ = json.NewEncoder(w).Encode(map[string]any{"errors": []map[string]string{{"message": "temporarily unavailable", "traceId": "t-1"}}})
+			return
+		}
 		status := f.statuses[len(f.statuses)-1]
 		if f.polls < len(f.statuses) {
 			status = f.statuses[f.polls]
 		}
 		f.polls++
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"deployment": map[string]any{"id": "dep-123", "status": status}}})
+		dep := map[string]any{"id": "dep-123", "status": status}
+		if f.metaImage != "" {
+			dep["meta"] = map[string]any{"image": f.metaImage}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"deployment": dep}})
 	default:
 		http.Error(w, "unexpected operation", http.StatusBadRequest)
 	}
@@ -175,5 +186,30 @@ func TestMissingTokenOrIDsAreRejected(t *testing.T) {
 	}
 	if len(f.requests) != 0 {
 		t.Errorf("%d requests sent with invalid input", len(f.requests))
+	}
+}
+
+func TestTransientStatusErrorsAreTolerated(t *testing.T) {
+	f := &fakeRailway{statuses: []string{"SUCCESS"}, pollFails: maxPollErrors - 1}
+	if res, err := deployer(t, f).Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage}); err != nil || res.Status != "SUCCESS" {
+		t.Fatalf("result %+v, err %v; want success after transient errors", res, err)
+	}
+	f = &fakeRailway{statuses: []string{"SUCCESS"}, pollFails: maxPollErrors}
+	_, err := deployer(t, f).Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage})
+	if err == nil || !strings.Contains(err.Error(), "trace t-1") {
+		t.Fatalf("err = %v, want failure after %d errors naming the trace", err, maxPollErrors)
+	}
+}
+
+func TestDeploymentRunningAnotherImageFails(t *testing.T) {
+	other := strings.Replace(testImage, "aaaa", "bbbb", 1)
+	f := &fakeRailway{statuses: []string{"SUCCESS"}, metaImage: other}
+	_, err := deployer(t, f).Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage})
+	if err == nil || !strings.Contains(err.Error(), "not the requested") {
+		t.Fatalf("err = %v, want image mismatch failure", err)
+	}
+	f = &fakeRailway{statuses: []string{"SUCCESS"}, metaImage: testImage}
+	if _, err := deployer(t, f).Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage}); err != nil {
+		t.Fatalf("matching meta image rejected: %v", err)
 	}
 }

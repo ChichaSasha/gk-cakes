@@ -4,7 +4,8 @@
 // at a commit on main with a successful main CI run, and an image built from
 // that commit, may deploy; a repeated event for an already deployed artifact
 // is skipped. Full releases target production-<component>; prereleases target
-// staging only. Any GitHub API failure is returned as an error so callers fail
+// staging-<component> only. Artifact digests are read from the container
+// registry (ghcr.io), the same source the publish step resolves. Any GitHub API failure is returned as an error so callers fail
 // closed.
 package releasegate
 
@@ -59,12 +60,18 @@ type Input struct {
 	Repository string
 }
 
-// Client calls the GitHub REST API.
+// Client calls the GitHub REST API and the ghcr.io registry API.
 type Client struct {
-	BaseURL string
-	Token   string
-	HTTP    *http.Client
+	BaseURL     string
+	RegistryURL string // default https://ghcr.io
+	Token       string
+	HTTP        *http.Client
 }
+
+var (
+	shaPattern    = regexp.MustCompile(`^[0-9a-f]{40}$`)
+	digestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+)
 
 type releaseEvent struct {
 	Action  string `json:"action"`
@@ -133,7 +140,7 @@ func Evaluate(ctx context.Context, in Input, gh *Client) (Decision, error) {
 		return deny("no successful main CI run (%s, push to main) for commit %s", MainWorkflow, sha), nil
 	}
 	pkg := "gk-cakes-" + component
-	digest, err := gh.imageDigest(ctx, ev.Repository.Owner.Login, ev.Repository.Owner.Type, pkg, sha)
+	digest, err := gh.registryDigest(ctx, imagePath(ev.Repository.Owner.Login, component), "sha-"+sha)
 	if err != nil {
 		return Decision{}, err
 	}
@@ -146,7 +153,7 @@ func Evaluate(ctx context.Context, in Input, gh *Client) (Decision, error) {
 		Version:        version,
 		Tag:            tag,
 		CommitSHA:      sha,
-		Image:          "ghcr.io/" + strings.ToLower(ev.Repository.Owner.Login) + "/" + pkg,
+		Image:          "ghcr.io/" + imagePath(ev.Repository.Owner.Login, component),
 		ArtifactDigest: digest,
 		Environment:    "production-" + component,
 		APIContract:    "v1",
@@ -154,7 +161,7 @@ func Evaluate(ctx context.Context, in Input, gh *Client) (Decision, error) {
 	if ev.Release.Prerelease {
 		// Explicit routing: prereleases verify the release path on staging and
 		// never reach production.
-		manifest.Environment = "staging"
+		manifest.Environment = "staging-" + component
 	}
 	if component == "api" {
 		// Read from the verified commit through the API; the gate never runs
@@ -168,7 +175,7 @@ func Evaluate(ctx context.Context, in Input, gh *Client) (Decision, error) {
 		}
 		manifest.SchemaVersion = schema
 	}
-	deployed, err := gh.alreadyDeployed(ctx, in.Repository, manifest.Environment, sha, digest)
+	deployed, err := gh.currentlyDeployed(ctx, in.Repository, manifest.Environment, digest)
 	if err != nil {
 		return Decision{}, err
 	}
@@ -286,50 +293,115 @@ func (c *Client) mainCIPassed(ctx context.Context, repo, sha string) (bool, erro
 	return false, nil
 }
 
-type pkgContainer struct {
-	Tags []string `json:"tags"`
+func imagePath(owner, component string) string {
+	return strings.ToLower(owner) + "/gk-cakes-" + component
 }
 
-type pkgMetadata struct {
-	Container pkgContainer `json:"container"`
-}
-
-type pkgVersion struct {
-	Name     string      `json:"name"`
-	Metadata pkgMetadata `json:"metadata"`
-}
-
-// imageDigest returns the digest of the container package version tagged
-// sha-<sha>, or "" when there is none.
-func (c *Client) imageDigest(ctx context.Context, owner, ownerType, pkg, sha string) (string, error) {
-	scope := "/users/"
-	if ownerType == "Organization" {
-		scope = "/orgs/"
+// registryDigest returns the manifest digest for repo:tag in the registry, or
+// "" when the tag does not exist. It tries an anonymous pull token first
+// (public packages) and then the GitHub token.
+func (c *Client) registryDigest(ctx context.Context, repo, tag string) (string, error) {
+	base := strings.TrimRight(c.RegistryURL, "/")
+	if base == "" {
+		base = "https://ghcr.io"
 	}
-	want := "sha-" + sha
-	const perPage, maxPages = 100, 20
-	for page := 1; page <= maxPages; page++ {
-		var versions []pkgVersion
-		q := url.Values{"per_page": {fmt.Sprint(perPage)}, "page": {fmt.Sprint(page)}}
-		err := c.get(ctx, scope+owner+"/packages/container/"+pkg+"/versions", q, &versions)
-		if errors.Is(err, errNotFound) {
-			return "", nil
-		}
-		if err != nil {
-			return "", err
-		}
-		for _, v := range versions {
-			for _, t := range v.Metadata.Container.Tags {
-				if t == want && strings.HasPrefix(v.Name, "sha256:") {
-					return v.Name, nil
-				}
-			}
-		}
-		if len(versions) < perPage {
-			return "", nil
-		}
+	token, err := c.registryToken(ctx, base, repo, false)
+	if err != nil {
+		token, err = c.registryToken(ctx, base, repo, true)
 	}
-	return "", fmt.Errorf("package %s: more than %d pages of versions", pkg, maxPages)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, base+"/v2/"+repo+"/manifests/"+tag, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", strings.Join([]string{
+		"application/vnd.oci.image.manifest.v1+json",
+		"application/vnd.oci.image.index.v1+json",
+		"application/vnd.docker.distribution.manifest.v2+json",
+		"application/vnd.docker.distribution.manifest.list.v2+json",
+	}, ", "))
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("registry %s:%s: %w", repo, tag, err)
+	}
+	resp.Body.Close()
+	switch {
+	case resp.StatusCode == http.StatusNotFound:
+		return "", nil
+	case resp.StatusCode/100 != 2:
+		return "", fmt.Errorf("registry %s:%s: HTTP %d", repo, tag, resp.StatusCode)
+	}
+	digest := resp.Header.Get("Docker-Content-Digest")
+	if !digestPattern.MatchString(digest) {
+		return "", fmt.Errorf("registry %s:%s: unexpected digest %q", repo, tag, digest)
+	}
+	return digest, nil
+}
+
+func (c *Client) registryToken(ctx context.Context, base, repo string, authenticated bool) (string, error) {
+	u := base + "/token?" + url.Values{"scope": {"repository:" + repo + ":pull"}, "service": {"ghcr.io"}}.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return "", err
+	}
+	if authenticated {
+		req.SetBasicAuth("x-access-token", c.Token)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("registry token: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return "", fmt.Errorf("registry token: HTTP %d", resp.StatusCode)
+	}
+	var body struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil || body.Token == "" {
+		return "", errors.New("registry token: no token in response")
+	}
+	return body.Token, nil
+}
+
+// VerifyArtifact re-checks, outside a release event, that digest is the
+// registry image built for commit sha of component, and that sha is on main
+// with a successful main CI run. Staging uses it before deploying a
+// release-path artifact.
+func (c *Client) VerifyArtifact(ctx context.Context, repo, owner, component, sha, digest string) error {
+	switch {
+	case component != "api" && component != "ui":
+		return fmt.Errorf("component %q must be api or ui", component)
+	case !shaPattern.MatchString(sha):
+		return fmt.Errorf("commit %q must be a 40-character SHA", sha)
+	case !digestPattern.MatchString(digest):
+		return fmt.Errorf("digest %q must be sha256:<64 hex>", digest)
+	}
+	onMain, err := c.onMain(ctx, repo, sha)
+	if err != nil {
+		return err
+	}
+	if !onMain {
+		return fmt.Errorf("commit %s is not on main", sha)
+	}
+	passed, err := c.mainCIPassed(ctx, repo, sha)
+	if err != nil {
+		return err
+	}
+	if !passed {
+		return fmt.Errorf("no successful main CI run for commit %s", sha)
+	}
+	got, err := c.registryDigest(ctx, imagePath(owner, component), "sha-"+sha)
+	if err != nil {
+		return err
+	}
+	if got != digest {
+		return fmt.Errorf("registry digest for %s sha-%s is %q, not %q", imagePath(owner, component), sha, got, digest)
+	}
+	return nil
 }
 
 var migrationFile = regexp.MustCompile(`^([0-9]{4}_[a-z0-9_]+)\.sql$`)
@@ -366,18 +438,16 @@ type deployment struct {
 	Payload deploymentPayload `json:"payload"`
 }
 
-// alreadyDeployed reports whether a deployment of digest for sha to
-// environment has a latest status of success.
-func (c *Client) alreadyDeployed(ctx context.Context, repo, environment, sha, digest string) (bool, error) {
-	var deployments []deployment
-	q := url.Values{"environment": {environment}, "sha": {sha}, "per_page": {"100"}}
+// currentlyDeployed reports whether the latest successful deployment recorded
+// for environment is digest. Older successes do not count, so redeploying an
+// earlier artifact after a newer one (a rollback) is not mistaken for a replay.
+func (c *Client) currentlyDeployed(ctx context.Context, repo, environment, digest string) (bool, error) {
+	var deployments []deployment // newest first
+	q := url.Values{"environment": {environment}, "per_page": {"30"}}
 	if err := c.get(ctx, "/repos/"+repo+"/deployments", q, &deployments); err != nil {
 		return false, err
 	}
 	for _, d := range deployments {
-		if d.Payload.ArtifactDigest != digest {
-			continue
-		}
 		var statuses []struct {
 			State string `json:"state"`
 		}
@@ -385,7 +455,7 @@ func (c *Client) alreadyDeployed(ctx context.Context, repo, environment, sha, di
 			return false, err
 		}
 		if len(statuses) > 0 && statuses[0].State == "success" {
-			return true, nil
+			return d.Payload.ArtifactDigest == digest, nil
 		}
 	}
 	return false, nil

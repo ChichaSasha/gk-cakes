@@ -1,6 +1,8 @@
 // Command gk-release-gate evaluates the GitHub event of the current workflow
 // run and decides whether a release may deploy. It writes the release manifest
-// and step outputs. Exit status: 0 deploy or skip, 3 denied, 1 error.
+// and step outputs. With -verify it instead re-checks one artifact (component,
+// commit, digest) before a staging deploy. Exit status: 0 deploy, skip or
+// verified; 3 denied or not verified; 1 error.
 package main
 
 import (
@@ -29,6 +31,10 @@ func main() {
 func run(ctx context.Context, args []string, getenv func(string) string, stdout io.Writer) int {
 	fs := flag.NewFlagSet("gk-release-gate", flag.ContinueOnError)
 	manifestPath := fs.String("manifest", "release-manifest.json", "where to write the manifest for deploy/skip decisions")
+	verify := fs.Bool("verify", false, "verify one artifact instead of evaluating the event")
+	component := fs.String("component", "", "with -verify: api or ui")
+	commit := fs.String("commit", "", "with -verify: 40-character commit SHA")
+	digest := fs.String("digest", "", "with -verify: sha256 digest")
 	if err := fs.Parse(args); err != nil {
 		return exitError
 	}
@@ -52,11 +58,26 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
+	client := &releasegate.Client{
+		BaseURL:     baseURL,
+		RegistryURL: getenv("GK_REGISTRY_URL"),
+		Token:       token,
+		HTTP:        &http.Client{Timeout: 20 * time.Second},
+	}
+	if *verify {
+		err := client.VerifyArtifact(ctx, getenv("GITHUB_REPOSITORY"), getenv("GITHUB_REPOSITORY_OWNER"), *component, *commit, *digest)
+		if err != nil {
+			fmt.Fprintf(stdout, "not verified: %v\n", err)
+			return exitDenied
+		}
+		fmt.Fprintf(stdout, "verified: %s %s for commit %s\n", *component, *digest, *commit)
+		return exitOK
+	}
 	d, err := releasegate.Evaluate(ctx, releasegate.Input{
 		EventName:  getenv("GITHUB_EVENT_NAME"),
 		Event:      event,
 		Repository: getenv("GITHUB_REPOSITORY"),
-	}, &releasegate.Client{BaseURL: baseURL, Token: token, HTTP: &http.Client{Timeout: 20 * time.Second}})
+	}, client)
 	if err != nil {
 		fmt.Fprintf(stdout, "error: %v\n", err)
 		return exitError
