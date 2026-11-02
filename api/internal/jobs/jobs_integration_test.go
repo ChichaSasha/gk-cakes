@@ -489,8 +489,10 @@ func TestHeartbeatFailuresPastLeaseCancelHandler(t *testing.T) {
 	if elapsed := at.Sub(began); elapsed < time.Second {
 		t.Errorf("handler cancelled after %v, before the lease could have expired", elapsed)
 	}
-	if got := f.row(t, id); got.State == "completed" {
-		t.Fatalf("job = %+v; a worker that lost its lease must not complete it", got)
+	// A reclaimed second run may be released to queued during shutdown; the
+	// abandoned first run must neither complete nor release (retry) the job.
+	if got := f.row(t, id); got.State == "completed" || got.State == "retry" {
+		t.Fatalf("job = %+v; a worker past its lease must not finalize the job", got)
 	}
 }
 
