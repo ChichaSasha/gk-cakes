@@ -65,3 +65,15 @@ func TestVerifyRejectsMalformedArtifactWithoutNetwork(t *testing.T) {
 		}
 	}
 }
+
+func TestGHTokenIsAcceptedAsFallback(t *testing.T) {
+	env := map[string]string{
+		"GH_TOKEN":          "token",
+		"GITHUB_EVENT_NAME": "push",
+		"GITHUB_REPOSITORY": "ChichaSasha/gk-cakes",
+	}
+	var out bytes.Buffer
+	if code := run(context.Background(), nil, func(k string) string { return env[k] }, &out); code != exitDenied {
+		t.Fatalf("exit %d with only GH_TOKEN, want %d (evaluated and denied); output %q", code, exitDenied, out.String())
+	}
+}

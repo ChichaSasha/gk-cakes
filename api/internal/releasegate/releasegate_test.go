@@ -24,14 +24,15 @@ const (
 // fakeGitHub models the GitHub REST endpoints and the ghcr.io registry API
 // the gate reads.
 type fakeGitHub struct {
-	tags        map[string]tagRef        // tag name -> ref object
-	annotated   map[string]tagRef        // annotated tag object sha -> next object
-	compare     map[string]string        // commit sha -> compare status against main
-	runs        map[string][]workflowRun // commit sha -> Components main-push runs, newest first
-	manifests   map[string]string        // "<repo>:<tag>" -> registry digest
-	migrations  map[string][]string      // commit sha -> files in api/migrations
-	deployments map[string][]deployment  // environment -> deployments, newest first
-	statuses    map[int64][]string       // deployment id -> status states, newest first
+	tags            map[string]tagRef        // tag name -> ref object
+	annotated       map[string]tagRef        // annotated tag object sha -> next object
+	compare         map[string]string        // commit sha -> compare status against main
+	runs            map[string][]workflowRun // commit sha -> Components main-push runs, newest first
+	manifests       map[string]string        // "<repo>:<tag>" -> registry digest
+	migrations      map[string][]string      // commit sha -> files in api/migrations
+	deployments     map[string][]deployment  // environment -> deployments, newest first
+	statuses        map[int64][]string       // deployment id -> status states, newest first
+	privateRegistry bool                     // registry refuses anonymous pull tokens
 }
 
 type tagRef struct{ Type, SHA string }
@@ -60,8 +61,16 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reply := func(v any) { _ = json.NewEncoder(w).Encode(v) }
 	notFound := func() { http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound) }
 
-	// Registry API (ghcr.io): anonymous token, then manifest lookup.
+	// Registry API (ghcr.io): pull token (anonymous unless the fake demands
+	// the GitHub token), then manifest lookup.
 	if p == "/registry/token" {
+		if f.privateRegistry {
+			user, pass, ok := r.BasicAuth()
+			if !ok || user != "x-access-token" || pass != "test-token" {
+				http.Error(w, "denied", http.StatusForbidden)
+				return
+			}
+		}
 		reply(map[string]string{"token": "registry-token"})
 		return
 	}
@@ -288,33 +297,33 @@ func TestPrereleaseRoutesToStaging(t *testing.T) {
 	}
 }
 
-// TestReplaySkipsOnlyWhenTheLatestSuccessfulDeploymentMatches: a repeated
-// event for the artifact that is currently deployed is skipped; redeploying
-// an older artifact after a newer one (a rollback) is not mistaken for a replay.
-func TestReplaySkipsOnlyWhenTheLatestSuccessfulDeploymentMatches(t *testing.T) {
+// TestReplayIsKeyedOnReleaseIdentity: a repeated event for a release whose
+// tag and digest were already deployed successfully is skipped, even after
+// later deploys; failed attempts and other releases do not count.
+func TestReplayIsKeyedOnReleaseIdentity(t *testing.T) {
 	f := newFake()
 	f.deployments["production-api"] = []deployment{
-		{ID: 9, Payload: deploymentPayload{ArtifactDigest: oldDigest}}, // newest attempt, failed
-		{ID: 7, Payload: deploymentPayload{ArtifactDigest: apiDigest}},
+		{ID: 9, Payload: deploymentPayload{ArtifactDigest: oldDigest, Version: "api-v1.2.4"}}, // newer release
+		{ID: 7, Payload: deploymentPayload{ArtifactDigest: apiDigest, Version: "api-v1.2.3"}},
 	}
-	f.statuses[9] = []string{"failure"}
+	f.statuses[9] = []string{"success"}
 	f.statuses[7] = []string{"success"}
 	if d := evaluate(t, f, "release", publish("api-v1.2.3")); d.Action != ActionSkip || !strings.Contains(d.Reason, "already deployed") {
-		t.Fatalf("replay = %q (%s), want skip as already deployed", d.Action, d.Reason)
+		t.Fatalf("replay after a newer release = %q (%s), want skip", d.Action, d.Reason)
 	}
 
-	// A newer artifact has since been deployed successfully: deploying this
-	// older one again is a rollback, not a replay.
-	f.statuses[9] = []string{"success"}
-	if d := evaluate(t, f, "release", publish("api-v1.2.3")); d.Action != ActionDeploy {
-		t.Fatalf("rollback to an older artifact = %q (%s), want deploy", d.Action, d.Reason)
-	}
-
-	// Only a failed earlier attempt: deploy again.
-	f.deployments["production-api"] = f.deployments["production-api"][1:]
+	// Only a failed attempt of this release: deploy again.
 	f.statuses[7] = []string{"failure"}
 	if d := evaluate(t, f, "release", publish("api-v1.2.3")); d.Action != ActionDeploy {
 		t.Fatalf("after failed attempt: action = %q (%s), want deploy", d.Action, d.Reason)
+	}
+
+	// Same digest deployed under another identity (e.g. a main deploy) is
+	// not this release.
+	f.deployments["production-api"] = []deployment{{ID: 5, Payload: deploymentPayload{ArtifactDigest: apiDigest, Version: "main-111111111111"}}}
+	f.statuses[5] = []string{"success"}
+	if d := evaluate(t, f, "release", publish("api-v1.2.3")); d.Action != ActionDeploy {
+		t.Fatalf("digest deployed under another identity: action = %q (%s), want deploy", d.Action, d.Reason)
 	}
 }
 
@@ -349,6 +358,14 @@ func TestVerifyArtifactChecksCommitCIAndDigest(t *testing.T) {
 				t.Fatalf("err = %v, want mention of %q", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestPrivateRegistryUsesGitHubToken(t *testing.T) {
+	f := newFake()
+	f.privateRegistry = true
+	if d := evaluate(t, f, "release", publish("api-v1.2.3")); d.Action != ActionDeploy || d.Manifest.ArtifactDigest != apiDigest {
+		t.Fatalf("private registry: action = %q (%s), want deploy with the registry digest", d.Action, d.Reason)
 	}
 }
 

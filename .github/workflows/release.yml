@@ -1,7 +1,8 @@
 # GK-034: component releases. A published release runs the release gate,
 # built from trusted main. A prerelease that passes is handed to the Staging
 # workflow (dispatched on main, where the staging environment and its token
-# live), which re-verifies and deploys the exact digest. Full releases target
+# live), which re-verifies and deploys the exact digest; this run waits for
+# that Staging run and fails if it fails or is cancelled. Full releases target
 # production, which stays disabled until Sasha authorizes the first
 # production release (GK-036). Nothing here holds deploy credentials.
 name: Release
@@ -60,7 +61,7 @@ jobs:
     needs: gate
     if: needs.gate.outputs.decision == 'deploy' && startsWith(needs.gate.outputs.environment, 'staging-')
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 40
     permissions:
       actions: write
     env:
@@ -70,11 +71,26 @@ jobs:
       DIGEST: ${{ needs.gate.outputs.digest }}
       VERSION: ${{ needs.gate.outputs.version }}
     steps:
-      - name: Hand the verified artifact to the Staging workflow
+      - name: Hand the verified artifact to the Staging workflow and wait for it
         run: |
+          release="$COMPONENT-v$VERSION"
+          since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           gh workflow run staging.yml --repo "$GITHUB_REPOSITORY" --ref main \
-            -f component="$COMPONENT" -f commit_sha="$SHA" -f digest="$DIGEST" -f version="$COMPONENT-v$VERSION"
-          echo "Dispatched Staging for $COMPONENT-v$VERSION ($DIGEST); see the Staging workflow runs." >> "$GITHUB_STEP_SUMMARY"
+            -f component="$COMPONENT" -f commit_sha="$SHA" -f digest="$DIGEST" -f version="$release"
+          run_id=""
+          for _ in $(seq 1 30); do
+            run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow staging.yml --event workflow_dispatch --limit 20 \
+              --json databaseId,displayTitle,createdAt \
+              --jq "[.[] | select(.displayTitle == \"Staging release $release\" and .createdAt >= \"$since\")] | first | .databaseId // empty")
+            [[ -n "$run_id" ]] && break
+            sleep 5
+          done
+          if [[ -z "$run_id" ]]; then
+            echo "dispatched Staging run for $release not found" >&2
+            exit 1
+          fi
+          echo "Staging run for $release: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run_id" | tee -a "$GITHUB_STEP_SUMMARY"
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --interval 15 --exit-status
 
   production:
     name: production-deploy

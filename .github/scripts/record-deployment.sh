@@ -16,7 +16,8 @@ create)
       description: ("gk " + $version),
       payload: {artifact_digest: $digest, version: $version}
     }' |
-    gh api -X POST "repos/$GITHUB_REPOSITORY/deployments" --input - --jq .id
+    gh api -X POST "repos/$GITHUB_REPOSITORY/deployments" --input - --jq '.id // empty' |
+    { read -r id || true; if [[ ! "$id" =~ ^[0-9]+$ ]]; then echo "deployment record was not created" >&2; exit 1; fi; echo "$id"; }
   ;;
 status)
   id=$2 state=$3 description=$4

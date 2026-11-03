@@ -175,12 +175,12 @@ func Evaluate(ctx context.Context, in Input, gh *Client) (Decision, error) {
 		}
 		manifest.SchemaVersion = schema
 	}
-	deployed, err := gh.currentlyDeployed(ctx, in.Repository, manifest.Environment, digest)
+	released, err := gh.AlreadyReleased(ctx, in.Repository, manifest.Environment, tag, digest)
 	if err != nil {
 		return Decision{}, err
 	}
-	if deployed {
-		return Decision{Action: ActionSkip, Reason: fmt.Sprintf("%s is already deployed to %s", digest, manifest.Environment), Manifest: manifest}, nil
+	if released {
+		return Decision{Action: ActionSkip, Reason: fmt.Sprintf("release %s (%s) is already deployed to %s", tag, digest, manifest.Environment), Manifest: manifest}, nil
 	}
 	return Decision{Action: ActionDeploy, Reason: "verified release", Manifest: manifest}, nil
 }
@@ -430,6 +430,7 @@ func (c *Client) latestMigration(ctx context.Context, repo, sha string) (string,
 
 type deploymentPayload struct {
 	ArtifactDigest string `json:"artifact_digest"`
+	Version        string `json:"version"`
 }
 
 type deployment struct {
@@ -438,16 +439,20 @@ type deployment struct {
 	Payload deploymentPayload `json:"payload"`
 }
 
-// currentlyDeployed reports whether the latest successful deployment recorded
-// for environment is digest. Older successes do not count, so redeploying an
-// earlier artifact after a newer one (a rollback) is not mistaken for a replay.
-func (c *Client) currentlyDeployed(ctx context.Context, repo, environment, digest string) (bool, error) {
+// AlreadyReleased reports whether environment has a successful deployment
+// record for this exact release (version tag and digest). A replayed release
+// is therefore skipped even after later deploys, while a rollback must use a
+// new release tag and is deployed.
+func (c *Client) AlreadyReleased(ctx context.Context, repo, environment, version, digest string) (bool, error) {
 	var deployments []deployment // newest first
-	q := url.Values{"environment": {environment}, "per_page": {"30"}}
+	q := url.Values{"environment": {environment}, "per_page": {"100"}}
 	if err := c.get(ctx, "/repos/"+repo+"/deployments", q, &deployments); err != nil {
 		return false, err
 	}
 	for _, d := range deployments {
+		if d.Payload.Version != version || d.Payload.ArtifactDigest != digest {
+			continue
+		}
 		var statuses []struct {
 			State string `json:"state"`
 		}
@@ -455,7 +460,7 @@ func (c *Client) currentlyDeployed(ctx context.Context, repo, environment, diges
 			return false, err
 		}
 		if len(statuses) > 0 && statuses[0].State == "success" {
-			return d.Payload.ArtifactDigest == digest, nil
+			return true, nil
 		}
 	}
 	return false, nil

@@ -1,14 +1,17 @@
 # GK-034: the only path that deploys staging.
-#   workflow_run      a green Components run on a push to main: build (or reuse)
+#   workflow_run      a green Components run on a push to main: reuse or build
 #                     the API and UI images for that exact commit, push them to
 #                     ghcr.io and deploy their digests, but only while the commit
 #                     is still the head of main (no accidental downgrade).
 #   workflow_dispatch sent by the release workflow for a prerelease that passed
 #                     the release gate: re-verify the artifact (commit on main,
-#                     green main CI, registry digest) and deploy that component.
-# All staging deploys share one concurrency group and are never cancelled.
-# API deploys run migrations first and stay off until STAGING_API_ENABLED.
+#                     green main CI, registry digest), skip if that release is
+#                     already deployed, then deploy that component.
+# All staging deploys share one concurrency group and are never cancelled
+# while running. API deploys run migrations first and stay off until the
+# repository variable STAGING_API_ENABLED is true.
 name: Staging
+run-name: ${{ inputs.version && format('Staging release {0}', inputs.version) || format('Staging {0}', github.event.workflow_run.head_sha) }}
 
 on:
   workflow_run:
@@ -42,94 +45,58 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  prepare:
-    name: prepare
+  publish:
+    name: publish-images
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_branch == 'main' &&
-       github.event.workflow_run.head_repository.full_name == github.repository)
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
       contents: read
-      actions: read
       packages: write
-    outputs:
-      tools_ref: ${{ steps.ref.outputs.tools_ref }}
-      sha: ${{ steps.ref.outputs.sha }}
-      version: ${{ steps.ref.outputs.version }}
-      deploy_api: ${{ steps.plan.outputs.deploy_api }}
-      deploy_ui: ${{ steps.plan.outputs.deploy_ui }}
-      api_image: ${{ steps.plan.outputs.api_image }}
-      ui_image: ${{ steps.plan.outputs.ui_image }}
     env:
-      GH_TOKEN: ${{ github.token }}
-      EVENT: ${{ github.event_name }}
-      RUN_SHA: ${{ github.event.workflow_run.head_sha }}
-      IN_COMPONENT: ${{ inputs.component }}
-      IN_SHA: ${{ inputs.commit_sha }}
-      IN_DIGEST: ${{ inputs.digest }}
-      IN_VERSION: ${{ inputs.version }}
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    outputs:
+      sha: ${{ github.event.workflow_run.head_sha }}
+      version: main-${{ github.event.workflow_run.head_sha }}
+      deploy_api: ${{ steps.push.outputs.deploy_api }}
+      deploy_ui: ${{ steps.push.outputs.deploy_ui }}
+      api_image: ${{ steps.push.outputs.api_image }}
+      ui_image: ${{ steps.push.outputs.ui_image }}
     steps:
-      - name: Resolve refs
-        id: ref
-        run: |
-          if [[ "$EVENT" == workflow_run ]]; then
-            {
-              echo "tools_ref=$RUN_SHA"
-              echo "sha=$RUN_SHA"
-              echo "version=main-${RUN_SHA:0:12}"
-            } >> "$GITHUB_OUTPUT"
-          else
-            if [[ ! "$IN_SHA" =~ ^[0-9a-f]{40}$ || ! "$IN_DIGEST" =~ ^sha256:[0-9a-f]{64}$ || ! "$IN_VERSION" =~ ^(api|ui)-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ || "${IN_VERSION%%-v*}" != "$IN_COMPONENT" ]]; then
-              echo "invalid dispatch inputs" >&2
-              exit 1
-            fi
-            {
-              echo "tools_ref=$GITHUB_SHA"
-              echo "sha=$IN_SHA"
-              echo "version=$IN_VERSION"
-            } >> "$GITHUB_OUTPUT"
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ steps.ref.outputs.tools_ref }}
+          ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        if: github.event_name == 'workflow_dispatch'
-        with:
-          go-version-file: api/go.mod
-          cache-dependency-path: api/go.sum
-      - name: Plan
-        id: plan
+      - name: Reuse or build images for the verified commit
+        id: push
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
-          if [[ "$EVENT" == workflow_dispatch ]]; then
-            (cd api && go run ./cmd/gk-release-gate -verify -component "$IN_COMPONENT" -commit "$IN_SHA" -digest "$IN_DIGEST")
-            {
-              echo "deploy_${IN_COMPONENT}=true"
-              echo "${IN_COMPONENT}_image=$registry/gk-cakes-$IN_COMPONENT@$IN_DIGEST"
-            } >> "$GITHUB_OUTPUT"
-            echo "- release $IN_VERSION: verified \`$registry/gk-cakes-$IN_COMPONENT@$IN_DIGEST\` (commit \`$IN_SHA\`)" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
           head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
-          if [[ "$head" != "$RUN_SHA" ]]; then
-            echo "- skipped: commit \`$RUN_SHA\` is no longer the head of main (\`$head\`)" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [[ "$head" != "$SHA" ]]; then
+            echo "- skipped: commit \`$SHA\` is no longer the head of main (\`$head\`)" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
           for component in api ui; do
-            tag="$registry/gk-cakes-$component:sha-$RUN_SHA"
-            if digest=$(docker buildx imagetools inspect "$tag" --format '{{json .Manifest}}' 2>/dev/null | jq -r .digest) && [[ -n "$digest" ]]; then
-              note="reused"
-            else
+            tag="$registry/gk-cakes-$component:sha-$SHA"
+            if out=$(docker buildx imagetools inspect "$tag" --format '{{json .Manifest}}' 2>&1); then
+              digest=$(jq -r .digest <<<"$out")
+              note=reused
+            elif grep -qiE 'not found|manifest unknown' <<<"$out"; then
               docker buildx build --platform linux/amd64 --provenance=false --sbom=false --push \
-                --label "org.opencontainers.image.revision=$RUN_SHA" --tag "$tag" "$component"
+                --label "org.opencontainers.image.revision=$SHA" --tag "$tag" "$component"
               digest=$(docker buildx imagetools inspect "$tag" --format '{{json .Manifest}}' | jq -r .digest)
-              note="built"
+              note=built
+            else
+              echo "cannot inspect $tag: $out" >&2
+              exit 1
             fi
             if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
               echo "unexpected registry digest for $tag: $digest" >&2
@@ -139,13 +106,86 @@ jobs:
               echo "deploy_${component}=true"
               echo "${component}_image=$registry/gk-cakes-$component@$digest"
             } >> "$GITHUB_OUTPUT"
-            echo "- $component ($note): \`$registry/gk-cakes-$component@$digest\` (commit \`$RUN_SHA\`)" >> "$GITHUB_STEP_SUMMARY"
+            echo "- $component ($note): \`$registry/gk-cakes-$component@$digest\` (commit \`$SHA\`)" >> "$GITHUB_STEP_SUMMARY"
           done
+
+  verify:
+    name: verify-release
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+      deployments: read
+    env:
+      IN_COMPONENT: ${{ inputs.component }}
+      IN_SHA: ${{ inputs.commit_sha }}
+      IN_DIGEST: ${{ inputs.digest }}
+      IN_VERSION: ${{ inputs.version }}
+      API_ENABLED: ${{ vars.STAGING_API_ENABLED }}
+    outputs:
+      sha: ${{ inputs.commit_sha }}
+      version: ${{ inputs.version }}
+      deploy_api: ${{ steps.check.outputs.deploy_api }}
+      deploy_ui: ${{ steps.check.outputs.deploy_ui }}
+      api_image: ${{ steps.check.outputs.api_image }}
+      ui_image: ${{ steps.check.outputs.ui_image }}
+    steps:
+      - name: Validate inputs
+        run: |
+          if [[ ! "$IN_SHA" =~ ^[0-9a-f]{40}$ || ! "$IN_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ||
+                ! "$IN_VERSION" =~ ^(api|ui)-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ||
+                "${IN_VERSION%%-v*}" != "$IN_COMPONENT" ]]; then
+            echo "invalid dispatch inputs" >&2
+            exit 1
+          fi
+          if [[ "$IN_COMPONENT" == api && "$API_ENABLED" != true ]]; then
+            echo "API staging deploys are not enabled (STAGING_API_ENABLED); refusing to report success without deploying" >&2
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+      - name: Re-verify the artifact and check for replay
+        id: check
+        working-directory: api
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          go run ./cmd/gk-release-gate -verify -component "$IN_COMPONENT" -commit "$IN_SHA" -digest "$IN_DIGEST" \
+            -environment "staging-$IN_COMPONENT" -version "$IN_VERSION"
+          code=$?
+          set -e
+          registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          case "$code" in
+            0)
+              {
+                echo "deploy_${IN_COMPONENT}=true"
+                echo "${IN_COMPONENT}_image=$registry/gk-cakes-$IN_COMPONENT@$IN_DIGEST"
+              } >> "$GITHUB_OUTPUT"
+              echo "- $IN_VERSION verified: \`$registry/gk-cakes-$IN_COMPONENT@$IN_DIGEST\` (commit \`$IN_SHA\`)" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            4)
+              echo "- $IN_VERSION is already deployed to staging; skipped (replay)" | tee -a "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              exit "$code"
+              ;;
+          esac
 
   deploy-api:
     name: deploy-api
-    needs: prepare
-    if: needs.prepare.outputs.deploy_api == 'true' && vars.STAGING_API_ENABLED == 'true'
+    needs: [publish, verify]
+    if: >-
+      !cancelled() && vars.STAGING_API_ENABLED == 'true' &&
+      (needs.publish.outputs.deploy_api == 'true' || needs.verify.outputs.deploy_api == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment: staging
@@ -154,15 +194,15 @@ jobs:
       packages: read
       deployments: write
     env:
-      SHA: ${{ needs.prepare.outputs.sha }}
-      VERSION: ${{ needs.prepare.outputs.version }}
-      IMAGE: ${{ needs.prepare.outputs.api_image }}
+      SHA: ${{ needs.publish.outputs.sha || needs.verify.outputs.sha }}
+      VERSION: ${{ needs.publish.outputs.version || needs.verify.outputs.version }}
+      IMAGE: ${{ needs.publish.outputs.api_image || needs.verify.outputs.api_image }}
       SERVICE_ID: ${{ vars.RAILWAY_API_SERVICE_ID }}
       ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.prepare.outputs.tools_ref }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -197,9 +237,10 @@ jobs:
 
   deploy-ui:
     name: deploy-ui
-    needs: [prepare, deploy-api]
+    needs: [publish, verify, deploy-api]
     if: >-
-      !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.deploy_ui == 'true' &&
+      !cancelled() &&
+      (needs.publish.outputs.deploy_ui == 'true' || needs.verify.outputs.deploy_ui == 'true') &&
       (needs.deploy-api.result == 'success' || needs.deploy-api.result == 'skipped')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -208,15 +249,15 @@ jobs:
       contents: read
       deployments: write
     env:
-      SHA: ${{ needs.prepare.outputs.sha }}
-      VERSION: ${{ needs.prepare.outputs.version }}
-      IMAGE: ${{ needs.prepare.outputs.ui_image }}
+      SHA: ${{ needs.publish.outputs.sha || needs.verify.outputs.sha }}
+      VERSION: ${{ needs.publish.outputs.version || needs.verify.outputs.version }}
+      IMAGE: ${{ needs.publish.outputs.ui_image || needs.verify.outputs.ui_image }}
       SERVICE_ID: ${{ vars.RAILWAY_UI_SERVICE_ID }}
       ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.prepare.outputs.tools_ref }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:

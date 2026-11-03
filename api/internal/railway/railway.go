@@ -127,7 +127,7 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 		default:
 			pollErrors = 0
 			res.Status = st.Deployment.Status
-			if img := metaImage(st.Deployment.Meta); img != "" && img != req.Image {
+			if img := metaImage(st.Deployment.Meta); digestOf(img) != "" && digestOf(img) != digestOf(req.Image) {
 				return res, fmt.Errorf("railway: deployment %s runs image %q, not the requested %q", deployed.ID, img, req.Image)
 			}
 			switch {
@@ -146,6 +146,16 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 		case <-time.After(d.PollInterval):
 		}
 	}
+}
+
+// digestOf returns the @sha256:... part of an image reference, or "". Only
+// digests are compared, so registry-name normalization cannot cause a false
+// mismatch.
+func digestOf(ref string) string {
+	if i := strings.LastIndex(ref, "@sha256:"); i >= 0 {
+		return ref[i+1:]
+	}
+	return ""
 }
 
 // metaImage extracts the image Railway reports for a deployment, when its

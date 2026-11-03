@@ -208,8 +208,10 @@ func TestDeploymentRunningAnotherImageFails(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "not the requested") {
 		t.Fatalf("err = %v, want image mismatch failure", err)
 	}
-	f = &fakeRailway{statuses: []string{"SUCCESS"}, metaImage: testImage}
-	if _, err := deployer(t, f).Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage}); err != nil {
-		t.Fatalf("matching meta image rejected: %v", err)
+	for _, reported := range []string{testImage, "docker.io/" + testImage, "ghcr.io/chichasasha/gk-cakes-api"} {
+		f = &fakeRailway{statuses: []string{"SUCCESS"}, metaImage: reported}
+		if _, err := deployer(t, f).Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage}); err != nil {
+			t.Errorf("meta image %q rejected: %v", reported, err)
+		}
 	}
 }

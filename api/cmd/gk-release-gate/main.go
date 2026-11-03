@@ -1,8 +1,10 @@
 // Command gk-release-gate evaluates the GitHub event of the current workflow
 // run and decides whether a release may deploy. It writes the release manifest
 // and step outputs. With -verify it instead re-checks one artifact (component,
-// commit, digest) before a staging deploy. Exit status: 0 deploy, skip or
-// verified; 3 denied or not verified; 1 error.
+// commit, digest) before a staging deploy and, given -environment and
+// -version, whether that release is already deployed there.
+// Exit status: 0 deploy, skip or verified; 3 denied or not verified;
+// 4 verified but already deployed; 1 error.
 package main
 
 import (
@@ -19,9 +21,10 @@ import (
 )
 
 const (
-	exitOK     = 0
-	exitError  = 1
-	exitDenied = 3
+	exitOK       = 0
+	exitError    = 1
+	exitDenied   = 3
+	exitReleased = 4
 )
 
 func main() {
@@ -35,12 +38,17 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	component := fs.String("component", "", "with -verify: api or ui")
 	commit := fs.String("commit", "", "with -verify: 40-character commit SHA")
 	digest := fs.String("digest", "", "with -verify: sha256 digest")
+	environment := fs.String("environment", "", "with -verify: deployment record environment for the replay check")
+	version := fs.String("version", "", "with -verify: release tag for the replay check")
 	if err := fs.Parse(args); err != nil {
 		return exitError
 	}
 	token := getenv("GITHUB_TOKEN")
 	if token == "" {
-		fmt.Fprintln(stdout, "error: GITHUB_TOKEN is required")
+		token = getenv("GH_TOKEN")
+	}
+	if token == "" {
+		fmt.Fprintln(stdout, "error: GITHUB_TOKEN (or GH_TOKEN) is required")
 		return exitError
 	}
 	var event []byte
@@ -71,6 +79,17 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 			return exitDenied
 		}
 		fmt.Fprintf(stdout, "verified: %s %s for commit %s\n", *component, *digest, *commit)
+		if *environment != "" && *version != "" {
+			released, err := client.AlreadyReleased(ctx, getenv("GITHUB_REPOSITORY"), *environment, *version, *digest)
+			if err != nil {
+				fmt.Fprintf(stdout, "error: replay check: %v\n", err)
+				return exitError
+			}
+			if released {
+				fmt.Fprintf(stdout, "already deployed: %s (%s) in %s\n", *version, *digest, *environment)
+				return exitReleased
+			}
+		}
 		return exitOK
 	}
 	d, err := releasegate.Evaluate(ctx, releasegate.Input{
