@@ -4,10 +4,12 @@
 # test recipients, and optionally the business mailbox for the display-name
 # check. Waits for the staging worker to send them and the signed webhook to
 # record delivery or bounce evidence. Checks that the public webhook endpoint
-# refuses unsigned, forged, stale and oversized deliveries, and scans the
-# staging environment's logs for the recipients and subject. The report (IDs,
-# states, counts) goes to the job summary. Each run sends 2-3 emails against
-# the Resend Free quota.
+# refuses unsigned, forged, stale and oversized deliveries (each refusal
+# matched to its logged reason), and scans the staging environment's logs for
+# the recipients, subject and run label. Unreadable or truncated logs make the
+# run incomplete (failed) unless skip_logs is chosen. The report (IDs, states,
+# counts) goes to the job summary. Each run sends 2-3 emails against the
+# Resend Free quota.
 name: Email proof
 run-name: Email proof ${{ github.run_id }}
 
@@ -16,6 +18,10 @@ on:
     inputs:
       business_mailbox:
         description: Also send one notice to the business mailbox (display-name check)
+        type: boolean
+        default: false
+      skip_logs:
+        description: Accept a run without the log scan (otherwise unreadable logs make it incomplete)
         type: boolean
         default: false
 
@@ -50,8 +56,9 @@ jobs:
           APP_ENV: staging
           MIGRATION_DATABASE_URL: ${{ secrets.STAGING_MIGRATION_DATABASE_URL }}
           API_URL: ${{ vars.STAGING_API_URL }}
-          PROOF_LABEL: gk${{ github.run_id }}${{ github.run_attempt }}
+          PROOF_LABEL: gk${{ github.run_id }}a${{ github.run_attempt }}
           PROOF_EXTRA_RECIPIENT: ${{ inputs.business_mailbox && 'gk.cake.london@gmail.com' || '' }}
+          PROOF_SKIP_LOGS: ${{ inputs.skip_logs && 'true' || 'false' }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
           RAILWAY_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
         run: go run ./cmd/gk-email-proof

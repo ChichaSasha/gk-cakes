@@ -42,6 +42,9 @@ type Request struct {
 type Result struct {
 	DeploymentID string
 	Status       string
+	// Warnings note checks that could not be made (for example instance
+	// executions the token cannot read during a settle period).
+	Warnings []string
 }
 
 // Deployer talks to the Railway API with an environment-scoped project token.
@@ -73,16 +76,28 @@ const (
 	statusQuery = `query gkStatus($id: String!) {
   deployment(id: $id) { id status meta }
 }`
-	logsQuery = `query gkLogs($environmentId: String!, $afterDate: String!, $afterLimit: Int!) {
-  environmentLogs(environmentId: $environmentId, afterDate: $afterDate, afterLimit: $afterLimit) { message attributes { key value } }
+	// environmentLogs is anchored: beforeDate/beforeLimit select the logs
+	// between the oldest date and the anchor, afterDate/afterLimit those after
+	// it (the Railway CLI reads a window the same way).
+	logsQuery = `query gkLogs($environmentId: String!, $anchorDate: String!, $beforeDate: String!, $beforeLimit: Int!) {
+  environmentLogs(environmentId: $environmentId, anchorDate: $anchorDate, beforeDate: $beforeDate,
+    beforeLimit: $beforeLimit, afterDate: $anchorDate, afterLimit: 0) { timestamp message attributes { key value } }
+}`
+	executionsQuery = `query gkExecutions($input: DeploymentInstanceExecutionListInput!) {
+  deploymentInstanceExecutions(input: $input, first: 50) { edges { node { deploymentId status } } }
 }`
 )
 
-// EnvironmentLogs returns up to limit log lines of the environment since a
-// time, each as its message followed by its attributes (key=value).
-func (d *Deployer) EnvironmentLogs(ctx context.Context, environmentID string, since time.Time, limit int) ([]string, error) {
-	if d.ProjectToken == "" || environmentID == "" || limit <= 0 {
-		return nil, errors.New("railway: logs need a token, an environment ID and a positive limit")
+// MaxLogLines is the most lines EnvironmentLogs requests (Railway's maximum).
+const MaxLogLines = 5000
+
+// EnvironmentLogs returns the environment's log lines between since and
+// until, oldest first, each as its message followed by its attributes
+// (key=value). complete is false when the limit was reached, so older lines
+// in the window may be missing.
+func (d *Deployer) EnvironmentLogs(ctx context.Context, environmentID string, since, until time.Time) (lines []string, complete bool, err error) {
+	if d.ProjectToken == "" || environmentID == "" || !since.Before(until) {
+		return nil, false, errors.New("railway: logs need a token, an environment ID and a time window")
 	}
 	var out struct {
 		Logs []struct {
@@ -94,11 +109,12 @@ func (d *Deployer) EnvironmentLogs(ctx context.Context, environmentID string, si
 		} `json:"environmentLogs"`
 	}
 	if err := d.call(ctx, logsQuery, map[string]any{
-		"environmentId": environmentID, "afterDate": since.UTC().Format(time.RFC3339), "afterLimit": limit,
+		"environmentId": environmentID, "anchorDate": until.UTC().Format(time.RFC3339Nano),
+		"beforeDate": since.UTC().Format(time.RFC3339Nano), "beforeLimit": MaxLogLines,
 	}, &out); err != nil {
-		return nil, fmt.Errorf("railway: environment logs: %w", err)
+		return nil, false, fmt.Errorf("railway: environment logs: %w", err)
 	}
-	lines := make([]string, 0, len(out.Logs))
+	lines = make([]string, 0, len(out.Logs))
 	for _, l := range out.Logs {
 		var b strings.Builder
 		b.WriteString(l.Message)
@@ -107,7 +123,45 @@ func (d *Deployer) EnvironmentLogs(ctx context.Context, environmentID string, si
 		}
 		lines = append(lines, b.String())
 	}
-	return lines, nil
+	return lines, len(out.Logs) < MaxLogLines, nil
+}
+
+var badExecution = map[string]bool{"CRASHED": true, "EXITED": true, "RESTARTING": true, "REMOVED": true, "STOPPED": true}
+
+// executionsOK reports whether deploymentID still runs its first instance
+// execution: a crash and restart under Railway's restart policy keeps the
+// deployment SUCCESS, so the status alone cannot show a crash loop.
+func (d *Deployer) executionsOK(ctx context.Context, req Request, deploymentID string) (bool, string, error) {
+	var out struct {
+		Executions struct {
+			Edges []struct {
+				Node struct {
+					DeploymentID string `json:"deploymentId"`
+					Status       string `json:"status"`
+				} `json:"node"`
+			} `json:"edges"`
+		} `json:"deploymentInstanceExecutions"`
+	}
+	if err := d.call(ctx, executionsQuery, map[string]any{
+		"input": map[string]any{"environmentId": req.EnvironmentID, "serviceId": req.ServiceID},
+	}, &out); err != nil {
+		return false, "", err
+	}
+	var mine []string
+	for _, e := range out.Executions.Edges {
+		if e.Node.DeploymentID == deploymentID {
+			mine = append(mine, e.Node.Status)
+		}
+	}
+	for _, st := range mine {
+		if badExecution[st] {
+			return false, fmt.Sprintf("an instance execution is %s", st), nil
+		}
+	}
+	if len(mine) > 1 {
+		return false, fmt.Sprintf("%d instance executions (restarted)", len(mine)), nil
+	}
+	return true, "", nil
 }
 
 var failed = map[string]bool{"FAILED": true, "CRASHED": true, "REMOVED": true, "REMOVING": true, "SKIPPED": true}
@@ -163,6 +217,7 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 	res := Result{DeploymentID: deployed.ID}
 	deadline := time.Now().Add(d.Timeout)
 	var settleUntil time.Time // set once SUCCESS is first seen
+	executionsChecked := req.Settle > 0
 	pollErrors := 0
 	for {
 		var st struct {
@@ -191,10 +246,26 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 				return res, fmt.Errorf("railway: deployment %s ended %s", deployed.ID, res.Status)
 			case res.Status == "SUCCESS" && req.Settle <= 0:
 				return res, nil
-			case res.Status == "SUCCESS" && settleUntil.IsZero():
-				settleUntil = time.Now().Add(req.Settle)
-			case res.Status == "SUCCESS" && time.Now().After(settleUntil):
-				return res, nil
+			case res.Status == "SUCCESS":
+				if settleUntil.IsZero() {
+					settleUntil = time.Now().Add(req.Settle)
+					if end := settleUntil.Add(d.PollInterval); end.After(deadline) {
+						deadline = end // a late SUCCESS still gets its full settle period
+					}
+				}
+				if executionsChecked {
+					ok, why, xerr := d.executionsOK(ctx, req, deployed.ID)
+					switch {
+					case xerr != nil:
+						executionsChecked = false
+						res.Warnings = append(res.Warnings, "instance executions not readable; settle checked the deployment status only: "+xerr.Error())
+					case !ok:
+						return res, fmt.Errorf("railway: deployment %s is not running steadily within %s of SUCCESS: %s", deployed.ID, req.Settle, why)
+					}
+				}
+				if time.Now().After(settleUntil) {
+					return res, nil
+				}
 			}
 		}
 		if time.Now().After(deadline) {

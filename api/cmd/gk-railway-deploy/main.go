@@ -44,6 +44,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		StartCommand: *startCmd, Settle: *settle,
 	})
 	fmt.Fprintf(stdout, "service %s image %s deployment %s status %s\n", *service, *image, res.DeploymentID, res.Status)
+	for _, w := range res.Warnings {
+		fmt.Fprintf(stdout, "warning: %s\n", w)
+	}
 	if path := getenv("GITHUB_OUTPUT"); path != "" && res.DeploymentID != "" {
 		if f, ferr := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644); ferr == nil {
 			fmt.Fprintf(f, "deployment_id=%s\nstatus=%s\n", res.DeploymentID, res.Status)

@@ -34,10 +34,14 @@ import (
 const TemplateRevision = "sandbox-proof.v1"
 
 // LogSearcher returns the environment's log lines since a time (message and
-// attributes as text), or an error when logs are not available.
+// attributes as text); complete is false when older lines may be missing.
 type LogSearcher interface {
-	Since(ctx context.Context, since time.Time) ([]string, error)
+	Since(ctx context.Context, since time.Time) (lines []string, complete bool, err error)
 }
+
+// ErrIncomplete means no evidence contradicted AC3 but part of it could not
+// be checked (logs not readable or truncated).
+var ErrIncomplete = errors.New("emailproof: incomplete")
 
 // Config configures a proof run.
 type Config struct {
@@ -45,9 +49,11 @@ type Config struct {
 	Environment    string    // APP_ENV of the target, e.g. "staging"
 	APIURL         string    // https://<api host>, no trailing slash
 	HTTP           *http.Client
-	Logs           LogSearcher // nil: the log check is reported as not verified
-	Label          string      // unique per run, [a-z0-9]{1,24}
-	ExtraRecipient string      // optional controlled mailbox (display-name check)
+	Logs           LogSearcher   // nil: the log check is not made (incomplete unless SkipLogs)
+	SkipLogs       bool          // explicitly accept a run without the log check
+	LogDelay       time.Duration // wait for log indexing before each log scan
+	Label          string        // unique per run, [a-z0-9]{1,24}
+	ExtraRecipient string        // optional controlled mailbox (display-name check)
 	Wait           time.Duration
 	Poll           time.Duration
 	Out            io.Writer // Markdown report
@@ -70,12 +76,16 @@ type Case struct {
 	Job       string
 }
 
-// Probe is one refused webhook delivery.
+// Probe is one refused webhook delivery. Reason is the refusal the API must
+// log for it (matched by svix-id where one is sent), or "" when the refusal
+// happens before the webhook code (oversized: the access log's 413).
 type Probe struct {
 	Name   string
 	Status int
 	Want   int
 	SvixID string
+	Reason string
+	Logged bool
 }
 
 func (c Config) validate() error {
@@ -186,11 +196,15 @@ func Run(ctx context.Context, cfg Config) error {
 		problems = append(problems, fmt.Sprintf("%d refused webhook probes were stored", stored))
 	}
 
-	logReport, logProblems := checkLogs(ctx, cfg, started, cases, subject)
+	logReport, logProblems := checkLogs(ctx, cfg, started, cases, probes, subject)
 	problems = append(problems, logProblems...)
-	writeReport(cfg, cases, probes, stored, logReport, problems)
-	if len(problems) > 0 {
+	incomplete := !logReport.verified && !cfg.SkipLogs
+	writeReport(cfg, cases, probes, stored, logReport, problems, incomplete)
+	switch {
+	case len(problems) > 0:
 		return fmt.Errorf("emailproof: %d problem(s): %s", len(problems), strings.Join(problems, "; "))
+	case incomplete:
+		return fmt.Errorf("%w: %s", ErrIncomplete, logReport.reason)
 	}
 	return nil
 }
@@ -246,15 +260,19 @@ func probeEndpoint(ctx context.Context, cfg Config) ([]Probe, error) {
 	_, _ = rand.Read(forged)
 	body := []byte(`{"type":"email.delivered","created_at":"2026-01-01T00:00:00Z","data":{"email_id":"proof-forged","tags":{"env":"` + cfg.Environment + `"}}}`)
 	now := cfg.Now()
+	// The stale probe is refused for its timestamp before any signature is
+	// checked; the log reason tells the two apart.
 	probes := []Probe{
-		{Name: "unsigned", Want: http.StatusUnauthorized},
-		{Name: "signed with another secret", Want: http.StatusUnauthorized},
-		{Name: "stale timestamp", Want: http.StatusUnauthorized},
+		{Name: "unsigned", Want: http.StatusUnauthorized, Reason: "missing or malformed signature headers"},
+		{Name: "signed with another secret", Want: http.StatusUnauthorized, Reason: "no matching signature"},
+		{Name: "stale timestamp", Want: http.StatusUnauthorized, Reason: "timestamp outside the tolerance"},
 		{Name: "oversized", Want: http.StatusRequestEntityTooLarge},
 	}
 	for i := range probes {
 		p := &probes[i]
-		p.SvixID = "msg_proof" + cfg.Label + strconv.Itoa(i)
+		if p.Name != "unsigned" {
+			p.SvixID = "msg_probe" + randomHex(8) // never the run label (the log scan searches for it)
+		}
 		h := http.Header{}
 		payload := body
 		switch p.Name {
@@ -316,52 +334,126 @@ type logReport struct {
 	sensitives int
 }
 
-// checkLogs scans the environment's logs since the run started: the
-// recipients and subject must not appear; the dispatch and webhook log lines
-// must (so an empty or unrelated log cannot pass).
-func checkLogs(ctx context.Context, cfg Config, since time.Time, cases []*Case, subject string) (logReport, []string) {
-	r := logReport{controls: map[string]int{"email provider call": 0, "email webhook event": 0}}
+const (
+	controlDispatch = "email provider call"
+	controlWebhook  = "email webhook event"
+)
+
+// checkLogs scans the environment's logs since the run started. The run's
+// recipients, their local parts, the subject and the run label (which is also
+// in the body) must not appear. This run's dispatch and recorded webhook
+// lines (carrying its intent IDs) and each probe's refusal must, so an empty,
+// unrelated or partial log cannot pass. Lines may take a while to be indexed:
+// the scan waits LogDelay and retries a few times while controls are missing.
+func checkLogs(ctx context.Context, cfg Config, since time.Time, cases []*Case, probes []Probe, subject string) (logReport, []string) {
+	r := logReport{}
 	if cfg.Logs == nil {
 		r.reason = "no log access configured"
 		return r, nil
 	}
-	lines, err := cfg.Logs.Since(ctx, since.Add(-time.Minute))
-	if err != nil {
-		r.reason = "logs not available: " + err.Error()
-		return r, nil
-	}
-	r.verified, r.lines = true, len(lines)
-	needles := []string{subject, cfg.Label + "@resend.dev"}
+	needles := []string{subject, cfg.Label}
 	for _, c := range cases {
 		needles = append(needles, c.To, strings.SplitN(c.To, "@", 2)[0])
 	}
-	for _, line := range lines {
-		lower := strings.ToLower(line)
-		for k := range r.controls {
-			if strings.Contains(line, k) {
-				r.controls[k]++
+	var problems []string
+	for try := 0; try < 3; try++ {
+		if cfg.LogDelay > 0 {
+			select {
+			case <-ctx.Done():
+				r.reason = ctx.Err().Error()
+				return r, nil
+			case <-time.After(cfg.LogDelay):
 			}
 		}
+		lines, complete, err := cfg.Logs.Since(ctx, since.Add(-time.Minute))
+		switch {
+		case err != nil:
+			r = logReport{reason: "logs not available: " + err.Error()}
+			return r, nil
+		case !complete:
+			r = logReport{reason: fmt.Sprintf("log window truncated at %d lines", len(lines))}
+			return r, nil
+		}
+		r = scanLines(lines, needles, cases, probes)
+		problems = nil
+		if r.sensitives > 0 {
+			problems = append(problems, fmt.Sprintf("%d log line(s) contain a proof recipient, the subject or the run label", r.sensitives))
+		}
+		missing := false
+		for _, k := range []string{controlDispatch, controlWebhook} {
+			if r.controls[k] == 0 {
+				missing = true
+				problems = append(problems, fmt.Sprintf("no %q log line for this run's intents: the log scan did not see the run", k))
+			}
+		}
+		for _, p := range probes {
+			if !p.Logged {
+				missing = true
+				problems = append(problems, fmt.Sprintf("webhook probe %q: no log line shows the expected refusal", p.Name))
+			}
+		}
+		if !missing || r.sensitives > 0 {
+			break
+		}
+	}
+	return r, problems
+}
+
+// scanLines counts sensitive lines, this run's control lines, and marks the
+// probes whose refusal is logged.
+func scanLines(lines, needles []string, cases []*Case, probes []Probe) logReport {
+	r := logReport{verified: true, lines: len(lines), controls: map[string]int{controlDispatch: 0, controlWebhook: 0}}
+	for i := range probes {
+		probes[i].Logged = false
+	}
+	for _, line := range lines {
+		lower := strings.ToLower(line)
 		for _, n := range needles {
 			if strings.Contains(lower, strings.ToLower(n)) {
 				r.sensitives++
 				break
 			}
 		}
-	}
-	var problems []string
-	if r.sensitives > 0 {
-		problems = append(problems, fmt.Sprintf("%d log line(s) contain a proof recipient or the subject", r.sensitives))
-	}
-	for k, v := range r.controls {
-		if v == 0 {
-			problems = append(problems, fmt.Sprintf("no %q log line found: the log scan did not see the run", k))
+		for _, c := range cases {
+			if c.Notice.IntentID == "" || !strings.Contains(line, c.Notice.IntentID) {
+				continue
+			}
+			if hasMessage(line, controlDispatch) {
+				r.controls[controlDispatch]++
+			}
+			if hasMessage(line, controlWebhook) && hasField(line, "result", "recorded") {
+				r.controls[controlWebhook]++
+			}
+		}
+		for i := range probes {
+			p := &probes[i]
+			switch {
+			case p.Reason == "":
+				p.Logged = p.Logged || (hasMessage(line, "request") && hasField(line, "path", "/webhooks/email") && hasField(line, "status", "413"))
+			case hasMessage(line, "email webhook refused") && hasField(line, "reason", p.Reason) &&
+				(p.SvixID == "" || hasField(line, "svix_id", p.SvixID)):
+				p.Logged = true
+			}
 		}
 	}
-	return r, problems
+	return r
 }
 
-func writeReport(cfg Config, cases []*Case, probes []Probe, stored int, logs logReport, problems []string) {
+// hasMessage matches a log line's message, whether Railway shows it as the
+// message followed by attributes or as the raw JSON line.
+func hasMessage(line, msg string) bool {
+	return line == msg || strings.HasPrefix(line, msg+" ") ||
+		strings.Contains(line, `"msg":"`+msg+`"`) || strings.Contains(line, `"message":"`+msg+`"`)
+}
+
+// hasField matches an attribute in either representation (key=value, or a
+// JSON string or number).
+func hasField(line, key, value string) bool {
+	return strings.Contains(line, " "+key+"="+value) || strings.Contains(line, `"`+key+`":"`+value+`"`) ||
+		strings.Contains(line, `"`+key+`":`+value+`,`) || strings.Contains(line, `"`+key+`":`+value+`}`)
+}
+
+func writeReport(cfg Config, cases []*Case, probes []Probe, stored int, logs logReport, problems []string, incomplete bool) {
 	w := cfg.Out
 	fmt.Fprintf(w, "### GK-024 sandbox proof `%s` (%s)\n\n", cfg.Label, cfg.Environment)
 	fmt.Fprintln(w, "| Case | Intent | State | Provider message | Attempts | Webhook events | Recovery | Job |")
@@ -370,19 +462,27 @@ func writeReport(cfg Config, cases []*Case, probes []Probe, stored int, logs log
 		fmt.Fprintf(w, "| %s | `%s` | **%s** | `%s` | %s | %s | %s | %s |\n", c.Name, c.Notice.IntentID, c.State, c.MessageID,
 			strings.Join(c.Attempts, ", "), strings.Join(c.Events, "<br>"), c.Recovery, c.Job)
 	}
-	fmt.Fprintln(w, "\n| Webhook probe | Status | Expected |")
-	fmt.Fprintln(w, "|---|---|---|")
+	fmt.Fprintln(w, "\n| Webhook probe | Status | Expected | Refusal logged |")
+	fmt.Fprintln(w, "|---|---|---|---|")
 	for _, p := range probes {
-		fmt.Fprintf(w, "| %s | %d | %d |\n", p.Name, p.Status, p.Want)
+		logged := "not checked"
+		if logs.verified {
+			logged = map[bool]string{true: "yes", false: "**no**"}[p.Logged]
+		}
+		fmt.Fprintf(w, "| %s | %d | %d | %s |\n", p.Name, p.Status, p.Want, logged)
 	}
 	fmt.Fprintf(w, "\nRefused probes stored: %d.\n\n", stored)
 	if logs.verified {
-		fmt.Fprintf(w, "Logs: %d line(s) scanned; %d with a proof recipient or the subject; dispatch lines %d, webhook lines %d.\n\n",
-			logs.lines, logs.sensitives, logs.controls["email provider call"], logs.controls["email webhook event"])
+		fmt.Fprintf(w, "Logs: %d line(s) scanned; %d with a proof recipient, the subject or the run label; this run's dispatch lines %d, recorded webhook lines %d.\n\n",
+			logs.lines, logs.sensitives, logs.controls[controlDispatch], logs.controls[controlWebhook])
 	} else {
 		fmt.Fprintf(w, "Logs: **not verified** (%s).\n\n", logs.reason)
 	}
-	if len(problems) == 0 {
+	switch {
+	case len(problems) == 0 && incomplete:
+		fmt.Fprintln(w, "Result: **incomplete**: the log checks were not made.")
+		return
+	case len(problems) == 0:
 		fmt.Fprintln(w, "Result: **pass**.")
 		return
 	}
@@ -390,6 +490,12 @@ func writeReport(cfg Config, cases []*Case, probes []Probe, stored int, logs log
 	for _, p := range problems {
 		fmt.Fprintf(w, "- %s\n", p)
 	}
+}
+
+func randomHex(n int) string {
+	b := make([]byte, n)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("%x", b)
 }
 
 func newUUID() string {

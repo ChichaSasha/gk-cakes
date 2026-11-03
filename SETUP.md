@@ -193,7 +193,9 @@ go only into Bitwarden and sealed Railway variables, never chat, Git or Trello.
 4. Railway, staging environment: new service `gk-worker-staging` from the public
    image `ghcr.io/chichasasha/gk-cakes-api` (any current tag; the pipeline pins
    the digest). Start command `/usr/local/bin/gk-worker`, no public domain, no
-   health check, one replica. Sealed variables: `APP_ENV=staging`,
+   health check, one replica; keep the default restart policy (On Failure) and
+   draining time (the deploy fails if the worker restarts within 90 seconds of
+   starting). Sealed variables: `APP_ENV=staging`,
    `DATABASE_URL` (step 1), `EMAIL_API_KEY` (the existing sandbox sending key),
    `RECOVERY_B2_KEY_ID`, `RECOVERY_B2_KEY` (step 2), `RECOVERY_ENCRYPTION_KEYS`
    (step 3). Deploy the staged changes; note the service ID.
@@ -202,10 +204,14 @@ go only into Bitwarden and sealed Railway variables, never chat, Git or Trello.
    `email.complained`, `email.bounced`, `email.failed`, `email.suppressed` (not
    opens or clicks). Put its signing secret in the `gk-api-staging` service as
    sealed `EMAIL_WEBHOOK_SECRET` and deploy the staged change; save it in Bitwarden.
-6. GitHub: `staging` environment variable `RAILWAY_WORKER_SERVICE_ID`, repository
-   variable `STAGING_WORKER_ENABLED=true`. Then the agent redeploys staging and
-   runs the **Email proof** workflow (AC3); the business-mailbox option checks
-   the `GK Cakes` display name in the received email.
+6. GitHub: `staging` environment variable `RAILWAY_WORKER_SERVICE_ID` (the worker
+   service, never the API's or UI's), repository variable
+   `STAGING_WORKER_ENABLED=true`. The worker is then deployed by the next
+   staging deploy, which runs on a merge to `main` (an older Staging run is
+   skipped once its commit is no longer the head of `main`). With Sasha's
+   go-ahead the agent runs the **Email proof** workflow (AC3); the
+   business-mailbox option sends one email that Sasha opens to check the
+   `GK Cakes` display name.
 
 ### Hosting, DNS, CI and monitoring — Railway Pro / GK-012–014,034
 

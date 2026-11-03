@@ -9,11 +9,13 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,20 +39,53 @@ var webhookSecret = "whsec_" + base64.StdEncoding.EncodeToString([]byte("gk-proo
 
 // syncBuffer collects the API and worker logs, as the environment's logs.
 type syncBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
+	mu      sync.Mutex
+	buf     bytes.Buffer
+	rewrite func(string) string // simulates a webhook that refuses for another reason
 }
 
 func (b *syncBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.rewrite != nil {
+		_, err := b.buf.WriteString(b.rewrite(string(p)))
+		return len(p), err
+	}
 	return b.buf.Write(p)
 }
 
-func (b *syncBuffer) Since(context.Context, time.Time) ([]string, error) {
+func (b *syncBuffer) setRewrite(f func(string) string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return strings.Split(strings.TrimSpace(b.buf.String()), "\n"), nil
+	b.rewrite = f
+}
+
+// Since returns the logs as Railway shows structured lines: the message
+// followed by the other fields as key=value attributes.
+func (b *syncBuffer) Since(context.Context, time.Time) ([]string, bool, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var out []string
+	for _, raw := range strings.Split(strings.TrimSpace(b.buf.String()), "\n") {
+		var fields map[string]any
+		if json.Unmarshal([]byte(raw), &fields) != nil {
+			out = append(out, raw)
+			continue
+		}
+		line := fmt.Sprint(fields["msg"])
+		keys := make([]string, 0, len(fields))
+		for k := range fields {
+			if k != "msg" && k != "time" && k != "level" {
+				keys = append(keys, k)
+			}
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			line += fmt.Sprintf(" %s=%v", k, fields[k])
+		}
+		out = append(out, line)
+	}
+	return out, true, nil
 }
 
 // sandbox is a local stand-in for staging: real PostgreSQL, the worker with
@@ -58,13 +93,27 @@ func (b *syncBuffer) Since(context.Context, time.Time) ([]string, error) {
 // answers sends and then posts signed events the way Resend does
 // (delivered@ -> sent + delivered, bounced@ -> sent + bounced).
 type sandbox struct {
-	t        *testing.T
-	ctx      context.Context
-	owner    string // migrator URL
-	api      *httptest.Server
-	logs     *syncBuffer
-	leak     bool // the fake API logs the recipient (negative test)
+	t     *testing.T
+	ctx   context.Context
+	owner string // migrator URL
+	api   *httptest.Server
+	logs  *syncBuffer
+
+	mu       sync.Mutex
+	leak     bool // the fake Resend logs the recipient (negative test)
 	bounceAs string
+}
+
+func (s *sandbox) set(leak bool, bounceAs string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.leak, s.bounceAs = leak, bounceAs
+}
+
+func (s *sandbox) behaviour() (bool, string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.leak, s.bounceAs
 }
 
 func newSandbox(t *testing.T, withWebhook bool) (*sandbox, *dbtest.DB) {
@@ -145,7 +194,8 @@ func (s *sandbox) resend(w http.ResponseWriter, r *http.Request) {
 	for _, t := range req.Tags {
 		tags[t.Name] = t.Value
 	}
-	if s.leak {
+	leak, bounceAs := s.behaviour()
+	if leak {
 		fmt.Fprintf(s.logs, `{"msg":"debug","to":%q}`+"\n", req.To[0])
 	}
 	go func() {
@@ -155,7 +205,7 @@ func (s *sandbox) resend(w http.ResponseWriter, r *http.Request) {
 		case strings.HasPrefix(req.To[0], "delivered+"):
 			s.post("email.delivered", id, req.To[0], tags)
 		case strings.HasPrefix(req.To[0], "bounced+"):
-			s.post(s.bounceAs, id, req.To[0], tags)
+			s.post(bounceAs, id, req.To[0], tags)
 		default:
 			s.post("email.delivered", id, req.To[0], tags)
 		}
@@ -183,10 +233,16 @@ func (s *sandbox) post(typ, id, to string, tags map[string]string) {
 
 func (s *sandbox) run(t *testing.T, db *dbtest.DB, extra string) (string, error) {
 	t.Helper()
+	return s.runWith(t, db, emailproof.Config{Logs: s.logs, ExtraRecipient: extra})
+}
+
+func (s *sandbox) runWith(t *testing.T, db *dbtest.DB, cfg emailproof.Config) (string, error) {
+	t.Helper()
 	var out bytes.Buffer
-	err := emailproof.Run(s.ctx, emailproof.Config{DB: db.MigratorConn(t), Environment: "test", APIURL: s.api.URL,
-		HTTP: s.api.Client(), Logs: s.logs, Label: "run42", ExtraRecipient: extra, Wait: 15 * time.Second,
-		Poll: 100 * time.Millisecond, Out: &out})
+	cfg.DB, cfg.Environment, cfg.APIURL, cfg.HTTP = db.MigratorConn(t), "test", s.api.URL, s.api.Client()
+	cfg.Label, cfg.Wait, cfg.Poll, cfg.Out = "run42", 15*time.Second, 100*time.Millisecond, &out
+	cfg.LogDelay = 200 * time.Millisecond // let the webhook's last lines land
+	err := emailproof.Run(s.ctx, cfg)
 	return out.String(), err
 }
 
@@ -196,9 +252,9 @@ func TestProofPassesOnAWorkingEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("proof failed: %v\n%s", err, report)
 	}
-	for _, want := range []string{"**delivered_to_server**", "**bounced**", "Result: **pass**", "| unsigned | 401 | 401 |",
-		"| signed with another secret | 401 | 401 |", "| stale timestamp | 401 | 401 |", "| oversized | 413 | 413 |",
-		"Refused probes stored: 0.", "email.bounced:matched:bounced"} {
+	for _, want := range []string{"**delivered_to_server**", "**bounced**", "Result: **pass**", "| unsigned | 401 | 401 | yes |",
+		"| signed with another secret | 401 | 401 | yes |", "| stale timestamp | 401 | 401 | yes |", "| oversized | 413 | 413 | yes |",
+		"Refused probes stored: 0.", "email.bounced:matched:bounced", " 0 with a proof recipient, the subject or the run label"} {
 		if !strings.Contains(report, want) {
 			t.Errorf("report lacks %q:\n%s", want, report)
 		}
@@ -219,18 +275,45 @@ func TestProofFailsWithoutTheWebhook(t *testing.T) {
 
 func TestProofFailsOnPersonalDataInLogs(t *testing.T) {
 	s, db := newSandbox(t, true)
-	s.leak = true
+	s.set(true, "email.bounced")
 	report, err := s.run(t, db, "")
-	if err == nil || !strings.Contains(report, "contain a proof recipient or the subject") {
+	if err == nil || !strings.Contains(report, "contain a proof recipient, the subject or the run label") {
 		t.Fatalf("err = %v, want the leak reported:\n%s", err, report)
 	}
 }
 
 func TestProofFailsWhenEvidenceIsMissing(t *testing.T) {
 	s, db := newSandbox(t, true)
-	s.bounceAs = "email.delivery_delayed" // the bounce never arrives
+	s.set(false, "email.delivery_delayed") // the bounce never arrives
 	report, err := s.run(t, db, "")
 	if err == nil || !strings.Contains(report, `bounced: intent is "accepted"`) {
 		t.Fatalf("err = %v, want the missing bounce reported:\n%s", err, report)
+	}
+}
+
+// Without readable logs the run is incomplete, never a pass, unless the log
+// check is explicitly skipped.
+func TestProofWithoutLogsIsIncomplete(t *testing.T) {
+	s, db := newSandbox(t, true)
+	report, err := s.runWith(t, db, emailproof.Config{})
+	if !errors.Is(err, emailproof.ErrIncomplete) || !strings.Contains(report, "Result: **incomplete**") {
+		t.Fatalf("err = %v, want incomplete:\n%s", err, report)
+	}
+	report, err = s.runWith(t, db, emailproof.Config{SkipLogs: true})
+	if err != nil || !strings.Contains(report, "Result: **pass**") || !strings.Contains(report, "not verified") {
+		t.Fatalf("explicit skip: err = %v:\n%s", err, report)
+	}
+}
+
+// A webhook that accepts stale timestamps is caught by the logged refusal
+// reason, although its signature check still answers 401.
+func TestProofCatchesAMissingTimestampCheck(t *testing.T) {
+	s, db := newSandbox(t, true)
+	s.logs.setRewrite(func(line string) string {
+		return strings.Replace(line, "timestamp outside the tolerance", "no matching signature", 1)
+	})
+	report, err := s.run(t, db, "")
+	if err == nil || !strings.Contains(report, `webhook probe "stale timestamp": no log line shows the expected refusal`) {
+		t.Fatalf("err = %v, want the stale probe reported:\n%s", err, report)
 	}
 }

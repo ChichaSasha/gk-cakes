@@ -32,6 +32,10 @@ type fakeRailway struct {
 	updateErr string
 	pollFails int    // first N status polls answer with a GraphQL error
 	metaImage string // image reported in deployment meta, if any
+	// executions are the instance executions reported for the deployment
+	// ("" for the default single RUNNING one); executionsErr refuses the query.
+	executions    []string
+	executionsErr bool
 }
 
 func (f *fakeRailway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -54,6 +58,25 @@ func (f *fakeRailway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"serviceInstanceUpdate": true}})
 	case strings.Contains(req.Query, "serviceInstanceDeployV2"):
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"serviceInstanceDeployV2": "dep-123"}})
+	case strings.Contains(req.Query, "deploymentInstanceExecutions"):
+		if f.executionsErr {
+			_ = json.NewEncoder(w).Encode(map[string]any{"errors": []map[string]string{{"message": "Not Authorized"}}})
+			return
+		}
+		input, _ := req.Variables["input"].(map[string]any)
+		if input["serviceId"] != testService || input["environmentId"] != testEnv {
+			http.Error(w, "unexpected input", http.StatusBadRequest)
+			return
+		}
+		statuses := f.executions
+		if statuses == nil {
+			statuses = []string{"RUNNING"}
+		}
+		edges := []map[string]any{{"node": map[string]any{"deploymentId": "older-deployment", "status": "REMOVED"}}}
+		for _, st := range statuses {
+			edges = append(edges, map[string]any{"node": map[string]any{"deploymentId": "dep-123", "status": st}})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"deploymentInstanceExecutions": map[string]any{"edges": edges}}})
 	case strings.Contains(req.Query, "deployment("):
 		if f.pollFails > 0 {
 			f.pollFails--
@@ -260,8 +283,9 @@ func TestSettleCatchesACrashAfterSuccess(t *testing.T) {
 	}
 }
 
-func TestEnvironmentLogsJoinsMessageAndAttributes(t *testing.T) {
+func TestEnvironmentLogsReadsTheAnchoredWindow(t *testing.T) {
 	var got gqlRequest
+	count := 2
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Project-Access-Token") != "project-token" {
 			_ = json.NewEncoder(w).Encode(map[string]any{"errors": []map[string]string{{"message": "Not Authorized"}}})
@@ -269,23 +293,73 @@ func TestEnvironmentLogsJoinsMessageAndAttributes(t *testing.T) {
 		}
 		body, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(body, &got)
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"environmentLogs": []map[string]any{
-			{"message": "email provider call", "attributes": []map[string]string{{"key": "result", "value": "accepted"}}},
-			{"message": "request", "attributes": []map[string]string{}},
-		}}})
+		logs := []map[string]any{
+			{"timestamp": "2026-11-03T12:00:01Z", "message": "email provider call", "attributes": []map[string]string{{"key": "result", "value": "accepted"}}},
+			{"timestamp": "2026-11-03T12:00:02Z", "message": "request", "attributes": []map[string]string{}},
+		}
+		for len(logs) < count {
+			logs = append(logs, map[string]any{"timestamp": "2026-11-03T12:00:03Z", "message": "x", "attributes": []map[string]string{}})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"environmentLogs": logs}})
 	}))
 	defer srv.Close()
 	d := &Deployer{Endpoint: srv.URL, ProjectToken: "project-token", HTTP: srv.Client()}
 	since := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
-	lines, err := d.EnvironmentLogs(context.Background(), testEnv, since, 500)
-	if err != nil || len(lines) != 2 || lines[0] != "email provider call result=accepted" || lines[1] != "request" {
-		t.Fatalf("lines = %q, %v", lines, err)
+	until := since.Add(10 * time.Minute)
+	lines, complete, err := d.EnvironmentLogs(context.Background(), testEnv, since, until)
+	if err != nil || !complete || len(lines) != 2 || lines[0] != "email provider call result=accepted" || lines[1] != "request" {
+		t.Fatalf("lines = %q, complete %v, %v", lines, complete, err)
 	}
-	if !strings.Contains(got.Query, "environmentLogs") || got.Variables["environmentId"] != testEnv ||
-		got.Variables["afterDate"] != "2026-11-03T12:00:00Z" || got.Variables["afterLimit"] != float64(500) {
+	// Railway's window: logs between beforeDate (oldest) and the anchor, none after it.
+	if !strings.Contains(got.Query, "environmentLogs") || !strings.Contains(got.Query, "afterLimit: 0") ||
+		got.Variables["environmentId"] != testEnv || got.Variables["beforeDate"] != "2026-11-03T12:00:00Z" ||
+		got.Variables["anchorDate"] != "2026-11-03T12:10:00Z" || got.Variables["beforeLimit"] != float64(MaxLogLines) {
 		t.Fatalf("request = %+v", got)
 	}
-	if _, err := (&Deployer{Endpoint: srv.URL, ProjectToken: "wrong", HTTP: srv.Client()}).EnvironmentLogs(context.Background(), testEnv, since, 10); err == nil {
+	count = MaxLogLines
+	if lines, complete, err := d.EnvironmentLogs(context.Background(), testEnv, since, until); err != nil || complete || len(lines) != MaxLogLines {
+		t.Fatalf("a full page: %d lines, complete %v, %v; want it reported as possibly truncated", len(lines), complete, err)
+	}
+	if _, _, err := (&Deployer{Endpoint: srv.URL, ProjectToken: "wrong", HTTP: srv.Client()}).EnvironmentLogs(context.Background(), testEnv, since, until); err == nil {
 		t.Fatal("unauthorized log request succeeded")
+	}
+	if _, _, err := d.EnvironmentLogs(context.Background(), testEnv, until, since); err == nil {
+		t.Fatal("an empty window was accepted")
+	}
+}
+
+// Railway restarts a crashed deployment under its restart policy and keeps
+// it SUCCESS, so the settle period also checks the instance executions.
+func TestSettleCatchesACrashLoopBehindASuccessStatus(t *testing.T) {
+	req := Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage, Settle: 50 * time.Millisecond}
+	for name, executions := range map[string][]string{
+		"restarted":      {"CRASHED", "RUNNING"},
+		"two executions": {"RUNNING", "RUNNING"},
+		"exited":         {"EXITED"},
+		"restarting":     {"RESTARTING"},
+	} {
+		f := &fakeRailway{statuses: []string{"SUCCESS"}, executions: executions}
+		if _, err := deployer(t, f).Deploy(context.Background(), req); err == nil || !strings.Contains(err.Error(), "not running steadily") {
+			t.Errorf("%s: err = %v, want the crash loop reported", name, err)
+		}
+	}
+	steady := &fakeRailway{statuses: []string{"SUCCESS"}}
+	if res, err := deployer(t, steady).Deploy(context.Background(), req); err != nil || len(res.Warnings) != 0 {
+		t.Fatalf("steady: %+v, %v", res, err)
+	}
+	blind := &fakeRailway{statuses: []string{"SUCCESS"}, executionsErr: true}
+	res, err := deployer(t, blind).Deploy(context.Background(), req)
+	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "status only") {
+		t.Fatalf("executions unreadable: %+v, %v; want success with a warning", res, err)
+	}
+}
+
+func TestLateSuccessStillGetsItsSettlePeriod(t *testing.T) {
+	f := &fakeRailway{statuses: []string{"DEPLOYING", "SUCCESS"}}
+	d := deployer(t, f)
+	d.PollInterval = 40 * time.Millisecond
+	d.Timeout = 30 * time.Millisecond // SUCCESS arrives after the timeout
+	if _, err := d.Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage, Settle: 50 * time.Millisecond}); err != nil {
+		t.Fatalf("late SUCCESS: %v, want the settle period honoured past the timeout", err)
 	}
 }

@@ -85,7 +85,7 @@ production stores wait for the first authorized production release (GK-036).
 | `RECOVERY_B2_KEY_ID`, `RECOVERY_B2_KEY` | B2 key: one bucket, prefix `recovery/`, list/read/write only (no delete) | worker service variables (sealed); Bitwarden | create a new key with the B2 CLI, update the variables, redeploy, delete the old key | delete the key in B2 |
 | `EMAIL_WEBHOOK_SECRET`   | signing secret of the Resend webhook endpoint for this environment's API | API service variables (sealed) | replace the endpoint's secret in Resend, update the variable and redeploy promptly (deliveries signed with a secret the API does not have are refused and retried by Resend) | delete the webhook endpoint in Resend |
 | `RECOVERY_ENCRYPTION_KEYS` | seals journal envelopes; one list per environment | worker service variables (sealed) **and** Bitwarden (envelopes are unreadable without it) | prepend a new `kid:key`, keep the old ones listed (they still open older envelopes) | never drop a key while envelopes sealed with it are retained |
-| `MIGRATION_DATABASE_URL` | migration credential                | GitHub environment secret, staging: `STAGING_MIGRATION_DATABASE_URL` | rotate the password of the same role (see below)                | rotate; runtime services never hold it       |
+| `MIGRATION_DATABASE_URL` | migration credential (used by `gk-migrate` in deploys and by the manual Email proof workflow) | GitHub environment secret, staging: `STAGING_MIGRATION_DATABASE_URL` | rotate the password of the same role (see below)                | rotate; runtime services never hold it       |
 | `RAILWAY_STAGING_TOKEN`  | Railway project token, staging environment only | GitHub environment `staging` secret (deployable from `main` only) | regenerate in Railway, update the secret                  | delete the token in Railway                  |
 | Provider secrets         | per provider account and environment | API service variables                            | provider dashboard, update the variable, redeploy               | revoke the key in the provider dashboard     |
 
@@ -150,11 +150,17 @@ get no image and cannot be released. Workflows: `.github/workflows/staging.yml` 
   `deploy` for main deploys, `deploy:release` for releases).
 - **Worker.** After a successful API deploy (main or release), `deploy-worker`
   deploys the same API image to the worker's own Railway service with the start
-  command `/usr/local/bin/gk-worker` and no health check or public domain, then
-  keeps watching for 90 seconds and fails if the deployment crashes (the worker
-  exits at start when its email or recovery-journal settings are wrong). It is
-  off until `STAGING_WORKER_ENABLED` is `true` and is recorded as
-  `staging-worker` (not read by the release gate).
+  command `/usr/local/bin/gk-worker` and no health check or public domain. It
+  refuses a `RAILWAY_WORKER_SERVICE_ID` equal to the API or UI service (the
+  start command persists on a service). It then watches for 90 seconds: the
+  deployment must stay SUCCESS and keep running its first instance. Railway
+  restarts a crashed process under its restart policy without leaving SUCCESS,
+  so a second instance execution, or one that crashed, exited or is restarting,
+  fails the deploy. The worker exits at start when its email or recovery-journal
+  settings are wrong. If the token cannot read instance executions, the check
+  falls back to the status and prints a warning. It is off until
+  `STAGING_WORKER_ENABLED` is `true` and is recorded as `staging-worker` (not
+  read by the release gate).
 - **Release.** Publish a GitHub release tagged `api-vX.Y.Z` or `ui-vX.Y.Z` on a
   `main` commit. The gate (`gk-release-gate`) deploys only that component and only
   if the tag points at a commit on `main` with a successful main CI run, the
@@ -453,13 +459,23 @@ content or provider error messages.
 - it waits for `delivered_to_server` and `bounced` evidence from the real
   worker and webhook;
 - it checks that `/webhooks/email` refuses unsigned, forged and stale (401) and
-  oversized (413) deliveries, none of them stored;
-- it scans the staging environment's logs (Railway) for the recipients and the
-  subject; the dispatch and webhook lines must be present, so an empty log
-  cannot pass.
+  oversized (413) deliveries, none of them stored, and matches each refusal to
+  the reason the API logged (`missing or malformed signature headers`,
+  `no matching signature`, `timestamp outside the tolerance`, and the access
+  log's 413), so the stale probe proves the timestamp check, not just a bad
+  signature;
+- it scans the staging environment's logs (Railway, the window since the run
+  started) for the recipients, their local parts, the subject and the run
+  label (which is also in the body). This run's dispatch and recorded webhook
+  lines, carrying its intent IDs, must be present, so an empty, unrelated or
+  partial log cannot pass. The scan waits for log indexing and retries.
 
-The report in the job summary carries IDs, states and counts only. Each run
-sends two or three emails against the Resend Free quota.
+Result **pass** means everything above was shown. **Fail** means some evidence
+contradicts AC3. **Incomplete** (also a failed run) means the logs could not be
+read or the window was truncated; the workflow's `skip_logs` input explicitly
+accepts a run without the log checks. The report in the job summary carries
+IDs, states and counts only. Each run sends two or three emails against the
+Resend Free quota.
 
 Not yet: manager reconcile/resend and custom-message endpoints, and showing or alerting
 managers about adverse evidence beyond the audit trail (GK-024 Milestone B,

@@ -6,9 +6,11 @@
 // Environment: APP_ENV, MIGRATION_DATABASE_URL, API_URL (https://host),
 // PROOF_LABEL ([a-z0-9]{1,24}, unique per run), optional
 // PROOF_EXTRA_RECIPIENT (a controlled mailbox for the display-name check),
-// optional PROOF_WAIT (default 10m), optional RAILWAY_TOKEN and
-// RAILWAY_ENVIRONMENT_ID for the log scan, optional GITHUB_STEP_SUMMARY.
-// Exit status: 0 pass, 1 fail, 2 configuration.
+// optional PROOF_WAIT (default 10m), RAILWAY_TOKEN and
+// RAILWAY_ENVIRONMENT_ID for the log scan (without them, or if Railway refuses,
+// the result is incomplete unless PROOF_SKIP_LOGS=true), optional
+// GITHUB_STEP_SUMMARY. Exit status: 0 pass, 1 fail or incomplete, 2
+// configuration.
 package main
 
 import (
@@ -37,8 +39,8 @@ type railwayLogs struct {
 	env string
 }
 
-func (r railwayLogs) Since(ctx context.Context, since time.Time) ([]string, error) {
-	return r.d.EnvironmentLogs(ctx, r.env, since, 5000)
+func (r railwayLogs) Since(ctx context.Context, since time.Time) ([]string, bool, error) {
+	return r.d.EnvironmentLogs(ctx, r.env, since, time.Now().Add(time.Minute))
 }
 
 func run(ctx context.Context, getenv func(string) string, stdout io.Writer) int {
@@ -78,7 +80,8 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) int 
 	}
 	err = emailproof.Run(ctx, emailproof.Config{
 		DB: conn, Environment: string(cfg.Env), APIURL: getenv("API_URL"), HTTP: &http.Client{Timeout: 30 * time.Second},
-		Logs: logs, Label: getenv("PROOF_LABEL"), ExtraRecipient: getenv("PROOF_EXTRA_RECIPIENT"),
+		Logs: logs, SkipLogs: getenv("PROOF_SKIP_LOGS") == "true", LogDelay: 20 * time.Second,
+		Label: getenv("PROOF_LABEL"), ExtraRecipient: getenv("PROOF_EXTRA_RECIPIENT"),
 		Wait: wait, Poll: 10 * time.Second, Out: out,
 	})
 	if err != nil {

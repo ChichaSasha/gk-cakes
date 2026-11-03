@@ -262,7 +262,11 @@ func eventTags(raw json.RawMessage) map[string]string {
 func (w *Webhook) Receive(ctx context.Context, h http.Header, body []byte) (string, error) {
 	id, err := w.Verify(h, body)
 	if err != nil {
-		w.log.Warn("email webhook refused", "reason", strings.TrimPrefix(err.Error(), ErrInvalidSignature.Error()+": "))
+		claimed := header(h, "id")
+		if !svixIDPattern.MatchString(claimed) {
+			claimed = "" // only a well-formed id is logged
+		}
+		w.log.Warn("email webhook refused", "reason", strings.TrimPrefix(err.Error(), ErrInvalidSignature.Error()+": "), "svix_id", claimed)
 		return "", err
 	}
 	ev, err := ParseEvent(body)
