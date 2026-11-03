@@ -108,8 +108,13 @@ FROM pg_roles WHERE rolname = '<login>';
 ```
 
 `gk-migrate` applies files once, in order, under an advisory lock. Applied files
-are immutable (checksummed), and an older build refuses to run against a database
-with newer migrations. Never add destructive down migrations.
+are immutable (checksummed). An older build on a newer database (a rollback)
+checks that its own migrations are all applied unchanged and that every newer
+version sorts after its own, then applies nothing and exits 0 ("database is ahead
+of this build"); any other mismatch is refused as diverged histories. Migrations
+are forward-only: never add down migrations, and keep each one compatible with the
+previous release (expand now, contract only once no supported release needs the
+old shape).
 
 ## Releases and deployment (GK-034)
 
@@ -121,9 +126,9 @@ get no image and cannot be released. Workflows: `.github/workflows/staging.yml` 
 `release.yml`.
 
 - **Staging, automatic.** A green Components run on a push to `main` publishes
-  (or reuses) both images and deploys them while that commit is still the head of
-  `main`: API first (migrate once, then Railway behind `/readyz`), then UI (behind
-  `/healthz`). Each deploy ends with `.github/scripts/smoke.sh` against the
+  (or reuses) both images, runs the compatibility matrix, and deploys them while
+  that commit is still the head of `main`: API first (migrate once, then Railway
+  behind `/readyz`), then UI (behind `/healthz`). Each deploy ends with `.github/scripts/smoke.sh` against the
   public URLs and is recorded as a GitHub deployment
   (`staging-api` / `staging-ui`, payload `version` and `artifact_digest`; task
   `deploy` for main deploys, `deploy:release` for releases).
@@ -144,9 +149,27 @@ get no image and cannot be released. Workflows: `.github/workflows/staging.yml` 
   runs, so a migration is not cancelled). A superseded release run fails and can
   be re-run.
 - **Rollback.** Publish a new, higher tag pointing at the older commit (for
-  example `ui-v1.4.1` at the commit of `ui-v1.3.0`). Lower tags are refused. API
-  rollback across a migration is not possible yet: an older `gk-migrate` refuses a
-  newer schema (GK-034 part 2, AC2).
+  example `ui-v1.4.1` at the commit of `ui-v1.3.0`). Lower tags are refused. An API
+  rollback keeps the newer schema and data: the older `gk-migrate` applies nothing.
+  Builds from before this behaviour (staging deploys up to `c24c709`, including
+  `api-v0.0.1`/`api-v0.0.2`) still refuse a newer schema, so they are not
+  rollback targets once a migration has been added; while staging runs one, the
+  compatibility matrix blocks deploying a new migration.
+- **Compatibility matrix (AC2).** Before any staging deploy, the
+  `compatibility-matrix` job runs `.github/scripts/compat-matrix.sh` with the
+  deployed images (newest successful staging record per component) and the
+  candidates against a disposable PostgreSQL, in deploy order:
+  - deployed `gk-migrate`, a runtime login and a seeded job, deployed API ready;
+  - candidate `gk-migrate`: must not delete rows, and the deployed API must stay
+    ready (rolling deploy, rollback target);
+  - candidate API ready on the result;
+  - deployed `gk-migrate` again: must succeed and change nothing (rollback);
+  - both API builds allow only the UI origin (CORS), and both UI builds serve
+    `/healthz` and the home page.
+
+  In a rollback the candidate is the older build, so the same steps check the
+  other direction. The UI calls no API endpoint yet; features that add UI→API
+  calls extend the contract checks in that script.
 
 `gk-release-gate` exit status: `0` deploy, skip or verified; `3` denied, not
 verified or a downgrade; `4` verified but already deployed; `1` error.
@@ -159,8 +182,8 @@ Limits of the record-based checks:
 - A mistaken high tag (say `ui-v10.0.0`) that gets recorded forces every later
   release of that component above it. The only other way out is deleting that
   deployment record (mark it inactive, then delete it; needs `deployments:write`).
-- Each environment holds at most 5000 release records; beyond that the checks
-  fail closed until old records are deleted.
+- Each environment can hold fewer than 5000 release records (50 pages); at
+  5000 the checks fail closed until old records are deleted.
 
 Staging configuration (all nonsecret unless noted):
 
