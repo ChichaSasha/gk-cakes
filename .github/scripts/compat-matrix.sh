@@ -7,16 +7,18 @@
 #   1. deployed gk-migrate on an empty database; runtime logins; a seeded job;
 #      deployed API ready.
 #   2. candidate gk-migrate. Business tables keep their rows, and the business
-#      schema keeps every column (type, NOT NULL), function (signature, SECURITY
-#      DEFINER) and runtime-group grant it had: migrations are expand-only, so
+#      schema keeps every column (type, NOT NULL), column default, function
+#      (signature, SECURITY DEFINER) and runtime-group privilege it had:
+#      migrations are expand-only (additions are fine, changes are not), so
 #      the deployed build keeps working (rolling deploy, rollback target). A run
 #      that applies nothing must change nothing. The deployed API stays ready.
 #   3. candidate API ready on the result.
 #   4. deployed gk-migrate again (the other direction): succeeds and changes
 #      nothing.
 #   5. both API builds allow the UI origin and refuse a foreign one (CORS).
-#   6. both gk-worker builds claim and release a job through the job gateway
-#      (job_claim / job_release) on the result without errors.
+#   6. both gk-worker builds claim and release a job, freshly enqueued through
+#      business.job_enqueue on the result, via job_claim / job_release without
+#      errors, leaving it in retry without a lease.
 #   7. both UI builds serve /healthz and the home page.
 # API readiness is a database ping, and the UI calls no API endpoint yet: features
 # that add UI->API calls or new runtime database use extend these checks.
@@ -85,30 +87,43 @@ WHERE n.nspname = 'business' AND c.relkind = 'r';
 SQL
 }
 
-# The business schema contract older code relies on, one line per object.
+# The business schema contract older code relies on, one line per object:
+# columns (type, NOT NULL), column defaults (separate lines, so adding one is
+# compatible), functions (signature, result, SECURITY DEFINER) and the runtime
+# groups' effective privileges (explicit, via PUBLIC or membership).
 schema_snapshot() {
   psql_q <<'SQL' | LC_ALL=C sort
-SELECT format('column %s.%s %s%s', c.relname, a.attname, format_type(a.atttypid, a.atttypmod),
+WITH rel AS (
+  SELECT c.oid, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'business' AND c.relkind IN ('r', 'p', 'v', 'm')
+), fn AS (
+  SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'business'
+), grp(g) AS (VALUES ('gk_api'), ('gk_worker'), ('gk_backup'))
+SELECT format('column %s.%s %s%s', r.relname, a.attname, format_type(a.atttypid, a.atttypmod),
               CASE WHEN a.attnotnull THEN ' not null' ELSE '' END)
-FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE n.nspname = 'business' AND c.relkind IN ('r', 'p', 'v', 'm') AND a.attnum > 0 AND NOT a.attisdropped
+FROM pg_attribute a JOIN rel r ON r.oid = a.attrelid
+WHERE a.attnum > 0 AND NOT a.attisdropped
 UNION ALL
-SELECT format('function %s returns %s%s', p.oid::regprocedure, pg_get_function_result(p.oid),
+SELECT format('default %s.%s %s', r.relname, a.attname, pg_get_expr(d.adbin, d.adrelid))
+FROM pg_attrdef d JOIN rel r ON r.oid = d.adrelid
+JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum AND NOT a.attisdropped
+UNION ALL
+SELECT format('function %s returns %s%s', fn.oid::regprocedure, pg_get_function_result(fn.oid),
               CASE WHEN p.prosecdef THEN ' security definer' ELSE '' END)
-FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-WHERE n.nspname = 'business'
+FROM fn JOIN pg_proc p ON p.oid = fn.oid
 UNION ALL
-SELECT format('grant %s %s on %s', r.rolname, x.privilege_type, c.oid::regclass)
-FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace, aclexplode(c.relacl) x JOIN pg_roles r ON r.oid = x.grantee
-WHERE n.nspname = 'business' AND r.rolname IN ('gk_api', 'gk_worker', 'gk_backup')
+SELECT format('grant %s %s on business.%s', grp.g, pr.p, r.relname)
+FROM rel r CROSS JOIN grp
+CROSS JOIN (VALUES ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE'), ('REFERENCES'), ('TRIGGER')) AS pr(p)
+WHERE has_table_privilege(grp.g, r.oid, pr.p)
 UNION ALL
-SELECT format('grant %s EXECUTE on %s', r.rolname, p.oid::regprocedure)
-FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace, aclexplode(p.proacl) x JOIN pg_roles r ON r.oid = x.grantee
-WHERE n.nspname = 'business' AND r.rolname IN ('gk_api', 'gk_worker', 'gk_backup')
+SELECT format('grant %s EXECUTE on %s', grp.g, fn.oid::regprocedure)
+FROM fn CROSS JOIN grp
+WHERE has_function_privilege(grp.g, fn.oid, 'EXECUTE')
 UNION ALL
-SELECT format('grant %s USAGE on schema business', g)
-FROM unnest(ARRAY['gk_api', 'gk_worker', 'gk_backup']) AS g
-WHERE has_schema_privilege(g, 'business', 'USAGE');
+SELECT format('grant %s USAGE on schema business', grp.g)
+FROM grp
+WHERE has_schema_privilege(grp.g, 'business', 'USAGE');
 SQL
 }
 
@@ -174,11 +189,22 @@ cors_ok() { # cors_ok <port> <what>
     fail "$2: CORS allowed '$allowed' for the UI origin and '$foreign' for a foreign one"
 }
 
-worker_ok() { # worker_ok <name> <image>: the worker claims and releases the seeded job, error-free
-  psql_q <<<"UPDATE business.job SET next_attempt_at = now();" >/dev/null
+# enqueue <when>: enqueue a job through business.job_enqueue on the current
+# schema (as a domain command would) and print its id.
+enqueue() {
+  psql_q <<SQL
+BEGIN;
+SET LOCAL ROLE gk_owner;
+SELECT business.job_enqueue(gen_random_uuid(), $1);
+COMMIT;
+SQL
+}
+
+worker_ok() { # worker_ok <name> <image>: the worker claims and releases a fresh job, error-free
+  local job logs="" code state
+  job=$(enqueue "NULL") || fail "enqueue through business.job_enqueue on the resulting schema failed"
   docker run -d --platform linux/amd64 --name "$prefix-worker-$1" --network "container:$pg" -e APP_ENV=test \
     -e DATABASE_URL="$(url_for gk_worker_compat)" --entrypoint /usr/local/bin/gk-worker "$2" >/dev/null
-  local logs="" code
   for _ in $(seq 1 30); do
     logs=$(docker logs "$prefix-worker-$1" 2>&1)
     [[ "$logs" == *'"msg":"job failed; scheduling retry"'* || "$logs" == *'"level":"ERROR"'* ]] && break
@@ -190,6 +216,8 @@ worker_ok() { # worker_ok <name> <image>: the worker claims and releases the see
   [[ "$logs" != *'"level":"ERROR"'* ]] || fail "$1 gk-worker logged an error: $(grep '"level":"ERROR"' <<<"$logs" | head -1)"
   [[ "$logs" == *'"msg":"job failed; scheduling retry"'* ]] || fail "$1 gk-worker did not claim and release the job"
   [[ "$code" == 0 ]] || fail "$1 gk-worker exited $code on SIGTERM"
+  state=$(psql_q <<<"SELECT state || '/' || (lease_owner IS NULL)::text FROM business.job WHERE id = '$job';")
+  [[ "$state" == retry/true ]] || fail "$1 gk-worker left job $job as '$state', want retry/true (released, no lease)"
 }
 
 {
@@ -214,14 +242,12 @@ SQL
 
 # 1. Staging as it is.
 out=$(migrate_with "$DEPLOYED_API") || fail "deployed gk-migrate on an empty database: $out"
-psql_q <<'SQL' >/dev/null
+psql_q <<'SQL' >/dev/null || fail "creating the runtime logins failed"
 CREATE ROLE gk_api_compat LOGIN PASSWORD 'compat' IN ROLE gk_api;
 CREATE ROLE gk_worker_compat LOGIN PASSWORD 'compat' IN ROLE gk_worker;
-BEGIN;
-SET LOCAL ROLE gk_owner;
-SELECT business.job_enqueue(gen_random_uuid(), now() + interval '1 day');
-COMMIT;
 SQL
+# Not claimable before step 6, so the API steps see stable data.
+enqueue "now() + interval '1 day'" >/dev/null || fail "enqueue through business.job_enqueue on the deployed schema failed"
 start_api deployed "$DEPLOYED_API" "$api_port_deployed"
 wait_200 "http://127.0.0.1:$api_port_deployed/readyz" '"status":"ready"' "deployed API on the deployed schema"
 data_before=$(data_snapshot)
@@ -263,7 +289,7 @@ pass "both API builds allow the UI origin and refuse a foreign one"
 # 6. Both workers use the job gateway on the result.
 worker_ok deployed "$DEPLOYED_API"
 worker_ok candidate "$CANDIDATE_API"
-pass "deployed and candidate gk-worker claim and release a job through the gateway"
+pass "deployed and candidate gk-worker claim and release a fresh job through the gateway"
 
 # 7. Both UI builds.
 start_ui deployed "$DEPLOYED_UI" "$ui_port_deployed"

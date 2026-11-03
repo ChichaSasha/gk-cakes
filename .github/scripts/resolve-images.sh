@@ -7,8 +7,8 @@
 # With no records at all (first deploy) the deployed image is the candidate.
 # Fails closed when records exist but none of the newest 100 succeeded, when a
 # successful record has a malformed digest, or on any GitHub API error.
-# Writes DEPLOYED_API/CANDIDATE_API/DEPLOYED_UI/CANDIDATE_UI to $GITHUB_ENV, or
-# prints them as export lines when GITHUB_ENV is unset.
+# Prints "resolve: NAME=value" for DEPLOYED_API, CANDIDATE_API, DEPLOYED_UI and
+# CANDIDATE_UI, and appends NAME=value to $GITHUB_ENV when it is set.
 # Requires GH_TOKEN (deployments: read), GITHUB_REPOSITORY, REGISTRY_OWNER.
 set -euo pipefail
 
