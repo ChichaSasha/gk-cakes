@@ -138,6 +138,10 @@ func TestParseEventKeepsOnlyMinimizedEvidence(t *testing.T) {
 	}
 	// Beyond the type, unexpected shapes are dropped, never fatal: a signed
 	// delivery that can never succeed would exhaust the provider's retries.
+	dropped, err := ParseEvent([]byte(`{"type":"email.sent","data":{"email_id":"bad id@example.org","tags":{"intent":"x","env":"Prod!"}}}`))
+	if err != nil || strings.Join(dropped.Dropped, ",") != "email_id,tags.intent,tags.env" {
+		t.Fatalf("dropped = %v, %v; want the three unusable fields named", dropped.Dropped, err)
+	}
 	for _, odd := range []string{
 		`{"type":"email.sent","data":{"email_id":"bad id@example.org"}}`,
 		`{"type":"email.bounced","data":{"bounce":"Permanent","tags":"intent"}}`,
@@ -184,5 +188,48 @@ func TestReceiveIgnoresOtherEnvironmentsAndEventTypesWithoutStoring(t *testing.T
 		if err != nil || got != WebhookIgnored {
 			t.Errorf("%s: %q, %v; want ignored", name, got, err)
 		}
+	}
+}
+
+type recordingQuerier struct{ calls int }
+
+func (r *recordingQuerier) QueryRow(context.Context, string, ...any) pgx.Row {
+	r.calls++
+	return errRow{}
+}
+
+type errRow struct{}
+
+func (errRow) Scan(...any) error { return errors.New("stop") }
+
+// Warn lines make silent evidence loss visible: one of our events without
+// its environment tag, and fields dropped from our environment's event.
+// They name fields and IDs only.
+func TestReceiveWarnsAboutUnusableFields(t *testing.T) {
+	const secret = "whsec_plJ3nmyCDGBKInavdOK15jsl"
+	now := time.Now()
+	var logs strings.Builder
+	db := &recordingQuerier{}
+	w, err := NewWebhook(WebhookConfig{DB: db, Secret: secret, Environment: "test",
+		Logger: slog.New(slog.NewJSONHandler(&logs, nil)), Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	untagged := `{"type":"email.delivered","data":{"email_id":"m1","to":["ms.example@example.org"],"tags":{"intent":"11111111-1111-4111-8111-111111111111"}}}`
+	if got, err := w.Receive(context.Background(), sign(t, secret, "msg_untagged", now, []byte(untagged)), []byte(untagged)); err != nil || got != WebhookIgnored {
+		t.Fatalf("untagged: %q, %v", got, err)
+	}
+	odd := `{"type":"email.delivered","data":{"email_id":"ms.example@example.org","tags":{"env":"test"}}}`
+	_, _ = w.Receive(context.Background(), sign(t, secret, "msg_odd", now, []byte(odd)), []byte(odd))
+	out := logs.String()
+	if !strings.Contains(out, `"level":"WARN","msg":"email webhook event for an intent without an environment tag ignored"`) ||
+		!strings.Contains(out, `"level":"WARN","msg":"email webhook event fields dropped"`) || !strings.Contains(out, `"fields":"email_id"`) {
+		t.Fatalf("logs lack the warnings:\n%s", out)
+	}
+	if strings.Contains(out, "ms.example@example.org") {
+		t.Fatalf("logs contain the address:\n%s", out)
+	}
+	if db.calls != 1 {
+		t.Fatalf("database calls %d, want only the own-environment event stored", db.calls)
 	}
 }

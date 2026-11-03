@@ -19,7 +19,10 @@ import (
 // DefaultEndpoint is Railway's public GraphQL API.
 const DefaultEndpoint = "https://backboard.railway.com/graphql/v2"
 
-var digestRef = regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}$`)
+var (
+	digestRef    = regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}$`)
+	startCommand = regexp.MustCompile(`^/[a-z0-9/_.-]{1,200}$`)
+)
 
 // Request selects what to deploy where.
 type Request struct {
@@ -27,6 +30,12 @@ type Request struct {
 	EnvironmentID   string
 	Image           string // must be pinned: name@sha256:<64 hex>
 	HealthcheckPath string // optional; Railway marks SUCCESS only once it answers
+	// StartCommand optionally overrides the image ENTRYPOINT (exec form), for
+	// example /usr/local/bin/gk-worker for the worker service.
+	StartCommand string
+	// Settle keeps watching after SUCCESS and fails if the deployment crashes
+	// within it: the check for a process with no health endpoint.
+	Settle time.Duration
 }
 
 // Result reports the deployment Railway created.
@@ -43,6 +52,9 @@ type Deployer struct {
 	PollInterval time.Duration
 	Timeout      time.Duration
 }
+
+// maxResponseBytes bounds a GraphQL response (log pages are the largest).
+const maxResponseBytes = 8 << 20
 
 // healthcheckTimeoutSeconds bounds how long Railway waits for the health path.
 const healthcheckTimeoutSeconds = 120
@@ -61,7 +73,42 @@ const (
 	statusQuery = `query gkStatus($id: String!) {
   deployment(id: $id) { id status meta }
 }`
+	logsQuery = `query gkLogs($environmentId: String!, $afterDate: String!, $afterLimit: Int!) {
+  environmentLogs(environmentId: $environmentId, afterDate: $afterDate, afterLimit: $afterLimit) { message attributes { key value } }
+}`
 )
+
+// EnvironmentLogs returns up to limit log lines of the environment since a
+// time, each as its message followed by its attributes (key=value).
+func (d *Deployer) EnvironmentLogs(ctx context.Context, environmentID string, since time.Time, limit int) ([]string, error) {
+	if d.ProjectToken == "" || environmentID == "" || limit <= 0 {
+		return nil, errors.New("railway: logs need a token, an environment ID and a positive limit")
+	}
+	var out struct {
+		Logs []struct {
+			Message    string `json:"message"`
+			Attributes []struct {
+				Key   string `json:"key"`
+				Value string `json:"value"`
+			} `json:"attributes"`
+		} `json:"environmentLogs"`
+	}
+	if err := d.call(ctx, logsQuery, map[string]any{
+		"environmentId": environmentID, "afterDate": since.UTC().Format(time.RFC3339), "afterLimit": limit,
+	}, &out); err != nil {
+		return nil, fmt.Errorf("railway: environment logs: %w", err)
+	}
+	lines := make([]string, 0, len(out.Logs))
+	for _, l := range out.Logs {
+		var b strings.Builder
+		b.WriteString(l.Message)
+		for _, a := range l.Attributes {
+			b.WriteString(" " + a.Key + "=" + a.Value)
+		}
+		lines = append(lines, b.String())
+	}
+	return lines, nil
+}
 
 var failed = map[string]bool{"FAILED": true, "CRASHED": true, "REMOVED": true, "REMOVING": true, "SKIPPED": true}
 
@@ -79,6 +126,12 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 	}
 
 	input := map[string]any{"source": map[string]any{"image": req.Image}}
+	if req.StartCommand != "" {
+		if !startCommand.MatchString(req.StartCommand) {
+			return Result{}, fmt.Errorf("railway: start command %q must be an absolute executable path", req.StartCommand)
+		}
+		input["startCommand"] = req.StartCommand
+	}
 	if req.HealthcheckPath != "" {
 		input["healthcheckPath"] = req.HealthcheckPath
 		input["healthcheckTimeout"] = healthcheckTimeoutSeconds
@@ -109,6 +162,7 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 
 	res := Result{DeploymentID: deployed.ID}
 	deadline := time.Now().Add(d.Timeout)
+	var settleUntil time.Time // set once SUCCESS is first seen
 	pollErrors := 0
 	for {
 		var st struct {
@@ -131,10 +185,16 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 				return res, fmt.Errorf("railway: deployment %s runs image %q, not the requested %q", deployed.ID, img, req.Image)
 			}
 			switch {
-			case res.Status == "SUCCESS":
-				return res, nil
+			case failed[res.Status] && !settleUntil.IsZero():
+				return res, fmt.Errorf("railway: deployment %s ended %s within %s of SUCCESS", deployed.ID, res.Status, req.Settle)
 			case failed[res.Status]:
 				return res, fmt.Errorf("railway: deployment %s ended %s", deployed.ID, res.Status)
+			case res.Status == "SUCCESS" && req.Settle <= 0:
+				return res, nil
+			case res.Status == "SUCCESS" && settleUntil.IsZero():
+				settleUntil = time.Now().Add(req.Settle)
+			case res.Status == "SUCCESS" && time.Now().After(settleUntil):
+				return res, nil
 			}
 		}
 		if time.Now().After(deadline) {
@@ -191,7 +251,7 @@ func (d *Deployer) call(ctx context.Context, query string, vars map[string]any, 
 		return err
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
 		return err
 	}

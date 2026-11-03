@@ -175,6 +175,38 @@ The steps below are the integration runbook, not evidence those tests have run.
    sender/API/webhook keys by environment; revoke unused grants. No marketing
    campaign or real customer message is authorized by this setup task.
 
+**GK-024 staging email setup (Owner: Creator; agent guides each step).** Needed
+before the staging worker sends and the webhook records evidence. Secret values
+go only into Bitwarden and sealed Railway variables, never chat, Git or Trello.
+
+1. Supabase sandbox, SQL editor: create the worker login and save its password
+   in Bitwarden (`GK Cakes Sandbox — gk_worker_staging`):
+   `CREATE ROLE gk_worker_staging LOGIN PASSWORD '<generated>' IN ROLE gk_worker;`
+   then run the two membership checks in [api/README.md](api/README.md#database-roles).
+   Its `DATABASE_URL` matches the API's (session pooler, `sslmode=verify-full`,
+   `sslrootcert=/etc/gk/supabase-root-2021.crt`) with this user.
+2. B2 key without delete, with the B2 CLI (the web console presets include delete):
+   `b2 key create --bucket gk-cakes-sandbox-backups-flbgymxjelzexgoxrcss --name-prefix recovery/ gk-recovery-staging listFiles,readFiles,writeFiles`.
+   Save the key ID and application key in Bitwarden.
+3. Recovery encryption key: `printf 'k1:%s\n' "$(openssl rand -base64 32)"`; save
+   it in Bitwarden (envelopes are unreadable without it).
+4. Railway, staging environment: new service `gk-worker-staging` from the public
+   image `ghcr.io/chichasasha/gk-cakes-api` (any current tag; the pipeline pins
+   the digest). Start command `/usr/local/bin/gk-worker`, no public domain, no
+   health check, one replica. Sealed variables: `APP_ENV=staging`,
+   `DATABASE_URL` (step 1), `EMAIL_API_KEY` (the existing sandbox sending key),
+   `RECOVERY_B2_KEY_ID`, `RECOVERY_B2_KEY` (step 2), `RECOVERY_ENCRYPTION_KEYS`
+   (step 3). Deploy the staged changes; note the service ID.
+5. Resend → Webhooks → add endpoint `https://staging-api.gkcake.com/webhooks/email`
+   with `email.sent`, `email.delivered`, `email.delivery_delayed`,
+   `email.complained`, `email.bounced`, `email.failed`, `email.suppressed` (not
+   opens or clicks). Put its signing secret in the `gk-api-staging` service as
+   sealed `EMAIL_WEBHOOK_SECRET` and deploy the staged change; save it in Bitwarden.
+6. GitHub: `staging` environment variable `RAILWAY_WORKER_SERVICE_ID`, repository
+   variable `STAGING_WORKER_ENABLED=true`. Then the agent redeploys staging and
+   runs the **Email proof** workflow (AC3); the business-mailbox option checks
+   the `GK Cakes` display name in the received email.
+
 ### Hosting, DNS, CI and monitoring — Railway Pro / GK-012–014,034
 
 Apply the [approved GK-006 policy](docs/creator/GK-006/README.md): staging updates

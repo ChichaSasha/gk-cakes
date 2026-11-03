@@ -144,6 +144,8 @@ type Event struct {
 	IntentTag         string
 	Env               string
 	Detail            map[string]string // categories only, never addresses or messages
+	// Dropped names fields that were present but unusable (names only).
+	Dropped []string
 }
 
 var (
@@ -171,15 +173,27 @@ func ParseEvent(body []byte) (Event, error) {
 		ev.CreatedAt = &t
 	}
 	data := jsonObject(top.Data)
-	if id := jsonString(data["email_id"]); messageIDPattern.MatchString(id) {
-		ev.ProviderMessageID = id
+	if raw, ok := data["email_id"]; ok {
+		if id := jsonString(raw); messageIDPattern.MatchString(id) {
+			ev.ProviderMessageID = id
+		} else {
+			ev.Dropped = append(ev.Dropped, "email_id")
+		}
 	}
 	tags := eventTags(data["tags"])
-	if v := tags[intentTagName]; uuidPattern.MatchString(v) {
-		ev.IntentTag = v
+	if v, ok := tags[intentTagName]; ok {
+		if uuidPattern.MatchString(v) {
+			ev.IntentTag = v
+		} else {
+			ev.Dropped = append(ev.Dropped, "tags.intent")
+		}
 	}
-	if v := tags[envTagName]; envPattern.MatchString(v) {
-		ev.Env = v
+	if v, ok := tags[envTagName]; ok {
+		if envPattern.MatchString(v) {
+			ev.Env = v
+		} else {
+			ev.Dropped = append(ev.Dropped, "tags.env")
+		}
 	}
 	category := func(key string, raw json.RawMessage) {
 		if v := jsonString(raw); categoryPattern.MatchString(v) {
@@ -265,6 +279,10 @@ func (w *Webhook) Receive(ctx context.Context, h http.Header, body []byte) (stri
 			log.Info("email webhook event ignored", "event_env", ev.Env)
 		}
 		return WebhookIgnored, nil
+	}
+	if len(ev.Dropped) > 0 {
+		// Evidence may stop applying if the provider changes a format.
+		log.Warn("email webhook event fields dropped", "fields", strings.Join(ev.Dropped, ","))
 	}
 	var detail *string
 	if len(ev.Detail) > 0 {

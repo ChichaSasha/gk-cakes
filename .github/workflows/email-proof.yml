@@ -1,0 +1,57 @@
+# GK-024 AC3: manual sandbox proof against staging (api/internal/emailproof).
+# Enqueues controlled notices with the migration credential, as a domain
+# transaction would: Resend's delivered+<run>@ and bounced+<run>@resend.dev
+# test recipients, and optionally the business mailbox for the display-name
+# check. Waits for the staging worker to send them and the signed webhook to
+# record delivery or bounce evidence. Checks that the public webhook endpoint
+# refuses unsigned, forged, stale and oversized deliveries, and scans the
+# staging environment's logs for the recipients and subject. The report (IDs,
+# states, counts) goes to the job summary. Each run sends 2-3 emails against
+# the Resend Free quota.
+name: Email proof
+run-name: Email proof ${{ github.run_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      business_mailbox:
+        description: Also send one notice to the business mailbox (display-name check)
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: email-proof
+  cancel-in-progress: false
+
+jobs:
+  proof:
+    name: sandbox-proof
+    if: github.ref == 'refs/heads/main' && vars.STAGING_WORKER_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: staging
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+      - name: Install the Supabase CA the migration credential names
+        run: sudo install -D -m 0644 api/certs/supabase-root-2021.crt /etc/gk/supabase-root-2021.crt
+      - name: Run the proof
+        working-directory: api
+        env:
+          APP_ENV: staging
+          MIGRATION_DATABASE_URL: ${{ secrets.STAGING_MIGRATION_DATABASE_URL }}
+          API_URL: ${{ vars.STAGING_API_URL }}
+          PROOF_LABEL: gk${{ github.run_id }}${{ github.run_attempt }}
+          PROOF_EXTRA_RECIPIENT: ${{ inputs.business_mailbox && 'gk.cake.london@gmail.com' || '' }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
+          RAILWAY_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
+        run: go run ./cmd/gk-email-proof
