@@ -33,8 +33,9 @@ mobile and short laptop screens, with a "To pay now" line at the top):
    from then on (or if the cake isn't collected) 50%, rounded in the customer's favour; 100% if the chef
    cancels; once paid, moving date or time doesn't change the deadline; after handover contact the chef.
    Approved statutory-rights notice. Confirmation tick-box.
-5. **Payment** — secure payment page shows the available options; expected methods marked as still being
-   confirmed with the payment provider (6 shown, all 17 accepted labels on demand, Google Pay not listed);
+5. **Payment** — secure payment page shows the available options; "Ways to pay include" 6 methods, all 17
+   accepted labels on demand (Google Pay not listed), with a preview note that the list is still being
+   confirmed with the payment provider;
    prices and refunds in GBP; other currencies shown with fees by the payment page.
 
 Summary promises: place on this date held 15 minutes while paying, and a still-processing payment is
@@ -75,7 +76,9 @@ errors or overflow. New text contrast ≥ 6.48:1, focus ring 7.9:1 (reviewer-mea
 
 Independent AI review on PR #6 (round 1, head fb04036): two specialist reviewers in fresh contexts
 (checkout UX/accessibility; payments and refund-policy rules), both **revise**, no blockers. All findings
-fixed in this revision except those deferred to r02: delivery request form, already-past deadline
+fixed except those deferred to r02 (round 2 on 60fc88c: both revise, one major each — Continue
+out of reach on short desktop screens; FREEDELIVERY kept on a collection order after a date change — fixed
+with the minor items): delivery request form, already-past deadline
 variant, free-order (£0) path, "last place taken" when Continue is pressed, and keeping typed details
 across a date change (prototype limitation, specified for the live shop). Record: PR #6 comments.
 
@@ -83,6 +86,8 @@ across a date change (prototype limitation, specified for the live shop). Record
 
 0. **GK delivery:** should delivery customers send a request and pay after the chef confirms (current
    behaviour), or pay for the cake now with delivery quoted and paid afterwards? The rules allow both.
+   Note: paying now fixes the handover time and refund deadline at payment, while the delivery time is
+   still only a request; if the chef later confirms a different time, the deadline would not move.
 1. Section order: is details → code → checks → payment right, or should payment methods sit higher?
 2. Is showing 6 payment methods + “11 more” right, or show all 17?
 3. Refund wording — clear enough at the moment of paying?
