@@ -155,21 +155,35 @@ get no image and cannot be released. Workflows: `.github/workflows/staging.yml` 
   `api-v0.0.1`/`api-v0.0.2`) still refuse a newer schema, so they are not
   rollback targets once a migration has been added; while staging runs one, the
   compatibility matrix blocks deploying a new migration.
-- **Compatibility matrix (AC2).** Before any staging deploy, the
-  `compatibility-matrix` job runs `.github/scripts/compat-matrix.sh` with the
-  deployed images (newest successful staging record per component) and the
-  candidates against a disposable PostgreSQL, in deploy order:
-  - deployed `gk-migrate`, a runtime login and a seeded job, deployed API ready;
-  - candidate `gk-migrate`: must not delete rows, and the deployed API must stay
-    ready (rolling deploy, rollback target);
-  - candidate API ready on the result;
-  - deployed `gk-migrate` again: must succeed and change nothing (rollback);
-  - both API builds allow only the UI origin (CORS), and both UI builds serve
-    `/healthz` and the home page.
+- **Compatibility matrix (AC2).** `.github/scripts/compat-matrix.sh` runs the
+  deployed and candidate images against a disposable PostgreSQL, migrated by a
+  non-superuser database owner as on Supabase, in deploy order:
+  1. deployed `gk-migrate`, runtime logins, a seeded job, deployed API ready;
+  2. candidate `gk-migrate`: business tables keep their rows, and the business
+     schema keeps every column (type, NOT NULL), function (signature, SECURITY
+     DEFINER) and runtime-group grant it had; a run that applies nothing must
+     change nothing; the deployed API stays ready;
+  3. candidate API ready on the result;
+  4. deployed `gk-migrate` again: succeeds and changes nothing (rollback);
+  5. both API builds allow only the UI origin (CORS);
+  6. both `gk-worker` builds claim and release a job through `job_claim` /
+     `job_release` without errors;
+  7. both UI builds serve `/healthz` and the home page.
 
   In a rollback the candidate is the older build, so the same steps check the
-  other direction. The UI calls no API endpoint yet; features that add UI→API
-  calls extend the contract checks in that script.
+  other direction. It runs in staging (`compatibility-matrix`, before any
+  deploy; both deploy jobs require it) and on pull requests (`compat` in
+  `components.yml`, the PR's images against what staging runs). Images are
+  resolved by `.github/scripts/resolve-images.sh`. Limits:
+  - "Deployed" is the newest staging record with a successful status; a deploy
+    marked failed while live is not the baseline. The lookup fails closed when
+    records exist but none of the newest 100 succeeded.
+  - A release of one component needs a successful record of the other.
+  - API readiness is a database ping, and the UI calls no API endpoint yet:
+    features that add UI→API calls or new runtime database use must extend the
+    script's checks.
+  - Removing or narrowing anything in the business schema fails the matrix, so
+    the first contract migration must add a reviewed exception mechanism.
 
 `gk-release-gate` exit status: `0` deploy, skip or verified; `3` denied, not
 verified or a downgrade; `4` verified but already deployed; `1` error.

@@ -226,7 +226,7 @@ func TestDivergentHistoriesAreRefused(t *testing.T) {
 		{"whole build applied, but an unknown database migration sorts below its newest",
 			fstest.MapFS{"0001_a.sql": a, "0002_x.sql": file("CREATE TABLE gk_meta.x (id integer);"), "0003_c.sql": file("CREATE TABLE gk_meta.c (id integer);")},
 			fstest.MapFS{"0001_a.sql": a, "0003_c.sql": file("CREATE TABLE gk_meta.c (id integer);")},
-			"older than its newest"},
+			"not newer than its newest"},
 		{"older build whose applied file changed",
 			fstest.MapFS{"0001_a.sql": a, "0002_b.sql": file("CREATE TABLE gk_meta.b (id integer);")},
 			fstest.MapFS{"0001_a.sql": file("CREATE TABLE gk_meta.a (id integer); -- edited")},
@@ -248,6 +248,29 @@ func TestDivergentHistoriesAreRefused(t *testing.T) {
 				t.Fatalf("refused run changed history %v -> %v (applied %v)", before, after, report.Applied)
 			}
 		})
+	}
+}
+
+// TestUnknownVersionWithTheBuildsNewestNumberIsDiverged: versions compare by
+// their NNNN number, so an unknown "0002_z" next to the build's "0002_b" is a
+// divergence, not a newer database (string order would say it is newer).
+func TestUnknownVersionWithTheBuildsNewestNumberIsDiverged(t *testing.T) {
+	ctx := context.Background()
+	conn := dbtest.New(t).MigratorConn(t)
+	build := fstest.MapFS{
+		"0001_a.sql": &fstest.MapFile{Data: []byte("CREATE TABLE gk_meta.a (id integer);")},
+		"0002_b.sql": &fstest.MapFile{Data: []byte("CREATE TABLE gk_meta.b (id integer);")},
+	}
+	if _, err := migrate.Run(ctx, conn, build); err != nil {
+		t.Fatal(err)
+	}
+	// A history row no build of this line produced (simulated divergence).
+	if _, err := conn.Exec(ctx, "INSERT INTO gk_meta.schema_migration (version, sha256) VALUES ('0002_z', repeat('0', 64))"); err != nil {
+		t.Fatal(err)
+	}
+	report, err := migrate.Apply(ctx, conn, build, "")
+	if err == nil || !strings.Contains(err.Error(), "diverged") {
+		t.Fatalf("report %+v, err %v; want diverged refusal", report, err)
 	}
 }
 

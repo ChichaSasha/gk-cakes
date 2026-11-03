@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -152,8 +153,8 @@ func Apply(ctx context.Context, conn *pgx.Conn, fsys fs.FS, target string) (repo
 				return Report{}, fmt.Errorf("histories diverged: database has %v unknown to this build, but this build's %s is not applied", ahead, m.Version)
 			}
 		}
-		if ahead[0] < newest {
-			return Report{}, fmt.Errorf("histories diverged: database migration %s is unknown to this build and older than its newest, %s", ahead[0], newest)
+		if n, ok := versionNumber(ahead[0]); !ok || n <= mustVersionNumber(newest) {
+			return Report{}, fmt.Errorf("histories diverged: database migration %s is unknown to this build and not newer than its newest, %s", ahead[0], newest)
 		}
 		return Report{Ahead: ahead}, nil
 	}
@@ -217,6 +218,21 @@ func appliedVersions(ctx context.Context, conn *pgx.Conn) (map[string]string, er
 		done[version] = sum
 	}
 	return done, rows.Err()
+}
+
+// versionNumber returns the NNNN number of a migration version.
+func versionNumber(version string) (int, bool) {
+	if len(version) < 5 || version[4] != '_' {
+		return 0, false
+	}
+	n, err := strconv.Atoi(version[:4])
+	return n, err == nil
+}
+
+// mustVersionNumber is versionNumber for versions Load has validated.
+func mustVersionNumber(version string) int {
+	n, _ := versionNumber(version)
+	return n
 }
 
 func containsVersion(ms []Migration, version string) bool {

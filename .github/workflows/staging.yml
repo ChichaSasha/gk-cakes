@@ -222,37 +222,8 @@ jobs:
       - name: Resolve deployed and candidate images
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -o pipefail
-          shopt -s inherit_errexit
-          registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
-          # Deployed = newest staging record with a successful latest status.
-          deployed() {
-            local list id digest state
-            list=$(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=staging-$1&per_page=100" \
-              --jq '.[] | [.id, .payload.artifact_digest] | @tsv')
-            while IFS=$'\t' read -r id digest; do
-              [[ -n "$id" ]] || continue
-              state=$(gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses?per_page=1" --jq '.[0].state // ""')
-              if [[ "$state" == success && "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-                echo "$registry/gk-cakes-$1@$digest"
-                return
-              fi
-            done <<<"$list"
-          }
-          for c in api ui; do
-            upper=${c^^}
-            new_var="NEW_$upper"
-            dep=$(deployed "$c")
-            cand=${!new_var:-$dep} # a release changes one component; the other stays as deployed
-            dep=${dep:-$cand}      # first deploy: nothing deployed yet
-            if [[ -z "$cand" ]]; then
-              echo "no $c image to check" >&2
-              exit 1
-            fi
-            echo "DEPLOYED_$upper=$dep" >> "$GITHUB_ENV"
-            echo "CANDIDATE_$upper=$cand" >> "$GITHUB_ENV"
-          done
+          REGISTRY_OWNER: ${{ github.repository_owner }}
+        run: .github/scripts/resolve-images.sh
       - name: Previous/current compatibility matrix (AC2)
         run: .github/scripts/compat-matrix.sh
 
