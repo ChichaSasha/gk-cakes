@@ -214,19 +214,42 @@ const (
 	phaseOutcome  = "outcome"
 )
 
+// envelopeVersion 2 carries the payload as opaque bytes (base64): JSON
+// re-encoding would escape or compact it, and a replay must send the exact
+// bytes. No version 1 envelope was ever written outside tests.
+const envelopeVersion = 2
+
 type envelope struct {
-	V            int             `json:"v"`
-	Environment  string          `json:"environment"`
-	Phase        string          `json:"phase"`
-	OperationID  string          `json:"operation_id"`
-	Kind         Kind            `json:"kind"`
-	AggregateID  string          `json:"aggregate_id"`
-	PriorVersion int             `json:"prior_version"`
-	PayloadHash  string          `json:"payload_hash"`
-	Payload      json.RawMessage `json:"payload,omitempty"`
-	ReplayUntil  *time.Time      `json:"replay_until,omitempty"`
-	Outcome      *Outcome        `json:"outcome,omitempty"`
-	SealedAt     time.Time       `json:"sealed_at"`
+	V            int        `json:"v"`
+	Environment  string     `json:"environment"`
+	Phase        string     `json:"phase"`
+	OperationID  string     `json:"operation_id"`
+	Kind         Kind       `json:"kind"`
+	AggregateID  string     `json:"aggregate_id"`
+	PriorVersion int        `json:"prior_version"`
+	PayloadHash  string     `json:"payload_hash"`
+	Payload      []byte     `json:"payload,omitempty"`
+	ReplayUntil  *time.Time `json:"replay_until,omitempty"`
+	Outcome      *Outcome   `json:"outcome,omitempty"`
+	SealedAt     time.Time  `json:"sealed_at"`
+}
+
+// matches reports whether an existing envelope belongs to the operation as
+// env describes it: same identity, and for a prepared envelope the same
+// payload bytes and replay deadline (a resume must never extend the
+// provider window).
+func (got envelope) matches(env envelope, phase string) bool {
+	switch {
+	case got.V != envelopeVersion || got.Phase != phase || got.OperationID != env.OperationID ||
+		got.PayloadHash != env.PayloadHash || got.AggregateID != env.AggregateID || got.PriorVersion != env.PriorVersion:
+		return false
+	case phase == phasePrepared:
+		return hashHex(got.Payload) == env.PayloadHash && got.ReplayUntil != nil && env.ReplayUntil != nil &&
+			got.ReplayUntil.Equal(*env.ReplayUntil)
+	case phase == phaseOutcome:
+		return got.Outcome != nil && env.Outcome != nil && sameOutcome(*got.Outcome, *env.Outcome)
+	}
+	return false
 }
 
 // ensure makes sure the envelope for phase exists in the journal. When the
@@ -244,9 +267,7 @@ func (c *Coordinator) ensure(ctx context.Context, key, phase string, env envelop
 				return fmt.Errorf("recovery: existing %s envelope: %w", phase, err)
 			}
 			var got envelope
-			if err := json.Unmarshal(plain, &got); err != nil || got.OperationID != env.OperationID ||
-				got.PayloadHash != env.PayloadHash || got.Phase != phase ||
-				(phase == phaseOutcome && (got.Outcome == nil || !sameOutcome(*got.Outcome, *env.Outcome))) {
+			if err := json.Unmarshal(plain, &got); err != nil || !got.matches(env, phase) {
 				return fmt.Errorf("recovery: existing %s envelope for %s does not match the operation", phase, env.OperationID)
 			}
 			return nil
@@ -259,6 +280,10 @@ func (c *Coordinator) ensure(ctx context.Context, key, phase string, env envelop
 	plain, err := json.Marshal(env)
 	if err != nil {
 		return err
+	}
+	var check envelope
+	if err := json.Unmarshal(plain, &check); err != nil || !check.matches(env, phase) {
+		return fmt.Errorf("recovery: %s envelope for %s does not round-trip", phase, env.OperationID)
 	}
 	sealed, err := c.Sealer.Seal(name, plain)
 	if err != nil {
@@ -289,7 +314,7 @@ func (c *Coordinator) start(ctx context.Context, store Store, op Operation) (str
 		return "", Reservation{}, envelope{}, ErrStale
 	}
 	env := envelope{
-		V: 1, Environment: c.Environment, OperationID: op.ID, Kind: op.Kind,
+		V: envelopeVersion, Environment: c.Environment, OperationID: op.ID, Kind: op.Kind,
 		AggregateID: op.AggregateID, PriorVersion: op.PriorVersion, PayloadHash: op.PayloadHash(),
 	}
 	return key, res, env, nil
@@ -429,7 +454,7 @@ func (c *Coordinator) Resolve(ctx context.Context, store Store, op Operation, ou
 		return Outcome{}, fmt.Errorf("recovery: operation %s is not recorded; nothing to resolve", op.ID)
 	}
 	env := envelope{
-		V: 1, Environment: c.Environment, OperationID: op.ID, Kind: op.Kind,
+		V: envelopeVersion, Environment: c.Environment, OperationID: op.ID, Kind: op.Kind,
 		AggregateID: op.AggregateID, PriorVersion: op.PriorVersion, PayloadHash: op.PayloadHash(),
 	}
 	state, changed := res.State, false
@@ -527,7 +552,7 @@ func (c *Coordinator) Pending(ctx context.Context) ([]Operation, error) {
 		if env.ReplayUntil != nil {
 			op.ReplayUntil = *env.ReplayUntil
 		}
-		if op.PayloadHash() != env.PayloadHash || env.Phase != phasePrepared {
+		if env.V != envelopeVersion || op.PayloadHash() != env.PayloadHash || env.Phase != phasePrepared {
 			return nil, fmt.Errorf("recovery: %s does not match its payload hash", name)
 		}
 		if key, _ := c.EnvelopeKey(op); key != base {

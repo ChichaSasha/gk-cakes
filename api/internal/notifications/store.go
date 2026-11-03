@@ -129,6 +129,14 @@ func (s leaseStore) Frozen(ctx context.Context) (bool, error) {
 	return frozen, gatewayErr(err)
 }
 
+// admit asks the database, right before the provider call, whether the
+// call may happen: "ok", "frozen", "suspended" or "expired" (database clock).
+func (s leaseStore) admit(ctx context.Context, opID string) (string, error) {
+	var status string
+	err := s.db.QueryRow(ctx, "SELECT business.notification_dispatch_admit($1::uuid, $2::uuid, $3, $4::uuid)", s.args(opID)...).Scan(&status)
+	return status, gatewayErr(err)
+}
+
 // recordAttempt appends the provider call's result. It runs detached from
 // the job context (bounded) so that evidence of a cancelled call is kept.
 func (s leaseStore) recordAttempt(ctx context.Context, opID string, res Result) error {

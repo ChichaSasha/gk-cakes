@@ -5,11 +5,14 @@
 -- job and an audit event together (business.notification_enqueue, called by
 -- the owning domain gateway function). The worker dispatches outside any
 -- database transaction under the K11 recovery coordinator, calling only the
--- lease-fenced gateway functions below: each verifies that the caller holds
--- the job's live lease (owner, generation, unexpired) and that the recovery
--- operation is exactly the intent's (operation = idempotency key, aggregate =
--- intent, payload hash = the stored dispatch payload), then changes the
--- recovery phase and the intent in one transaction.
+-- gateway functions below. Every function that changes state or admits a
+-- provider call verifies that the caller holds the job's live lease (owner,
+-- generation, unexpired) and that the recovery operation is exactly the
+-- intent's (operation = idempotency key, aggregate = intent, payload hash =
+-- the stored dispatch payload), then changes the recovery phase and the
+-- intent in one transaction. Attempt evidence is recorded even after a lease
+-- loss (the provider call happened). job_fail and job_attention fence on
+-- owner and generation like the other job finalizers.
 --
 -- Intent states: queued -> sending (dispatch prepared) -> accepted (provider
 -- message ID) | failed (definitive provider rejection) | unknown (a response
@@ -174,16 +177,18 @@ SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   v_transition uuid;
+  v_state text;
 BEGIN
   UPDATE business.notification_intent
   SET suspended_reason = p_reason, version = version + 1, updated_at = pg_catalog.now()
   WHERE id = p_intent_id AND suspended_reason IS NULL AND state IN ('queued', 'sending', 'unknown')
-  RETURNING transition_id INTO v_transition;
+  RETURNING transition_id, state INTO v_transition, v_state;
   IF NOT FOUND THEN
     RETURN false;
   END IF;
+  -- The state shows whether an earlier attempt may already have been sent.
   PERFORM business.audit_record(p_actor_kind, p_actor_id, 'notification.suspended', 'notification_intent', p_intent_id,
-                                v_transition, NULL);
+                                v_transition, pg_catalog.json_build_object('intent_state', v_state));
   RETURN true;
 END;
 $$;
@@ -387,8 +392,35 @@ BEGIN
 END;
 $$;
 
--- Worker: record one provider call. An unknown or conflicting response makes
--- a sending intent unknown. Returns the attempt number.
+-- Worker: admission right before the provider call, on the database clock:
+-- 'ok', or 'frozen' (restore in progress), 'suspended' (recipient or contact
+-- revoked) or 'expired' (the provider window has ended). Only 'ok' may call
+-- the provider; the call itself happens after this transaction commits.
+CREATE FUNCTION business.notification_dispatch_admit(p_job_id uuid, p_worker uuid, p_generation bigint, p_operation_id uuid)
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v business.notification_intent := business.notification_leased_operation(p_job_id, p_worker, p_generation, p_operation_id);
+BEGIN
+  IF business.recovery_frozen() THEN
+    RETURN 'frozen';
+  ELSIF v.suspended_reason IS NOT NULL THEN
+    RETURN 'suspended';
+  ELSIF v.replay_until IS NULL OR pg_catalog.now() >= v.replay_until THEN
+    RETURN 'expired';
+  END IF;
+  RETURN 'ok';
+END;
+$$;
+
+-- Worker: record one provider call. Evidence is kept even from a worker
+-- whose lease has since been lost (the call happened); the job, intent and
+-- operation must still belong together and the generation must have been
+-- issued. An unknown or conflicting response makes a sending intent
+-- unknown. Returns the attempt number.
 CREATE FUNCTION business.notification_attempt_record(
   p_job_id uuid, p_worker uuid, p_generation bigint, p_operation_id uuid,
   p_result text, p_http_status integer, p_provider_code text, p_provider_message_id text)
@@ -398,9 +430,18 @@ SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
-  v business.notification_intent := business.notification_leased_operation(p_job_id, p_worker, p_generation, p_operation_id);
+  v business.notification_intent;
   v_no integer;
 BEGIN
+  SELECT i.* INTO v
+  FROM business.job j JOIN business.notification_intent i ON i.job_id = j.id AND i.id = j.operation_id
+  WHERE j.id = p_job_id AND i.idempotency_key = p_operation_id AND p_worker IS NOT NULL
+    AND p_generation BETWEEN 1 AND j.generation
+  FOR UPDATE OF i;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'attempt does not belong to job % generation %', p_job_id, p_generation
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
   IF v.state = 'queued' THEN
     RAISE EXCEPTION 'intent % has no prepared dispatch', v.id USING ERRCODE = 'invalid_parameter_value';
   END IF;
@@ -446,9 +487,14 @@ BEGIN
         version = version + 1, updated_at = pg_catalog.now()
     WHERE id = v.id AND state IN ('sending', 'unknown');
   ELSE
-    UPDATE business.notification_intent
-    SET state = 'failed', version = version + 1, updated_at = pg_catalog.now()
-    WHERE id = v.id AND state IN ('sending', 'unknown');
+    -- A rejection proves only that this request was not sent; after an
+    -- unknown or conflicting attempt the outcome stays unknown.
+    UPDATE business.notification_intent i
+    SET state = CASE WHEN EXISTS (SELECT 1 FROM business.notification_attempt a
+                                  WHERE a.intent_id = v.id AND a.result IN ('unknown', 'conflict'))
+                     THEN 'unknown' ELSE 'failed' END,
+        version = i.version + 1, updated_at = pg_catalog.now()
+    WHERE i.id = v.id AND i.state IN ('sending', 'unknown');
   END IF;
   RETURN QUERY SELECT v_state, v_changed;
 END;
@@ -520,6 +566,7 @@ REVOKE ALL ON FUNCTION business.notification_leased_operation(uuid, uuid, bigint
 REVOKE ALL ON FUNCTION business.notification_dispatch_begin(uuid, uuid, bigint) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.notification_recovery_reserve(uuid, uuid, bigint, uuid, text, uuid, integer, text, text, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.notification_recovery_prepared(uuid, uuid, bigint, uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.notification_dispatch_admit(uuid, uuid, bigint, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.notification_attempt_record(uuid, uuid, bigint, uuid, text, integer, text, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.notification_recovery_committed(uuid, uuid, bigint, uuid, json, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.notification_recovery_secured(uuid, uuid, bigint, uuid) FROM PUBLIC;
@@ -533,6 +580,7 @@ GRANT EXECUTE ON FUNCTION business.job_attention(uuid, uuid, bigint, text) TO gk
 GRANT EXECUTE ON FUNCTION business.notification_dispatch_begin(uuid, uuid, bigint) TO gk_worker;
 GRANT EXECUTE ON FUNCTION business.notification_recovery_reserve(uuid, uuid, bigint, uuid, text, uuid, integer, text, text, timestamptz) TO gk_worker;
 GRANT EXECUTE ON FUNCTION business.notification_recovery_prepared(uuid, uuid, bigint, uuid) TO gk_worker;
+GRANT EXECUTE ON FUNCTION business.notification_dispatch_admit(uuid, uuid, bigint, uuid) TO gk_worker;
 GRANT EXECUTE ON FUNCTION business.notification_attempt_record(uuid, uuid, bigint, uuid, text, integer, text, text) TO gk_worker;
 GRANT EXECUTE ON FUNCTION business.notification_recovery_committed(uuid, uuid, bigint, uuid, json, text) TO gk_worker;
 GRANT EXECUTE ON FUNCTION business.notification_recovery_secured(uuid, uuid, bigint, uuid) TO gk_worker;

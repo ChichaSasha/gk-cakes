@@ -290,6 +290,11 @@ identity (provider-idempotent within the window) and goes to `reconcile` again
 if its outcome still cannot be recorded. `CopyBlob` stores an essential
 attachment's bytes before its reference is committed.
 
+Envelopes (format version 2) carry the payload as opaque bytes, so a replay
+gets exactly the stored request back; reusing an existing prepared envelope
+requires the same payload and replay deadline, so a resume can never extend the
+provider window.
+
 Objects live under `recovery/<APP_ENV>/` in the sandbox bucket
 `gk-cakes-sandbox-backups-flbgymxjelzexgoxrcss`:
 `op/<aggregate>/<prior version>-<operation>.{prepared,outcome}` and
@@ -322,7 +327,10 @@ Not yet:
 
 - the staging worker service and its variables (GK-024 A3);
 - B2 Object Lock retention, restore tooling and the restore drill (GK-034
-  Milestone B, GK-035);
+  Milestone B, GK-035). The restore tooling must replay the journal before
+  workers resume: a restored database can re-anchor a notice's window (the
+  existing prepared envelope then refuses the resume), and an existing outcome
+  envelope should be adopted rather than replayed;
 - K09 retention for the journal: it keeps recipients and message bodies (and
   later essential photos) until deleted, and this key cannot delete. Keeping
   only current copies of still-retained records, 30-day restore points and
@@ -347,23 +355,26 @@ stored once with its SHA-256; recipient and content are frozen, so later profile
 changes never retarget it. One intent per transition, recipient and template
 revision (a second is refused).
 
-**Dispatch.** The worker claims the job and calls only lease-fenced gateway
-functions: each checks the live lease (owner, generation, unexpired; `GK001`
-otherwise) and that the recovery operation is exactly the intent's (operation =
-idempotency key, aggregate = intent, payload hash = stored payload). The first
-dispatch fixes `first_dispatch_at` and `replay_until` (+23 hours, below
-Resend's 24-hour idempotency retention). The prepared envelope is in B2 before
-the provider call; the stored request bytes are sent with the
-`Idempotency-Key` header (5 s timeout). Every call is appended to
-`business.notification_attempt`.
+**Dispatch.** The worker claims the job and calls only the gateway functions.
+Each one that changes state or admits a call checks the live lease (owner,
+generation, unexpired; `GK001` otherwise) and that the recovery operation is
+exactly the intent's (operation = idempotency key, aggregate = intent, payload
+hash = stored payload). The first dispatch fixes `first_dispatch_at` and
+`replay_until` (+23 hours, below Resend's 24-hour idempotency retention). The
+prepared envelope is in B2 before the provider call. Right before each call,
+`notification_dispatch_admit` re-checks the restore freeze, a revocation and the
+window on the database clock; only then are the stored request bytes sent, in
+canonical form, with the `Idempotency-Key` header (5 s timeout). Every call is
+appended to `business.notification_attempt`, even when the worker's lease was
+lost meanwhile (the call happened).
 
 | Provider response                                     | Attempt     | Intent                     | Job                          |
 | ----------------------------------------------------- | ----------- | -------------------------- | ---------------------------- |
 | 2xx with message ID                                   | `accepted`  | `accepted` (message ID)    | completed                    |
-| 400/422 validation                                    | `rejected`  | `failed`                   | completed                    |
+| 400/422 with a content error name (`validation_error`, `missing_required_field`, ...) | `rejected` | `failed` (`unknown` after an unknown attempt) | attention (recipient did not get it; not retried) |
 | 429, 409 concurrent request                           | `deferred`  | unchanged                  | retry                        |
 | timeout, connection loss, 5xx, other                  | `unknown`   | `unknown`                  | retry (same key and body)    |
-| 401/403/404/405, invalid idempotency key              | `refused`   | unchanged                  | attention (fix, then requeue)|
+| 401/403/404/405; 400/422 invalid API key, invalid idempotency key or unrecognised | `refused` | unchanged | attention (fix, then requeue)|
 | 409 key used with a different body                    | `conflict`  | `unknown`                  | attention                    |
 
 Retries come after 1m, 5m, 15m and 1h (`business.job_fail`); the fifth
@@ -372,9 +383,11 @@ failure moves the job to attention for a manager, who can re-admit it with
 original key until `replay_until`; after that it goes to `reconcile` and
 attention and is never sent again blindly, requeued or not. A restore freeze
 defers dispatch (5 minutes, not a failure) without starting the window. A
-revoked recipient (`business.notification_suspend`) is never sent to, including
-replays of an unknown dispatch. A payload of another environment or sender is
-refused before any call.
+revoked recipient (`business.notification_suspend`, audited with the intent's
+state at that moment) is never sent to, including replays of an unknown
+dispatch and a revocation that lands while the dispatch is being prepared. A
+payload of another environment or sender, or not in canonical form, is refused
+before any call.
 
 `delivered_to_server` and `bounced` are provider evidence from the signed
 webhook (GK-024 A3); the engine never claims inbox delivery or reading. Logs and

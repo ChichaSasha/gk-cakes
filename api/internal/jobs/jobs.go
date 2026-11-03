@@ -72,8 +72,11 @@ func (e *DeferError) Error() string { return fmt.Sprintf("deferred for %s: %v", 
 
 func (e *DeferError) Unwrap() error { return e.Err }
 
-// Defer returns an error that releases the job for a retry after d (at most a day).
-func Defer(d time.Duration, err error) error { return &DeferError{After: d, Err: err} }
+// Defer returns an error that releases the job for a retry after d, bounded
+// to between one second and one day.
+func Defer(d time.Duration, err error) error {
+	return &DeferError{After: min(max(d, time.Second), 24*time.Hour), Err: err}
+}
 
 // Handler performs a job. It must return promptly when ctx is cancelled.
 type Handler func(ctx context.Context, job Job) error

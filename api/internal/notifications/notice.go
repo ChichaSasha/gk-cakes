@@ -205,6 +205,12 @@ func ParseDispatch(stored []byte, env, intentID, key string) (Dispatch, error) {
 	if err := validateMessage(Message{To: req.To[0], Subject: req.Subject, Text: req.Text, HTML: req.HTML}); err != nil {
 		return Dispatch{}, err
 	}
+	// The stored bytes must be exactly the canonical encoding of what was
+	// checked: no duplicate or case-variant keys the provider might read
+	// differently.
+	if canonical, err := marshal(req); err != nil || !bytes.Equal(canonical, p.Request) {
+		return Dispatch{}, errors.New("notifications: stored request is not in canonical form")
+	}
 	return Dispatch{IdempotencyKey: key, Request: p.Request}, nil
 }
 

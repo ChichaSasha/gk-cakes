@@ -87,6 +87,11 @@ func NewResend(cfg ResendConfig) (*Resend, error) {
 var (
 	messageIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
 	codePattern      = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+	// Resend error names for a request whose content is invalid (400/422).
+	// Resend also answers 400 validation_error "API key is invalid" for a
+	// malformed key; that is recognised by its message and refused instead.
+	rejectionCodes = map[string]bool{"validation_error": true, "missing_required_field": true,
+		"missing_required_parameter": true, "invalid_parameter": true, "invalid_attachment": true}
 )
 
 const maxResponseBytes = 64 << 10
@@ -125,20 +130,26 @@ func Classify(status int, body []byte) Result {
 		}
 		return Result{Kind: Accepted, Status: status, MessageID: ok.ID}
 	}
+	// The message is read only to recognise credential problems; it can echo
+	// recipients, so it is never stored or logged.
 	var failure struct {
-		Name string `json:"name"`
+		Name    string `json:"name"`
+		Message string `json:"message"`
 	}
 	_ = json.Unmarshal(body, &failure)
 	code := ""
 	if codePattern.MatchString(failure.Name) {
 		code = failure.Name
 	}
+	credential := strings.Contains(strings.ToLower(failure.Message), "api key")
 	res := Result{Status: status, Code: code}
 	switch {
-	case status == http.StatusBadRequest && code == "invalid_idempotency_key":
-		res.Kind = Refused
-	case status == http.StatusBadRequest, status == http.StatusUnprocessableEntity:
+	case (status == http.StatusBadRequest || status == http.StatusUnprocessableEntity) && rejectionCodes[code] && !credential:
 		res.Kind = Rejected
+	case status == http.StatusBadRequest, status == http.StatusUnprocessableEntity:
+		// An invalid key, an invalid idempotency key or an unrecognised
+		// error: nothing final; a manager checks the configuration.
+		res.Kind = Refused
 	case status == http.StatusConflict && code == "invalid_idempotent_request":
 		res.Kind = Conflict
 	case status == http.StatusConflict, status == http.StatusTooManyRequests:

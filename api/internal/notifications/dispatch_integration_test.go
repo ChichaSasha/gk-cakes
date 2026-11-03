@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -220,8 +222,9 @@ func TestUnknownPastTheProviderWindowIsNeverResentBlindly(t *testing.T) {
 	}
 }
 
-// A definitive provider rejection fails the intent without retrying; logs
-// keep the status but not the provider's message (which echoes recipients).
+// A definitive provider rejection fails the intent without retrying and
+// tells a manager; evidence keeps the status but not the provider's message
+// (which echoes recipients).
 func TestDefinitiveRejectionFailsWithoutRetry(t *testing.T) {
 	h := newHarness(t)
 	n := newNotice(t, "test")
@@ -232,8 +235,13 @@ func TestDefinitiveRejectionFailsWithoutRetry(t *testing.T) {
 	if row.State != "failed" || strings.Join(row.Attempts, ",") != "rejected" {
 		t.Fatalf("intent %+v, want failed after one rejected attempt", row)
 	}
-	if j := h.job(row.JobID); j.State != "completed" {
-		t.Fatalf("job %+v, want completed (nothing to retry)", j)
+	if j := h.job(row.JobID); j.State != "attention" || j.Reason == nil || !strings.Contains(*j.Reason, "rejected") {
+		t.Fatalf("job %+v, want attention for the rejection", j)
+	}
+	h.owned("SELECT business.job_requeue($1::uuid)", row.JobID)
+	h.runOnce(1)
+	if _, reqs := h.provider.counts(); reqs != 1 {
+		t.Fatalf("provider requests %d after a requeue, want still 1 (the outcome is recorded)", reqs)
 	}
 	var status int
 	var code string
@@ -298,6 +306,106 @@ func TestRetriesBackOffThenNeedAttention(t *testing.T) {
 	if sends, _ := h.provider.counts(); sends != 0 {
 		t.Fatalf("provider sends %d, want 0", sends)
 	}
+}
+
+// A rejection after an unknown attempt proves only that the replay was not
+// sent: the intent stays unknown.
+func TestRejectionAfterAnUnknownAttemptStaysUnknown(t *testing.T) {
+	h := newHarness(t)
+	n := newNotice(t, "test")
+	h.enqueue(n)
+	h.provider.queue("fail500", "reject")
+	h.runOnce(1)
+	h.due(h.intent(n.IntentID).JobID)
+	h.runOnce(1)
+	row := h.intent(n.IntentID)
+	if row.State != "unknown" || strings.Join(row.Attempts, ",") != "unknown,rejected" {
+		t.Fatalf("intent %+v, want unknown after unknown then rejected", row)
+	}
+	if j := h.job(row.JobID); j.State != "attention" {
+		t.Fatalf("job %+v, want attention", j)
+	}
+}
+
+// A revocation committed while the dispatch is being prepared stops it at
+// the admission check right before the provider call.
+func TestRevocationDuringTheDispatchStopsTheCall(t *testing.T) {
+	h := newHarness(t)
+	n := newNotice(t, "test")
+	h.enqueue(n)
+	var once sync.Once
+	h.journal.Fail = func(op, name string) error {
+		if op == "put" && strings.HasSuffix(name, ".prepared") {
+			once.Do(func() {
+				h.owned("SELECT business.notification_suspend($1::uuid, 'recipient deleted their account', 'system', NULL)", n.IntentID)
+			})
+		}
+		return nil
+	}
+	h.runOnce(1)
+	row := h.intent(n.IntentID)
+	if _, reqs := h.provider.counts(); reqs != 0 || len(row.Attempts) != 0 {
+		t.Fatalf("provider requests %d, attempts %v; want no call", reqs, row.Attempts)
+	}
+	if j := h.job(row.JobID); j.State != "attention" || j.Reason == nil || !strings.Contains(*j.Reason, "revoked") {
+		t.Fatalf("job %+v, want attention for the revocation", j)
+	}
+	var detail string
+	if err := h.admin.QueryRow(h.ctx, "SELECT detail::text FROM business.audit_event WHERE action = 'notification.suspended' AND subject_id = $1::uuid",
+		n.IntentID).Scan(&detail); err != nil || !strings.Contains(detail, `"intent_state"`) {
+		t.Fatalf("suspension audit detail %q (%v), want the intent state recorded", detail, err)
+	}
+}
+
+// The admission check uses the database clock: a dispatch whose window has
+// ended there is not sent even when the worker's clock is behind.
+func TestWindowEndOnTheDatabaseClockStopsTheCall(t *testing.T) {
+	h := newHarness(t)
+	n := newNotice(t, "test")
+	h.enqueue(n)
+	// The window was anchored long ago (as after an earlier start whose
+	// reservation never happened); the worker's clock runs two hours slow.
+	if _, err := h.admin.Exec(h.ctx, `UPDATE business.notification_intent SET first_dispatch_at = now() - interval '23 hours 1 minute',
+		replay_until = now() - interval '1 minute' WHERE id = $1::uuid`, n.IntentID); err != nil {
+		t.Fatal(err)
+	}
+	h.advance(-2 * time.Hour)
+	h.runOnce(1)
+	row := h.intent(n.IntentID)
+	if _, reqs := h.provider.counts(); reqs != 0 || len(row.Attempts) != 0 {
+		t.Fatalf("provider requests %d, attempts %v; want no call", reqs, row.Attempts)
+	}
+	if j := h.job(row.JobID); j.State != "attention" || j.Reason == nil || !strings.Contains(*j.Reason, "reconciliation") {
+		t.Fatalf("job %+v, want attention for reconciliation", j)
+	}
+}
+
+// After a primary loss, the journal lists the pending dispatch with the
+// exact stored payload (HTML, '<', '&' and all), so a replay sends the
+// identical request.
+func TestJournalHoldsTheExactNoticePayload(t *testing.T) {
+	h := newHarness(t)
+	msg := message()
+	msg.HTML = `<p>Dear Ms Example, Tom &amp; Jerry's cake &lt;3 is confirmed — £42.50</p>`
+	n, err := notifications.NewNotice("test", nextUUID(), nextUUID(), "order-confirmed.v1", msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.enqueue(n)
+	h.provider.queue("lose")
+	h.runOnce(1)
+	pending, err := h.coord.Pending(h.ctx)
+	if err != nil || len(pending) != 1 {
+		t.Fatalf("Pending = %+v, %v", pending, err)
+	}
+	if !bytes.Equal(pending[0].Payload, n.Payload) || pending[0].ID != n.IdempotencyKey || pending[0].AggregateID != n.IntentID {
+		t.Fatalf("journal copy %s, want the exact stored payload %s", pending[0].Payload, n.Payload)
+	}
+	d, err := notifications.ParseDispatch(pending[0].Payload, "test", n.IntentID, n.IdempotencyKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sameKeyAndBody(t, h.provider.allRequests(), n.IdempotencyKey, d.Request)
 }
 
 // A revoked recipient is never sent to, including the replay of an unknown
@@ -490,19 +598,30 @@ func TestGatewayIsFencedByTheLiveLease(t *testing.T) {
 		}
 	}
 	genA := claim(a)
-	var status string
-	if err := h.pool.QueryRow(h.ctx, "SELECT status FROM business.notification_dispatch_begin($1::uuid, $2::uuid, $3)", jobID, a, genA).Scan(&status); err != nil || status != "ready" {
+	var (
+		status string
+		replay time.Time
+	)
+	if err := h.pool.QueryRow(h.ctx, "SELECT status, replay_until FROM business.notification_dispatch_begin($1::uuid, $2::uuid, $3)", jobID, a, genA).Scan(&status, &replay); err != nil || status != "ready" {
 		t.Fatalf("begin with the live lease: %q, %v", status, err)
 	}
+	row := h.intent(n.IntentID)
+	key, hash := n.IdempotencyKey, recovery.HashHex(row.Payload)
+	envelopeKey := "recovery/test/op/" + n.IntentID + "/0000000000-" + key
 	// A's lease expires (not yet reclaimed): the gateway refuses it already.
+	// Every state-changing call carries otherwise valid arguments.
 	expire()
 	stale := []string{
 		"SELECT status FROM business.notification_dispatch_begin($1::uuid, $2::uuid, $3)",
 		"SELECT business.notification_recovery_frozen($1::uuid, $2::uuid, $3)::text",
-		"SELECT business.notification_recovery_prepared($1::uuid, $2::uuid, $3, '" + n.IdempotencyKey + "'::uuid)",
-		"SELECT business.notification_attempt_record($1::uuid, $2::uuid, $3, '" + n.IdempotencyKey + "'::uuid, 'unknown', NULL, NULL, NULL)::text",
-		"SELECT business.notification_recovery_secured($1::uuid, $2::uuid, $3, '" + n.IdempotencyKey + "'::uuid)",
-		"SELECT business.notification_recovery_reconcile($1::uuid, $2::uuid, $3, '" + n.IdempotencyKey + "'::uuid, 'r')",
+		fmt.Sprintf("SELECT result FROM business.notification_recovery_reserve($1::uuid, $2::uuid, $3, '%s'::uuid, 'dispatch', '%s'::uuid, 0, '%s', '%s', '%s'::timestamptz)",
+			key, n.IntentID, hash, envelopeKey, replay.UTC().Format(time.RFC3339Nano)),
+		"SELECT business.notification_recovery_prepared($1::uuid, $2::uuid, $3, '" + key + "'::uuid)",
+		"SELECT business.notification_dispatch_admit($1::uuid, $2::uuid, $3, '" + key + "'::uuid)",
+		"SELECT op_state FROM business.notification_recovery_committed($1::uuid, $2::uuid, $3, '" + key +
+			`'::uuid, '{"status":"accepted","evidence":{"provider_message_id":"re-1"}}'::json, repeat('a', 64))`,
+		"SELECT business.notification_recovery_secured($1::uuid, $2::uuid, $3, '" + key + "'::uuid)",
+		"SELECT business.notification_recovery_reconcile($1::uuid, $2::uuid, $3, '" + key + "'::uuid, 'r')",
 	}
 	for _, sql := range stale {
 		var out string
@@ -537,13 +656,7 @@ func TestGatewayIsFencedByTheLiveLease(t *testing.T) {
 
 	// The lease holder can reserve only the intent's own dispatch: each case
 	// changes one field of the valid reservation.
-	var replay time.Time
-	if err := h.pool.QueryRow(h.ctx, "SELECT replay_until FROM business.notification_dispatch_begin($1::uuid, $2::uuid, $3)", jobID, b, genB).Scan(&replay); err != nil {
-		t.Fatal(err)
-	}
-	row := h.intent(n.IntentID)
-	valid := []any{n.IdempotencyKey, "dispatch", n.IntentID, 0, recovery.HashHex(row.Payload),
-		"recovery/test/op/" + n.IntentID + "/0000000000-" + n.IdempotencyKey, replay}
+	valid := []any{key, "dispatch", n.IntentID, 0, hash, envelopeKey, replay}
 	with := func(i int, v any) []any { out := append([]any{}, valid...); out[i] = v; return out }
 	reserve := func(args []any) (string, error) {
 		var result string
@@ -565,6 +678,32 @@ func TestGatewayIsFencedByTheLiveLease(t *testing.T) {
 	}
 	if result, err := reserve(valid); err != nil || result != "reserved" {
 		t.Fatalf("the intent's own dispatch: %q, %v; want reserved", result, err)
+	}
+
+	// Evidence is kept from a worker that lost its lease (its call happened),
+	// but only for an issued generation of this job and its own operation.
+	var prepared string
+	if err := h.pool.QueryRow(h.ctx, "SELECT business.notification_recovery_prepared($1::uuid, $2::uuid, $3, $4::uuid)", jobID, b, genB, key).Scan(&prepared); err != nil {
+		t.Fatal(err)
+	}
+	record := func(worker string, gen int64, op string) error {
+		var no int
+		return h.pool.QueryRow(h.ctx, "SELECT business.notification_attempt_record($1::uuid, $2::uuid, $3, $4::uuid, 'unknown', NULL, NULL, NULL)",
+			jobID, worker, gen, op).Scan(&no)
+	}
+	if err := record(a, genA, key); err != nil {
+		t.Fatalf("attempt from the lost lease: %v, want it recorded", err)
+	}
+	if got := h.intent(n.IntentID); strings.Join(got.Attempts, ",") != "unknown" || got.State != "unknown" {
+		t.Fatalf("intent %+v, want the stale unknown attempt recorded", got)
+	}
+	for name, err := range map[string]error{
+		"a generation never issued": record(a, genB+1, key),
+		"another operation":         record(b, genB, nextUUID()),
+	} {
+		if got := dbtest.SQLState(err); got != "22023" {
+			t.Errorf("attempt with %s: SQLSTATE %q (%v), want 22023", name, got, err)
+		}
 	}
 }
 
@@ -619,8 +758,9 @@ func TestRuntimeRolesUseOnlyTheNotificationGateway(t *testing.T) {
 		"business.job_fail(uuid, uuid, bigint, text)",
 		"business.job_attention(uuid, uuid, bigint, text)",
 		"business.notification_dispatch_begin(uuid, uuid, bigint)",
-		"business.notification_recovery_reserve(uuid, uuid, bigint, uuid, text, uuid, integer, text, text, timestamptz)",
+		"business.notification_recovery_reserve(uuid, uuid, bigint, uuid, text, uuid, integer, text, text, timestamp with time zone)",
 		"business.notification_recovery_prepared(uuid, uuid, bigint, uuid)",
+		"business.notification_dispatch_admit(uuid, uuid, bigint, uuid)",
 		"business.notification_attempt_record(uuid, uuid, bigint, uuid, text, integer, text, text)",
 		"business.notification_recovery_committed(uuid, uuid, bigint, uuid, json, text)",
 		"business.notification_recovery_secured(uuid, uuid, bigint, uuid)",
@@ -658,6 +798,23 @@ func TestRuntimeRolesUseOnlyTheNotificationGateway(t *testing.T) {
 				}
 			}
 		}
+	}
+	// Exactly these, plus the GK-020 lease functions, for the worker.
+	rows, err := h.admin.Query(h.ctx, `SELECT replace(p.oid::regprocedure::text, ',', ', ') FROM pg_proc p
+		JOIN pg_namespace ns ON ns.oid = p.pronamespace
+		WHERE ns.nspname = 'business' AND has_function_privilege('gk_worker', p.oid, 'EXECUTE') ORDER BY 1`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := append([]string{"business.job_claim(uuid, interval)", "business.job_complete(uuid, uuid, bigint)",
+		"business.job_heartbeat(uuid, uuid, bigint, interval)", "business.job_release(uuid, uuid, bigint, interval)"}, worker...)
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Errorf("gk_worker can execute %v, want exactly %v", got, want)
 	}
 	// And in practice: the worker login cannot enqueue or read intents.
 	conn := h.db.LoginConn(t, "gk_worker")

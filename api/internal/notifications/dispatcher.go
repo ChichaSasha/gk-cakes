@@ -19,12 +19,13 @@ const FreezeRecheck = 5 * time.Minute
 
 // Attention reasons stored on the job (no personal data).
 const (
-	reasonSuspended  = "notification suspended: recipient or contact revoked; not sent"
-	reasonPayload    = "stored notification payload refused; not sent"
+	reasonSuspended  = "notification suspended (recipient or contact revoked): no further send attempts; see its attempts for any earlier ones"
+	reasonPayload    = "stored notification payload refused: no send attempt made with it"
 	reasonReconcile  = "email outcome unknown past the provider idempotency window; manager reconciliation needed, never a blind resend"
 	reasonRecovery   = "recovery operation conflict for this notification"
 	reasonRefused    = "email provider refused the request: check the API key and the sending domain, then requeue"
 	reasonConflict   = "email provider reports this idempotency key used with a different body; outcome unknown"
+	reasonRejected   = "email rejected by the provider (see its attempts); reach the recipient another way"
 	statusAccepted   = "accepted"
 	statusRejected   = "rejected"
 	providerEvidence = "provider_message_id"
@@ -86,7 +87,12 @@ func (d *Dispatcher) Handle(ctx context.Context, job jobs.Job) error {
 	op := recovery.Operation{ID: b.Key, Kind: recovery.KindDispatch, AggregateID: b.IntentID,
 		Payload: b.Payload, ReplayUntil: b.ReplayUntil}
 	log := d.log.With("job_id", job.ID, "generation", job.Generation, "intent_id", b.IntentID)
-	_, err = d.coord.Dispatch(ctx, store, op, d.effect(log, store, op.ID, dispatch))
+	outcome, err := d.coord.Dispatch(ctx, store, op, d.effect(log, store, op.ID, dispatch))
+	if err == nil && outcome.Status == statusRejected {
+		// Settled and never retried, but a manager must know the
+		// recipient did not get it.
+		return jobs.Attention(reasonRejected, nil)
+	}
 	return outcomeError(err)
 }
 
@@ -95,6 +101,14 @@ func (d *Dispatcher) Handle(ctx context.Context, job jobs.Job) error {
 // the dispatch stays prepared and is replayed with the same key and body.
 func (d *Dispatcher) effect(log *slog.Logger, store leaseStore, opID string, dispatch Dispatch) recovery.Effect {
 	return func(ctx context.Context) (recovery.Outcome, error) {
+		// Last check before the call, on the database clock: a freeze, a
+		// revocation or the end of the window since the dispatch began.
+		switch status, err := store.admit(ctx, opID); {
+		case err != nil:
+			return recovery.Outcome{}, fmt.Errorf("notifications: admission: %w", err)
+		case status != "ok":
+			return recovery.Outcome{}, &admitError{status: status}
+		}
 		callCtx, cancel := context.WithTimeout(ctx, ProviderTimeout)
 		res := d.sender.Send(callCtx, dispatch.IdempotencyKey, dispatch.Request)
 		cancel()
@@ -118,6 +132,12 @@ func (d *Dispatcher) effect(log *slog.Logger, store leaseStore, opID string, dis
 		}
 	}
 }
+
+// admitError means the provider was not called: the dispatch was refused
+// admission right before the call.
+type admitError struct{ status string }
+
+func (e *admitError) Error() string { return "email dispatch not admitted: " + e.status }
 
 // callError is a provider call whose outcome is not a recordable one.
 type callError struct{ res Result }
@@ -143,14 +163,19 @@ func (e *callError) Unwrap() error { return e.res.Err }
 // counted retry (unknown, deferred, journal or database trouble), a deferral
 // while frozen, or manager attention.
 func outcomeError(err error) error {
-	var ce *callError
+	var (
+		ce *callError
+		ae *admitError
+	)
 	switch {
 	case err == nil:
 		return nil
-	case errors.Is(err, recovery.ErrNeedsReconcile):
+	case errors.Is(err, recovery.ErrNeedsReconcile), errors.As(err, &ae) && ae.status == "expired":
 		return jobs.Attention(reasonReconcile, err)
-	case errors.Is(err, recovery.ErrFrozen):
+	case errors.Is(err, recovery.ErrFrozen), errors.As(err, &ae) && ae.status == "frozen":
 		return jobs.Defer(FreezeRecheck, err)
+	case errors.As(err, &ae) && ae.status == "suspended":
+		return jobs.Attention(reasonSuspended, err)
 	case errors.Is(err, recovery.ErrBusy), errors.Is(err, recovery.ErrStale):
 		return jobs.Attention(reasonRecovery, err)
 	case errors.As(err, &ce) && ce.res.Kind == Refused:

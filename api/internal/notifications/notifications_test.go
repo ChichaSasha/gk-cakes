@@ -108,6 +108,9 @@ func TestParseDispatchRefusesForeignPayloads(t *testing.T) {
 		"another reply-to": tamper(ReplyTo, "someone@evil.example"),
 		"extra recipient":  tamper(`"to":["ms.example@example.org"]`, `"to":["ms.example@example.org","x@evil.example"]`),
 		"unknown field":    tamper(`"subject":`, `"bcc":["x@evil.example"],"subject":`),
+		"case-variant key": tamper(`"from":"`+From+`"`, `"from":"Evil <e@evil.example>","FROM":"`+From+`"`),
+		"duplicate key":    tamper(`"from":"`+From+`"`, `"from":"Evil <e@evil.example>","from":"`+From+`"`),
+		"not canonical":    tamper(`"subject":`, `"subject" :`),
 		"another provider": tamper(`"provider":"resend"`, `"provider":"other"`),
 		"not JSON":         []byte("{"),
 	} {
@@ -141,7 +144,11 @@ func TestClassifyFollowsTheResendErrorReference(t *testing.T) {
 		{500, `{"name":"application_error"}`, Unknown, "application_error"},
 		{503, `<html>unavailable</html>`, Unknown, ""},
 		{418, ``, Unknown, ""},
-		{422, `{"name":"Not A Code; x@example.org"}`, Rejected, ""},
+		{422, `{"name":"Not A Code; x@example.org"}`, Refused, ""},
+		{422, `{"name":"invalid_parameter"}`, Rejected, "invalid_parameter"},
+		{400, `{"statusCode":400,"name":"validation_error","message":"API key is invalid"}`, Refused, "validation_error"},
+		{400, ``, Refused, ""},
+		{400, `{"name":"unexpected_error"}`, Refused, "unexpected_error"},
 	}
 	for _, tc := range cases {
 		got := Classify(tc.status, []byte(tc.body))

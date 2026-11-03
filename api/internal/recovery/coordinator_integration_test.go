@@ -918,6 +918,29 @@ func TestPrimaryLossReplaysFromIndependentJournal(t *testing.T) {
 	}
 }
 
+// TestResumeNeverExtendsTheReplayWindow: after a primary loss, a database
+// that re-anchored the dispatch with a later deadline cannot reuse the
+// journal's prepared envelope; the resume stops instead of replaying past the
+// provider's idempotency window.
+func TestResumeNeverExtendsTheReplayWindow(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	op := h.dispatchOp(64)
+	lose := true
+	if _, err := h.coord.Dispatch(ctx, h.store(), op, h.effect(op, &lose)); err == nil {
+		t.Fatal("expected the unknown outcome")
+	}
+	restored := mustStore(t, ownerConn(t, dbtest.New(t)))
+	later := op
+	later.ReplayUntil = op.ReplayUntil.Add(6 * time.Hour)
+	if _, err := h.coord.Dispatch(ctx, restored, later, h.effect(later, nil)); err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("resume with a later deadline: err = %v, want the prepared envelope refused", err)
+	}
+	if h.provider.count() != 1 {
+		t.Fatalf("sends = %d, want only the original one", h.provider.count())
+	}
+}
+
 // TestRuntimeRolesCannotUseRecoveryInternals: the coordinator functions are
 // owner-only; only the backup reader may read the tables (as for every
 // business table).
