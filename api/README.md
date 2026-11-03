@@ -59,16 +59,18 @@ settings (GK-024). They are added, with validation, by the tickets that use them
 
 API endpoints: `GET /healthz` (liveness), `GET /readyz` (database reachable).
 
-### Secret inventory (proposed until GK-013/GK-034 configure the stores)
+### Secret inventory
 
 Values never enter Git, Trello, logs or the UI. Owner for every entry: Creator
-(Sasha), who holds the provider accounts.
+(Sasha), who holds the provider accounts. Staging is configured (GK-034);
+production stores wait for the first authorized production release (GK-036).
 
 | Secret                   | Scope                               | Storage location                                  | Rotation                                                        | Revocation                                   |
 | ------------------------ | ----------------------------------- | ------------------------------------------------- | --------------------------------------------------------------- | -------------------------------------------- |
-| `DATABASE_URL` (api)     | `gk_api` login, one per environment | API service variables (Railway, per environment)  | `ALTER ROLE <login> PASSWORD`, update the variable, redeploy    | `ALTER ROLE <login> NOLOGIN` or drop it      |
+| `DATABASE_URL` (api)     | `gk_api` login, one per environment | API service variables (Railway, per environment; staging login `gk_api_staging`; seal the variable) | `ALTER ROLE <login> PASSWORD`, update the variable, deploy the staged change | `ALTER ROLE <login> NOLOGIN` or drop it      |
 | `DATABASE_URL` (worker)  | `gk_worker` login, one per environment | worker/cron service variables                  | as above                                                        | as above                                     |
-| `MIGRATION_DATABASE_URL` | migration credential                | protected CI migration environment only           | rotate the password of the same role (see below)                | rotate; runtime services never hold it       |
+| `MIGRATION_DATABASE_URL` | migration credential                | GitHub environment secret, staging: `STAGING_MIGRATION_DATABASE_URL` | rotate the password of the same role (see below)                | rotate; runtime services never hold it       |
+| `RAILWAY_STAGING_TOKEN`  | Railway project token, staging environment only | GitHub environment `staging` secret (deployable from `main` only) | regenerate in Railway, update the secret                  | delete the token in Railway                  |
 | Provider secrets         | per provider account and environment | API service variables                            | provider dashboard, update the variable, redeploy               | revoke the key in the provider dashboard     |
 
 The migration credential should stay one stable role (on Supabase, `postgres`)
@@ -109,15 +111,68 @@ FROM pg_roles WHERE rolname = '<login>';
 are immutable (checksummed), and an older build refuses to run against a database
 with newer migrations. Never add destructive down migrations.
 
+## Releases and deployment (GK-034)
+
+UI and API are built once per `main` commit as
+`ghcr.io/chichasasha/gk-cakes-{api,ui}:sha-<commit>` (labelled
+`org.opencontainers.image.revision=<commit>`) and deployed by digest; nothing is
+rebuilt at deploy time. Workflows: `.github/workflows/staging.yml` and
+`release.yml`.
+
+- **Staging, automatic.** A green Components run on a push to `main` publishes
+  (or reuses) both images and deploys them while that commit is still the head of
+  `main`: API first (migrate once, then Railway behind `/readyz`), then UI (behind
+  `/healthz`). Each deploy ends with `.github/scripts/smoke.sh` against the
+  public URLs and is recorded as a GitHub deployment
+  (`staging-api` / `staging-ui`, payload `version` and `artifact_digest`).
+- **Release.** Publish a GitHub release tagged `api-vX.Y.Z` or `ui-vX.Y.Z` on a
+  `main` commit. The gate (`gk-release-gate`) deploys only that component and only
+  if the tag points at a commit on `main` with a successful main CI run, the
+  registry image for that commit exists and carries that commit in its revision
+  label, the same release is not already deployed (replay: skip) and no higher
+  version of that component is already deployed to the target (downgrade: deny).
+  A **prerelease** goes to staging, where the deploy job repeats these checks
+  inside its serialized section; a **full release** targets production, which
+  stays disabled until GK-036.
+- **Rollback.** Publish a new, higher tag pointing at the older commit (for
+  example `ui-v1.4.1` at the commit of `ui-v1.3.0`). Lower tags are refused. API
+  rollback across a migration is not possible yet: an older `gk-migrate` refuses a
+  newer schema (GK-034 part 2, AC2).
+
+`gk-release-gate` exit status: `0` deploy, skip or verified; `3` denied, not
+verified or a downgrade; `4` verified but already deployed; `1` error.
+
+Staging configuration (all nonsecret unless noted):
+
+| Name | Where | Purpose |
+| --- | --- | --- |
+| `STAGING_API_ENABLED` | repository variable | `true` enables API deploys (migrations run first) |
+| `RAILWAY_PROJECT_ID`, `RAILWAY_ENVIRONMENT_ID`, `RAILWAY_API_SERVICE_ID`, `RAILWAY_UI_SERVICE_ID` | `staging` environment variables | deploy targets |
+| `STAGING_API_URL`, `STAGING_UI_URL` | `staging` environment variables | public smoke check, `https://<host>` without a trailing slash |
+| `RAILWAY_STAGING_TOKEN`, `STAGING_MIGRATION_DATABASE_URL` | `staging` environment secrets | see the secret inventory |
+
+Railway and Cloudflare notes from the first staging setup:
+
+- Railway variable edits are staged until **Deploy** is pressed on the
+  staged-changes banner (Option-click commits without a Railway redeploy). The
+  pipeline deploys only committed settings, so an unapplied variable is missing
+  at runtime.
+- A custom domain added before the service's first deploy may target the wrong
+  port; check it under Settings → Networking after the first deploy.
+- The staging hostnames are proxied by Cloudflare; Railway needs the zone's
+  SSL/TLS mode set to **Full** (not Flexible, not Full (Strict)).
+
+## Verified on the Supabase sandbox (staging, 2026-11-03)
+
+- TLS `verify-full` through the IPv4 session pooler with
+  `sslrootcert=/etc/gk/supabase-root-2021.crt` (bundled in the image), for both
+  the migration credential and the `gk_api_staging` runtime login.
+- Migrations `0001` and `0002` applied, which also confirms PostgreSQL 16 or later
+  (`GRANT ... WITH INHERIT FALSE, SET TRUE`).
+
 ## Not yet verified
 
-These need scoped Supabase sandbox access, which the bootstrap did not have:
-
-- TLS `verify-full` against the real sandbox endpoint (CA provisioning via
-  `sslrootcert` if required). The client-side behaviour is tested locally.
 - Runtime-role denial and the gateway on the sandbox. They are proven on
   PostgreSQL 17.11 only.
-- Server major version: migrations need PostgreSQL 16 or later
-  (`GRANT ... WITH INHERIT FALSE, SET TRUE`); 17 is assumed.
 - Whether Supabase's pooler forwards the `statement_timeout`/`lock_timeout`
   startup parameters (direct connections do).

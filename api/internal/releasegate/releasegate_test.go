@@ -2,6 +2,8 @@ package releasegate
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -14,11 +16,48 @@ const (
 	mainSHA   = "1111111111111111111111111111111111111111"
 	sideSHA   = "2222222222222222222222222222222222222222"
 	tagObjSHA = "3333333333333333333333333333333333333333"
-	apiDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	uiDigest  = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	oldDigest = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 	testRepo  = "ChichaSasha/gk-cakes"
 	testOwner = "ChichaSasha"
+
+	dockerManifest = "application/vnd.docker.distribution.manifest.v2+json"
+	ociIndex       = "application/vnd.oci.image.index.v1+json"
+)
+
+// fakeImage is a single-platform image as the registry stores it: manifest
+// and config bytes addressed by their sha256 digests.
+type fakeImage struct {
+	mediaType, manifest, config string
+	digest, configDigest        string
+}
+
+func sha256Digest(b []byte) string {
+	sum := sha256.Sum256(b)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// newImage builds an image whose revision label is revision (none if empty).
+func newImage(component, revision string) fakeImage {
+	labels := map[string]string{"org.opencontainers.image.description": "GK Cakes " + component}
+	if revision != "" {
+		labels["org.opencontainers.image.revision"] = revision
+	}
+	cfg, _ := json.Marshal(map[string]any{"architecture": "amd64", "os": "linux", "config": map[string]any{"Labels": labels}})
+	cfgDigest := sha256Digest(cfg)
+	man, _ := json.Marshal(map[string]any{
+		"schemaVersion": 2,
+		"mediaType":     dockerManifest,
+		"config":        map[string]any{"mediaType": "application/vnd.docker.container.image.v1+json", "size": len(cfg), "digest": cfgDigest},
+		"layers":        []any{},
+	})
+	return fakeImage{mediaType: dockerManifest, manifest: string(man), config: string(cfg), digest: sha256Digest(man), configDigest: cfgDigest}
+}
+
+var (
+	apiImage  = newImage("api", mainSHA)
+	uiImage   = newImage("ui", mainSHA)
+	apiDigest = apiImage.digest
+	uiDigest  = uiImage.digest
 )
 
 // fakeGitHub models the GitHub REST endpoints and the ghcr.io registry API
@@ -29,6 +68,8 @@ type fakeGitHub struct {
 	compare         map[string]string        // commit sha -> compare status against main
 	runs            map[string][]workflowRun // commit sha -> Components main-push runs, newest first
 	manifests       map[string]string        // "<repo>:<tag>" -> registry digest
+	images          map[string]fakeImage     // "<repo>@<manifest digest>" -> image
+	blobs           map[string]string        // "<repo>@<blob digest>" -> blob bytes
 	migrations      map[string][]string      // commit sha -> files in api/migrations
 	deployments     map[string][]deployment  // environment -> deployments, newest first
 	statuses        map[int64][]string       // deployment id -> status states, newest first
@@ -38,21 +79,30 @@ type fakeGitHub struct {
 type tagRef struct{ Type, SHA string }
 
 func newFake() *fakeGitHub {
-	return &fakeGitHub{
+	f := &fakeGitHub{
 		tags:      map[string]tagRef{"api-v1.2.3": {"commit", mainSHA}, "ui-v0.4.0": {"tag", tagObjSHA}},
 		annotated: map[string]tagRef{tagObjSHA: {"commit", mainSHA}},
 		compare:   map[string]string{mainSHA: "ahead", sideSHA: "diverged"},
 		runs: map[string][]workflowRun{
 			mainSHA: {{HeadSHA: mainSHA, Event: "push", HeadBranch: "main", Status: "completed", Conclusion: "success"}},
 		},
-		manifests: map[string]string{
-			"chichasasha/gk-cakes-api:sha-" + mainSHA: apiDigest,
-			"chichasasha/gk-cakes-ui:sha-" + mainSHA:  uiDigest,
-		},
+		manifests:   map[string]string{},
+		images:      map[string]fakeImage{},
+		blobs:       map[string]string{},
 		migrations:  map[string][]string{mainSHA: {"0001_roles_and_schema.sql", "0002_job_gateway.sql", "migrations.go"}},
 		deployments: map[string][]deployment{},
 		statuses:    map[int64][]string{},
 	}
+	f.push("chichasasha/gk-cakes-api", "sha-"+mainSHA, apiImage)
+	f.push("chichasasha/gk-cakes-ui", "sha-"+mainSHA, uiImage)
+	return f
+}
+
+// push stores img in repo and points tag at it.
+func (f *fakeGitHub) push(repo, tag string, img fakeImage) {
+	f.manifests[repo+":"+tag] = img.digest
+	f.images[repo+"@"+img.digest] = img
+	f.blobs[repo+"@"+img.configDigest] = img.config
 }
 
 func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +112,7 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	notFound := func() { http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound) }
 
 	// Registry API (ghcr.io): pull token (anonymous unless the fake demands
-	// the GitHub token), then manifest lookup.
+	// the GitHub token), then manifest and blob lookups.
 	if p == "/registry/token" {
 		if f.privateRegistry {
 			user, pass, ok := r.BasicAuth()
@@ -80,17 +130,38 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		rest := strings.TrimPrefix(p, "/registry/v2/")
-		repo, tag, ok := strings.Cut(rest, "/manifests/")
+		if repo, digest, ok := strings.Cut(rest, "/blobs/"); ok {
+			blob, found := f.blobs[repo+"@"+digest]
+			if !found {
+				notFound()
+				return
+			}
+			_, _ = w.Write([]byte(blob))
+			return
+		}
+		repo, ref, ok := strings.Cut(rest, "/manifests/")
 		if !ok || !strings.Contains(r.Header.Get("Accept"), "application/vnd.oci.image.manifest.v1+json") {
 			http.Error(w, "bad manifest request", http.StatusBadRequest)
 			return
 		}
-		digest, found := f.manifests[repo+":"+tag]
+		digest := ref
+		if !strings.HasPrefix(ref, "sha256:") {
+			var found bool
+			if digest, found = f.manifests[repo+":"+ref]; !found {
+				notFound()
+				return
+			}
+		}
+		img, found := f.images[repo+"@"+digest]
 		if !found {
 			notFound()
 			return
 		}
 		w.Header().Set("Docker-Content-Digest", digest)
+		w.Header().Set("Content-Type", img.mediaType)
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(img.manifest))
+		}
 		return
 	}
 
@@ -455,6 +526,70 @@ func TestVerifyArtifactChecksCommitCIAndDigest(t *testing.T) {
 				t.Fatalf("err = %v, want mention of %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// TestArtifactMustCarryItsCommitRevision: the image behind sha-<commit> must
+// say it was built from that commit (org.opencontainers.image.revision), and
+// the manifest and config bytes must match their digests, so a retagged or
+// tampered image cannot be released.
+func TestArtifactMustCarryItsCommitRevision(t *testing.T) {
+	const apiRepo = "chichasasha/gk-cakes-api"
+	cases := []struct {
+		name    string
+		mutate  func(*fakeGitHub)
+		denied  string // deny reason; empty means the gate must return an error
+		errText string
+	}{
+		{"image built from another commit", func(f *fakeGitHub) {
+			f.push(apiRepo, "sha-"+mainSHA, newImage("api", sideSHA))
+		}, "built from commit \"" + sideSHA + "\"", ""},
+		{"image without revision label", func(f *fakeGitHub) {
+			f.push(apiRepo, "sha-"+mainSHA, newImage("api", ""))
+		}, "built from commit \"\"", ""},
+		{"manifest bytes do not match digest", func(f *fakeGitHub) {
+			img := f.images[apiRepo+"@"+apiDigest]
+			img.manifest += " "
+			f.images[apiRepo+"@"+apiDigest] = img
+		}, "", "manifest does not match"},
+		{"config bytes do not match digest", func(f *fakeGitHub) {
+			f.blobs[apiRepo+"@"+apiImage.configDigest] = strings.Replace(apiImage.config, mainSHA, sideSHA, 1)
+		}, "", "config does not match"},
+		{"multi-platform index", func(f *fakeGitHub) {
+			img := apiImage
+			img.mediaType = ociIndex
+			img.manifest = `{"schemaVersion":2,"mediaType":"` + ociIndex + `","manifests":[]}`
+			img.digest = sha256Digest([]byte(img.manifest))
+			f.push(apiRepo, "sha-"+mainSHA, img)
+		}, "", "not a single-platform image manifest"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFake()
+			tc.mutate(f)
+			d, err := Evaluate(context.Background(), Input{EventName: "release", Event: publish("api-v1.2.3"), Repository: testRepo}, client(t, f))
+			if tc.denied == "" {
+				if err == nil || !strings.Contains(err.Error(), tc.errText) {
+					t.Fatalf("decision %q (%s), err %v; want error mentioning %q", d.Action, d.Reason, err, tc.errText)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if d.Action != ActionDeny || !strings.Contains(d.Reason, tc.denied) || d.Manifest != nil {
+				t.Fatalf("decision %q (%s); want deny mentioning %q without manifest", d.Action, d.Reason, tc.denied)
+			}
+		})
+	}
+
+	// The deploy-time re-check applies the same rule.
+	f := newFake()
+	f.push(apiRepo, "sha-"+mainSHA, newImage("api", sideSHA))
+	retagged := f.manifests[apiRepo+":sha-"+mainSHA]
+	err := client(t, f).VerifyArtifact(context.Background(), testRepo, testOwner, "api", mainSHA, retagged)
+	if err == nil || !strings.Contains(err.Error(), "built from commit") {
+		t.Fatalf("VerifyArtifact of a retagged image: err = %v, want revision mismatch", err)
 	}
 }
 

@@ -5,12 +5,17 @@
 // that commit, may deploy; a repeated event for an already deployed artifact
 // is skipped. Full releases target production-<component>; prereleases target
 // staging-<component> only. Artifact digests are read from the container
-// registry (ghcr.io), the same source the publish step resolves. Any GitHub API failure is returned as an error so callers fail
+// registry (ghcr.io), the same source the publish step resolves, and the image
+// must carry its commit in the org.opencontainers.image.revision label. A
+// release older than one already deployed to the same environment is denied.
+// Any GitHub or registry API failure is returned as an error so callers fail
 // closed.
 package releasegate
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -148,6 +153,13 @@ func Evaluate(ctx context.Context, in Input, gh *Client) (Decision, error) {
 	}
 	if digest == "" {
 		return deny("no artifact %s tagged sha-%s exists", pkg, sha), nil
+	}
+	revision, err := gh.imageRevision(ctx, imagePath(ev.Repository.Owner.Login, component), digest)
+	if err != nil {
+		return Decision{}, err
+	}
+	if revision != sha {
+		return deny("artifact %s@%s was built from commit %q (%s), not %s", pkg, digest, revision, RevisionLabel, sha), nil
 	}
 
 	manifest := &Manifest{
@@ -307,17 +319,9 @@ func imagePath(owner, component string) string {
 }
 
 // registryDigest returns the manifest digest for repo:tag in the registry, or
-// "" when the tag does not exist. It tries an anonymous pull token first
-// (public packages) and then the GitHub token.
+// "" when the tag does not exist.
 func (c *Client) registryDigest(ctx context.Context, repo, tag string) (string, error) {
-	base := strings.TrimRight(c.RegistryURL, "/")
-	if base == "" {
-		base = "https://ghcr.io"
-	}
-	token, err := c.registryToken(ctx, base, repo, false)
-	if err != nil {
-		token, err = c.registryToken(ctx, base, repo, true)
-	}
+	base, token, err := c.registryAuth(ctx, repo)
 	if err != nil {
 		return "", err
 	}
@@ -326,12 +330,7 @@ func (c *Client) registryDigest(ctx context.Context, repo, tag string) (string, 
 		return "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", strings.Join([]string{
-		"application/vnd.oci.image.manifest.v1+json",
-		"application/vnd.oci.image.index.v1+json",
-		"application/vnd.docker.distribution.manifest.v2+json",
-		"application/vnd.docker.distribution.manifest.list.v2+json",
-	}, ", "))
+	req.Header.Set("Accept", manifestAccept)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("registry %s:%s: %w", repo, tag, err)
@@ -348,6 +347,126 @@ func (c *Client) registryDigest(ctx context.Context, repo, tag string) (string, 
 		return "", fmt.Errorf("registry %s:%s: unexpected digest %q", repo, tag, digest)
 	}
 	return digest, nil
+}
+
+const (
+	// RevisionLabel is the image label the publish step sets to the source
+	// commit SHA.
+	RevisionLabel = "org.opencontainers.image.revision"
+
+	dockerManifestType = "application/vnd.docker.distribution.manifest.v2+json"
+	ociManifestType    = "application/vnd.oci.image.manifest.v1+json"
+	maxRegistryObject  = 4 << 20
+)
+
+var manifestAccept = strings.Join([]string{
+	ociManifestType,
+	"application/vnd.oci.image.index.v1+json",
+	dockerManifestType,
+	"application/vnd.docker.distribution.manifest.list.v2+json",
+}, ", ")
+
+// imageRevision returns the RevisionLabel of the single-platform image
+// repo@digest ("" when absent). The manifest and config bytes are checked
+// against their digests, so the label provably belongs to that digest.
+func (c *Client) imageRevision(ctx context.Context, repo, digest string) (string, error) {
+	base, token, err := c.registryAuth(ctx, repo)
+	if err != nil {
+		return "", err
+	}
+	body, contentType, err := c.registryGet(ctx, base+"/v2/"+repo+"/manifests/"+digest, token, manifestAccept)
+	if err != nil {
+		return "", err
+	}
+	if got := sha256Of(body); got != digest {
+		return "", fmt.Errorf("registry %s@%s: manifest does not match its digest (%s)", repo, digest, got)
+	}
+	var manifest struct {
+		MediaType string `json:"mediaType"`
+		Config    struct {
+			Digest string `json:"digest"`
+		} `json:"config"`
+	}
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		return "", fmt.Errorf("registry %s@%s: decode manifest: %w", repo, digest, err)
+	}
+	mediaType := manifest.MediaType
+	if mediaType == "" {
+		mediaType, _, _ = strings.Cut(contentType, ";")
+	}
+	if mediaType != dockerManifestType && mediaType != ociManifestType {
+		return "", fmt.Errorf("registry %s@%s: %q is not a single-platform image manifest", repo, digest, mediaType)
+	}
+	if !digestPattern.MatchString(manifest.Config.Digest) {
+		return "", fmt.Errorf("registry %s@%s: unexpected config digest %q", repo, digest, manifest.Config.Digest)
+	}
+	config, _, err := c.registryGet(ctx, base+"/v2/"+repo+"/blobs/"+manifest.Config.Digest, token, "")
+	if err != nil {
+		return "", err
+	}
+	if got := sha256Of(config); got != manifest.Config.Digest {
+		return "", fmt.Errorf("registry %s@%s: config does not match its digest %s (%s)", repo, digest, manifest.Config.Digest, got)
+	}
+	var image struct {
+		Config struct {
+			Labels map[string]string `json:"Labels"`
+		} `json:"config"`
+	}
+	if err := json.Unmarshal(config, &image); err != nil {
+		return "", fmt.Errorf("registry %s@%s: decode config: %w", repo, digest, err)
+	}
+	return image.Config.Labels[RevisionLabel], nil
+}
+
+func sha256Of(b []byte) string {
+	sum := sha256.Sum256(b)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// registryGet fetches a registry object (bounded size) and its content type.
+// Blob requests may redirect to storage; the client drops the token there.
+func (c *Client) registryGet(ctx context.Context, u, token, accept string) ([]byte, string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	if accept != "" {
+		req.Header.Set("Accept", accept)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("registry GET: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return nil, "", fmt.Errorf("registry GET %s: HTTP %d", req.URL.Path, resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxRegistryObject+1))
+	if err != nil {
+		return nil, "", fmt.Errorf("registry GET %s: %w", req.URL.Path, err)
+	}
+	if len(body) > maxRegistryObject {
+		return nil, "", fmt.Errorf("registry GET %s: object larger than %d bytes", req.URL.Path, maxRegistryObject)
+	}
+	return body, resp.Header.Get("Content-Type"), nil
+}
+
+// registryAuth returns the registry base URL and a pull token for repo. It
+// tries an anonymous token first (public packages), then the GitHub token.
+func (c *Client) registryAuth(ctx context.Context, repo string) (string, string, error) {
+	base := strings.TrimRight(c.RegistryURL, "/")
+	if base == "" {
+		base = "https://ghcr.io"
+	}
+	token, err := c.registryToken(ctx, base, repo, false)
+	if err != nil {
+		token, err = c.registryToken(ctx, base, repo, true)
+	}
+	if err != nil {
+		return "", "", err
+	}
+	return base, token, nil
 }
 
 func (c *Client) registryToken(ctx context.Context, base, repo string, authenticated bool) (string, error) {
@@ -377,8 +496,8 @@ func (c *Client) registryToken(ctx context.Context, base, repo string, authentic
 }
 
 // VerifyArtifact re-checks, outside a release event, that digest is the
-// registry image built for commit sha of component, and that sha is on main
-// with a successful main CI run. Staging uses it before deploying a
+// registry image tagged and labelled for commit sha of component, and that sha
+// is on main with a successful main CI run. Staging uses it before deploying a
 // release-path artifact.
 func (c *Client) VerifyArtifact(ctx context.Context, repo, owner, component, sha, digest string) error {
 	switch {
@@ -409,6 +528,13 @@ func (c *Client) VerifyArtifact(ctx context.Context, repo, owner, component, sha
 	}
 	if got != digest {
 		return fmt.Errorf("registry digest for %s sha-%s is %q, not %q", imagePath(owner, component), sha, got, digest)
+	}
+	revision, err := c.imageRevision(ctx, imagePath(owner, component), digest)
+	if err != nil {
+		return err
+	}
+	if revision != sha {
+		return fmt.Errorf("artifact %s@%s was built from commit %q (%s), not %s", imagePath(owner, component), digest, revision, RevisionLabel, sha)
 	}
 	return nil
 }
