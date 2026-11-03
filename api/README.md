@@ -231,6 +231,57 @@ Railway and Cloudflare notes from the first staging setup:
 - Migrations `0001` and `0002` applied, which also confirms PostgreSQL 16 or later
   (`GRANT ... WITH INHERIT FALSE, SET TRUE`).
 
+## Recovery journal (K11, GK-024)
+
+`internal/recovery` implements the minimal confirmed-order recovery protocol
+from [K11](../docs/design/contracts.md#k11--confirmed-order-recovery-contract).
+Every protected operation (an outgoing email/payment/refund dispatch, or an
+accepted business command) runs through `Coordinator.Dispatch`:
+
+1. reserve it in `business.recovery_operation` (one unresolved operation per
+   aggregate; others get `ErrBusy`);
+2. write the encrypted **prepared** envelope to B2 and wait for B2's checksum
+   acknowledgment, then mark it `prepared`;
+3. run the effect, only while outgoing effects are not frozen; an error means
+   the outcome is unknown and the operation stays `prepared`;
+4. record the outcome (`committed`), write the encrypted **outcome** envelope,
+   then mark it `secured`.
+
+A resumed operation continues from its recorded phase and reuses envelopes
+already written. A dispatch is repeated only with the same identity and only
+before its provider replay deadline (for Resend, 24 hours of idempotency);
+after it the operation goes to `reconcile` for manager review instead.
+`Coordinator.Pending` lists prepared operations without an outcome from B2
+alone, so after a primary database loss they can be resumed against a
+restored database. `CopyBlob` stores an essential attachment's bytes before
+its reference is committed. No database transaction is held across B2 or
+provider calls.
+
+Objects live under `recovery/<APP_ENV>/` in the sandbox bucket
+`gk-cakes-sandbox-backups-flbgymxjelzexgoxrcss`:
+`op/<aggregate>/<prior version>-<operation>.{prepared,outcome}` and
+`blob/<sha256>`. Names contain only IDs, versions and hashes. Contents are
+AES-256-GCM sealed in the application, bound to their object name, on top of
+B2's SSE-B2; the bucket keeps all versions, and the journal never deletes.
+
+Setup requirements (the code refuses anything else):
+
+- **B2 application key:** restricted to that one bucket and the name prefix
+  `recovery/`, with `listFiles`, `readFiles` and `writeFiles`, and without
+  `deleteFiles`.
+- **Encryption key:** `kid:base64(32 random bytes)`, for example `k1:` followed
+  by `openssl rand -base64 32`. Keep it in Bitwarden as well as the service
+  variables: without it the envelopes cannot be read. A comma-separated list
+  rotates keys (the first seals, all open).
+
+The tables and functions are owner-internal: domain gateway functions call
+them in the same transaction as their own state change, and no runtime role
+can call them directly. Restore tooling (as `gk_owner`) freezes all outgoing
+effects with `business.recovery_set_freeze(true, reason)`.
+
+Not yet: runtime wiring and service variables (GK-024 email engine), B2
+Object Lock retention and restore tooling (GK-034 Milestone B).
+
 ## Not yet verified
 
 - Runtime-role denial and the gateway on the sandbox. They are proven on
