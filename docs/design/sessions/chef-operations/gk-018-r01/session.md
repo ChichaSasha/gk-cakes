@@ -3,7 +3,7 @@
 Status: shown to Creator; feedback pending. Not approved. Example data only; the prototype
 saves, sends, charges and refunds nothing and makes no network calls.
 
-- Card: GK-018  (moved Backlog → In Progress 2026-11-03 on the user's "Yes, take GK-018").
+- Card: GK-018 https://trello.com/c/jjP7btz9 (moved Backlog → In Progress 2026-11-03 on the user's "Yes, take GK-018").
 - Base: origin/main 784a717. Visual tokens/fonts reused from approved GK-015 r12.
 - Model check: host model llmplatform/claude-opus-5-5 (user-selected) vs card policy gpt-5.6-sol/high; user selection takes precedence.
 - Bounded r01 scope: A-ORDERS/A-FULFILLMENT Today view and order detail, desktop + mobile.
