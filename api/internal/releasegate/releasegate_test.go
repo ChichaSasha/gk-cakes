@@ -312,7 +312,8 @@ func TestReplayIsKeyedOnReleaseIdentity(t *testing.T) {
 		t.Fatalf("replay after a newer release = %q (%s), want skip", d.Action, d.Reason)
 	}
 
-	// Only a failed attempt of this release: deploy again.
+	// Only a failed attempt of this release (and nothing newer): deploy again.
+	f.deployments["production-api"] = f.deployments["production-api"][1:]
 	f.statuses[7] = []string{"failure"}
 	if d := evaluate(t, f, "release", publish("api-v1.2.3")); d.Action != ActionDeploy {
 		t.Fatalf("after failed attempt: action = %q (%s), want deploy", d.Action, d.Reason)
@@ -324,6 +325,102 @@ func TestReplayIsKeyedOnReleaseIdentity(t *testing.T) {
 	f.statuses[5] = []string{"success"}
 	if d := evaluate(t, f, "release", publish("api-v1.2.3")); d.Action != ActionDeploy {
 		t.Fatalf("digest deployed under another identity: action = %q (%s), want deploy", d.Action, d.Reason)
+	}
+}
+
+// TestOlderReleaseIsDeniedAsDowngrade covers AC2's "cannot downgrade
+// unexpectedly": a release older than one already deployed successfully to
+// the same environment is denied. Versions compare numerically; failed
+// attempts, main deploys and other components do not count; a rollback uses a
+// new, higher tag.
+func TestOlderReleaseIsDeniedAsDowngrade(t *testing.T) {
+	type rec struct {
+		version string
+		state   string
+	}
+	cases := []struct {
+		name       string
+		env        string
+		prerelease bool
+		records    []rec // newest first
+		tag        string
+		want       string
+		reason     string
+	}{
+		{"newer release deployed", "production-api", false, []rec{{"api-v1.2.4", "success"}}, "api-v1.2.3", ActionDeny, "older than api-v1.2.4"},
+		{"numeric, not string, order", "production-api", false, []rec{{"api-v1.10.0", "success"}}, "api-v1.9.0", ActionDeny, "older than api-v1.10.0"},
+		{"newer major deployed", "production-api", false, []rec{{"api-v2.0.0", "success"}}, "api-v1.99.99", ActionDeny, "older than api-v2.0.0"},
+		{"highest of several is reported", "production-api", false,
+			[]rec{{"api-v1.3.0", "success"}, {"api-v1.5.0", "success"}, {"api-v1.4.0", "success"}}, "api-v1.2.3", ActionDeny, "older than api-v1.5.0"},
+		{"prerelease older than staging", "staging-api", true, []rec{{"api-v1.2.4", "success"}}, "api-v1.2.3", ActionDeny, "older than api-v1.2.4"},
+		{"upgrade is allowed", "production-api", false, []rec{{"api-v1.9.0", "success"}}, "api-v1.10.0", ActionDeploy, ""},
+		{"newer attempt failed", "production-api", false, []rec{{"api-v1.2.4", "failure"}}, "api-v1.2.3", ActionDeploy, ""},
+		{"newer attempt still running", "production-api", false, []rec{{"api-v1.2.4", "in_progress"}}, "api-v1.2.3", ActionDeploy, ""},
+		{"newer failed, older success", "production-api", false,
+			[]rec{{"api-v1.2.4", "failure"}, {"api-v1.2.2", "success"}}, "api-v1.2.3", ActionDeploy, ""},
+		{"main deploys are not releases", "staging-api", true, []rec{{"main-" + mainSHA, "success"}}, "api-v1.2.3", ActionDeploy, ""},
+		{"other component ignored", "production-api", false, []rec{{"ui-v9.0.0", "success"}}, "api-v1.2.3", ActionDeploy, ""},
+		{"rollback with a new higher tag", "production-api", false, []rec{{"api-v1.2.4", "success"}}, "api-v1.2.5", ActionDeploy, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFake()
+			f.tags[tc.tag] = tagRef{"commit", mainSHA}
+			for i, r := range tc.records {
+				id := int64(100 + i)
+				f.deployments[tc.env] = append(f.deployments[tc.env], deployment{ID: id, Payload: deploymentPayload{ArtifactDigest: oldDigest, Version: r.version}})
+				f.statuses[id] = []string{r.state}
+			}
+			d := evaluate(t, f, "release", releaseEventJSON("published", tc.tag, false, tc.prerelease))
+			if d.Action != tc.want {
+				t.Fatalf("action = %q (%s), want %q", d.Action, d.Reason, tc.want)
+			}
+			if !strings.Contains(d.Reason, tc.reason) {
+				t.Errorf("reason %q does not mention %q", d.Reason, tc.reason)
+			}
+			if tc.want == ActionDeny && d.Manifest != nil {
+				t.Errorf("denied decision carries a manifest: %+v", d.Manifest)
+			}
+		})
+	}
+}
+
+// TestReplayOfSupersededReleaseIsSkippedNotDenied: an exact replay of an
+// older release that was deployed before is a no-op, not a downgrade error.
+func TestReplayOfSupersededReleaseIsSkippedNotDenied(t *testing.T) {
+	f := newFake()
+	f.deployments["production-api"] = []deployment{
+		{ID: 9, Payload: deploymentPayload{ArtifactDigest: oldDigest, Version: "api-v1.2.4"}},
+		{ID: 7, Payload: deploymentPayload{ArtifactDigest: apiDigest, Version: "api-v1.2.3"}},
+	}
+	f.statuses[9] = []string{"success"}
+	f.statuses[7] = []string{"success"}
+	if d := evaluate(t, f, "release", publish("api-v1.2.3")); d.Action != ActionSkip {
+		t.Fatalf("replay of superseded release = %q (%s), want skip", d.Action, d.Reason)
+	}
+}
+
+// TestNewerReleasedGuardsDeployJobs: the deploy job re-checks for a newer
+// successful release inside its serialized section, where concurrent
+// releases are ordered.
+func TestNewerReleasedGuardsDeployJobs(t *testing.T) {
+	ctx := context.Background()
+	f := newFake()
+	f.deployments["staging-ui"] = []deployment{
+		{ID: 3, Payload: deploymentPayload{ArtifactDigest: oldDigest, Version: "ui-v0.5.0"}},
+		{ID: 2, Payload: deploymentPayload{ArtifactDigest: oldDigest, Version: "main-" + mainSHA}},
+	}
+	f.statuses[3] = []string{"success"}
+	f.statuses[2] = []string{"success"}
+	c := client(t, f)
+	for tag, want := range map[string]string{"ui-v0.4.0": "ui-v0.5.0", "ui-v0.5.0": "", "ui-v0.5.1": "", "ui-v1.0.0": ""} {
+		got, err := c.NewerReleased(ctx, testRepo, "staging-ui", tag)
+		if err != nil || got != want {
+			t.Errorf("NewerReleased(%s) = %q, %v; want %q", tag, got, err, want)
+		}
+	}
+	if _, err := c.NewerReleased(ctx, testRepo, "staging-ui", "ui-v1"); err == nil {
+		t.Error("NewerReleased accepted a malformed tag")
 	}
 }
 

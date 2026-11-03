@@ -2,9 +2,10 @@
 // run and decides whether a release may deploy. It writes the release manifest
 // and step outputs. With -verify it instead re-checks one artifact (component,
 // commit, digest) before a staging deploy and, given -environment and
-// -version, whether that release is already deployed there.
-// Exit status: 0 deploy, skip or verified; 3 denied or not verified;
-// 4 verified but already deployed; 1 error.
+// -version, whether that release is already deployed there or older than a
+// release already deployed there.
+// Exit status: 0 deploy, skip or verified; 3 denied, not verified or a
+// downgrade; 4 verified but already deployed; 1 error.
 package main
 
 import (
@@ -88,6 +89,15 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 			if released {
 				fmt.Fprintf(stdout, "already deployed: %s (%s) in %s\n", *version, *digest, *environment)
 				return exitReleased
+			}
+			newer, err := client.NewerReleased(ctx, getenv("GITHUB_REPOSITORY"), *environment, *version)
+			if err != nil {
+				fmt.Fprintf(stdout, "error: downgrade check: %v\n", err)
+				return exitError
+			}
+			if newer != "" {
+				fmt.Fprintf(stdout, "not verified: %s is older than %s, already deployed to %s; a rollback needs a new, higher tag\n", *version, newer, *environment)
+				return exitDenied
 			}
 		}
 		return exitOK

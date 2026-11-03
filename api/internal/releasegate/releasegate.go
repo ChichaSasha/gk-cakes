@@ -18,6 +18,8 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -181,6 +183,13 @@ func Evaluate(ctx context.Context, in Input, gh *Client) (Decision, error) {
 	}
 	if released {
 		return Decision{Action: ActionSkip, Reason: fmt.Sprintf("release %s (%s) is already deployed to %s", tag, digest, manifest.Environment), Manifest: manifest}, nil
+	}
+	newer, err := gh.NewerReleased(ctx, in.Repository, manifest.Environment, tag)
+	if err != nil {
+		return Decision{}, err
+	}
+	if newer != "" {
+		return deny("release %s is older than %s, already deployed to %s; a rollback needs a new, higher tag", tag, newer, manifest.Environment), nil
 	}
 	return Decision{Action: ActionDeploy, Reason: "verified release", Manifest: manifest}, nil
 }
@@ -455,13 +464,11 @@ func (c *Client) AlreadyReleased(ctx context.Context, repo, environment, version
 			if d.Payload.Version != version || d.Payload.ArtifactDigest != digest {
 				continue
 			}
-			var statuses []struct {
-				State string `json:"state"`
-			}
-			if err := c.get(ctx, fmt.Sprintf("/repos/%s/deployments/%d/statuses", repo, d.ID), url.Values{"per_page": {"1"}}, &statuses); err != nil {
+			ok, err := c.succeeded(ctx, repo, d.ID)
+			if err != nil {
 				return false, err
 			}
-			if len(statuses) > 0 && statuses[0].State == "success" {
+			if ok {
 				return true, nil
 			}
 		}
@@ -470,4 +477,95 @@ func (c *Client) AlreadyReleased(ctx context.Context, repo, environment, version
 		}
 	}
 	return false, fmt.Errorf("environment %s: more than %d pages of deployments", environment, maxPages)
+}
+
+// semver is a parsed X.Y.Z release version.
+type semver [3]int
+
+func (v semver) less(o semver) bool {
+	for i := range v {
+		if v[i] != o[i] {
+			return v[i] < o[i]
+		}
+	}
+	return false
+}
+
+// parseTag splits a ui-vX.Y.Z or api-vX.Y.Z tag into component and version.
+func parseTag(tag string) (string, semver, bool) {
+	m := tagPattern.FindStringSubmatch(tag)
+	if m == nil {
+		return "", semver{}, false
+	}
+	var v semver
+	for i := range v {
+		n, err := strconv.Atoi(m[i+2])
+		if err != nil {
+			return "", semver{}, false // digits overflow int
+		}
+		v[i] = n
+	}
+	return m[1], v, true
+}
+
+// NewerReleased returns the highest release tag of tag's component with a
+// successful deployment record in environment whose version is greater than
+// tag's, or "" when there is none. Deploying tag would then be a downgrade.
+// Failed or unfinished attempts and non-release (main-...) deploys do not
+// count. Callers run it inside their serialized deploy section so concurrent
+// releases are ordered; a deliberate rollback uses a new, higher tag.
+func (c *Client) NewerReleased(ctx context.Context, repo, environment, tag string) (string, error) {
+	component, version, ok := parseTag(tag)
+	if !ok {
+		return "", fmt.Errorf("tag %q is not ui-vX.Y.Z or api-vX.Y.Z", tag)
+	}
+	type candidate struct {
+		tag string
+		v   semver
+		id  int64
+	}
+	var newer []candidate
+	const perPage, maxPages = 100, 50
+	for page := 1; ; page++ {
+		if page > maxPages {
+			return "", fmt.Errorf("environment %s: more than %d pages of deployments", environment, maxPages)
+		}
+		var deployments []deployment // newest first
+		q := url.Values{"environment": {environment}, "per_page": {fmt.Sprint(perPage)}, "page": {fmt.Sprint(page)}}
+		if err := c.get(ctx, "/repos/"+repo+"/deployments", q, &deployments); err != nil {
+			return "", err
+		}
+		for _, d := range deployments {
+			if comp, v, ok := parseTag(d.Payload.Version); ok && comp == component && version.less(v) {
+				newer = append(newer, candidate{d.Payload.Version, v, d.ID})
+			}
+		}
+		if len(deployments) < perPage {
+			break
+		}
+	}
+	// Highest version first; only its latest status decides, so stop at the
+	// first successful one.
+	sort.SliceStable(newer, func(i, j int) bool { return newer[j].v.less(newer[i].v) })
+	for _, n := range newer {
+		ok, err := c.succeeded(ctx, repo, n.id)
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			return n.tag, nil
+		}
+	}
+	return "", nil
+}
+
+// succeeded reports whether a deployment's latest status is success.
+func (c *Client) succeeded(ctx context.Context, repo string, id int64) (bool, error) {
+	var statuses []struct {
+		State string `json:"state"`
+	}
+	if err := c.get(ctx, fmt.Sprintf("/repos/%s/deployments/%d/statuses", repo, id), url.Values{"per_page": {"1"}}, &statuses); err != nil {
+		return false, err
+	}
+	return len(statuses) > 0 && statuses[0].State == "success", nil
 }
