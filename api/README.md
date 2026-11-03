@@ -52,10 +52,20 @@ and staging/production reject local hosts and Unix sockets.
 | `PORT`                   | api        | default `8080`                                                                              |
 | `SHUTDOWN_TIMEOUT`       | api, worker | drain budget, default `20s`                                                                |
 | `PAYMENT_SECRET`         | api        | optional until its adapter exists; live keys only in production, test keys only elsewhere   |
-| `PAYMENT_WEBHOOK_SECRET`, `EMAIL_API_KEY`, `EMAIL_WEBHOOK_SECRET`, `STORAGE_WRITE_KEY` | api | optional until their adapters exist; redacted |
+| `PAYMENT_WEBHOOK_SECRET`, `EMAIL_WEBHOOK_SECRET`, `STORAGE_WRITE_KEY` | api | optional until their adapters exist; redacted |
+| `EMAIL_API_KEY`          | worker     | Resend sending key (`re_...`), redacted; see email dispatch below                          |
+| `RECOVERY_B2_KEY_ID`, `RECOVERY_B2_KEY` | worker | B2 application key for the recovery journal (key secret redacted); scope enforced at start, see [Recovery journal](#recovery-journal-k11-gk-024) |
+| `RECOVERY_ENCRYPTION_KEYS` | worker   | journal encryption keys `kid:base64(32 bytes)[,...]`, redacted                              |
 
-Not consumed yet: `AUTH_*` issuer/audience/JWKS settings (GK-021) and B2 recovery
-settings (GK-024). They are added, with validation, by the tickets that use them.
+Email dispatch: the four worker variables above are required in staging and
+production; in local and test they are set together or not at all, and a worker
+without them sends no email (notification jobs are retried and then reach
+attention). At start the worker checks the B2 key's scope and reachability and
+exits with status 1 if the journal is not usable: no email is sent without it.
+The API still accepts an `EMAIL_API_KEY` but does not use it.
+
+Not consumed yet: `AUTH_*` issuer/audience/JWKS settings (GK-021). They are added,
+with validation, by the ticket that uses them.
 
 API endpoints: `GET /healthz` (liveness), `GET /readyz` (database reachable).
 
@@ -69,6 +79,9 @@ production stores wait for the first authorized production release (GK-036).
 | ------------------------ | ----------------------------------- | ------------------------------------------------- | --------------------------------------------------------------- | -------------------------------------------- |
 | `DATABASE_URL` (api)     | `gk_api` login, one per environment | API service variables (Railway, per environment; staging login `gk_api_staging`; seal the variable) | `ALTER ROLE <login> PASSWORD`, update the variable, deploy the staged change | `ALTER ROLE <login> NOLOGIN` or drop it      |
 | `DATABASE_URL` (worker)  | `gk_worker` login, one per environment | worker/cron service variables                  | as above                                                        | as above                                     |
+| `EMAIL_API_KEY`          | Resend sending-only key restricted to `gkcake.com`, one per environment | worker service variables (sealed); Bitwarden | create a new key in Resend, update the variable, redeploy, delete the old key | delete the key in Resend |
+| `RECOVERY_B2_KEY_ID`, `RECOVERY_B2_KEY` | B2 key: one bucket, prefix `recovery/`, list/read/write only (no delete) | worker service variables (sealed); Bitwarden | create a new key with the B2 CLI, update the variables, redeploy, delete the old key | delete the key in B2 |
+| `RECOVERY_ENCRYPTION_KEYS` | seals journal envelopes; one list per environment | worker service variables (sealed) **and** Bitwarden (envelopes are unreadable without it) | prepend a new `kid:key`, keep the old ones listed (they still open older envelopes) | never drop a key while envelopes sealed with it are retained |
 | `MIGRATION_DATABASE_URL` | migration credential                | GitHub environment secret, staging: `STAGING_MIGRATION_DATABASE_URL` | rotate the password of the same role (see below)                | rotate; runtime services never hold it       |
 | `RAILWAY_STAGING_TOKEN`  | Railway project token, staging environment only | GitHub environment `staging` secret (deployable from `main` only) | regenerate in Railway, update the secret                  | delete the token in Railway                  |
 | Provider secrets         | per provider account and environment | API service variables                            | provider dashboard, update the variable, redeploy               | revoke the key in the provider dashboard     |
@@ -87,7 +100,7 @@ are provisioned per environment outside Git and granted exactly one group:
 | ----------- | ----------------------------- | ----------------------------------------------------------- |
 | `gk_owner`  | owns business objects         | never granted to runtime; migration credential may `SET ROLE` |
 | `gk_api`    | API runtime                   | schema `USAGE`; gateway functions as features add them      |
-| `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions |
+| `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions (`job_claim`, `job_heartbeat`, `job_complete`, `job_release`, `job_fail`, `job_attention`) and the lease-fenced notification gateway (`notification_dispatch_begin`, `notification_attempt_record`, `notification_recovery_*`) |
 | `gk_backup` | backup reader                 | `SELECT` on business tables                                 |
 
 The migration credential needs `CREATEROLE` and `CREATE` on the database.
@@ -270,9 +283,12 @@ Rules for callers:
 
 `Coordinator.Pending` lists prepared operations without an outcome from B2
 alone, so after a primary database loss they can be resumed against a
-restored database (a `reconcile` decision is not journalled; the deadline
-check reproduces it). `CopyBlob` stores an essential attachment's bytes before
-its reference is committed.
+restored database. A `reconcile` decision is not journalled: after a loss the
+deadline check reproduces an expired one, and an operation sent to `reconcile`
+because its outcome could not be recorded is attempted again with the same
+identity (provider-idempotent within the window) and goes to `reconcile` again
+if its outcome still cannot be recorded. `CopyBlob` stores an essential
+attachment's bytes before its reference is committed.
 
 Objects live under `recovery/<APP_ENV>/` in the sandbox bucket
 `gk-cakes-sandbox-backups-flbgymxjelzexgoxrcss`:
@@ -304,7 +320,7 @@ table). Restore tooling (as `gk_owner`) freezes all outgoing effects with
 
 Not yet:
 
-- runtime wiring and service variables (GK-024 email engine);
+- the staging worker service and its variables (GK-024 A3);
 - B2 Object Lock retention, restore tooling and the restore drill (GK-034
   Milestone B, GK-035);
 - K09 retention for the journal: it keeps recipients and message bodies (and
@@ -312,6 +328,62 @@ Not yet:
   only current copies of still-retained records, 30-day restore points and
   deletion tombstones carried into replay belong to GK-034 Milestone B with
   the retention work.
+
+## Transactional email (K08, GK-024)
+
+`internal/notifications` sends transactional email through Resend from the
+worker, protected by the recovery journal above. No marketing or bulk sending.
+
+**Enqueue.** A domain gateway function calls the owner-internal
+`business.notification_enqueue` inside the transaction that commits its business
+transition, so the notification intent, its job and a `notification.queued`
+audit event exist exactly when the transition does: a rollback leaves none of
+them, and no enqueue happens after commit. The application builds the notice
+with `notifications.NewNotice`: sender `GK Cakes <orders@gkcake.com>`, Reply-To
+`gk.cake.london@gmail.com`, one bare recipient address, subject at most 200
+characters without CR/LF, text body, optional HTML, and a Resend tag with the
+intent ID. The exact payload (environment, idempotency key and request) is
+stored once with its SHA-256; recipient and content are frozen, so later profile
+changes never retarget it. One intent per transition, recipient and template
+revision (a second is refused).
+
+**Dispatch.** The worker claims the job and calls only lease-fenced gateway
+functions: each checks the live lease (owner, generation, unexpired; `GK001`
+otherwise) and that the recovery operation is exactly the intent's (operation =
+idempotency key, aggregate = intent, payload hash = stored payload). The first
+dispatch fixes `first_dispatch_at` and `replay_until` (+23 hours, below
+Resend's 24-hour idempotency retention). The prepared envelope is in B2 before
+the provider call; the stored request bytes are sent with the
+`Idempotency-Key` header (5 s timeout). Every call is appended to
+`business.notification_attempt`.
+
+| Provider response                                     | Attempt     | Intent                     | Job                          |
+| ----------------------------------------------------- | ----------- | -------------------------- | ---------------------------- |
+| 2xx with message ID                                   | `accepted`  | `accepted` (message ID)    | completed                    |
+| 400/422 validation                                    | `rejected`  | `failed`                   | completed                    |
+| 429, 409 concurrent request                           | `deferred`  | unchanged                  | retry                        |
+| timeout, connection loss, 5xx, other                  | `unknown`   | `unknown`                  | retry (same key and body)    |
+| 401/403/404/405, invalid idempotency key              | `refused`   | unchanged                  | attention (fix, then requeue)|
+| 409 key used with a different body                    | `conflict`  | `unknown`                  | attention                    |
+
+Retries come after 1m, 5m, 15m and 1h (`business.job_fail`); the fifth
+failure moves the job to attention for a manager, who can re-admit it with
+`business.job_requeue` (owner tooling). An unknown outcome is replayed with the
+original key until `replay_until`; after that it goes to `reconcile` and
+attention and is never sent again blindly, requeued or not. A restore freeze
+defers dispatch (5 minutes, not a failure) without starting the window. A
+revoked recipient (`business.notification_suspend`) is never sent to, including
+replays of an unknown dispatch. A payload of another environment or sender is
+refused before any call.
+
+`delivered_to_server` and `bounced` are provider evidence from the signed
+webhook (GK-024 A3); the engine never claims inbox delivery or reading. Logs and
+stored evidence carry IDs, HTTP status and the provider's error name only,
+never recipients, content or provider error messages.
+
+Not yet: the signed webhook inbox, the staging worker service and the sandbox
+proof (GK-024 A3); manager reconcile/resend and custom-message endpoints
+(GK-024 Milestone B, after GK-021 and GK-023/025).
 
 ## Not yet verified
 

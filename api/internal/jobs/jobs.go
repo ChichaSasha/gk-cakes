@@ -1,6 +1,11 @@
 // Package jobs runs the maintenance worker loop over the business.job lease
 // gateway. Shutdown stops new claims, lets the in-flight job finish within the
 // drain budget, and otherwise releases its lease for another worker.
+//
+// A handler error schedules a retry with the database's bounded backoff (1m,
+// 5m, 15m, 1h, then manager attention, business.job_fail); Attention
+// escalates at once and Defer gives the lease back for a later attempt
+// without counting a failure.
 package jobs
 
 import (
@@ -15,25 +20,60 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Defaults from the architecture proposal: 60s lease with heartbeat; the
-// first retry delay is 1m. Attempt counting/attention belongs to GK-024.
+// Defaults from the architecture proposal: 60s lease with heartbeat.
 const (
 	DefaultLease        = 60 * time.Second
 	DefaultPollInterval = 2 * time.Second
-	DefaultRetryAfter   = time.Minute
 	finalizeTimeout     = 5 * time.Second
 	abandonWait         = 5 * time.Second
+	maxReasonRunes      = 200
 )
 
-// ErrNoHandler is returned by Unhandled; such jobs are scheduled for retry.
+// ErrNoHandler is returned by Unhandled; such jobs are retried and, if never
+// handled, reach attention.
 var ErrNoHandler = errors.New("jobs: no handler registered for this operation")
 
-// Job is a leased unit of work.
+// Job is a leased unit of work. Worker and Generation identify the lease for
+// gateway functions that fence on it.
 type Job struct {
 	ID          string
 	OperationID string
 	Generation  int64
+	Worker      string
 }
+
+// AttentionError moves the job to manager attention instead of retrying.
+// Reason is stored on the job: it must not contain personal data.
+type AttentionError struct {
+	Reason string
+	Err    error
+}
+
+func (e *AttentionError) Error() string {
+	if e.Err == nil {
+		return e.Reason
+	}
+	return e.Reason + ": " + e.Err.Error()
+}
+
+func (e *AttentionError) Unwrap() error { return e.Err }
+
+// Attention returns an error that moves the job to attention with reason.
+func Attention(reason string, err error) error { return &AttentionError{Reason: reason, Err: err} }
+
+// DeferError gives the lease back for a retry after After without counting a
+// failure (for example while outgoing effects are frozen).
+type DeferError struct {
+	After time.Duration
+	Err   error
+}
+
+func (e *DeferError) Error() string { return fmt.Sprintf("deferred for %s: %v", e.After, e.Err) }
+
+func (e *DeferError) Unwrap() error { return e.Err }
+
+// Defer returns an error that releases the job for a retry after d (at most a day).
+func Defer(d time.Duration, err error) error { return &DeferError{After: d, Err: err} }
 
 // Handler performs a job. It must return promptly when ctx is cancelled.
 type Handler func(ctx context.Context, job Job) error
@@ -48,7 +88,6 @@ type Options struct {
 	ShutdownTimeout time.Duration
 	Lease           time.Duration
 	PollInterval    time.Duration
-	RetryAfter      time.Duration
 	// WorkerID identifies this process's leases; generated when empty.
 	WorkerID string
 }
@@ -67,9 +106,6 @@ func New(pool *pgxpool.Pool, opts Options) *Worker {
 	if opts.PollInterval == 0 {
 		opts.PollInterval = DefaultPollInterval
 	}
-	if opts.RetryAfter == 0 {
-		opts.RetryAfter = DefaultRetryAfter
-	}
 	if opts.WorkerID == "" {
 		opts.WorkerID = newUUID()
 	}
@@ -85,8 +121,7 @@ func (w *Worker) Run(ctx context.Context) error {
 			log.Info("worker stopped")
 			return nil
 		}
-		claimedAt := time.Now()
-		job, ok, err := w.claim(ctx)
+		ok, err := w.runOnce(ctx, log)
 		switch {
 		case err != nil && ctx.Err() != nil:
 			continue
@@ -95,10 +130,24 @@ func (w *Worker) Run(ctx context.Context) error {
 			sleep(ctx, w.opts.PollInterval)
 		case !ok:
 			sleep(ctx, w.opts.PollInterval)
-		default:
-			w.process(ctx, log.With("job_id", job.ID, "generation", job.Generation), job, claimedAt.Add(w.opts.Lease))
 		}
 	}
+}
+
+// RunOnce claims at most one due job and processes it to completion, as Run
+// does; it reports whether a job was processed.
+func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
+	return w.runOnce(ctx, w.opts.Logger.With("worker_id", w.opts.WorkerID))
+}
+
+func (w *Worker) runOnce(ctx context.Context, log *slog.Logger) (bool, error) {
+	claimedAt := time.Now()
+	job, ok, err := w.claim(ctx)
+	if err != nil || !ok {
+		return false, err
+	}
+	w.process(ctx, log.With("job_id", job.ID, "generation", job.Generation), job, claimedAt.Add(w.opts.Lease))
+	return true, nil
 }
 
 // process runs one job. leaseDeadline is a conservative local estimate of
@@ -161,11 +210,24 @@ func (w *Worker) process(ctx context.Context, log *slog.Logger, job Job, leaseDe
 }
 
 func (w *Worker) finalize(log *slog.Logger, job Job, handlerErr error) {
-	if handlerErr != nil {
-		log.Warn("job failed; scheduling retry", "error", handlerErr, "retry_after", w.opts.RetryAfter.String())
-		w.release(log, job, w.opts.RetryAfter)
-		return
+	var (
+		attention *AttentionError
+		deferral  *DeferError
+	)
+	switch {
+	case handlerErr == nil:
+		w.complete(log, job)
+	case errors.As(handlerErr, &attention):
+		w.attention(log, job, attention.Reason, handlerErr)
+	case errors.As(handlerErr, &deferral):
+		log.Info("job deferred", "error", handlerErr, "retry_after", deferral.After.String())
+		w.release(log, job, deferral.After)
+	default:
+		w.fail(log, job, handlerErr)
 	}
+}
+
+func (w *Worker) complete(log *slog.Logger, job Job) {
 	ctx, cancel := context.WithTimeout(context.Background(), finalizeTimeout)
 	defer cancel()
 	var ok bool
@@ -178,6 +240,58 @@ func (w *Worker) finalize(log *slog.Logger, job Job, handlerErr error) {
 	default:
 		log.Info("job completed")
 	}
+}
+
+// fail records a failure; the database schedules the retry or, when the
+// retries are exhausted, moves the job to attention.
+func (w *Worker) fail(log *slog.Logger, job Job, handlerErr error) {
+	ctx, cancel := context.WithTimeout(context.Background(), finalizeTimeout)
+	defer cancel()
+	var (
+		state    string
+		failures int
+		next     time.Time
+	)
+	err := w.pool.QueryRow(ctx, "SELECT job_state, job_failures, job_next_attempt_at FROM business.job_fail($1::uuid, $2::uuid, $3, $4)",
+		job.ID, w.opts.WorkerID, job.Generation, reason(handlerErr.Error())).Scan(&state, &failures, &next)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		log.Warn("failure fenced: lease no longer held", "error", handlerErr)
+	case err != nil:
+		log.Error("recording the failure failed; lease will expire for reclaim", "error", err, "job_error", handlerErr)
+	case state == "attention":
+		log.Error("job failed too often; needs manager attention", "error", handlerErr, "failures", failures)
+	default:
+		log.Warn("job failed; scheduling retry", "error", handlerErr, "failures", failures,
+			"retry_after", time.Until(next).Round(time.Second).String())
+	}
+}
+
+func (w *Worker) attention(log *slog.Logger, job Job, why string, handlerErr error) {
+	ctx, cancel := context.WithTimeout(context.Background(), finalizeTimeout)
+	defer cancel()
+	var ok bool
+	err := w.pool.QueryRow(ctx, "SELECT business.job_attention($1::uuid, $2::uuid, $3, $4)",
+		job.ID, w.opts.WorkerID, job.Generation, reason(why)).Scan(&ok)
+	switch {
+	case err != nil:
+		log.Error("moving the job to attention failed; lease will expire for reclaim", "error", err, "job_error", handlerErr)
+	case !ok:
+		log.Warn("attention fenced: lease no longer held", "error", handlerErr)
+	default:
+		log.Error("job needs manager attention", "error", handlerErr)
+	}
+}
+
+// reason bounds a stored reason to the database limit.
+func reason(s string) string {
+	if s == "" {
+		s = "unspecified failure"
+	}
+	if r := []rune(s); len(r) > maxReasonRunes {
+		s = string(r[:maxReasonRunes])
+	}
+	return s
 }
 
 func (w *Worker) release(log *slog.Logger, job Job, after time.Duration) {
@@ -205,6 +319,7 @@ func (w *Worker) claim(ctx context.Context) (Job, bool, error) {
 	if err != nil {
 		return Job{}, false, fmt.Errorf("claim: %w", err)
 	}
+	job.Worker = w.opts.WorkerID
 	return job, true, nil
 }
 

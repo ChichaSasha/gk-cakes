@@ -666,6 +666,39 @@ func TestResolveNeverReservesAnUnknownOperation(t *testing.T) {
 	}
 }
 
+// TestLookupRefusesADifferentIdentity: the read-only lookup applies the
+// same identity check as reserve, so Resolve cannot act on an operation
+// recorded with a different payload or deadline.
+func TestLookupRefusesADifferentIdentity(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	store := h.store()
+	op := h.dispatchOp(63)
+	if _, err := h.coord.Dispatch(ctx, store, op, h.effect(op, nil)); err != nil {
+		t.Fatal(err)
+	}
+	key, err := h.coord.EnvelopeKey(op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res, err := store.Lookup(ctx, op, key); err != nil || res.Result != "existing" || res.State != recovery.StateSecured {
+		t.Fatalf("Lookup of the recorded operation = %+v, %v", res, err)
+	}
+	changed := op
+	changed.Payload = json.RawMessage(`{"provider":"resend","changed":true}`)
+	later := op
+	later.ReplayUntil = op.ReplayUntil.Add(time.Minute)
+	for name, other := range map[string]recovery.Operation{"payload": changed, "deadline": later} {
+		_, err := store.Lookup(ctx, other, key)
+		if got := dbtest.SQLState(err); got != "23505" {
+			t.Errorf("Lookup with a different %s: SQLSTATE %q (%v), want 23505", name, got, err)
+		}
+		if _, err := h.coord.Resolve(ctx, store, other, recovery.Outcome{Status: "abandoned"}); err == nil {
+			t.Errorf("Resolve with a different %s succeeded", name)
+		}
+	}
+}
+
 // TestPhaseTransitionsAreGuarded: a reserved operation cannot go to
 // reconcile (its effect never ran) and committing requires the right phase.
 func TestPhaseTransitionsAreGuarded(t *testing.T) {
@@ -895,6 +928,7 @@ func TestRuntimeRolesCannotUseRecoveryInternals(t *testing.T) {
 	reads := []string{"SELECT * FROM business.recovery_operation", "SELECT * FROM business.recovery_freeze"}
 	calls := []string{
 		"SELECT * FROM business.recovery_reserve(gen_random_uuid(), 'dispatch', gen_random_uuid(), 0, repeat('a', 64), 'k', now())",
+		"SELECT * FROM business.recovery_lookup(gen_random_uuid(), 'dispatch', gen_random_uuid(), 0, repeat('a', 64), 'k', now())",
 		"SELECT business.recovery_mark_prepared(gen_random_uuid())",
 		"SELECT * FROM business.recovery_mark_committed(gen_random_uuid(), '{}'::json, repeat('a', 64), false)",
 		"SELECT business.recovery_mark_secured(gen_random_uuid())",

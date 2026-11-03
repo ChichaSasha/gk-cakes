@@ -94,6 +94,9 @@ func hashHex(b []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// HashHex is the hex SHA-256 used for payload and outcome hashes.
+func HashHex(b []byte) string { return hashHex(b) }
+
 // PayloadHash is the hex SHA-256 of the payload bytes.
 func (op Operation) PayloadHash() string { return hashHex(op.Payload) }
 
@@ -124,6 +127,10 @@ func (o Outcome) encode() (string, []byte, error) {
 	}
 	return hashHex(b), b, nil
 }
+
+// Encode returns the hash and canonical JSON a store records for the
+// outcome, refusing outcomes the recovery record cannot hold.
+func (o Outcome) Encode() (hash string, body []byte, err error) { return o.encode() }
 
 func sameOutcome(a, b Outcome) bool {
 	ha, _, errA := a.encode()

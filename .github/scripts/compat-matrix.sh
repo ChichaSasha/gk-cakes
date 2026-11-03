@@ -21,7 +21,9 @@
 #      errors, leaving it in retry without a lease.
 #   7. both UI builds serve /healthz and the home page.
 # API readiness is a database ping, and the UI calls no API endpoint yet: features
-# that add UI->API calls or new runtime database use extend these checks.
+# that add UI->API calls or new runtime database use extend these checks. The
+# workers run without provider credentials, so email dispatch stays off and its
+# lease-fenced notification gateway is covered by the integration suite only.
 #   compat-matrix.sh   (env: DEPLOYED_API CANDIDATE_API DEPLOYED_UI CANDIDATE_UI, image@sha256 refs)
 set -euo pipefail
 

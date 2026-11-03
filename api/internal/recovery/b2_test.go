@@ -400,3 +400,64 @@ func TestNewB2RequiresCredentialsAndRoot(t *testing.T) {
 		}
 	}
 }
+
+// TestB2ExpiredUploadTokenDiscardsIdleTargets: an expired upload token
+// likely means the idle targets expired too, so the pool is emptied and only
+// the fresh target is kept.
+func TestB2ExpiredUploadTokenDiscardsIdleTargets(t *testing.T) {
+	ctx := context.Background()
+	f := newFakeB2(t)
+	j := f.journal(t)
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := j.Put(ctx, fmt.Sprintf("recovery/test/w/%d", i), []byte("v")); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if len(j.uploads) < 2 {
+		t.Fatalf("idle targets after concurrent puts = %d; the test needs at least 2", len(j.uploads))
+	}
+	f.mu.Lock()
+	f.expireUploadToken = true
+	f.mu.Unlock()
+	if err := j.Put(ctx, "recovery/test/x", []byte("v")); err != nil {
+		t.Fatal(err)
+	}
+	if len(j.uploads) != 1 {
+		t.Fatalf("idle targets after an expired upload token = %d, want only the fresh one", len(j.uploads))
+	}
+}
+
+// TestB2TargetFromASupersededAuthorizationIsDropped: a target obtained
+// before a re-authorization is not returned to the pool.
+func TestB2TargetFromASupersededAuthorizationIsDropped(t *testing.T) {
+	ctx := context.Background()
+	j := newFakeB2(t).journal(t)
+	if err := j.Put(ctx, "recovery/test/warm", []byte("v")); err != nil {
+		t.Fatal(err)
+	}
+	up, err := j.takeUpload(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.authorize(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	j.returnUpload(up)
+	if len(j.uploads) != 0 {
+		t.Fatalf("idle targets = %d, want the superseded one dropped", len(j.uploads))
+	}
+	fresh, err := j.takeUpload(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j.returnUpload(fresh)
+	if len(j.uploads) != 1 {
+		t.Fatalf("idle targets = %d, want the current authorization's target kept", len(j.uploads))
+	}
+}
