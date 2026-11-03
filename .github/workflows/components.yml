@@ -45,6 +45,8 @@ jobs:
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
       - name: Build
         run: CGO_ENABLED=0 go build -trimpath -o bin/ ./cmd/...
+      - name: Build container image (no push)
+        run: docker build --platform linux/amd64 -t gk-cakes-api:ci .
 
   api-postgres:
     name: api-postgres
@@ -113,6 +115,8 @@ jobs:
         run: npm run test:bundle-secrets
       - name: Build
         run: npm run build
+      - name: Build container image (no push)
+        run: docker build --platform linux/amd64 -t gk-cakes-ui:ci .
       - name: Start the built server and check /healthz
         run: |
           PORT=3000 ORIGIN=http://127.0.0.1:3000 node build &

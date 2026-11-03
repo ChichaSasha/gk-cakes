@@ -1,0 +1,107 @@
+# GK-034: component releases. A published release runs the release gate,
+# built from trusted main. A prerelease that passes is handed to the Staging
+# workflow (dispatched on main, where the staging environment and its token
+# live), which re-verifies and deploys the exact digest; this run waits for
+# that Staging run and fails if it fails or is cancelled. Full releases target
+# production, which stays disabled until Sasha authorizes the first
+# production release (GK-036). Nothing here holds deploy credentials.
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: release-gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+      deployments: read
+    outputs:
+      decision: ${{ steps.gate.outputs.decision }}
+      component: ${{ steps.gate.outputs.component }}
+      environment: ${{ steps.gate.outputs.environment }}
+      digest: ${{ steps.gate.outputs.digest }}
+      commit_sha: ${{ steps.gate.outputs.commit_sha }}
+      version: ${{ steps.gate.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+      - name: Evaluate release
+        id: gate
+        working-directory: api
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          go run ./cmd/gk-release-gate -manifest "$RUNNER_TEMP/release-manifest.json" | tee "$RUNNER_TEMP/gate.txt"
+          code=${PIPESTATUS[0]}
+          set -e
+          { echo '```'; cat "$RUNNER_TEMP/gate.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$code"
+
+  staging:
+    name: dispatch-staging
+    needs: gate
+    if: needs.gate.outputs.decision == 'deploy' && startsWith(needs.gate.outputs.environment, 'staging-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      COMPONENT: ${{ needs.gate.outputs.component }}
+      SHA: ${{ needs.gate.outputs.commit_sha }}
+      DIGEST: ${{ needs.gate.outputs.digest }}
+      VERSION: ${{ needs.gate.outputs.version }}
+    steps:
+      - name: Hand the verified artifact to the Staging workflow and wait for it
+        run: |
+          release="$COMPONENT-v$VERSION"
+          since=$(date -u -d '-60 seconds' +%Y-%m-%dT%H:%M:%SZ) # margin for clock skew
+          gh workflow run staging.yml --repo "$GITHUB_REPOSITORY" --ref main \
+            -f component="$COMPONENT" -f commit_sha="$SHA" -f digest="$DIGEST" -f version="$release"
+          run_id=""
+          for _ in $(seq 1 30); do
+            run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow staging.yml --event workflow_dispatch --limit 20 \
+              --json databaseId,displayTitle,createdAt \
+              --jq "[.[] | select(.displayTitle == \"Staging release $release\" and .createdAt >= \"$since\")] | first | .databaseId // empty")
+            [[ -n "$run_id" ]] && break
+            sleep 5
+          done
+          if [[ -z "$run_id" ]]; then
+            echo "dispatched Staging run for $release not found" >&2
+            exit 1
+          fi
+          echo "Staging run for $release: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run_id" | tee -a "$GITHUB_STEP_SUMMARY"
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --interval 15 --exit-status
+
+  production:
+    name: production-deploy
+    needs: gate
+    if: needs.gate.outputs.decision == 'deploy' && startsWith(needs.gate.outputs.environment, 'production-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Production deploys are not enabled
+        run: |
+          echo "Gate passed, but production deploys are not configured." | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "Production credentials wait for Sasha's first authorized release (GK-036)." | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 1
