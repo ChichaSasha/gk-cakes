@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -170,7 +171,7 @@ func TestSecretsNeverFormatOrMarshal(t *testing.T) {
 		"PAYMENT_SECRET":         "sk_test_" + canary,
 		"PAYMENT_WEBHOOK_SECRET": "whsec_" + canary,
 		"EMAIL_API_KEY":          "re_" + canary,
-		"EMAIL_WEBHOOK_SECRET":   "whsec_" + canary,
+		"EMAIL_WEBHOOK_SECRET":   webhookSecret,
 		"STORAGE_WRITE_KEY":      canary,
 	})))
 	if err != nil {
@@ -190,7 +191,7 @@ func TestSecretsNeverFormatOrMarshal(t *testing.T) {
 		"json": string(encoded),
 	}
 	for format, out := range outputs {
-		if strings.Contains(out, canary) || strings.Contains(out, fmt.Sprintf("%x", canary)) {
+		if strings.Contains(out, canary) || strings.Contains(out, fmt.Sprintf("%x", canary)) || strings.Contains(out, webhookSecret[len("whsec_"):]) {
 			t.Errorf("%s output leaks a secret value: %s", format, out)
 		}
 	}
@@ -280,6 +281,22 @@ func TestLoadWorkerEmailDispatch(t *testing.T) {
 				t.Errorf("error leaks a secret value: %q", err)
 			}
 		})
+	}
+}
+
+// webhookSecret is a valid Svix signing secret used as a leak canary.
+var webhookSecret = "whsec_" + base64.StdEncoding.EncodeToString([]byte("c4n4ry-webhook-key-0123"))
+
+func TestLoadAPIWebhookSecret(t *testing.T) {
+	cfg, err := LoadAPI(env(merge(validLocalAPI, map[string]string{"EMAIL_WEBHOOK_SECRET": webhookSecret})))
+	if err != nil || cfg.Providers.EmailWebhookSecret.Reveal() != webhookSecret {
+		t.Fatalf("valid webhook secret: %v", err)
+	}
+	for _, bad := range []string{"whsec_" + canary, "c4n4ry" + webhookSecret, "whsec_" + base64.StdEncoding.EncodeToString([]byte("short"))} {
+		_, err := LoadAPI(env(merge(validLocalAPI, map[string]string{"EMAIL_WEBHOOK_SECRET": bad})))
+		if err == nil || !strings.Contains(err.Error(), "EMAIL_WEBHOOK_SECRET") || strings.Contains(err.Error(), canary) {
+			t.Errorf("invalid webhook secret: err = %v", err)
+		}
 	}
 }
 

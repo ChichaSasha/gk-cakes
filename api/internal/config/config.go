@@ -4,6 +4,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
@@ -124,7 +125,7 @@ func LoadAPI(getenv func(string) string) (API, error) {
 		PaymentSecret:        l.paymentSecret("PAYMENT_SECRET", cfg.Env),
 		PaymentWebhookSecret: l.optionalSecret("PAYMENT_WEBHOOK_SECRET"),
 		EmailAPIKey:          l.optionalSecret("EMAIL_API_KEY"),
-		EmailWebhookSecret:   l.optionalSecret("EMAIL_WEBHOOK_SECRET"),
+		EmailWebhookSecret:   l.webhookSecret("EMAIL_WEBHOOK_SECRET"),
 		StorageWriteKey:      l.optionalSecret("STORAGE_WRITE_KEY"),
 	}
 	return cfg, l.err()
@@ -308,6 +309,20 @@ func (l *loader) origin(name string, env Env) string {
 }
 
 func (l *loader) optionalSecret(name string) Secret { return Secret{value: l.get(name)} }
+
+// webhookSecret checks a Svix signing secret: "whsec_" and at least 16
+// base64-encoded bytes.
+func (l *loader) webhookSecret(name string) Secret {
+	s := l.optionalSecret(name)
+	if !s.IsSet() {
+		return s
+	}
+	encoded, ok := strings.CutPrefix(s.value, "whsec_")
+	if raw, err := base64.StdEncoding.DecodeString(encoded); !ok || err != nil || len(raw) < 16 {
+		l.fail("%s must be a webhook signing secret (whsec_ followed by base64)", name)
+	}
+	return s
+}
 
 // paymentSecret enforces Stripe key mode: live keys only in production, and
 // production only with live keys. Prefixes per Stripe API key conventions.

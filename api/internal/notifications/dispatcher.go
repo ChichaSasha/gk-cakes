@@ -97,7 +97,8 @@ func (d *Dispatcher) Handle(ctx context.Context, job jobs.Job) error {
 		// The database clock says the window has ended: record the
 		// reconciliation as the worker clock would have.
 		if _, rerr := store.MarkReconcile(ctx, op, "provider replay window ended (database clock) before the call"); rerr != nil {
-			return fmt.Errorf("notifications: mark reconcile: %w (after %v)", rerr, err)
+			// Nothing is sent either way; a manager sees it at once.
+			return jobs.Attention(reasonReconcile, fmt.Errorf("notifications: mark reconcile: %w (after %v)", rerr, err))
 		}
 	}
 	return outcomeError(err)
