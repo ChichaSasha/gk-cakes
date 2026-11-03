@@ -1,5 +1,6 @@
 // Package migrate applies embedded SQL migrations once, in order, under a
-// database advisory lock so concurrent runs serialize.
+// database advisory lock so concurrent runs serialize. An older build on a
+// newer database (a rollback) verifies its history and applies nothing.
 package migrate
 
 import (
@@ -74,25 +75,45 @@ func Load(fsys fs.FS) ([]Migration, error) {
 	return out, nil
 }
 
+// Report describes one migration run.
+type Report struct {
+	Applied []string // versions applied by this run, in order
+	Ahead   []string // applied versions this build does not know (the database is newer)
+}
+
 // Run applies every pending migration and returns the versions applied.
 func Run(ctx context.Context, conn *pgx.Conn, fsys fs.FS) ([]string, error) {
-	return RunTo(ctx, conn, fsys, "")
+	r, err := Apply(ctx, conn, fsys, "")
+	return r.Applied, err
 }
 
 // RunTo applies pending migrations up to and including target (all when
-// target is empty). It refuses to run when the database contains a version
-// this build does not know or an applied file has changed.
-func RunTo(ctx context.Context, conn *pgx.Conn, fsys fs.FS, target string) (applied []string, err error) {
+// target is empty) and returns the versions applied.
+func RunTo(ctx context.Context, conn *pgx.Conn, fsys fs.FS, target string) ([]string, error) {
+	r, err := Apply(ctx, conn, fsys, target)
+	return r.Applied, err
+}
+
+// Apply applies pending migrations up to and including target (all when
+// target is empty) under the advisory lock. It validates the whole recorded
+// history first and refuses to run when an applied file has changed or when
+// the histories diverged. A database that is ahead of this build — every
+// migration of this build applied unchanged, plus newer versions this build
+// does not know — is the rollback case (an older release deploying after a
+// newer one): nothing is applied and the newer versions are reported in
+// Report.Ahead. Migrations are forward-only, so a rollback never removes
+// schema or data.
+func Apply(ctx context.Context, conn *pgx.Conn, fsys fs.FS, target string) (report Report, err error) {
 	migrations, err := Load(fsys)
 	if err != nil {
-		return nil, err
+		return Report{}, err
 	}
 	if target != "" && !containsVersion(migrations, target) {
-		return nil, fmt.Errorf("unknown target migration %q", target)
+		return Report{}, fmt.Errorf("unknown target migration %q", target)
 	}
 
 	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1)", lockKey); err != nil {
-		return nil, fmt.Errorf("acquire migration lock: %w", err)
+		return Report{}, fmt.Errorf("acquire migration lock: %w", err)
 	}
 	defer func() {
 		if _, unlockErr := conn.Exec(context.WithoutCancel(ctx), "SELECT pg_advisory_unlock($1)", lockKey); unlockErr != nil && err == nil {
@@ -101,45 +122,59 @@ func RunTo(ctx context.Context, conn *pgx.Conn, fsys fs.FS, target string) (appl
 	}()
 
 	if _, err := conn.Exec(ctx, metaDDL); err != nil {
-		return nil, fmt.Errorf("prepare migration history: %w", err)
+		return Report{}, fmt.Errorf("prepare migration history: %w", err)
 	}
 	done, err := appliedVersions(ctx, conn)
 	if err != nil {
-		return nil, err
-	}
-	for version := range done {
-		if !containsVersion(migrations, version) {
-			return nil, fmt.Errorf("database has migration %s unknown to this build; refusing to run an older migration set", version)
-		}
+		return Report{}, err
 	}
 	// Validate the whole history before changing anything.
 	latest := ""
 	for _, m := range migrations {
 		if sum, ok := done[m.Version]; ok {
 			if sum != m.SHA256 {
-				return nil, fmt.Errorf("migration %s was modified after it was applied", m.Version)
+				return Report{}, fmt.Errorf("migration %s was modified after it was applied", m.Version)
 			}
 			latest = m.Version
 		}
 	}
+	var ahead []string
+	for version := range done {
+		if !containsVersion(migrations, version) {
+			ahead = append(ahead, version)
+		}
+	}
+	sort.Strings(ahead)
+	if len(ahead) > 0 {
+		newest := migrations[len(migrations)-1].Version
+		for _, m := range migrations {
+			if _, ok := done[m.Version]; !ok {
+				return Report{}, fmt.Errorf("histories diverged: database has %v unknown to this build, but this build's %s is not applied", ahead, m.Version)
+			}
+		}
+		if ahead[0] < newest {
+			return Report{}, fmt.Errorf("histories diverged: database migration %s is unknown to this build and older than its newest, %s", ahead[0], newest)
+		}
+		return Report{Ahead: ahead}, nil
+	}
 	for _, m := range migrations {
 		if _, ok := done[m.Version]; !ok && m.Version < latest {
-			return nil, fmt.Errorf("migration %s is numbered below already-applied %s; renumber it after the latest", m.Version, latest)
+			return Report{}, fmt.Errorf("migration %s is numbered below already-applied %s; renumber it after the latest", m.Version, latest)
 		}
 	}
 
 	for _, m := range migrations {
 		if _, ok := done[m.Version]; !ok {
 			if err := apply(ctx, conn, m); err != nil {
-				return applied, err
+				return report, err
 			}
-			applied = append(applied, m.Version)
+			report.Applied = append(report.Applied, m.Version)
 		}
 		if m.Version == target {
 			break
 		}
 	}
-	return applied, nil
+	return report, nil
 }
 
 func apply(ctx context.Context, conn *pgx.Conn, m Migration) error {
