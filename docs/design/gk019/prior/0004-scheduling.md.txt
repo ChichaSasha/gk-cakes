@@ -1,0 +1,33 @@
+# ADR-0004: Production, ready stock and pickup commitments
+
+Business-input update 2026-10-04: [owner-data-contract.md](../owner-data-contract.md)
+and [intake](../../creator/README.md) replace corresponding unapproved policy
+assumptions below. Technical acceptance here does not approve new policy integration.
+Load exact source/decision revisions; affected integration remains GK-019 review.
+
+
+Status: accepted
+Scope: technical structure only; business/visual/provider policies remain blocked as named below.
+Date: 2026-09-21; revision: r3
+Decision owner: planning master for reversible technical choices; Creator for policy/spend/account ownership. Technical approver: master based on qualified Astra commerce/operations assessment; independent final review pending. Creator policy/spend approver: pending, no fabricated approval.
+Affected requirements: C10 C11 C15 C16 C17 A07 A08 A12 S03. Consumers: feature packets, shared contracts and mapped tickets.
+
+## Context and options
+
+Separate production-day capacity, finite ready-stock and pickup appointment resources versus one calendar counter. Owner rejects automatic complexity weights. The [GK-001 handover](../../creator/GK-001/handover.md) now specifies seven cakes per handover date, two cakes using two places; chef extras are outside the standard count and both simultaneous last-place orders may proceed. No separate pickup order cap. Reducing the limit to five with seven cakes accepted preserves all seven; only the chef personally may cancel an accepted order. Strict admission mechanics still need GK-019 integration. Minimum lead time is 192 elapsed hours; uncertain dates require personal chef/admin agreement. Refund deadline is saved from original handover minus 120 elapsed hours and never moves with the appointment.
+
+## Recommendation
+
+Reserve resources atomically, keep expired/unknown payment commitments until terminal-unpaid evidence or explicit recoverable exception. Pickup move acquires target before releasing old in one transaction; never move production implicitly. Ready stock does not consume new production capacity.
+
+## Evidence and consequences
+
+[Evidence](../contracts.md) checked 2026-09-21. Documentation research is not an integration test. The option minimizes operated components but still requires explicit authorization, recovery and user-facing workflow work; no free-tier production guarantee. Costs and unknowns are recorded in provider research.
+
+## Verification and change path
+
+Creator sets model, lead times, production start, cutoffs, timezone and delivery windows. Past commitments cannot be invalidated silently by policy edits.
+
+Supersedes: contradictory POC proposal for this topic only; original input remains unchanged. Superseded by: none. A change invalidates affected contract sections, feature recommendations and ticket readiness; rerun independent integration review before promotion.
+
+Reconciliation r3: contracts.md is authoritative for exact gateway/lock order, late-payment full-return, external observation quarantine, timed-start materialization, notification generation/recipient fencing and exact inventory quantities. Pending statements in the original option analysis refer to Creator/provider/implementation evidence, not acceptance of these technical boundaries.

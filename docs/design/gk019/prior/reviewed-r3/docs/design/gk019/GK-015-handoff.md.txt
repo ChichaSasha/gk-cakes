@@ -1,0 +1,52 @@
+# GK-019 → GK-015 contract handoff — r3, focused re-review pending
+
+Local handoff for the separate visual-design context. No GK-015 visual artifact was
+edited or approved here. The exact contract hashes below identify this revision;
+[output manifest](output-manifest.json) ties them to the final check/review packet.
+Do not infer settled behavior for Q3–Q5 in [questions](questions.md).
+
+Consume contracts r6.2, canonical owner-data gk019-owner-r4 and schema r1.2. Important
+visible changes from historical r5:
+
+- Accepted payment methods are all17 GK-011 labels; Google Pay disabled. Display
+  actual qualified options, not an assumed cards-only product. Pending/unknown is
+  not paid; return from payment is not confirmation. Separate24h link/15m tentative
+  hold; Q2 accepted: late paid shows payment received/date awaiting agreement; chef confirms feasibility and customer explicitly agrees, otherwise full return. No replacement payment while unknown and no fulfillment until agreement.
+- Explicit free-order confirmation; no payment receipt or fake capture. GK delivery
+  quoted/paid separately and refunded separately by chef; collection remains free.
+- Daily availability counts cakes, not orders; actual remaining standard places,
+  chef extras separate, soft overcapacity accepted for admitted successful payments.
+  Never sell one finite physical cake twice. No per-pickup-slot count cap.
+- Both cake types use original handover−120h:100% before,50% equality/later including
+  no-show/post-handover; chef cancellation100%. Moves never reset; production does
+  not remove entitlement. Show exact refund amount and confirm cancellation.
+- Automatic preparation48h after cake payment/free confirmation; actual chef work
+  and inventory deductions are separate. Six-hour same-day self-move, date changes
+  through chef. Q1 is accepted: chef may approve a shorter lead for a specific ready/resale cake; preserve original resale handover, physical stock/safety and ordinary192h minimum. Show the specific agreed handover; no blanket short-lead promise.
+- One code/order, all cake prices including decor/reduced/resale; percentage excludes
+  delivery. Free-delivery eligibility chef-reviewed; no automatic zones/tariffs.
+- Primary custom button “Copy request & open Instagram” for @gk.cake.london; user
+  pastes/sends, retained selectable fallback; no sent claim. Current sender is
+  GK Cakes <orders@gkcake.com>, Gmail Reply-To. Historical sender test differs.
+- Specific permission for personal customer photo use; current retention periods
+  and expiry must guide copy. Allergen/recipe changes need explicit agreement;
+  no-response/decline means original if feasible, otherwise full refund.
+- Chef screens must show outstanding vs successful/unknown returns, separate
+  delivery action, selected ingredient/component batches, negative-stock warnings,
+  missing-cost evidence and recovery states. Analytics scope Q3 remains pending.
+
+GK-015 may continue visual foundation work against settled behaviors. Affected
+Q branches stay visibly provisional; contract review is not Creator visual approval.
+Implementation receives its own exact-version design approval and tests.
+
+## Exact shared revision hashes
+
+| File | SHA-256 |
+| --- | --- |
+| `docs/design/contracts.md` | `c77b66b44f6037b9664f448208858f1bee5aa5c3a4d73a72b95a452181462405` |
+| `docs/design/owner-data-contract.md` | `253cae599f66f2c4f5d776caa4c04c4eaa1b178b17848d1dae24fe135a709929` |
+| `docs/design/creator-decisions.md` | `e3f495d17986802a23b30df402dc359c8f9d97b5a04a00e0ab65aaaf5f60bd0e` |
+| `docs/design/gk019/schema.json` | `a4dcb20e0dc5494fea8ec211c0148fcc7f47cadf410d5be8dfdbbe5b36a7ad4b` |
+| `docs/creator/GK-001/decisions.json` | `76e937ae88c42bda7c70ddf9998a8a5ef8d9c1ed8fe674f0a67fb10c6a47e40c` |
+| `docs/creator/GK-003/decisions.json` | `81d66ebb912dc1d291abd25fbca7898e157c8323b2e1d08e1b06fb78748dbf6d` |
+| `docs/creator/GK-005/decisions.json` | `07f7bcd8f08ea46a478f3e01eebc2f8f9f52fe9897e497d8aa70f484485015f7` |

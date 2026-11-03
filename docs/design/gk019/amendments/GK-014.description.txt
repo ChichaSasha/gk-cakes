@@ -1,0 +1,71 @@
+## Context
+
+Owner: Creator; Kind: Setup
+Priority: P0 — foundational or money/security/fulfillment correctness prerequisite.
+Order: 180; Wave: 5; Parallel group: scoped Creator setup coordination.
+Requirements: A02, A05, A09, S06, S07, D02; Design/contract revision: GK-019 r6.5, K08 K09.
+Agent execution policy: not applicable (Creator-owned action).
+Depends on: GK-004, GK-020; deliverable: completed approved policy, setup/contract or tested implementation evidence from each listed prerequisite. All GK-020 dependents require B2 unless explicitly named B1.
+Unblocks: GK-034, GK-033.
+Safe in parallel with: none; GK-014 requires GK-020 B2, which follows GK-013 G1.
+Conflicts with: shared contracts/schema/ADRs and adjacent modules; implementation owner coordinates shared edits, no same-wave implied safety.
+Readiness at publication: blocked / specified but dependent: Selected monitoring/recovery target and bootstrap pending.
+
+There is currently no application; this is an ordered planning packet. Use selected providers alerts/backup tools. Name incident contact, budget thresholds and operational response expectations. Agent later executes controlled isolated restore; Creator approves target and access. No production database reset.
+
+Applicable common rules: server owns prices/availability/state; GBP integer pence, UTC instants plus Europe/London display and date semantics; role/ownership checked on every action; Idempotency-Key and expected_version protect repeated/stale mutations; pending external result is not success/failure. No network calls under database locks. Detailed requirements and tests below remain mandatory even if linked files change.
+
+References: docs/design/contracts.md K08 K09; docs/design/screens.md; docs/design/coverage.md; relevant docs/design/features/ packet; docs/planning/DELIVERY.md; SETUP.md. These are local unpushed planning artifacts; obtain this checkout's exact fingerprinted packet before execution.
+
+## To dos
+
+T1. Review current prerequisites and the concrete options/rules in Context; collect missing evidence (AC1).
+T2. Perform only the Creator action described, recording settings/decision versions and safe nonsecret evidence (AC1–AC3).
+T3. Check the acceptance examples, record remaining blockers and hand the approved output to dependent Agent tickets (AC3, AC4).
+
+## Not to dos
+
+Do not implement unrelated cleanup, register candidate alternatives, expose credentials, publish releases or deploy without the separate scoped authorization. Planning publication does not authorize application execution now. Do not mark Done without the board's acceptance.
+
+## Acceptance Criteria
+
+AC1. Controlled alert reaches named owner and thresholds reflect approved response/financial pending states.
+AC2. Database AND object backup resources, retention, restore destination and access are recorded; backup-notification evidence alone is not a restore test.
+AC3. Analytics/privacy configuration matches GK-004/005 and excludes private admin/order routes.
+AC4. Required acceptance evidence is tied to exact input/output revision, checked by the appropriate reviewer/Creator and recorded on Trello. For implementation include relevant tests, all related PRs, required review/checks, merge and main CI; authorized release/deployment/smoke only when separately in scope.
+
+Verification: inspect the concrete decision/configuration and nonsecret evidence against AC1–AC3. No forced software red/green cycle for human work. Account creation follows accepted-provider gate; no secret values in Trello.
+
+Proposed current specification; prior publication text preserved in GK-019 evidence/cards.json. Independent review and approval apply only to the exact current revision. Trello is the live execution record; application work has not started.
+
+Verified prerequisite cards:
+- GK-004: https://trello.com/c/RotJkR9L
+- GK-020: https://trello.com/c/W8q5svCh
+
+Verified dependent cards:
+- GK-034: https://trello.com/c/L9d2rl39
+- GK-033: https://trello.com/c/3YbFGdmp
+
+## GK-019 proposed contract amendment — r6.5 / UNPUBLISHED
+
+Owner, title, unrelated scope/labels and list remain unchanged. This dated amendment
+replaces contradictory historical policy/provider examples and adds the acceptance
+evidence below; it does not assert implementation readiness or completed tests.
+
+Contract inputs: K10; ADR0002; docs/design/contracts.md r6.5, owner-data-contract.md
+gk019-owner-r7, gk019/schema.json r1.5 and output-manifest.json exact hashes.
+Required current evidence: GK-004 final r13; GK-006. Refresh live prerequisites and comments before
+execution; a Done setup card proves only its accepted scope.
+
+Behavior: Railway/Supabase/B2/UptimeRobot Solo and PostHog Cloud EU accepted;£61 baseline/£100 ceiling,>£10 cumulative increase needs approval. Daily10:00–23:00 London support;3 support-hour routine recovery target, phone alerts. Analytics opt-in and standard provider retention, no replay; Q3 accepted: consented basic checkout steps/repeat visits only; no account/admin or personal/order details/replay.
+
+Acceptance extension: Prove alert routing/phone receipt, support-hour boundary and outage escalation; do not claim documentation as monitoring setup. Verify no pre-consent SDK/network/storage, safe allowlisted payloads including SDK defaults, no private-route leakage; withdrawal clears queues and optional identity.
+
+Execution: apply model/context check; then smallest failing meaningful behavior
+case, coherent implementation, focused green checks, required wider checks and
+fresh independent review. Design tickets instead produce/review exact artifacts.
+No application test, UI approval, release or deployment is supplied by this amendment.
+Remaining Q4 qualification gates apply only where named; unresolved branches stay blocked.
+
+Full brief requirements and nonconflicting safety/verification criteria remain.
+Repository packet is local/unpushed; obtain exact files, not merely a path string.

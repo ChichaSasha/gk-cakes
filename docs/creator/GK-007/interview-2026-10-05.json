@@ -1,0 +1,519 @@
+{
+  "ticket": "GK-007",
+  "revision": "interview-r1",
+  "date": "2026-10-05",
+  "main_card": "https://trello.com/c/iJqMyuN1",
+  "owner_card": "https://trello.com/c/ES15alvX",
+  "status": "individual_answers_recorded; consolidated_readback_and_completion_scope_pending",
+  "publication": "not_requested_or_performed",
+  "independent_review": "not_performed; same-session checks only",
+  "creator_model_gate": "not_applicable (Creator interview)",
+  "source_send_timestamps": "not available; no timestamps invented",
+  "answers": [
+    {
+      "id": "GK-007.interview.discount_types",
+      "source_kind": "current_codex_conversation",
+      "sequence": 1,
+      "question_context_paraphrase": "Percentage and free-delivery codes",
+      "answer_verbatim": "B",
+      "answer_utf8_sha256": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.stacking",
+      "source_kind": "current_codex_conversation",
+      "sequence": 2,
+      "question_context_paraphrase": "One code per order",
+      "answer_verbatim": "A - One code per order",
+      "answer_utf8_sha256": "5237921ba73dc9b44b6212b94a9e31525c5a4433e73bfe5692fceb4ebf62532f",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.eligibility",
+      "source_kind": "current_codex_conversation",
+      "sequence": 3,
+      "question_context_paraphrase": "All cakes, including custom and reduced-price cakes",
+      "answer_verbatim": "A",
+      "answer_utf8_sha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.limits",
+      "source_kind": "current_codex_conversation",
+      "sequence": 4,
+      "question_context_paraphrase": "Optional expiry, total and per-customer limits per code",
+      "answer_verbatim": "A — Configurable per code",
+      "answer_utf8_sha256": "8498ab4ba355d46b856e9a4a58c860327e87495bdb5012ec9f0446cc0ee7f0b5",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.cancel_usage",
+      "source_kind": "current_codex_conversation",
+      "sequence": 5,
+      "question_context_paraphrase": "Cancellation of a paid order does not restore usage",
+      "answer_verbatim": "**A — No:** the cancelled order still counts as a use.",
+      "answer_utf8_sha256": "c91eba87d97cc5afafb523220b5ea7a5a2bda376d66a4a2078f1968bc0882eb7",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.delivery_scope",
+      "source_kind": "current_codex_conversation",
+      "sequence": 6,
+      "question_context_paraphrase": "Selected delivery areas",
+      "answer_verbatim": "B — Selected delivery areas",
+      "answer_utf8_sha256": "de1f9269c959df7503eee0bb92c6b056ab4ce2fdfe77ead1f00fae97e23417ec",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.delivery_area_basis",
+      "source_kind": "current_codex_conversation",
+      "sequence": 7,
+      "question_context_paraphrase": "Distance from kitchen",
+      "answer_verbatim": "B — Distance from the kitchen",
+      "answer_utf8_sha256": "0afdaf78f6e6def2a91f0a1e2298f1a03e4b1efa7aeb565bd72f96a4a3dfdc26",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.delivery_distance",
+      "source_kind": "current_codex_conversation",
+      "sequence": 8,
+      "question_context_paraphrase": "Driving distance, not straight-line radius",
+      "answer_verbatim": "B",
+      "answer_utf8_sha256": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.zero_orders",
+      "source_kind": "current_codex_conversation",
+      "sequence": 9,
+      "question_context_paraphrase": "Allow confirmation without payment for free orders",
+      "answer_verbatim": "B — Allow free orders",
+      "answer_utf8_sha256": "78292b13826bde5fdcedb6da656afef0c57308931c146cb16207344237c19edd",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.percentage_basis",
+      "source_kind": "current_codex_conversation",
+      "sequence": 10,
+      "question_context_paraphrase": "Cake price including agreed decoration, excluding delivery",
+      "answer_verbatim": "A — Cake prices only",
+      "answer_utf8_sha256": "0b103ba55a5cd1a324b530e6f09338f133a8af4a93ddc01b2aa5bc90f4200f8e",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.discount_rounding",
+      "source_kind": "current_codex_conversation",
+      "sequence": 11,
+      "question_context_paraphrase": "Nearest penny, half up, proportional allocation; £20.01 at 10% gives £2 discount; £10.05 at 10% gives £1.01",
+      "answer_verbatim": "A",
+      "answer_utf8_sha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.limited_codes_signin",
+      "source_kind": "current_codex_conversation",
+      "sequence": 12,
+      "question_context_paraphrase": "Sign-in required for codes with per-customer limits",
+      "answer_verbatim": "B",
+      "answer_utf8_sha256": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.cake_recipes",
+      "source_kind": "current_codex_conversation",
+      "sequence": 13,
+      "question_context_paraphrase": "Separate recipe per cake size",
+      "answer_verbatim": "A — Separate recipe per size",
+      "answer_utf8_sha256": "4b2aa66c893a2d504551d3ad6d7efc82d253e3a4568fd0b7fb08bea9cd1ed67d",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.range_planning",
+      "source_kind": "current_codex_conversation",
+      "sequence": 14,
+      "question_context_paraphrase": "Midpoint for quantity ranges in shopping plans and estimated costs",
+      "answer_verbatim": "A",
+      "answer_utf8_sha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.servings",
+      "source_kind": "current_codex_conversation",
+      "sequence": 15,
+      "question_context_paraphrase": "6-inch Small cake example servings",
+      "answer_verbatim": "7-10",
+      "answer_utf8_sha256": "52c08677cc5d041c3036c88b0ff63f0e82516217002d27fe19a6ef206cee5118",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.vanilla_yield",
+      "source_kind": "current_codex_conversation",
+      "sequence": 16,
+      "question_context_paraphrase": "Finished vanilla sponge batch yield",
+      "answer_verbatim": "not measured yet",
+      "answer_utf8_sha256": "9dbb8efacd0607b604058883acfd455633b5b7b894468751b7d6bc7e8aaaeb4b",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.deduction_trigger",
+      "source_kind": "current_codex_conversation",
+      "sequence": 17,
+      "question_context_paraphrase": "Deduct planned quantities when chef starts production, adjust differences afterward",
+      "answer_verbatim": "A",
+      "answer_utf8_sha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.negative_stock",
+      "source_kind": "current_codex_conversation",
+      "sequence": 18,
+      "question_context_paraphrase": "Allow negative stock with warning and required reason",
+      "answer_verbatim": "B",
+      "answer_utf8_sha256": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.cancel_stock",
+      "source_kind": "current_codex_conversation",
+      "sequence": 19,
+      "question_context_paraphrase": "Require chef review after cancellation following production start, leave deductions unchanged until review",
+      "answer_verbatim": "B",
+      "answer_utf8_sha256": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.batch_selection",
+      "source_kind": "current_codex_conversation",
+      "sequence": 20,
+      "question_context_paraphrase": "Chef selects every batch",
+      "answer_verbatim": "B",
+      "answer_utf8_sha256": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.expiry_required",
+      "source_kind": "current_codex_conversation",
+      "sequence": 21,
+      "question_context_paraphrase": "Every new batch requires an expiry date",
+      "answer_verbatim": "A",
+      "answer_utf8_sha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.expired_stock",
+      "source_kind": "current_codex_conversation",
+      "sequence": 22,
+      "question_context_paraphrase": "Block use and exclude from usable stock; retain quantity until chef disposal or reasoned correction",
+      "answer_verbatim": "A",
+      "answer_utf8_sha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.expiry_boundary",
+      "source_kind": "current_codex_conversation",
+      "sequence": 23,
+      "question_context_paraphrase": "Entered date is last usable day; block next midnight Europe/London",
+      "answer_verbatim": "A",
+      "answer_utf8_sha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.recipe_history",
+      "source_kind": "current_codex_conversation",
+      "sequence": 24,
+      "question_context_paraphrase": "Existing confirmed orders retain original recipe; explicit amendments required",
+      "answer_verbatim": "A",
+      "answer_utf8_sha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.precision",
+      "source_kind": "current_codex_conversation",
+      "sequence": 25,
+      "question_context_paraphrase": "Hundredths of grams and millilitres",
+      "answer_verbatim": "C",
+      "answer_utf8_sha256": "6b23c0d5f35d1b11f9b683f0b0a617355deb11277d91ae091d399c655b87940d",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.cost_basis",
+      "source_kind": "current_codex_conversation",
+      "sequence": 26,
+      "question_context_paraphrase": "Latest recorded purchase price for shopping estimates",
+      "answer_verbatim": "A",
+      "answer_utf8_sha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.price_asof",
+      "source_kind": "current_codex_conversation",
+      "sequence": 27,
+      "question_context_paraphrase": "Use 2026-10-05 as provisional as-of date, not evidence of actual purchase date",
+      "answer_verbatim": "what date do the ingredient prices in your workbook relate to? Use todays date for now",
+      "answer_utf8_sha256": "357d7cbb4b43a66945e6284337c1e65cb0c9bdfd8040cf117d6d231a3e0378b8",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.conversion_policy",
+      "source_kind": "current_codex_conversation",
+      "sequence": 28,
+      "question_context_paraphrase": "Keep units separate until measured; affected calculations remain incomplete",
+      "answer_verbatim": "A",
+      "answer_utf8_sha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.component_batches",
+      "source_kind": "current_codex_conversation",
+      "sequence": 29,
+      "question_context_paraphrase": "Prepare and store component batches for multiple cakes",
+      "answer_verbatim": "B",
+      "answer_utf8_sha256": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.two_stage_stock",
+      "source_kind": "current_codex_conversation",
+      "sequence": 30,
+      "question_context_paraphrase": "Raw ingredients at component start; record actual component output and expiry; components and direct ingredients at cake assembly; no double deductions",
+      "answer_verbatim": "A",
+      "answer_utf8_sha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.component_scaling",
+      "source_kind": "current_codex_conversation",
+      "sequence": 31,
+      "question_context_paraphrase": "Scale component recipes proportionally, recording actual yield separately",
+      "answer_verbatim": "A",
+      "answer_utf8_sha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.shopping_packs",
+      "source_kind": "current_codex_conversation",
+      "sequence": 32,
+      "question_context_paraphrase": "Shopping purchases and budget use whole packs; recipe cost uses consumed quantity",
+      "answer_verbatim": "A",
+      "answer_utf8_sha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.component_expiry_entry",
+      "source_kind": "current_codex_conversation",
+      "sequence": 33,
+      "question_context_paraphrase": "Chef manually enters expiry for every component batch",
+      "answer_verbatim": "A",
+      "answer_utf8_sha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.whole_items",
+      "source_kind": "current_codex_conversation",
+      "sequence": 34,
+      "question_context_paraphrase": "Whole-item ingredients must have whole quantities; choose another scale or separate approved recipe",
+      "answer_verbatim": "Require whole-item quantities",
+      "answer_utf8_sha256": "8e88cc8428a013dc216231f795f86b080c80080d2a2c30c21ef25d5e08c90186",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.free_order_commitment",
+      "source_kind": "current_codex_conversation",
+      "sequence": 35,
+      "question_context_paraphrase": "Free confirmation immediately reserves capacity and consumes usage; cancellation does not restore usage",
+      "answer_verbatim": "A",
+      "answer_utf8_sha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.other_yields",
+      "source_kind": "current_codex_conversation",
+      "sequence": 36,
+      "question_context_paraphrase": "All remaining component yields unmeasured and to be supplied later",
+      "answer_verbatim": "unmeasured for now, but will be measured in the future",
+      "answer_utf8_sha256": "242a3a2afbb409d77bb02de3827cee7019bf8e95e8a141db2d038a59ebed3a2f",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.free_order_clock",
+      "source_kind": "current_codex_conversation",
+      "sequence": 37,
+      "question_context_paraphrase": "Free confirmation anchors the existing 48-hour preparation clock",
+      "answer_verbatim": "A",
+      "answer_utf8_sha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.quantity_rounding",
+      "source_kind": "current_codex_conversation",
+      "sequence": 38,
+      "question_context_paraphrase": "Nearest 0.01 g/ml with halves upward",
+      "answer_verbatim": "A",
+      "answer_utf8_sha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.deferred_ingredient_inputs",
+      "source_kind": "current_codex_conversation",
+      "sequence": 39,
+      "question_context_paraphrase": "Banana price/quantity and peel treatment; Oreo pack size/price; vanilla product/recipe amount/pack size/price deferred alongside yields",
+      "answer_verbatim": "record them as inputs to supply later alongside the measured yields",
+      "answer_utf8_sha256": "63aadeccc2eb2e81637e9a0bc540d38a8a7b43ef2512c1743ffc5c306b572d9b",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    },
+    {
+      "id": "GK-007.interview.automatic_status",
+      "source_kind": "current_codex_conversation",
+      "sequence": 40,
+      "question_context_paraphrase": "Retain automatic preparation status; deductions separately require chef confirmation of actual production and selected batches",
+      "answer_verbatim": "A",
+      "answer_utf8_sha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+      "attribution": "Sasha, user/developer; not a fabricated direct Elina statement"
+    }
+  ],
+  "workbook": {
+    "original_path": "/Users/sasha.chycha/Downloads/GK_Cake_Costs.xlsx",
+    "preserved_path": "source/GK_Cake_Costs.xlsx",
+    "sha256": "1898cdff50c151081c21e9690350dce2af1b4015c2c4c1bb4ce2a7e97fae30f2",
+    "permission": "read for this ticket; no workbook edit or external upload",
+    "status": "source data, not blanket approval of assumptions"
+  },
+  "related_input_file_sha256": {
+    "docs/design/tickets/GK-007.md": "dfae5e955d313e80871e6a4301b3222fa5212784a32ffa5f6f8da9cb641b12e1",
+    "docs/design/contracts.md": "d058cffd4c7da51a39c201b376db350b62717eb8cfa2e83f0ff757f4a4fb7290",
+    "docs/design/owner-data-contract.md": "30bd0355f991bf0d0e564a115e3179a7f4f42e7006d0fb53191223468a1556db",
+    "docs/creator/README.md": "de1f0bfd6fcda3a78b0fb3bd15cba5fe95e3c6a54b35f9cbe4eac9bd4c0ac2b4",
+    "docs/creator/GK-005/interview-2026-10-05.md": "5c687921384a7fac328ae862118a024e5e901d68a50aae2ca059129e6b4d1d6d",
+    "docs/creator/GK-001/README.md": "d91d6f9a29260c77b3ac3ab7f2d15fca651c009e83c0e0c5ca282af5b2ed8714",
+    "docs/creator/GK-001/source-comments.json": "178af3568fade9f2597361a157be3c2ea6e63a83ef7f46c26baddd80d20ab632",
+    "docs/creator/GK-001/decisions.json": "32ed103b78d03190d778f4d9b763cce04e48ac3ea6b37083ee6ff62241917842",
+    "docs/creator/GK-003/README.md": "6f5d94e5dceb791cb5ab225cc87fd283f0d388ce54602864fe1e52c0497b3903",
+    "docs/creator/GK-003/source-comments.json": "72aeedd3f42eebada3e0185580706658b027d9a282d6c85a87b37213c2621d4c",
+    "docs/creator/GK-003/decisions.json": "324248cf5f3de58ff58c5719f02aa67bc4a53e350596d1b7db5ae77f1621147e",
+    "docs/creator/GK-005/README.md": "eb12ff9fbb5e0243a3bf61e449361696bd3d6e534577816ea6ffdad77f204aaa",
+    "docs/creator/GK-005/source-comments.json": "d8b6854908a345d6d59028e8fb6e29e013fe6b5df7e84080e4a1667f984c8022",
+    "docs/creator/GK-005/decisions.json": "3d4bdf96e9824addf5d528ad95135582831d4651779fcb12483581b46db94942",
+    "docs/creator/GK-001/handover.md": "c50f6f6fe19f7714a258a5fd78ea4ff7a74a333dae0af0755e9757c9418fff77",
+    "docs/creator/GK-003/handover.md": "7543d78f06cc555e9455cdc8072baa42190b95532cec5583f898ffefb6705bde"
+  },
+  "related_source_decision_revisions": {
+    "001": {
+      "comments": {
+        "6abab66bbf2b0e811db912b7": "cdb7805b1e1d6a3d1bff62a1ea5a615c776dcdb1b58a967707902ad971d67855",
+        "6ac2d95174a456d0b2b9ba6a": "612835cca5d1566d859bf32a69f2d1ce50e660390ebadc775b991103f499ce69",
+        "chat:GK-001:2026-10-05:clarification-1": "a51fd7c0287d7c55163b3ac4d55c6f938152cb6f31b96762c2327ad1909b8923",
+        "chat:GK-001:2026-10-05:refund-deadline": "e60097641c674bf1d1fa0d55c5d9ffd000ee15a8656419d95f3d186fe267aa28",
+        "chat:GK-001:2026-10-05:refund-scope": "eb7d5d38c3852fc8fbe42c7fd2aca79e157af24b51c473027d225cd957dc3095"
+      },
+      "decisions": {
+        "BO-GK-001.work_week": "096b57e9ccc7d044494b33e7db3c91d76c329246f0ba664254fe8784695f3cf2",
+        "BO-GK-001.daily_limit": "ad07906a20af0395b985afdbce381d2b5215e9ab6e439984c250ed00e4abba91",
+        "BO-GK-001.capacity_exceptions": "2f22c6c8d2a50b753b4785817cdd864c6ef21890a20ba04c453dd236f1048cf5",
+        "BO-GK-001.lead_time": "41f447d6952073826af25ba0f55c2809e3d87fe9bc6ff4bb74bec254df622986",
+        "BO-GK-001.wedding_recommendation": "e286e04efd417284d8507327ea918790142586b9c0086131713e9356f69ee870",
+        "BO-GK-001.urgent_requests": "57457f7a3079e4afd6c629de340deab7198fb1e25e4793179ea44fbeb42abb56",
+        "BO-GK-001.booking_horizon": "73022a4f8f95b17ca4fc798cf1eb67c399cf22a2acc599939b53fabfdf06f56e",
+        "BO-GK-001.production_start": "e9abdaeeceeeb6841476b5690b666d1ed10089f9ad6da2dafe4bdceb18f49518",
+        "BO-GK-001.ready_preparation": "e48cc5d9dd0cfccece9c3a845e70b345bcaeb55aa83c92904e0d0d874e0c09cc",
+        "BO-GK-001.ready_cancellation": "93a75483b1f82df48df6c370f44ec6f1dc6a90e98bb288ed05567e1e992828a8",
+        "BO-GK-001.pickup_location": "c52e8456fba18f262ac3c85feca6d4a7cb8c2273924815d86152141253422776",
+        "BO-GK-001.address_release": "7e50dff561d5c75431c552bb827c026e2a0b191dc3bd70cf20a78c737248c7b9",
+        "BO-GK-001.pickup_hours": "7b9d9f3ed6a8545d821878be89cf9156bbcba1bac50ebda4cf1847936e95b73b",
+        "BO-GK-001.pickup_slot": "1e1a0c5922ae5fc62a0b75a769a6c07fc230e946b41c45fcd51b05a4e944e10a",
+        "BO-GK-001.move_date": "b0fe9fea35c17afa28ec0a0ade7cc0d77c745b08f2944a4a0e97e557fcd8cde0",
+        "BO-GK-001.move_time": "7f8b0043a7b01e951fd602e094a9c5138e11db1c9c71950f9d04fd4b52dc58a4",
+        "BO-GK-001.refund_follows_move": "31d16f84ff44fe6cbc850a3f384983369600693b60f5f6a9f8713a779c135eb8",
+        "BO-GK-001.fulfillment_modes": "7c995b690d3ec1e62be3209389caf34a659aa94a5de74417921f98fbf73c9c15",
+        "BO-GK-001.customer_courier": "1dae8c235a2ea77f85e188595ba94a7a7d91c38b69bb0d4474f2589214e72046",
+        "BO-GK-001.gk_delivery": "3be447d37f4c07e6a926e19019263f57b98ab44882b5ef3ac797f67bca68027b",
+        "BO-GK-001.delivery_geography": "2714357c59e2f9f3f5c28a400c3645e09a5079201c6e8b8b12c2ca24f473d8bd",
+        "BO-GK-001.schedule_admin": "b2be725d4e4b2d5e55706c2dfcd2537bc2bc92cb63af07281a6da9bffa38891a",
+        "BO-GK-001.capacity_concurrency": "ca0b164e85eef5af31fc0a855df6416f0b54873463ac5f53c6577070d012850a",
+        "BO-GK-001.courier_content": "9e504fd74ae76aabe76686e4511c3cfc2d0d9d6e4a4e731c078a5032a6c42faa"
+      }
+    },
+    "003": {
+      "comments": {
+        "6abac3d56b4b97c36cd21b0c": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "chat:GK-003:2026-10-05:user-follow-up": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "chat:GK-003:2026-10-05:delivery-clarification": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+        "chat:GK-001:2026-10-05:clarification-1": "a51fd7c0287d7c55163b3ac4d55c6f938152cb6f31b96762c2327ad1909b8923",
+        "chat:GK-001:2026-10-05:refund-deadline": "e60097641c674bf1d1fa0d55c5d9ffd000ee15a8656419d95f3d186fe267aa28",
+        "chat:GK-001:2026-10-05:refund-scope": "eb7d5d38c3852fc8fbe42c7fd2aca79e157af24b51c473027d225cd957dc3095",
+        "chat:GK-003:2026-10-05:website-payment-24h": "037d57fa3fc3254b357b6d33fb0e5baf0361990e7284984948ec3189618ba614"
+      },
+      "decisions": {
+        "BO-GK-003.request_fields": "870636834f4d617b79f1a1ac5080e8da9f9075c777cb6511142d6a1bd91f0fcf",
+        "BO-GK-003.order_contacts": "6b2b3546181de5a4dbd20e171e8d4bfce4c71bf89b7e8ce0118ba02693320e28",
+        "BO-GK-003.communication": "0a1ca125294c6705f2f934d639d64ac283c49e6e1390b0da9ee4dae557ead445",
+        "BO-GK-003.agreement": "851a14526b0518376acf7d3e774b56d45b288b05fbc5354f4cdb4e66c6ee8a0c",
+        "BO-GK-003.paid_commitment": "239ffb338a440ca4fb8d9ee96e08817a73047f0d04bd75148bb356ea75e1be4a",
+        "BO-GK-003.quote_validity": "3cd40f5a0ec491548204c8d4a9cf27361e8478b760605dce2a24395f1fde28ab",
+        "BO-GK-003.daily_limit": "9262a2df6bf6ace0743cf142f46eeecd63618dd5e0fcb7d28f8952c54e94c908",
+        "BO-GK-003.capacity_exception": "199a8cd08f3d5138bc6bc6a8372949e6c1fd54e31f7d4df9bc4b4afb9e6fdbd0",
+        "BO-GK-003.pricing_factors": "fd1eb08620900ef822c105bf0d06abeb136cc854c7d6f7d83dc5d2af5d1687a3",
+        "BO-GK-003.guest_purchase": "db66bacedc15c3f6fa14cd444ad2dd60a0b23b53b41f4aa125a369e0224000a2",
+        "BO-GK-003.reorder": "7c3c1552e96d257bd7be528d6fc6169adae1d864b51f3fca0f51d2637d7c6eaa",
+        "BO-GK-003.historical_claim": "c84121255514017cb71a9dcd1e1da84d31c2429482f95ab2dbd98067e41df298",
+        "BO-GK-003.payment_methods": "b7dcb6a590e92de522d61ad8af380bfd3dc53f6a8f9e83c4a00c8e573b99ee5e",
+        "BO-GK-003.cancellation_early": "92751b1e4b59d9ec750e05776846849bf56679e5ef4e92c787b8296f3f487b70",
+        "BO-GK-003.cancellation_late": "b44d62dccb5defcafed270ced4ff29ad5f8cdd5194873c8c46e2597c2ec28a4b",
+        "BO-GK-003.started_or_ready": "ada433c04f10f14591bc101bb1fa7cf7ca5b38908a2c0519bbf3ad29fd5f8fa4",
+        "BO-GK-003.after_handover": "9aa41d7dcb5c50aa1e5c744439681190225c0badbee1f16e3a62518170ad34be",
+        "BO-GK-003.no_show": "ca5fb5c08f5c27d46de93afc0affefcfc25a70b3672c5d670d19252e23cab73f",
+        "BO-GK-003.business_cancellation": "1d0666613a0155e65c8effc54b053cb75b9633ea4f6066b4f2d07fc73bafd4ba",
+        "BO-GK-003.refund_allocation": "13ac4cf71789897e0d0f22f8031b6b2757527849460201ec4660472a65fdcef3",
+        "BO-GK-003.refund_example_delivery": "ca62786ca0843998eca9976382dd185cc13222ffd9d486900b47ef1e4f3b3e2f",
+        "BO-GK-003.refund_example_discount": "cc9ad49addb8b8c44dd6da2d34c9f45362b3025987aefbc34f66afa4d9c8e7cc",
+        "BO-GK-003.refund_example_remaining": "7ca7ac5e3dce8ba0adfadc9a259895306089cbf7f57fd511e4044256c6ad70fb",
+        "BO-GK-003.offline_evidence": "f4d4cfc1169cf31bc513667b2e71cfa8c7841553d54f4a6ddca02345071f0658",
+        "BO-GK-003.legal_questions": "4a752427c7d009de03370c4b5852e98ccc960b473c6e0ea333bf247ed99b040e",
+        "BO-GK-003.cancelled_order": "265a1ad16a301a4586cf169d59e7ae6142fcd7f8d073b92212a09b4eb26cac30",
+        "BO-GK-003.resale": "9630c59aac99a1edf3b4e8309b05b0e4ba49cf9eb67294b02d1fe4a9ab3b485c",
+        "BO-GK-003.admin_exception": "8b0ae0f483a3e6f5cac2e5fcb165b99d3bfdb17e88f17f34395483214a4a7f92",
+        "BO-GK-003.delivery_failure": "84744f10d3be93cfe1ed21c34a2a0fa90a589c9e71a0a50021616557fe0c9ee1",
+        "BO-GK-003.checkout_hold": "9cb711ccd6ccf1a0285e5a1485a9baeab905cce2515108414dedb1e66f524c33",
+        "BO-GK-003.manual_order_link": "a9c38b8b79fe82958e878fbf4add21e23902c8a9d693009b88d3a0354fcae93f",
+        "BO-GK-003.publication_preference": "11b76e63ba4293788da27042ec294ec953f4fdab2f02da494af56844820d3f2c",
+        "BO-GK-003.refund_rounding": "bf8671b8f612becfc82de4753fa7b345a5581523b645bbb6e0e5b4f42bceddba",
+        "BO-GK-003.refund_execution": "d15cebd8e1853abde4645e313f3a33e1dc763486bf5430ebdbf2f9212d21d6b2"
+      }
+    },
+    "005": {
+      "comments": {
+        "6abacbecde4959cdb8da9e21": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916"
+      },
+      "decisions": {
+        "BO-GK-005.public_identity": "572747de969557ecb13adf40c0014b0c8a63edfd438c8253d309bfce7921ecbb",
+        "BO-GK-005.food_status": "16640dcb76cae03e4e4803e3bd488add6fec7f6c9bb96532253313bca173812f",
+        "BO-GK-005.identity_documents": "badde9c3e9d37abb6c5c2e49e6e5935705b64c040f7cf656d93353237c8688ef",
+        "BO-GK-005.flavours": "40dd38fa5b00dd83de4db9b89c44348e6f9afea012e893e6624d9f2cd312f9b0",
+        "BO-GK-005.allergens": "6467127af412fcb23dce9f493b35d515a78c7d500e7d75cac2df8f23706a7afe",
+        "BO-GK-005.cross_contact": "ea64ed35e3a1b117c665c6c2d0629ee267f1bca7a0dac159e9d7f87cb1bdb35a",
+        "BO-GK-005.handover_label": "5be2d4916b3e0f88202bed0a2601f5852543efd616635caa8f953451907f9646",
+        "BO-GK-005.vat": "d6b607a50e55d9edfccaf114f5593761e6b00836216bdcd9ce4390f3c3925750",
+        "BO-GK-005.refund_basis": "b88edd40a350d7947f14771faa85425748b89735dab04c46dcd1ac470851869b",
+        "BO-GK-005.refund_example": "fad3b1c0f2e0deeb3f6044e38c1a53f19d8eccb1629bdcb5a98f7c56231a2863",
+        "BO-GK-005.money_precision": "1e522bdb814c26e90dc124243cdd448ed793f43e504bbbaea304e834253d9400",
+        "BO-GK-005.policy_confirmation": "2f5119c21e407c99baf9b08e9c9d339ebd02a09151099059f81ba02f8d43bdce",
+        "BO-GK-005.statutory_notice": "d25f45b31760cc9f7aea44c1456a0e3349fa1cd7a8b37649b3e65ca136978b6e",
+        "BO-GK-005.internal_legal_note": "0086fc206db6b5b1a5c5afc71c440eb583c501d74c4af3035b590649c83b2d94",
+        "BO-GK-005.customer_data": "d09c5fa04c80a154f6b1b544c01b4c8e56a8337fc8066a6278536f3c19046397",
+        "BO-GK-005.privacy_incomplete": "f15630c4050553fcb9734443fb6a1099d01bf523b6e927f752278e4bfa85efce"
+      }
+    }
+  },
+  "readback_sha256": "a171c851183eff1a0c9552ff2686f9bf96420dc4b2edd1a7c7b04c577a3ef198",
+  "checks": {
+    "kind": "local Decimal arithmetic and source fingerprint verification, not application tests",
+    "results": {
+      "discount_20_01_10pct": "2.00",
+      "discount_10_05_10pct": "1.01",
+      "refund_18_01_50pct": "9.01",
+      "planned_components_g": "1695",
+      "whole_pack_purchase_gbp": "6.78",
+      "consumed_cost_gbp": "3.390",
+      "half_up_quantity": "12.35"
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "model_observed": "gpt-6-astra/high",
+  "model_evidence": "latest host turn_context 2026-10-06",
+  "history": "compacted-resumed master; independent continued reviewer",
+  "prior_output_manifest_sha256": "df92597305a5062f4e79a3d5b7174b6bd4f574332db15666d1c310684e7e4266",
+  "live_refresh_file": "evidence/q5-resume-live.json",
+  "live_refresh_sha256": "a84aaf1dfc48a4d343b347854829e3adff4118dc214b4bea203d0eecd07d362c",
+  "scope": "Design only; no application, money, provider configuration, Trello writes, release or deployment.",
+  "decision": "Q4 currency accepted; remaining qualification/bundle separate",
+  "user_reply_exact": "Approve optional local-currency payment",
+  "question_exact": "May eligible customers optionally pay in their local currency through Stripe, while GK Cakes keeps its prices and accounting in GBP? I recommend this to support the approved local payment methods. Stripe would show the converted amount and its conversion fee (currently 2–4%, with regional charges where applicable); customers can choose GBP instead using an eligible method.",
+  "source_text": "May eligible customers optionally pay in their local currency through Stripe, while GK Cakes keeps its prices and accounting in GBP? I recommend this to support the approved local payment methods. Stripe would show the converted amount and its conversion fee (currently 2–4%, with regional charges where applicable); customers can choose GBP instead using an eligible method.\nUser reply (verbatim): Approve optional local-currency payment",
+  "source_sha256": "0da89d3a61e0f99c11798ee19ce258b135f1e9e52916a97a497f22265127292a",
+  "source_id": "chat:GK-019:2026-10-06:Q4-currency",
+  "readback": "Optional provider-managed local presentment; GBP prices/accounting. Provider displays customer conversion fees/regional charges; GBP alternative through eligible method. Not authorization for other currencies of settlement or bundled funding additions."
+}

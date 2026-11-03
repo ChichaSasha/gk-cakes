@@ -1,0 +1,31 @@
+{
+  "ok": true,
+  "data": [
+    {
+      "id": "6ac40c031ff780251926d482",
+      "type": "commentCard",
+      "date": "2026-10-05T20:43:47.641Z",
+      "memberCreator": {
+        "id": "6ab07430e77c7ae74e433bb8",
+        "username": "sashachicha13",
+        "fullName": "sashachicha13"
+      },
+      "data": {
+        "text": "GK-012 accepted completion split r5 — 2026-10-05\n\nSasha explicitly approved GK-012 setup closure and retaining full Instagram handoff implementation/testing here: https://trello.com/c/nveiC5IF .\n\nApproved destination: https://ig.me/m/gk.cake.london (Elina controls @gk.cake.london, reported by Sasha). This supersedes the historical @gk.cake spelling. Primary custom-request button: \"Copy request & open Instagram\". One tap attempts to copy the summary and open the DM; customer pastes and sends. General contact links can open the DM without copying. No reliable text-prefill assumption or automatic DM-sent claim.\n\nBefore implementation, reconcile K02 and affected feature/ticket wording with this approved combined action. Required AC2 evidence: actual combined copy/open/paste behavior on iOS, Android and desktop; clipboard denial/unavailability; Instagram failing to open/unavailable; retained selectable summary and same request reference, manual copying and retry without losing the request. Opening/copying never establishes message delivery. Account/browser conditions and limitations must be recorded honestly.\n\nExisting GK-012 evidence covers only reported chat opening: Mac -> Instagram web DM; iPhone -> app DM; Android -> success reported in response to that check, app/browser unspecified. It does not prove the combined action or fallback. All the named tests remain mandatory before this feature's acceptance. Other policy/visual/implementation prerequisites and review/delivery gates remain; no automatic Ready/Done transition or deployment authorization.\n\nSource: docs/creator/GK-012/closure-scope-2026-10-05.md (r5), SHA-256 eb5cc4e9d77d50cf58a9de7a5c6ecc123fd99eacb3f16ae526dc2e1fb855808a\n"
+      }
+    },
+    {
+      "id": "6ac2f7da8d9e67587b09243c",
+      "type": "commentCard",
+      "date": "2026-10-05T01:05:30.378Z",
+      "memberCreator": {
+        "id": "6ab07430e77c7ae74e433bb8",
+        "username": "sashachicha13",
+        "fullName": "sashachicha13"
+      },
+      "data": {
+        "text": "GK-005 scope split / 2026-10-05: business input accepted; see closure decisions at https://trello.com/c/OWHhKPBT . Deferred legal, actual privacy/provider and label verification transferred to https://trello.com/c/Zarzv2Qo (GK-037), after GK-035 and before GK-036. This transfer does not block implementation. Other prerequisites remain; no Ready transition is implied. Read docs/creator/GK-005/interview-2026-10-05.md and source/evidence manifests; older decision JSON alone is incomplete."
+      }
+    }
+  ]
+}

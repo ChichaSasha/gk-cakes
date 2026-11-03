@@ -1,0 +1,196 @@
+{
+  "schema_version": 1,
+  "ticket": "GK-001",
+  "follow_up_revision": "main-acceptance-r1",
+  "kind": "agent_authored_questions_and_acceptance_audit_not_owner_answers",
+  "checked_at": "2026-10-04T21:49:13.121426+00:00",
+  "authorization": "User requested checking these main tickets, prompting all missing questions, and closing only if complete. Posts target main tickets only.",
+  "execution_check": {
+    "model_requested": null,
+    "model_observed": null,
+    "effort_observed": null,
+    "model_status": "unknown",
+    "history": "compacted-resumed",
+    "inputs": "Sufficient for bounded gap audit and questions; insufficient for final policy approval.",
+    "independence": "author; fresh read-only reviewer passed the bounded follow-up bodies",
+    "head": "bb96a89681bcf2fa1c663a02eacbe039e20e6363",
+    "policy_acceptance": "No new owner or consequential technical policy accepted."
+  },
+  "source_observations": [
+    {
+      "role": "owner",
+      "card_id": "6ab8580af5fcdd5860d21234",
+      "board_id": "6ab846cadeac31eff3e42507",
+      "url": "https://trello.com/c/rVHbBffB/2-bo-gk-001o010-%D0%BF%D0%BE%D0%B3%D0%BE%D0%B4%D0%B8%D1%82%D0%B8-%D0%BF%D1%80%D0%B0%D0%B2%D0%B8%D0%BB%D0%B0-%D0%B2%D0%B8%D0%B3%D0%BE%D1%82%D0%BE%D0%B2%D0%BB%D0%B5%D0%BD%D0%BD%D1%8F-%D0%B2%D0%B8%D0%B4%D0%B0%D1%87%D1%96-%D1%82%D0%B0-%D0%B4%D0%BE%D1%81%D1%82%D0%B0%D0%B2%D0%BA%D0%B8",
+      "list_id": "6ab846cadeac31eff3e42505",
+      "closed": false,
+      "retrieved_at": "2026-10-04T21:44:13.900856+00:00",
+      "description_sha256": "54b594d2e69751ac3233a05cc89abc18bf53daa6328f577105c97f34808c3bf9",
+      "description_matches_intake": true,
+      "comments_retrieved_at": "2026-10-04T21:44:14.296547+00:00",
+      "comments": [
+        {
+          "id": "6abab66bbf2b0e811db912b7",
+          "date": "2026-09-28T18:48:11.509Z",
+          "author": {
+            "id": "6aba9a6ee5e52c67f1fbb09b",
+            "username": "elinahryhorian",
+            "fullName": "Elina Hryhorian"
+          },
+          "sha256_original_utf8": "cdb7805b1e1d6a3d1bff62a1ea5a615c776dcdb1b58a967707902ad971d67855"
+        }
+      ],
+      "attachments_retrieved_at": "2026-10-04T21:44:14.721243+00:00",
+      "attachment_count": 0
+    },
+    {
+      "role": "parent",
+      "card_id": "6ab13b4fa34d3a2205f61353",
+      "board_id": "6ab074a2b3c3763832ddf623",
+      "url": "https://trello.com/c/eI8UpD6l/16-gk-001p0o010w00-set-production-pickup-and-london-delivery-policy",
+      "list_id": "6ab074adb3c3763832de0087",
+      "closed": false,
+      "retrieved_at": "2026-10-04T21:44:15.237912+00:00",
+      "description_sha256": "bfb92c13e7e0eebf3a0bbf8ddc56501e660cc21a71d079427524d2ab49939b4f",
+      "description_matches_intake": true,
+      "comments_retrieved_at": "2026-10-04T21:44:15.629766+00:00",
+      "comments": [],
+      "attachments_retrieved_at": "2026-10-04T21:44:15.981803+00:00",
+      "attachment_count": 0
+    }
+  ],
+  "retrieval_limits": "CLI comments list has no pagination flags. This refresh returned the same owner comment ID/content per card and no parent comments; prior browser completeness evidence is retained in source-comments.json. No claim of deleted or earlier edited history.",
+  "input_files_sha256": {
+    "docs/creator/GK-001/decisions.json": "2be14abb9748759da009768b72d6f09d9fcc67d368e397a94ebf233c50b13b7d",
+    "docs/creator/GK-001/source-comments.json": "e33b2a7b27ad0431910a87369e7c60bc998a1527d857276a6bc8d6997f372ae4",
+    "docs/design/tickets/GK-001.md": "f577d353e145d5f3948552705f10a5f01b7e4e71c809e9eb6ea9a958404bb061",
+    "docs/design/owner-data-contract.md": "32cf60a5c58701042eaebf4d890bef50a5823f8b39051f12230b0d78df83e38c",
+    "docs/roles/developer.en.md": "d80e6da6255d9488ff2954e8c1a75f95ce19e7407b7f818db08481fa361187af",
+    "docs/roles/mapping.json": "a4966befa5553df5a46789eeb926ac72c40025c34a66e2d23ea413d2cde8850f"
+  },
+  "owner_input_revision": "cdb7805b1e1d6a3d1bff62a1ea5a615c776dcdb1b58a967707902ad971d67855",
+  "question_ids": [
+    "BO-GK-001.question.refund_scope",
+    "BO-GK-001.question.days_months",
+    "BO-GK-001.question.count",
+    "BO-GK-001.question.slot_grid",
+    "BO-GK-001.question.placement_clock",
+    "BO-GK-001.question.delivery_details"
+  ],
+  "question_source_mapping": "Use decisions.json /questions/<suffix>/source_decisions and the provenance of those decisions. follow-up.md expands these groups against parent ACs; it does not supersede owner answers.",
+  "body_file": "follow-up.md",
+  "body_sha256": "f2fc8e5a6d935dced93eb33d937cae9ebbb09bc891855e713daf8eb3399a6139",
+  "closure_assessment": {
+    "eligible": false,
+    "reason": "Each of AC1–AC4 still needs decisions, examples, verification or exact-revision acceptance described in follow-up.md. Owner input capture alone is insufficient.",
+    "status_at_read": "Ready",
+    "status_change_requested": false,
+    "assessed_at": "2026-10-04T21:49:13.121426+00:00",
+    "live_status_authority": "Trello; this is a dated observation, not a parallel tracker."
+  },
+  "review": {
+    "status": "pass",
+    "scope": "Three follow-up bodies, source fidelity, questions and parent acceptance coverage; not final business/technical/legal acceptance.",
+    "reviewer": "main_ticket_review",
+    "context": "fresh independent fork_turns=none; read-only, no authorship",
+    "requested_model": "gpt-6-astra",
+    "requested_effort": "xhigh",
+    "effective_model": null,
+    "model_status": "requested-only",
+    "reviewed_body_sha256": "f2fc8e5a6d935dced93eb33d937cae9ebbb09bc891855e713daf8eb3399a6139",
+    "verdict": "Ready to publish as gap records; no blocking or major findings. All three main tickets remain open. Original-comment hashes matched; no private address, invented approval/default or legal conclusion; refund arithmetic and responsibility split correct.",
+    "recorded_at": "2026-10-04T21:51:12.180379+00:00",
+    "prior_body_sha256": "e708a61f789fadb022c1af9d44dc02fffb6a1d62633f730e6d1be231cfcf9c2b",
+    "formatting_change": "Bare source URLs changed to explicit Markdown links before publication, to avoid Trello rich editor including sentence punctuation in URLs.",
+    "formatting_recheck": "Independent reviewer confirmed reversing only explicit Markdown link wrappers exactly reproduces all previously reviewed hashes; PASS."
+  },
+  "publication": [
+    {
+      "comment_id": "6ac2cafe5ceafaf69b2795c1",
+      "card_id": "6ab13b4fa34d3a2205f61353",
+      "card_url": "https://trello.com/c/eI8UpD6l/16-gk-001p0o010w00-set-production-pickup-and-london-delivery-policy",
+      "permalink": "https://trello.com/c/eI8UpD6l#comment-6ac2cafe5ceafaf69b2795c1",
+      "permalink_evidence": "Actual #comment-ID href observed on posted comment timestamp in authenticated browser; resolved against the current card URL.",
+      "date": "2026-10-04T21:54:06.946Z",
+      "author_reported_by_trello": {
+        "id": "6ab07430e77c7ae74e433bb8",
+        "username": "sashachicha13",
+        "fullName": "sashachicha13"
+      },
+      "authorship_attribution": "Agent drafted and posted using Sasha developer account; not business-owner approval.",
+      "method": "Authenticated browser comment editor; CLI readback",
+      "verified_at": "2026-10-04T21:54:46.676718+00:00",
+      "text": "GK-001 acceptance follow-up — 2026-10-04 — main-acceptance-r1\n\nResult: owner input is captured, but AC1–AC4 are not yet fully satisfied. Keep this main ticket open. Sasha is the developer; Elina is the business owner. The questions below are for Sasha to coordinate; no blanket owner approval is inferred.\n\nSource: BO-GK-001, Elina's 2026-09-28 comment [source comment](https://trello.com/c/rVHbBffB#comment-6abab66bbf2b0e811db912b7 \"‌\"). Cross-check BO-GK-003 [source comment](https://trello.com/c/5FbrZxfc#comment-6abac3d56b4b97c36cd21b0c \"‌\") and BO-GK-005 [source comment](https://trello.com/c/PSsIz3tI#comment-6abacbecde4959cdb8da9e21 \"‌\").\n\nAlready captured: Thu–Sun; up to 7 cakes/day; 8–10 days; 48-hour start rule; exact collection windows; 60-minute slots without a separate slot order cap; same-day time moves at least 6 hours before the existing slot; individual GK Delivery quotes from £100, with no fixed zones. These confirmed portions remain valid while the following gaps are resolved.\n\nУточнення для власниці (можна відповідати за номерами):\n\n1. refund_scope — Для готових тортів у BO-GK-001 вказано 3 дні, у BO-GK-003/005 — 4 дні. Це окреме правило чи правило 4 днів його замінює? Після початку підготовки готового торта чи можна скасувати і що повертається? «50% сплаченої суми» стосується торта чи також доставки? Як повертається невиконана доставка? Чи перенесення дати або часу може відновити право на повернення після початку роботи? Це визначає суму й пріоритет правил.\n2. days_months — «8–10 днів», «3/4 дні», «приблизно 2 дні» — календарні/робочі дні чи точні години; від якої події та до якого моменту їх рахувати? Яка найраніша доступна дата в діапазоні 8–10 і чи він поширюється на вже готові торти? Як рахувати «наступні два місяці» та 7–8 місяців для весільних тортів, включно з останньою датою? Чи 2 місяці для весільних залишаються рекомендацією? Чи є окремі години виробництва, свята/закриті дні; якщо ні — так і зазначте. Це потрібно для календаря без вигаданих меж.\n3. count — Ліміт 7 — тортів чи замовлень: скільки місць займає одне замовлення з двома тортами? Це день виготовлення чи видачі, якщо вони різні? Хто може дозволити перевищення; чи є верхня межа, чи кожен випадок вирішується окремо? Що робити, якщо два клієнти одночасно оплачують останнє місце, і що робити з уже прийнятими замовленнями при зменшенні ліміту? Це визначає обіцянки клієнтам і повноваження адміністратора.\n4. slot_grid — У суботу 12:30–15:00, слот 60 хвилин: які точні інтервали показувати й що робити з останніми 30 хвилинами? Чи можуть інтервали перекриватися, і чи кінець слота має вкладатися у години видачі? Хто може змінювати дату, чи дозволені повторні перенесення, що робити, коли наступний день зайнятий, та після неділі? Як рахувати максимум один день з огляду на строк зберігання? Це потрібно для доступних варіантів і випадку перенесення на заповнений день.\n5. placement_clock — Від якої події рахувати 48 годин після «оформлення»: повної успішної оплати чи іншої? Для готового торта підтвердження і початок підготовки — окремі дії? Що робити з терміновою видачею раніше 48 годин, відмовою після оплати та скасуванням рівно у момент автоматичного початку? Якщо система запізнилася, правило діє від запланованої чи фактичної події? Саша підготує зрозумілі приклади переходів літнього/зимового часу після вибору точки відліку.\n6. delivery_details — Які часові вікна обіцяємо для GK Delivery, хто встановлює ціну і як довго вона діє? Наведіть без приватних адрес приклади доставки в Лондоні та поза ним: що можна підтвердити, що відхиляємо або погоджуємо окремо? Які рекомендації кур'єрів та інструкції ще потрібно додати? Хто й яким каналом надсилає повну адресу приблизно за 2 дні або раніше? Чи згаданий «залишок до оплати» є винятком із 100% оплати до бронювання? Це потрібно для ціни, вікна передачі й умов оплати.\n\nDeveloper completion work:\n\n- AC1: replace obsolete proposed X-hours-before-pickup/weighted-capacity assumptions with the actual owner rule only after resolving its anchor and scope. Record manual start, automatic equality, late scheduler and ready-preparation outcomes. Prepare both Europe/London DST walkthroughs; do not convert calendar days/months into hours.\n- AC2: obtain intended outcomes for simultaneous last-place payments, full-target move and reducing capacity below existing commitments; preserve the no-separate-pickup-slot-cap decision. Demonstrate consequences before owner signoff.\n- AC3: record accepted quote fee/window, address-based eligibility and courier/customer handover responsibility. No zone tariff engine implied.\n- AC4: obtain acceptance of the exact resulting policy and examples, then record revision/review evidence here. This is a Decision ticket; implementing dependent features is not required to complete it.\n\nDurable local packet: docs/creator/GK-001/{README.md,source-comments.json,decisions.json,follow-up.md,follow-up.json}; all question suffixes above map to BO-GK-001.question.<suffix>. Source decision IDs and wording remain in decisions.json. SQL/admin consequences: docs/design/owner-data-contract.md. Files are local and unpushed: Sasha must share this exact packet with future workers. Published ticket descriptions remain historical snapshots; this comment is the current gap record, not a new owner decision.",
+      "sha256_original_utf8": "8e89e4a35dd19efe7b037e78b7ff1339c895967778c1a2f251f17fceca09a856",
+      "reviewed_body_sha256": "f2fc8e5a6d935dced93eb33d937cae9ebbb09bc891855e713daf8eb3399a6139",
+      "normalization": "Trello rich editor changes blank-line layout and adds link title containing U+200C. Exact nonblank lines match after removing only that title. Raw posted text is retained here; not byte-identical to the reviewed Markdown file.",
+      "content_match": true,
+      "comments_returned": 1,
+      "status_change": false
+    }
+  ],
+  "answer_ingestion": "Read current main and mapped owner comments on next run; preserve author/attribution and revisions. Ingest actual owner replies into source-comments.json and decisions.json, including explicit resolution/supersession. Never treat this agent comment or its examples as owner approval. Re-run checks and map new decisions into SQL/admin contract before closing.",
+  "historical_review_note": "owner-intake-manifest.json and owner-intake-review.md describe the earlier ingestion revision; they are preserved. Added follow-up links in README and this later publication are outside that old review.",
+  "publication_failure": {
+    "method": "CLI comments add",
+    "result": "HTTP 414; no comment created; authenticated browser fallback succeeded"
+  },
+  "final_verification": [
+    {
+      "role": "owner",
+      "card_id": "6ab8580af5fcdd5860d21234",
+      "list_id": "6ab846cadeac31eff3e42505",
+      "closed": false,
+      "verified_at": "2026-10-04T21:58:39.869872+00:00",
+      "description_unchanged": true,
+      "comment_ids": [
+        "6abab66bbf2b0e811db912b7"
+      ],
+      "comments_verified_at": "2026-10-04T21:58:40.275581+00:00",
+      "owner_content_unchanged": true,
+      "attachment_count": 0
+    },
+    {
+      "role": "parent",
+      "card_id": "6ab13b4fa34d3a2205f61353",
+      "list_id": "6ab074adb3c3763832de0087",
+      "closed": false,
+      "verified_at": "2026-10-04T21:58:41.139622+00:00",
+      "description_unchanged": true,
+      "comment_ids": [
+        "6ac2cafe5ceafaf69b2795c1"
+      ],
+      "comments_verified_at": "2026-10-04T21:58:41.674404+00:00",
+      "owner_content_unchanged": null,
+      "attachment_count": 0
+    }
+  ],
+  "validation": {
+    "recorded_at": "2026-10-04T22:00:04.021523+00:00",
+    "checks": {
+      "python3 scripts/check_planning_kit.py": "pass",
+      "python3 scripts/check_role_packets.py": "pass",
+      "python3 scripts/check_owner_intake.py": "pass — 62 owner decisions, 123 original numeric occurrences; follow-up receipts also checked",
+      "python3 scripts/check_owner_intake.py --self-test": "pass",
+      "follow-up Markdown links, JSON identities/body/input hashes, private-address exclusion": "pass",
+      "live final readback": "pass — one follow-up per main card; all six descriptions/lists/closed states unchanged; owner comments unchanged; no attachments"
+    },
+    "scope": "Document/evidence checks only; no application/provider tests or new independent legal research required for this gap audit.",
+    "local_output_hashes": {
+      "docs/creator/GK-001/README.md": "2b59b30cefa96ddd5565616fb61807ecf231e2522e4071d4bcb63171dd0d87e7",
+      "docs/creator/GK-001/follow-up.md": "f2fc8e5a6d935dced93eb33d937cae9ebbb09bc891855e713daf8eb3399a6139",
+      "docs/creator/README.md": "dd117914b04e63bfa36c763925684587754a77ab6ac6015430e5a7f0f1e15cd1",
+      "scripts/check_owner_intake.py": "ae1c38842699be0f860d3da0fb04492e38f055210b01418dafd3e1ae204e173b"
+    }
+  },
+  "publication_review": {
+    "status": "pass",
+    "reviewer": "main_ticket_review",
+    "independence": "same fresh read-only reviewer; no authorship",
+    "model_status": "requested-only; gpt-6-astra/xhigh requested, effective identity unavailable",
+    "recorded_at": "2026-10-04T22:01:36.471285+00:00",
+    "scope": "Final snapshot/receipt/body matching, README consumption links, new validator block",
+    "verdict": "No actionable findings. Exact posted text/author/date/comment/card match final snapshots; documented normalization matches reviewed Markdown; all main cards remain open in Ready. Validator rejected duplicate identities, wrong-card receipts, corrupted hashes and changed posted content.",
+    "validator_sha256": "ae1c38842699be0f860d3da0fb04492e38f055210b01418dafd3e1ae204e173b"
+  }
+}

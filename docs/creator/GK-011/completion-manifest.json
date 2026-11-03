@@ -1,0 +1,20 @@
+{
+  "status": "GK-011 account-provisioning scope verified Done",
+  "review": "Author self-check and explicit Creator acceptance; no independent review claimed",
+  "checks": [
+    "planning-kit self-test passed",
+    "planning-kit validation passed",
+    "receipt completeness and artifact whitespace/JSON checks passed"
+  ],
+  "sha256": {
+    "docs/creator/GK-011/README.md": "ea77107e42a3840cf22cba0786cf6378703d92903bd641394d84beb1f55c2a38",
+    "docs/creator/GK-011/publication-source-r16.md": "0bf02d7bbaef614542f20be15e0d6b0a1f11a3575c987e5ac21252ea94dd92d7",
+    "docs/creator/GK-011/closure-scope-proposed.md": "0a023c50ddec17661ddb86f73cbf6c103b00b92c07b236489fd2eb0bcfb1d4c8",
+    "docs/creator/GK-011/closure-scope-accepted.md": "279c630dfa444c35653f97f89e8e0d328e66882bf1bf046ed7cc4796c7a91254",
+    "docs/creator/GK-011/publication-comments.json": "ca4957f294028e93397079c7cca3c44bd352d98f73220d0b7bf6797b5e256e44",
+    "docs/creator/GK-011/publication-description-amendment-compact.md": "aeb087202e3e5f661e8015e22b8098a0353050f020803b69847ae6386d183e23",
+    "docs/creator/GK-011/closure-publication-receipt.json": "4dad0f6869918ece9695b441d8ff085601d58d98875175b75eb660a5227a1c43",
+    "docs/creator/GK-011/public-email-dns-2026-10-05.json": "08482d8fab4f2bc9cd9e388c96850275e4826125b182a54444a8c25ed9d59c83",
+    "SETUP.md": "b6f7e7011aab8ea4f6d7d054c99d6020099b483a2ebccbc623de80fdbdbaf582"
+  }
+}

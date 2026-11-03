@@ -1,0 +1,337 @@
+{
+  "revision": "gk019-cases-r1",
+  "evidence_boundary": "Document arithmetic/state expectation fixtures; no application/provider/PostgreSQL tests run.",
+  "accepted_method_labels": [
+    "Cards",
+    "Cartes Bancaires",
+    "Apple Pay",
+    "Amazon Pay",
+    "Kakao Pay",
+    "MB WAY",
+    "Naver Pay",
+    "Onelink",
+    "PAYCO",
+    "Revolut Pay",
+    "Samsung Pay",
+    "Satispay",
+    "Bancontact",
+    "BLIK",
+    "EPS",
+    "Klarna",
+    "Pix"
+  ],
+  "disabled_method_labels": [
+    "Google Pay"
+  ],
+  "sender": {
+    "name": "GK Cakes",
+    "from": "orders@gkcake.com",
+    "reply_to": "gk.cake.london@gmail.com"
+  },
+  "refund_cases": [
+    {
+      "id": "R1",
+      "paid": [
+        8585,
+        2000
+      ],
+      "rate": 50,
+      "target": 5293,
+      "allocations": [
+        4293,
+        1000
+      ]
+    },
+    {
+      "id": "R2",
+      "paid": [
+        10000,
+        2000
+      ],
+      "rate": 50,
+      "target": 6000,
+      "allocations": [
+        5000,
+        1000
+      ]
+    },
+    {
+      "id": "R3",
+      "paid": [
+        1001,
+        1000
+      ],
+      "rate": 50,
+      "target": 1001,
+      "allocations": [
+        501,
+        500
+      ]
+    },
+    {
+      "id": "R4",
+      "paid": [
+        8585,
+        2000
+      ],
+      "rate": 100,
+      "target": 10585,
+      "allocations": [
+        8585,
+        2000
+      ]
+    },
+    {
+      "id": "R5",
+      "paid": [
+        0,
+        2000
+      ],
+      "rate": 50,
+      "target": 1000,
+      "allocations": [
+        0,
+        1000
+      ]
+    }
+  ],
+  "discount_cases": [
+    {
+      "sum": 2001,
+      "bps": 1000,
+      "discount": 200
+    },
+    {
+      "sum": 1005,
+      "bps": 1000,
+      "discount": 101
+    },
+    {
+      "sum": 10100,
+      "bps": 1500,
+      "discount": 1515
+    }
+  ],
+  "state_cases": [
+    {
+      "id": "P1",
+      "trigger": "return URL or completed unpaid session",
+      "expected": "pending, no paid confirmation, no second collection"
+    },
+    {
+      "id": "P2",
+      "trigger": "unknown create at15m/link24h",
+      "expected": "retain operation/reservations; reconcile; no blind replacement"
+    },
+    {
+      "id": "P3",
+      "trigger": "valid admitted success after day fills",
+      "expected": "accepted soft-capacity overage, chef alert; no automatic refund"
+    },
+    {
+      "id": "P4",
+      "trigger": "success with lead<192h",
+      "expected": "blocked Q2 decision; no invented exception"
+    },
+    {
+      "id": "P5",
+      "trigger": "two buyers same physical ready cake",
+      "expected": "one finite allocation; never double fulfill"
+    },
+    {
+      "id": "P6",
+      "trigger": "free confirmation",
+      "expected": "capacity/code committed,48h anchor, K11 protection; no provider capture"
+    },
+    {
+      "id": "R6",
+      "trigger": "cancel exactly original handover minus120h",
+      "expected": "50% target, moves unchanged"
+    },
+    {
+      "id": "R7",
+      "trigger": "production command wins before cancellation",
+      "expected": "current100/50 entitlement remains; no zero-refund rule"
+    },
+    {
+      "id": "R8",
+      "trigger": "completed/no-show refund request",
+      "expected": "chef route,50%, retain fulfilled history"
+    },
+    {
+      "id": "R9",
+      "trigger": "unknown refund then retry",
+      "expected": "balance reserved and same identity; no duplicate payout"
+    },
+    {
+      "id": "R10",
+      "trigger": "provider refund window elapsed",
+      "expected": "liability open, Q5 alternative-path decision; no unauthorized transfer"
+    },
+    {
+      "id": "S1",
+      "trigger": "7accepted then limit5",
+      "expected": "7retained, public remaining0, chef cancellation only"
+    },
+    {
+      "id": "S2",
+      "trigger": "same-day move exactly6h before current slot",
+      "expected": "allowed fitting slot, fixed deadline preserved"
+    },
+    {
+      "id": "I1",
+      "trigger": "automatic48h status",
+      "expected": "no ingredient deduction"
+    },
+    {
+      "id": "I2",
+      "trigger": "component200g used in cake after component production",
+      "expected": "component\u2212200g only, no duplicate raw deduction"
+    },
+    {
+      "id": "I3",
+      "trigger": "300g stock\u2212500g selected use",
+      "expected": "\u2212200g, warning and required reason"
+    },
+    {
+      "id": "I4",
+      "trigger": "batch expiry2026-10-10",
+      "expected": "usable through day, blocked2026-10-11T00:00 Europe/London"
+    },
+    {
+      "id": "E1",
+      "trigger": "email provider says delivered",
+      "expected": "delivered_to_server; not general inbox guarantee"
+    },
+    {
+      "id": "E2",
+      "trigger": "preview recipient changed",
+      "expected": "deny send; new preview required"
+    },
+    {
+      "id": "B1",
+      "trigger": "B2 unavailable before checkout/free confirmation",
+      "expected": "pause new commitment, recoverable state"
+    },
+    {
+      "id": "B2",
+      "trigger": "primary DB lost after provider success",
+      "expected": "restore independent intent/objects, reconcile provider, no duplicate charge"
+    },
+    {
+      "id": "B3",
+      "trigger": "restore includes deleted personal photo",
+      "expected": "tombstone removes/rejects copy before reopening"
+    },
+    {
+      "id": "A1",
+      "trigger": "typed email matches old order",
+      "expected": "no auto claim; verified proof and chef approval"
+    },
+    {
+      "id": "A2",
+      "trigger": "imageA selected then replacedB",
+      "expected": "pin authorizedA or require reselection; never silentB"
+    },
+    {
+      "id": "A3",
+      "trigger": "Instagram clipboard/open partial failure",
+      "expected": "retain same summary/image, manual fallback, no sent state"
+    },
+    {
+      "id": "AUTH1",
+      "trigger": "guest without Supabase session uses active order-scoped grant",
+      "expected": "permit eligible payment/free/cancellation on this order only; deny foreign order, missing scope and revoked/replaced grant"
+    },
+    {
+      "id": "AUTH2",
+      "trigger": "authenticated customer without staff role requests owned order; disabled session retries",
+      "expected": "valid current account plus ownership permits eligible customer action; disabled/unknown session denied; no staff membership demanded"
+    },
+    {
+      "id": "AUTH3",
+      "trigger": "staff current session but revoked or insufficient local capability",
+      "expected": "deny sensitive action after lock recheck; technical support cannot perform routine chef money override"
+    },
+    {
+      "id": "REC0",
+      "trigger": "GK-024 recovery gate incomplete before email/payment/free dispatch",
+      "expected": "no external dispatch or confirmation; downstream GK-025/026/027 blocked, disjoint workflow design may continue"
+    },
+    {
+      "id": "REFSER1",
+      "trigger": "10000 captured,2000 succeeded,3000 unknown; raise goal to10000",
+      "expected": "no new POST; if unknown succeeds remainder5000 once; if definitively fails remainder8000 once; old4000+1000 fragment scenario forbidden"
+    },
+    {
+      "id": "REFSER2",
+      "trigger": "4000 pending; raise full goal10000",
+      "expected": "no6000 dispatch while pending; definitive success then6000 once, failure then10000 once"
+    },
+    {
+      "id": "REFAGG1",
+      "trigger": "cake10000 delivery2000 prior cake return6000; ordinary50% target6000",
+      "expected": "remaining0; do not send nominal delivery1000; actuals retained"
+    },
+    {
+      "id": "REFAGG2",
+      "trigger": "same prior returns plus GK-caused delivery failure requiring full2000 delivery",
+      "expected": "one explicit delivery floor2000; revised combined goal8000 with prior cake6000; chef dispatch2000 once, never second delivery goal"
+    },
+    {
+      "id": "AUTH0",
+      "trigger": "guest public quote/create/free path before any order exists, or chef-template link",
+      "expected": "bind active proof to quote/template; foreign/revoked proof denied; atomic conversion issues independent order grant; same proof/key retry same order; no login required; free confirmation gated K11"
+    }
+  ],
+  "prior_refund_cases": [
+    {
+      "paid": [
+        10000,
+        2000
+      ],
+      "target": 6000,
+      "succeeded": [
+        6000,
+        0
+      ],
+      "reserved": [
+        0,
+        0
+      ],
+      "remaining": 0
+    },
+    {
+      "paid": [
+        10000,
+        2000
+      ],
+      "target": 6000,
+      "succeeded": [
+        2000,
+        0
+      ],
+      "reserved": [
+        3000,
+        0
+      ],
+      "remaining": 1000
+    },
+    {
+      "paid": [
+        10000,
+        2000
+      ],
+      "target": 6000,
+      "succeeded": [
+        7000,
+        0
+      ],
+      "reserved": [
+        0,
+        0
+      ],
+      "remaining": 0
+    }
+  ]
+}

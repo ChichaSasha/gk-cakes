@@ -1,0 +1,37 @@
+[
+  {
+    "id": "6ab074adb3c3763832de0077",
+    "name": "📥 Backlog",
+    "closed": false,
+    "idBoard": "6ab074a2b3c3763832ddf623",
+    "pos": 1
+  },
+  {
+    "id": "6ab074adb3c3763832de0087",
+    "name": "✅ Ready",
+    "closed": false,
+    "idBoard": "6ab074a2b3c3763832ddf623",
+    "pos": 2
+  },
+  {
+    "id": "6ab074adb3c3763832de0099",
+    "name": "🚧 In Progress",
+    "closed": false,
+    "idBoard": "6ab074a2b3c3763832ddf623",
+    "pos": 3
+  },
+  {
+    "id": "6ab074aeb3c3763832de00ad",
+    "name": "🔎 Review",
+    "closed": false,
+    "idBoard": "6ab074a2b3c3763832ddf623",
+    "pos": 4
+  },
+  {
+    "id": "6ab074aeb3c3763832de00c3",
+    "name": "🏁 Done",
+    "closed": false,
+    "idBoard": "6ab074a2b3c3763832ddf623",
+    "pos": 5
+  }
+]

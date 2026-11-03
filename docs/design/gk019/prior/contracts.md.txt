@@ -1,0 +1,652 @@
+# Shared contracts — r5 (technical reconciliation; final review pending)
+
+## GK-001 handover reconciliation notice — 2026-10-05
+
+Load [manual-handover-r2](../creator/GK-001/handover.md) and current decision hashes.
+Sasha's main-card answer clarifies full-payment +48-hour start, cake counting by
+handover date, chef-only date edits, overlapping fitting slots and delivery windows.
+It also allows both simultaneous last-place orders, so strict admission/one-winner
+assumptions below require GK-019 redesign before implementation. Existing financial
+integrity, identity, idempotency and audit safeguards remain; business capacity is
+not a reason to erase an actual paid order. Current minimum is 192 elapsed hours;
+uncertain dates go to chef/admin. Reducing 7 accepted cakes to limit 5 keeps all 7.
+For both cake types, save the original handover minus 120-hour refund deadline:
+100% before it, exactly 50% at/after it including no-show/post-handover; chef cancellation
+100%. Date/time changes preserve that deadline. Old 3/4-day/component rules are
+explicitly superseded. No code/schema changes or dependent Ready transition.
+
+
+Owner reconciliation 2026-10-04: [owner data contract](owner-data-contract.md) and
+[per-card evidence](../creator/README.md) govern business values. Load JSON and record
+hashes. The technical r5 structure below needs GK-019 review for placement/48-hour
+start, capacity units/exceptions, quote holds, no slot cap and refund action matrix.
+Do not execute displaced X, zone or flags-only assumptions from old ticket snapshots.
+
+
+Governs feature packets after reconciliation. Qualified Astra commerce/operations assessments support the technical choices below; Creator policy values remain explicitly blocked. No implementation or provider tests
+have run. Policy values remain Creator decisions; launch is London UK, GBP and Europe/London per creator-decisions.md (prior r2 context retained). API owns rules; UI hints
+and public availability never authorize commitment.
+
+## K00 — common wire and authorization rules
+
+`/api/v1` HTTPS JSON; UUID identifiers; lower_snake_case fields; required fields
+listed per command, omitted optional means unchanged/default, explicit null only
+for clearing named nullable fields (profile handle, optional note). Unknown mutation
+fields rejected. Errors: `{error:{code:"CAPACITY_UNAVAILABLE",message:"Choose another date",request_id:"...",retryable:false}}`.
+400 malformed; 401 unauthenticated; 403 role denied; 404 unknown/not-owned resource;
+409 STALE_VERSION/state/price/capacity/key conflict; 422 invalid business input;
+429 Retry-After; 503 unavailable. No SQL/provider detail or existence oracle.
+
+Bearer token verification uses configured issuer/JWKS/audience/allowed algorithm,
+expiry/nbf and subject; never token-supplied key URL. Local active staff membership
+is checked on every staff request; manager versus fulfillment duties are explicit.
+Object ownership is checked even with a valid token. Guest purchase is owner-confirmed (BO-GK-003.guest_purchase); guests use
+high-entropy scoped capability with only digest stored, never public order number.
+No identity linking by Instagram handle, typed email or matching delivery address.
+CORS allowlists exact UI origins; CSP, output escaping and no private shared cache.
+If browser session architecture changes to cookies, CSRF/origin validation and
+secure HttpOnly SameSite cookies become mandatory before that change ships.
+
+Mutations carry `Idempotency-Key` (opaque UUID) and existing-object `expected_version`
+integer. Scope = authenticated actor/capability + command + resource; unique DB
+scope/key and canonical request hash. Same key/same input returns saved operation;
+different input yields 409 KEY_REUSED. Money operation identities persist with
+financial history, not merely provider key retention. Proposed ordinary-key
+retention 30d; expired keys cannot duplicate a business unique relationship.
+Any ambiguous commit is looked up before reissuing. Client preserves key across
+retry, creates a new key only for a deliberately new operation.
+
+Money: signed 64-bit minor-unit integers, nonnegative bounded inputs and checked
+intermediates; currency ISO code and provider-supported exponent, no floats. Dates
+`YYYY-MM-DD` are shop-local production days, instants RFC3339 UTC. Slots have stable
+IDs, start/end instants and timezone snapshot. Ambiguous DST local entry must select
+an explicit offset; nonexistent time rejected. Cutoff compares server time after
+locks, not browser clock. User-facing timezone is always labelled.
+
+Read budgets/deadlines and bounded job retry defaults are in architecture.md.
+Public lists cursor-paginate <=50 entries; default 20. Reads can retry twice with
+jitter inside deadline; mutations retry only using original key. Async operations
+return 202 `{operation_id,state:"pending",poll_after_seconds:3}` with authorized
+`GET /operations/{id}`. Exhaustion surfaces actionable state, not false failure.
+
+## K01 — catalog, recipes, public availability
+
+Public `GET /cakes?cursor`, `GET /cakes/{id}`, `GET /availability?from&to` (max 31 days):
+active inspiration/product relationship, immutable image_revision_id plus URL/alt/width/height, variant ID,
+servings, current price/currency, recipe/allergen display revision, eligible dates.
+Owner BO-GK-003.daily_limit requests standard available slots per day; numeric
+remaining-versus-total display needs clarification before replacing the prior
+available/limited/unavailable projection. Never expose order names, counts identifying
+customers, contact details or private schedule. `GET /schedule`
+is the same privacy projection, shareable without auth.
+
+Manager `POST /admin/cakes`, `/admin/variants`, `/admin/recipes/versions` with expected
+version. Variant maps to one immutable recipe version with quantities/servings;
+archive referenced entities instead of deleting history. Image upload creates
+pending metadata, validates bytes/MIME/decode/size, writes unique object outside
+transaction, then finalizes ready metadata. Public bucket read only; private request
+attachments require scoped upload/read. Failures leave recoverable pending objects,
+never broken public catalog entries. Body/upload limits set in bootstrap, with a
+proposed 10MB/image ceiling tested before accepting photographic assets.
+
+## K02 — request, quote, reorder, history and favourites
+
+`POST /custom-requests` accepts paired inspiration_id/image_revision_id (both omitted/null for generic requests), servings/date, requested
+changes and contact choice. BO-GK-003.request_fields/order_contacts specify date,
+servings OR size, flavour/filling, idea/design details, conditional colour palette,
+optional/multiple references, and full name/phone/Instagram/email at custom-order
+placement. Wire expansion/validation must be reconciled; do not discard these fields.
+Response `{request_id,version,inspiration_id,image_revision_id,summary,handoff_state:"not_sent"}`. Draft owner can
+read/update; signed-out local recovery is explicitly labelled device-only until
+saved. Copy and open Instagram are separate actions; clipboard failure exposes
+selectable summary, unavailable Instagram retains summary/reference for retry.
+No browser/API event means DM sent. User confirms sending only as self-report.
+
+Manager creates versioned agreed quote linking request and customer proof; required
+configuration, recipe/allergen/price/currency, production date, fulfillment and
+policy snapshot, expiry. Current GK-003 payment link lasts 24 hours, retaining the
+source sending anchor; the former 48-hour quote window is superseded, with no
+date booking until successful 100% payment; exact expiry equality and temporary
+checkout-hold semantics remain open. Customer reviews exact quote version before committing
+100% payment. Admin-entered order is not paid just because conversation happened.
+`POST /admin/orders` source quote or manual agreement creates same order/payment
+path as website; external payment recording, if allowed, records method/reference,
+amount/currency, actor and evidence and is never labelled a Stripe collection.
+One quote version can convert to at most one active order; unique constraint.
+Unpaid expired order can be replaced only by explicit revalidation/new quote.
+
+`POST /reorders` with source order or inspiration ID produces current choices/quote,
+not cloned historical price/allergens/availability or automatic payment. Archived
+source offers custom request. `GET /me/orders`, `/orders/{id}` owner-scoped; account
+claim requires authenticated verified contact plus order capability/verified claim
+challenge, expiring single-use token and audit. Never auto-claim historical orders
+on an email string alone. `PUT/DELETE /me/favourites/{cake_id}` is set membership
+unique(customer,cake); archived entries remain labelled unavailable. Signed-out
+favourites are local IDs, merged with account only after explicit user choice.
+`PATCH /me/profile` optional Instagram handle uses bounded plain text, no identity
+proof, escaped output, private by default; exact platform syntax validated on setup.
+
+## K03 — price agreement and discount arithmetic
+
+`POST /checkout/quotes` accepts lines `{variant_id,quantity}`, production_date,
+pickup_slot_id OR chef_delivery address/window OR customer_arranged handover slot,
+discount_code optional. Returns quote ID/version/expiry and immutable proposed
+line/recipe/policy snapshots, currency, item subtotal, item discount, delivery fee,
+delivery discount, tax, total and availability advisory. Input amount/fee is ignored
+or rejected; server validates fulfillment eligibility and stock/capacity.
+
+Proposed policy: one code per order; percent applies to eligible item subtotal only,
+free-delivery affects chef delivery only, no stacking; Creator must approve before
+implementation. Percent is basis points 0..10000, discount D=floor((eligible_sum*bps+5000)/10000),
+allocated to eligible lines by floor proportional shares then largest fractional
+remainder, ties stable line ID. Thus item allocations sum exactly to D. Example
+1001+1000 at 10%=200, split 100/100, net 1801. Free-delivery cannot reduce goods below
+zero. BO-GK-005.vat reports not VAT registered and no separately added VAT; this is not
+verified tax exemption/zero-rate advice. Exact rounding/allocation remains blocked;
+authoritative tax_amount is shown before payment. Final total is sum of
+net lines + net delivery + tax under that approved policy.
+
+Code owns version/eligibility/currency/start/end/usage limit. Hold reserves usage
+atomically; success consumes, confirmed-unpaid expiry releases. Pending payment
+holds still count. Unique order/code application prevents retry consumption.
+Cancellation does not invent eligibility to reuse a limited-use code; Creator
+policy decides reinstatement with explicit ledger movement. Orders preserve the
+applied rule and allocation, never recompute refunds from today's price/code.
+
+## K04 — reservation, payment and expiry
+
+`POST /checkouts` required quote_id, quote_version, selected resource IDs, consented
+policy version and contact; scoped key. Transaction revalidates price/config/policy,
+creates awaiting_payment order + immutable item snapshots, reserves production
+units/ready stock, pickup/delivery resource and discount usage, creates collection
+operation and durable job. All-or-none; 409 PRICE_CHANGED returns replacement quote
+for explicit customer review, 409 CAPACITY_UNAVAILABLE leaves no partial hold.
+
+Global lock order: existing orders by UUID -> collection/capture rows by UUID ->
+refund rows by UUID -> mutable catalog/policy configuration rows by type/ID ->
+resources in rank production_day, finished_cake_lot, pickup_slot, delivery_window,
+discount then stable ID -> reservation/application rows -> inventory ingredient/lot
+rows by stable ID -> append command/history/audit/notification. Skip untouched ranks.
+Creation claims scoped command key and unique quote conversion before shared resource
+locks; losers retrieve committed identity or roll back, never wait on uniqueness
+while holding resources. Queue claim releases its short transaction before domain work.
+Pure config/resource/inventory edits never acquire order locks afterward. GK-001
+allows lowering the standard limit below accepted commitments: 7→5 preserves all 7.
+The previous rejection of such edits is superseded; accepted orders can only be
+cancelled personally by the chef through a separate audited operation. New-admission
+mechanics remain for GK-019 integration. Enumeration of affected orders is not a
+phantom-safe mechanism; booked-order edits need a separately reviewed closure/consent
+protocol and cannot silently rewrite commitments.
+
+Enforced gateway: typed PostgreSQL SECURITY DEFINER domain commands, nonlogin
+non-superuser owner, runtime roles denied DML/TRUNCATE/DDL/SET ROLE owner/migrator on
+protected lifecycle/snapshot/capture/refund/goal/observation/resource/discount tables.
+Revoke PUBLIC EXECUTE/default grants; trusted fixed search_path with pg_temp last,
+qualified objects and no runtime schema CREATE. Runtime gets only named command
+EXECUTE and required reads; worker observation/dispatch grants distinct. API validates
+identity and functions validate local actor/ownership/state/input. This prevents
+accidental bypass, not malicious owner/superuser action. Migrations/repairs follow
+same invariant/dispatch-freeze procedure. Real-role denial and sum/rollback tests
+are required in GK-020/023/025/026. Details: features/commerce.md gateway section.
+
+Current GK-001 input uses a standard 7 cakes per handover date, two cakes consuming
+two units, with no automatic complexity weighting. Chef-entered separately agreed
+extras are outside the standard counter and both simultaneous last-place orders may
+be placed. Do not enforce old strict admission blindly; GK-019 must reconcile these
+outcomes and ready-stock allocation. The prior technical design says
+ready stock consumes an existing finished-cake lot, not future production units.
+Creator confirmed hybrid made-to-order and occasional ready stock.
+Pickup and production are separate reservations. Customer-arranged delivery reserves
+a handover/pickup slot; chef delivery uses its own approved dispatch/window resource.
+No delivery zones/automatic tariffs: GK Delivery is an individually accepted
+address quote from £100; ordinary London consideration and separately confirmed
+outside/distant requests. Client-supplied price never overrides agreed fee. Pickup
+slots have no separate count cap; daily feasibility applies, so prior slot-counter
+admission requires review. See owner-data-contract.md capacity/delivery profiles.
+
+After DB commit a worker creates hosted Checkout with stable local operation key;
+unknown outcome reconciles same operation. Signed webhook is persisted by unique
+provider/account/environment/event ID before ack; worker fetches authoritative
+object where needed and validates order, environment, amount/currency and payment
+reference. Only confirmed successful capture confirms order/consumes holds. Return
+URL is never payment evidence. Duplicate/different event IDs for same object cannot
+double-consume; stale events cannot regress authoritative success.
+
+Selected provider session duration/methods require sandbox evidence. Stripe candidate
+allows 30 minutes–24 hours from provider creation, not from earlier local order
+creation. Persist dispatch_started_at/key/body before external create and save actual
+returned expiry. Recheck minimum provider window fits production/lead-time promise
+before admission. Local hold deadline is only a reconciliation trigger. Never-dispatched
+cleanup can release only if dispatch_started_at is null under same order lock and
+it closes the operation so a queued worker cannot later send. Once admitted, missing
+provider ID is unknown. Terminal-unpaid evidence must exclude any successful or
+unresolved underlying payment before release; processing/outage retains holds.
+
+Late capture records actual funds but cannot reopen cancelled/expired lifecycle or
+fulfill an infeasible promise. Default safe path: durable full-return goal, refund
+execution/reconciliation and manager queue, no fulfillment. GK-025 delivers this
+minimal refund recovery before collecting money; GK-026 extends it with customer/
+admin cancellation and partial allocation. Reacquisition/new replacement order is
+blocked until an explicit feasibility/consent policy is accepted; never infer revival
+from payment success. Extra capture/mismatched currency/amount/dispute freezes new
+collection/fulfillment and preserves provider facts in quarantine.
+
+```mermaid
+sequenceDiagram
+  participant U as Customer
+  participant A as API
+  participant D as PostgreSQL
+  participant P as Payment provider
+  U->>A: Confirm quote + idempotency key
+  A->>D: Atomic order + all holds + collection job
+  A-->>U: 202 pending / operation ID
+  A->>P: Create hosted checkout outside transaction
+  alt Unknown provider outcome
+    A->>D: Preserve same operation; reconcile, retain holds
+  else Verified capture webhook
+    P->>A: Signed event
+    A->>D: Inbox then atomic validated capture + consume holds
+    A-->>U: Confirmed order timeline
+  end
+  Note over A,P: Expiry releases only terminal-unpaid; late capture preserves terminal state and enters full-return recovery
+```
+
+## K05 — cancellation, production and refunds
+
+Current payment-source integration: load the latest GK-003 handover and exact source
+`chat:GK-003:2026-10-05:website-payment-24h`. Customer and chef-template orders pay
+through the website within a 24-hour payment window; the old off-site residual-balance
+exception is history for current intake. Production remains +48 hours after successful
+full payment. GK-chef delivery is separately priced/paid; only chef/admin refunds that
+collection separately. Allocate one total entitlement across actual captures; never
+refund the entire total independently from each capture. Historical Revolut facts and
+recovery evidence remain durable, without offering that old route for new orders.
+
+Orders owns lifecycle: awaiting_payment -> confirmed -> in_production -> ready ->
+completed; cancellation/expiry are explicit terminal branches. Payment remains
+separate (`created,pending,unknown,succeeded,failed,cancelled`), fulfillment separate
+(`awaiting_handover,out_for_delivery,completed,exception`) and refund separate.
+GK-001 manual-handover-r2 expressly replaces earlier 3/4-day, component and incompatible
+state restrictions for both cake types. Save `full_refund_deadline_at` at placement
+from original handover minus 120 elapsed hours. Customer cancellation strictly before
+that instant returns 100% whole-order cost including delivery; at equality or later,
+exactly 50%, including no-show and after handover. Chef cancellation returns 100%.
+Do not infer mandatory-rights limits or legal compliance from this business preference.
+
+Owner ordinary production rule: manual confirmation starts work early; otherwise
+48 elapsed hours after successful full payment with no earlier manual confirmation.
+Ready confirmation and preparation start are one event under the new answer. Late
+automatic processing retains the scheduled effective instant and separate actual
+recording/preparation evidence. Old pickup-minus-X proposal is displaced. Customer cancellation and
+refund eligibility are distinct; timed start must not imply a blanket denial of all
+cancellation. Its financial outcome follows the separate saved refund deadline;
+start equality does not create a new zero-refund branch. Technical post-handover
+return/state representation remains GK-019 integration; keep completed fulfillment
+evidence rather than pretending a delivered cake never existed.
+
+Existing technical discipline remains: cancel/start lock the same order, recheck
+version and server time after lock acquisition, append history/audit/intents once.
+A late scheduler cannot extend a policy deadline. Persist effective and recorded
+start separately. No pickup-minus-48 formula. Date/time moves preserve the original
+refund deadline, including earlier moves, and never reset production start.
+
+Refund contracts adopt the financial pilot r3 and commerce gateway. Refund states:
+reserved, submitting, pending, unknown, requires_action, succeeded, failed, cancelled.
+`POST /admin/orders/{id}/refunds` required amount_minor/currency, allocations array,
+reason/expected_version, manager capability; admin `/cancel` also requires cancellation
+capability/reason. For each capture C, succeeded S and live reservations R including
+unknown/requires_action: new amount <= C-S-R. Current user policy specifies 100%
+when the chef cancels; an older customer-breach carveout must not silently override
+that explicit answer. Payment evidence and prior refunds still govern dispatch. Existing
+technical full-return goals for recovery remain captured-funds targets; prior succeeded/pending partials count toward goal, not additional
+money. A pending partial later failing leaves an open shortfall and manager action;
+zero immediate new refund does not mean goal complete. Goals are obligations, not
+extra reservations. Unknown never releases balance merely on time/key expiry.
+
+Separate verified provider_observation records preserve unmatched/conflicting money
+facts outside controlled allocations. Example C10000p, local unknown10000p and
+unrelated dashboard succeeded5000p: retain both, quarantine capture, available=0,
+block new dispatch admissions and expose possible15000p liability. In-flight calls
+cannot be recalled by DB freeze. Reconcile identities, complete paginated outcomes
+and definitive nonexecution before atomically matching/reclassifying/importing and
+unfreezing. A real external over-refund remains visible discrepancy, never coerced
+into cap or discarded. Reporting deduplicates local+observed facts by provider/
+account/environment/object identity. Refund success can later be corrected by current
+provider evidence; audit correction, reopen goal if needed, no automatic second payout.
+Offline returns require manager evidence, never provider POST. Restore freezes outbound
+money/email operations until lost-window reconciliation. See pilot AC-R1–R7.
+
+```mermaid
+sequenceDiagram
+  participant C as Customer
+  participant Chef
+  participant O as Order transaction
+  participant P as Provider
+  C->>O: Cancel expected version
+  Chef->>O: Start production expected version
+  Note over O: Same order lock; recheck positive eligibility
+  alt Cancellation wins
+    O->>O: Cancel + refund reservation + audit + notification intent
+    O->>P: Refund via durable operation after commit
+    alt Timeout
+      O->>O: Unknown; retain reserved refund balance and reconcile
+    else Success
+      O->>O: Refund succeeded; completion notification
+    end
+  else Production wins
+    O-->>C: Re-evaluate action and component refund rules; unresolved states blocked for implementation
+  end
+```
+
+## K06 — pickup move, schedule settings and fulfillment
+
+`POST /orders/{id}/pickup` with target_slot_id and expected_version. Lock order and
+old/new slots in canonical order. Re-evaluate booked policy snapshot/cutoff after
+locks, reserve target and release source in one transaction, append history/audit
+and notification intent. Failure retains original slot. Production date and recipe
+remain unchanged; delivery-mode changes need new priced agreement, not this endpoint.
+Admin policy edits are versioned and affect new commitments; modifying existing
+bookings needs explicit affected-order consent/recovery process, never silent change.
+
+`POST /admin/orders/{id}/transitions` allowed action, version, reason; fulfillment
+role can ready/dispatch/complete only allowed paid states; manager start/cancel per
+policy. Delivery exception retains actionable state, not automatic refund/completion.
+Manual orders call K04 resource operations. Owner allows manually confirmed
+above-standard capacity; design an explicit audited exception admission, never a
+privileged unrecorded counter/payment bypass.
+Future courier boundary is one `delivery_reference` and explicit dispatch/status
+command mapping, with manual operation now; no unused integration framework.
+
+```mermaid
+sequenceDiagram
+  participant U as Customer
+  participant A as API
+  participant D as PostgreSQL
+  U->>A: Change pickup target + version
+  A->>D: Lock order and both slots; check server cutoff
+  alt Target available and policy allows
+    A->>D: Reserve new + release old + history + notice atomically
+    A-->>U: New appointment, shop timezone
+  else Full, stale or past cutoff
+    A-->>U: 409, keep old appointment, offer valid choices
+  end
+```
+
+## K07 — ingredient inventory, planning and finance views
+
+Inventory owns ingredients with canonical mass/volume/count units and validated
+conversions; no implicit grams-to-millilitres without ingredient-specific evidence.
+Immutable recipe versions have per-variant quantities/yield. Orders snapshot exact
+version/scaling, substitutions require explicit revised agreement for allergens.
+Forecast by production date = snapshot demand of included committed statuses minus
+usable on-hand after explicit allocation; draft quotes and unpaid holds shown
+separately so grocery plan does not double-count them. Ready stock already produced
+has no future recipe consumption. Actual stock movement is explicit receipt/use/
+waste/adjustment/reversal with unique operation key and reason; production-start
+policy determines planned-to-actual conversion, never automatic refund restock.
+Cost assumptions store supplier/unit price/as-of; grocery budgets are estimates.
+No negative stock silently normalized; policy permits audited discrepancy or rejects.
+
+`GET /admin/groceries?from&to`, `/admin/inventory`, `POST /admin/inventory/movements`,
+`GET /admin/metrics?from&to` max31-day UI window, paginated details. Finance totals:
+gross captured, successful refunds, net customer receipts=gross-refunds; discounts
+separate from already-net captured; known provider fees separately; net after known
+fees labelled incomplete until reconciled. Not accounting profit/tax filing or
+bank payout. Site visits/pageviews are separate telemetry, not distinct people.
+
+Inventory precision: wire quantities are bounded decimal strings, exact decimal
+storage with approved canonical scale; grams-to-volume needs ingredient-specific
+factor. Receipt/use/waste/adjustment/reversal movement appends once; no ledger
+clipping. Outstanding demand = snapshot planned amount minus net linked actual use,
+minimum zero for future demand only; excess use remains visible variance. Example
+1000g on-hand, 800g plan, 300g recorded use =>700g on-hand and500g remaining demand.
+Cancelled order removes remaining demand, not physical consumption. Missing-use
+ready/completed orders remain “usage not recorded”. Forecast allocates chronological
+outstanding demand and usable lots, including earlier unconsumed commitments before
+requested window; unknown expiry/cost is incomplete, not zero. Ingredient cost
+shortage500g at240p/1000g =>120p, rounded up per ingredient estimate; no accounting claim.
+
+Receipt shape: `POST /admin/inventory/movements` required ingredient_id, kind,
+quantity decimal string, unit, reason, expected_version and key. Existing-lot commands
+require lot_id. New receipt instead supplies `new_lot:{expiry_date:string|null}`
+and forbids lot_id; atomically creates lot+receipt. Use requires order_item_id when
+consuming an order; reversal requires reverses_id, rejects beyond remaining reversible
+quantity. Exact unit scale, expiry/use/negative-stock policies remain GK-007 decisions.
+
+Financial reports union verified captures/refunds and external observations, deduplicate
+matched identities, expose quarantine/exposure and completeness. Real15000p returns
+against10000p capture show receipts -5000p with discrepancy, not clipped or excluded.
+Unknown fees are null/incomplete. Local day queries use [London start-of-from,
+London start-of-day-after-to), handling 23/25-hour DST dates. Site visits/pageviews
+cannot satisfy “daily users” until Creator accepts definition or selects distinct
+measurement; GK-004/005/033 explicitly retain this decision.
+
+## K08 — durable notifications, custom messages and audit
+
+Every transaction requiring customer notice inserts unique intent keyed by business
+transition + recipient + template revision. Notification worker owns dispatch jobs;
+webhook inbox owns verified provider events. States queued, sending, accepted,
+delivered_to_server, bounced, failed, unknown. Delivered-to-server is evidence, not
+inbox/read. Attempt history is append-only; out-of-order events preserve facts and
+show adverse evidence, not overwrite bounce with stale accepted.
+
+`POST /admin/orders/{id}/messages/preview` accepts plain text subject/body, returns
+recipient identity, sanitized rendered preview/hash. `POST .../messages` requires
+preview_id, preview_hash, expected order/recipient version and idempotency key; rechecks manager
+permission/contact, stores audit + intent. No bulk marketing inferred. Preview
+cannot send; changed recipient/content requires new preview/confirmation.
+
+Unknown send outcome uses provider idempotency/status lookup while supported; after
+provider retention window, manager reconciles evidence before explicit resend
+warning that a duplicate is possible. Replays keep stable send identity. Leases
+need owner/fencing tokens; stale worker cannot finalize somebody else's claim.
+Poll payments independently of webhook arrival; jobs use bounded batches/attempts
+and indexed next_attempt_at. Critical exhausted work remains on manager queue.
+
+```mermaid
+sequenceDiagram
+  participant T as Business transaction
+  participant D as DB job/outbox
+  participant W as Worker
+  participant E as Email provider
+  T->>D: Commit state + unique notice intent
+  W->>D: Claim lease/fencing token
+  W->>E: Send stable operation ID
+  alt Timeout / worker crash
+    W->>D: Keep unknown or lease expires
+    W->>E: Reconcile original send before retry
+  else Accepted
+    W->>D: Store provider reference and accepted evidence
+    E->>D: Signed webhook through API inbox
+  end
+```
+
+```mermaid
+sequenceDiagram
+  participant U as Customer
+  participant I as Instagram
+  participant M as Manager
+  participant A as API
+  U->>A: Save custom request
+  A-->>U: Recoverable summary, not_sent
+  U->>I: Copy/open then personally send
+  alt Handoff unavailable
+    U->>U: Select/copy retained summary; retry same request
+  else Agreement reached
+    M->>A: Versioned agreed quote + proven customer association
+    U->>A: Review exact quote then create payment order
+    Note over A: K04 applies; quote conversion unique and capacity revalidated
+  end
+```
+
+Notification exact supplement: preview requires subject/body/purpose="transactional"/
+expected_version; subject <=200 and body<=10000 characters proposed, reject CR/LF in
+subject. Server stores preview_id/hash bound to manager, order association, contact
+ID+version, exact recipient/content. Send requires preview_id/hash, expected_version,
+recipient_version and key, no replacement body/address. Recheck active role and
+all bound records; proposed preview TTL15m. Accepted intent freezes recipient;
+post-enqueue revocation suspends unsent dispatch, never silently retargets or recalls
+already sent mail. Job owner+generation+live lease fences every finalization/retry;
+reconciliation generation rejects stale fetch results. Store first_dispatch_at,
+reuse immutable key/body only inside verified provider retention. Webhook-before-
+response remains pending correlation, not discarded. Intent+job+audit are inserted
+in one business transaction (no asynchronous enqueue gap).
+
+`POST /admin/notifications/{id}/reconcile` expected_version/key creates evidence-only
+job (zero sends). Deliberate successor `POST /admin/notifications/{id}/resends`
+requires original intent/version, fresh preview_id/hash/recipient_version,
+reason and acknowledge_possible_duplicate=true when irreducibly unknown; manager
+only, retained predecessor/successor chain. This explicit choice cannot bypass
+recipient/ownership or financial state checks. Provider lookup uncertainty remains
+visible; email evidence is not legal/accounting delivery proof.
+
+## K09 — schema, retention and deployment compatibility
+
+Entities use UUID PK, FKs, optimistic version, audit timestamps; business tables
+private schema and no client grants. Entity owners: identity profiles/staff/claims;
+catalog inspirations/products/variants/recipe_versions/images; orders quotes/orders/
+items/history; scheduling resources/reservations/policies; payments collections/
+refunds/allocations; inventory ingredients/movements; notifications intents/attempts;
+operations inbox/jobs/audit. FK retention preserves purchased snapshots if display
+catalog archived. Private PII retention is a Creator-approved policy; anonymization
+must preserve legally required financial evidence and revoke access/claim tokens.
+
+Query-driven indexes: customer+created_at+id orders, fulfillment/production date,
+active resource expiry, provider unique refs/event IDs, status+next_attempt jobs,
+order+event_time audit, ingredient+occurred_at movement. Restore/migration fixtures
+owned by corresponding module ticket; test empty and previous supported schema.
+No entity gets a separate service or speculative index just for its name.
+
+Compatibility: API v1 additive fields/endpoints; readers ignore unknown response
+fields; new enum values display safe unknown state and do not enable actions.
+Breaking changes require v2 or staged expansion, deployed-client observation and
+explicit retirement. Proposal supports current and previous UI release against new
+API and old API for unchanged UI paths; new feature flags activate only after API
+capability is present. Database expand -> API -> UI -> observe -> separately approve
+contract cleanup. Roll back compatible artifacts, never blindly down-migrate data.
+API/maintenance artifact must match; complete/lease running jobs safely during rollout.
+
+## K10 — policy readiness and stable technical acceptance
+
+Current business inputs are creator-decisions r3 and the fingerprinted owner intake.
+Numerous exact values are supplied; placement/counting/ready-cake conflicts and privacy
+gaps remain. No missing zero-total discount, stock-consumption or rounding policy inferred.
+100% discount can yield zero total: GK-007 must choose reject-zero combinations or
+an explicitly designed no-payment-required confirmation; never fabricate capture.
+Shared technical baseline Go/SvelteKit, private PostgreSQL modular commands, resource
+lock discipline, durable intents/quarantine and separate component compatibility are
+accepted by master based on qualified commerce/operations assessments, subject to
+fresh final review. Providers remain proposed/blocked, no spend or account approval.
+
+## K02A — reconciled customer representation
+
+Catalog response: `{id,kind:"inspiration"|"product",archive_state:"active",
+orderability:"request_only"|"orderable",title,images,variants,starting_price_minor:
+integer|null,currency:"GBP",recipe_display_revision,allergen_content_approved,
+stock_mode:"made_to_order"|"ready_stock"|"both"}`. Public active-only endpoint returns
+404 NOT_FOUND for archived detail, not private/historical tombstone. Authenticated
+favourites/history carry their authorized snapshot title/inspiration reference and
+can offer request-similar; public 404 offers generic custom request with no archived
+data. Missing approved allergen/cross-contact disclosure disables buying; request
+can still proceed without promising dietary safety. Public range validation422
+RANGE_INVALID consistently; max31 local dates, no private order information. Public
+standard-slot counts versus flags require owner-display clarification in K01.
+
+`GET /custom-requests/{id}` owner/capability only, safe saved fields/summary/version;
+`PATCH /custom-requests/{id}` key + expected_version + permitted fields updates draft;
+`POST /custom-requests/{id}/summary` key+expected_version+matching image_revision_id (null for generic request) freezes explicit revision,
+returns summary_revision/reference/save_location="account"|"scoped_server" and
+handoff_state="not_sent". Local-only signed-out draft is labelled device-only; its
+policy/capability option remains GK-003. Summary is text and contains no secret link.
+Draft state draft -> ready_for_handoff -> archived; state is not payment/order state.
+No persisted “I sent it” event in first version: no requirement depends on this
+optional self-report. Copy/open actions do not mutate sent state. Exact mandatory
+business fields remain blocked on GK-003, not invented by UI.
+
+Selected-image wire contract (C12): each ready public catalog image returns
+`{image_revision_id:UUID,url,alt,width,height}`. The UI retains the exact revision
+ID it displayed/selected; it does not infer the source from the latest gallery URL.
+`POST /custom-requests` carries `{inspiration_id:UUID,image_revision_id:UUID,...}`
+for an inspiration-based request. Generic requests omit both or send both null;
+the server stores both null. Supplying only one returns422 INVALID_REFERENCE_PAIR.
+The draft and GET response retain both IDs. PATCH changes or clears the pair
+atomically with expected_version; omitted pair means unchanged. Never accept a
+client object key or arbitrary image URL as proof of the selected catalog image.
+
+`POST /custom-requests/{id}/summary` requires key plus
+`{expected_version:7,image_revision_id:UUID|null}` matching the stored draft. A
+mismatch returns409 STALE_VERSION and requires refreshing the selected source;
+no-inspiration drafts require null and freeze a summary with no image/reference pin.
+Resolve object key/version server-side by the supplied image revision, verify it
+belongs to the supplied inspiration and is a published ready image accessible via
+that active public inspiration (or an already-authorized retained request revision).
+Replacement does not silently switch A to B: a superseded published A may be pinned
+while its inspiration remains active and bytes remain retainable. Wrong association,
+non-visible/private, archived-before-initial-freeze, missing or cleanup-tombstoned
+selection returns409 REFERENCE_UNAVAILABLE without an existence detail or substitute.
+Retained summary retrieval after catalog archival follows the owner/manager rule.
+
+Regression: customer displays/selects A, then catalog replaces A with B before
+creating the draft or freezing its summary. The explicit A ID yields the exact A
+pin/bytes if still permitted, otherwise REFERENCE_UNAVAILABLE and an explicit
+reselection path. Never return/pin B without a new customer selection. Generic
+no-inspiration request freezes without an image; half-pairs and foreign-image
+associations fail without a request image pin.
+
+C12 image preservation: freezing a summary revision atomically records the selected
+inspiration_id, image_revision_id, immutable object key/version and safe image
+metadata (MIME, dimensions, alt text) beside the exact requested differences. The
+Custom module owns the reference pin; Catalog/Storage may replace or archive public
+images but cannot mutate pinned bytes or delete an object while any retained request
+or quote references it. Pin creation and cleanup admission must serialize on the
+same image/object-reference row. A cleanup tombstone prevents new pins; selecting
+an already unavailable revision returns409 REFERENCE_UNAVAILABLE and asks the
+customer to select a current image, without freezing a false reference. Object
+writes use new immutable keys, never overwrite an existing referenced key.
+
+`GET /custom-requests/{id}/revisions/{revision}/image` checks request ownership or
+approved guest capability, or active manager permission plus the associated request.
+Return a short-lived authorized image URL with MIME/dimensions/alt and revision,
+not a permanent public bucket key; unrelated actor returns404. Expired URLs can be
+refreshed after the same authorization check. Instagram text summary identifies
+the request and image revision; it contains no secret capability. The customer
+retrieves/copies the selected image for the manual conversation and the associated
+chef retrieves the same revision in the admin request. Quote provenance references
+the exact request summary and pinned image revision, never today's gallery image.
+Approved explicit request/quote deletion releases references atomically only when
+all retained links permit it; incidental catalog archival never does. Retention
+period and legal deletion policy remain GK-005 decisions; no duration inferred.
+
+`GET /me/favourites` returns cake_id, active/archive status and authorized safe saved
+title/reference; `PUT/DELETE` set membership as K02. Explicit client set-union merge
+reuses those commands and per-item keys; preserve local IDs until acknowledged.
+No batch/sync engine. `GET /me/profile` gives private handle/version;
+`PATCH /me/profile` requires expected_version, optional handle (null clears), key.
+
+Order list projection `{id,number,created_at,currency,total_minor,lifecycle,
+payment_state,refund_summary,fulfillment_state,pickup,version}`; detail includes
+purchased snapshots, safe timeline `{at,type,label}` and server-derived allowed_actions.
+Unknown enums show updating/contact help and enable no new destructive action.
+Private no-store, cleared cache on sign-out; never return provider raw audit.
+`POST /reorders` accepts exactly one source_order_id (owner proof) OR inspiration_id
+(public active), optional current selection; returns `{source_reference,current_options,
+changed_fields:["price","allergens","servings"],availability,quote_id:null|UUID,
+requires_review:true}`. No order/payment automatically created. If archived/unavailable,
+return safe result with options empty and request_similar=true in authorized source
+context; foreign order remains404, no original owner's data.
+
+Identity implementation gate remains ADR-0005/GK-004/GK-019: select managed provider
+and supported browser session strategy (SDK bearer with hardened storage/CSP or
+secure HttpOnly session plus CSRF). No app endpoint may accept arbitrary subject
+or email proof. Managed provider owns sign-in/out and recovery; application `/me`
+reads verified principal. Historical claim proposal `POST /order-claims` with
+order reference+proof and key under authenticated subject; single-use expiring
+challenge bound to verified contact and order, generic404 CLAIM_UNAVAILABLE for
+missing/expired/used/foreign cases. Exact challenge delivery, expiration, guest
+capability/session storage and revoke semantics require qualified Astra design
+with chosen provider and Creator GK-003; named prerequisite GK-019, no implementation
+Ready until embedded in GK-021. Choosing SDK persistence alone does not prove
+revocation; short-lived JWT validity and current local role/ownership checks must
+be tested. Sign-out cache clearing does not revoke already issued access tokens.
+[Provider session](https://supabase.com/docs/guides/auth/sessions) and
+[sign-out](https://supabase.com/docs/guides/auth/signout) evidence checked 2026-09-21.

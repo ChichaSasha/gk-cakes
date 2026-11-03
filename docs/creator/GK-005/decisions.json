@@ -1,0 +1,1623 @@
+{
+  "schema_version": 1,
+  "ticket": "GK-005",
+  "input_revision": "eee247cc0d3d8cfcd9b40efea6b027e8caedec81dbefaf68e14ad049695d97b2",
+  "status_meaning": {
+    "confirmed": "Explicit owner business statement, not whole-ticket completion or legal approval. Unresolved semantics still block affected implementation.",
+    "reported_fact": "Attributed fact; consult field-specific evidence for independent verification, not blanket compliance.",
+    "conflict": "Owner wording retained; competing owner rule not resolved.",
+    "example": "Owner calculation/example only, not configurable business value.",
+    "unresolved": "Explicit owner question requiring external evidence.",
+    "incomplete": "Source fragment; missing answer remains null."
+  },
+  "normalization": {
+    "money": "GBP established in BO-GK-005; exact pounds × 100 = integer pence; no floats. Percent remains integer percent.",
+    "time": "No day-to-hour or month-to-day conversion. Recurring local clock strings unchanged; Europe/London from creator-decisions r2, not inferred from owner text.",
+    "unknown": "null means unknown or redacted, never zero/false/not-applicable; see field notes.",
+    "approval": "Direct statements adopted narrowly; no decision auto-supersedes a conflicting owner statement by recency."
+  },
+  "decisions": {
+    "public_identity": {
+      "id": "BO-GK-005.public_identity",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "legal_seller": "Elina Hryhorian trading as GK Cake London",
+          "trading_name": "GK Cake London",
+          "instagram": "@gk.cake.london",
+          "email": "gk.cake.london@gmail.com",
+          "legal_address_authorized": true,
+          "legal_address_value": null
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current approved interview-r1; GK-019 canonical reconciliation",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Exact legal address remains in protected conversation; obtain before final legal publication."
+        ]
+      },
+      "interpretation_en": "Current interview values; technical derivations remain in GK-019 contracts, not owner quotations.",
+      "data_contract": "business",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-005.public_identity",
+          "revision_sha256": "572747de969557ecb13adf40c0014b0c8a63edfd438c8253d309bfce7921ecbb",
+          "extent": "Explicitly replaced portions; source history retained."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-005:2026-10-05:legal-name-vat",
+        "revision_sha256": "106231433a5c7b33d530b388adf08be5e8ca921d937c8a27a94e654eaab758eb",
+        "lines": [
+          [
+            1,
+            4
+          ]
+        ],
+        "attribution": "Sasha interview/readback; not direct chef authorship",
+        "approval_basis": "Explicit replies in approved GK-005 interview-r1 and input-stage closure; no legal compliance approval."
+      },
+      "effective_from": null,
+      "effective_date_note": "Planning approval is not production policy activation.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "6abacbecde4959cdb8da9e21",
+          "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+          "lines": [
+            [
+              5,
+              7
+            ]
+          ],
+          "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+          "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+        }
+      ],
+      "revision_sha256": "f45946aaa4ef16d9524c649e04a5d5437874c50bc6918b6e33086ff6c9ba73ba"
+    },
+    "food_status": {
+      "id": "BO-GK-005.food_status",
+      "status": "reported_fact",
+      "business": {
+        "value": {
+          "food_business_registered": true,
+          "inspection_completed": true,
+          "public_record_available": true,
+          "rating": 5,
+          "rating_label": "Very Good",
+          "FHRS_ID": "1963655",
+          "authority": "Tower Hamlets",
+          "inspection_date": "2026-06-29",
+          "official_url": "https://ratings.food.gov.uk/business/1963655/gk-cake"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current approved interview-r1; GK-019 canonical reconciliation",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Official record verified in interview evidence; not registration-date or continuing-compliance guarantee."
+        ]
+      },
+      "interpretation_en": "Current interview values; technical derivations remain in GK-019 contracts, not owner quotations.",
+      "data_contract": "business",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-005.food_status",
+          "revision_sha256": "16640dcb76cae03e4e4803e3bd488add6fec7f6c9bb96532253313bca173812f",
+          "extent": "Explicitly replaced portions; source history retained."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-005:2026-10-05:identity-rating",
+        "revision_sha256": "715a3c3e7e0fd401fb3b87f4c84db75137019aec729ea1f725a2a31e4ed0a0e4",
+        "lines": [
+          [
+            1,
+            5
+          ]
+        ],
+        "attribution": "Sasha interview/readback; not direct chef authorship",
+        "approval_basis": "Explicit replies in approved GK-005 interview-r1 and input-stage closure; no legal compliance approval."
+      },
+      "effective_from": null,
+      "effective_date_note": "Planning approval is not production policy activation.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "6abacbecde4959cdb8da9e21",
+          "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+          "lines": [
+            [
+              11,
+              17
+            ]
+          ],
+          "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+          "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+        }
+      ],
+      "revision_sha256": "e99c92a01e3cc77bb851bb49ab10d3509770e61caa36f92937ce0a61ad06dee6"
+    },
+    "identity_documents": {
+      "id": "BO-GK-005.identity_documents",
+      "status": "confirmed",
+      "business": {
+        "value": false,
+        "type": "bool",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Do not attach identity documents to Trello or public materials.",
+      "data_contract": "privacy",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            19,
+            19
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "badde9c3e9d37abb6c5c2e49e6e5935705b64c040f7cf656d93353237c8688ef"
+    },
+    "flavours": {
+      "id": "BO-GK-005.flavours",
+      "status": "confirmed",
+      "business": {
+        "value": [
+          "Banana Pudding",
+          "Chocolate Raspberry",
+          "Chocolate Cream Duo",
+          "Chocolate & Banana",
+          "Vanilla Raspberry",
+          "White Chocolate Raspberry",
+          "Chocolate Oreo",
+          "Snickers"
+        ],
+        "type": "list",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Eight current flavour names, preserved exactly; no ingredient quantities, serving sizes or recipes supplied.",
+      "data_contract": "allergen",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            25,
+            34
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "40dd38fa5b00dd83de4db9b89c44348e6f9afea012e893e6624d9f2cd312f9b0"
+    },
+    "allergens": {
+      "id": "BO-GK-005.allergens",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "all_flavours": [
+            "EGGS",
+            "MILK",
+            "CEREALS CONTAINING GLUTEN (WHEAT)",
+            "SOYBEANS"
+          ],
+          "additional": {
+            "Chocolate Oreo": [
+              "SULPHITES"
+            ],
+            "Snickers": [
+              "PEANUTS"
+            ]
+          },
+          "prominent": {
+            "Snickers": [
+              "PEANUTS"
+            ]
+          },
+          "visible_before_purchase": true,
+          "owner_verified_date": "2026-09-28",
+          "applies_to_all_sizes": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current approved interview-r1; GK-019 canonical reconciliation",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Supplier sub-ingredients and actual product/label verification remain GK-037."
+        ]
+      },
+      "interpretation_en": "Current interview values; technical derivations remain in GK-019 contracts, not owner quotations.",
+      "data_contract": "allergen",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-005.allergens",
+          "revision_sha256": "6467127af412fcb23dce9f493b35d515a78c7d500e7d75cac2df8f23706a7afe",
+          "extent": "Explicitly replaced portions; source history retained."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-005:2026-10-05:allergens",
+        "revision_sha256": "25822ed28feeb801d28a24e65f1b3fddfec072cb856d2d5a3d8a4c4d1fe0bdd0",
+        "lines": [
+          [
+            1,
+            2
+          ]
+        ],
+        "attribution": "Sasha interview/readback; not direct chef authorship",
+        "approval_basis": "Explicit replies in approved GK-005 interview-r1 and input-stage closure; no legal compliance approval."
+      },
+      "effective_from": null,
+      "effective_date_note": "Planning approval is not production policy activation.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "6abacbecde4959cdb8da9e21",
+          "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+          "lines": [
+            [
+              38,
+              51
+            ]
+          ],
+          "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+          "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+        }
+      ],
+      "revision_sha256": "3dade43fe5452311508474cb3dc3aab2dbdbacadace4e6627105c5a3d1c9a587"
+    },
+    "cross_contact": {
+      "id": "BO-GK-005.cross_contact",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "handled": [
+            "EGGS",
+            "MILK",
+            "CEREALS CONTAINING GLUTEN (WHEAT)",
+            "SOYBEANS",
+            "PEANUTS"
+          ],
+          "notice": "“Allergen notice: All cakes are prepared in the same kitchen where EGGS, MILK, CEREALS CONTAINING GLUTEN (WHEAT), SOYBEANS and PEANUTS are handled. While care is taken to minimise cross-contact, we cannot guarantee that products are completely free from traces of other allergens. If you have a severe allergy, please contact us before ordering.”"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Single shared kitchen; owner-supplied exact English publication notice says precautions do not guarantee freedom from traces, and asks severe-allergy customers to contact before ordering. Preserve contains and cross-contact separately; do not add sulphites to this list by inference.",
+      "data_contract": "allergen",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            55,
+            59
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "ea64ed35e3a1b117c665c6c2d0629ee267f1bca7a0dac159e9d7f87cb1bdb35a"
+    },
+    "handover_label": {
+      "id": "BO-GK-005.handover_label",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "on": "cake box",
+          "per_order": true,
+          "match_actual_flavour_composition": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Place allergen label on cake box matching actual order flavour/composition; information provided before purchase and again on packaging at handover.",
+      "data_contract": "allergen",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            65,
+            72
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "5be2d4916b3e0f88202bed0a2601f5852543efd616635caa8f953451907f9646"
+    },
+    "vat": {
+      "id": "BO-GK-005.vat",
+      "status": "reported_fact",
+      "business": {
+        "value": {
+          "uk_vat_registered": false,
+          "vat_added_separately": false,
+          "reconfirmed_by": "Sasha",
+          "reconfirmed_date": "2026-10-05",
+          "accepted_order_total_preserved": true,
+          "new_tax_treatment_requires_review_and_effective_date": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current approved interview-r1; GK-019 canonical reconciliation",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "No HMRC/accountant verification or future tax rate supplied."
+        ]
+      },
+      "interpretation_en": "Current interview values; technical derivations remain in GK-019 contracts, not owner quotations.",
+      "data_contract": "tax",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-005.vat",
+          "revision_sha256": "d6b607a50e55d9edfccaf114f5593761e6b00836216bdcd9ce4390f3c3925750",
+          "extent": "Explicitly replaced portions; source history retained."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-005:2026-10-05:refund-vat-examples",
+        "revision_sha256": "6a4e48516811ca1e3932e24d55a9e0cbf17f7a5293b4c076f68906180f194c47",
+        "lines": [
+          [
+            1,
+            2
+          ]
+        ],
+        "attribution": "Sasha interview/readback; not direct chef authorship",
+        "approval_basis": "Explicit replies in approved GK-005 interview-r1 and input-stage closure; no legal compliance approval."
+      },
+      "effective_from": null,
+      "effective_date_note": "Planning approval is not production policy activation.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "6abacbecde4959cdb8da9e21",
+          "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+          "lines": [
+            [
+              78,
+              90
+            ]
+          ],
+          "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+          "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+        }
+      ],
+      "revision_sha256": "a6a346d0dedb9c579e4ac72387a5b91800b26f002a8ed80e7149de3fc6b80b29"
+    },
+    "refund_basis": {
+      "id": "BO-GK-005.refund_basis",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "policy": "BO-GK-003",
+          "basis": "actually_paid_after_discount",
+          "delivery_separate": true,
+          "only_remaining_owed": true,
+          "pending_is_completed": false
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Use BO-GK-003 actual-paid-after-discount cake basis, delivery separately, return only outstanding obligation; pending is not completed.",
+      "data_contract": "refund",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            92,
+            94
+          ],
+          [
+            105,
+            105
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "b88edd40a350d7947f14771faa85425748b89735dab04c46dcd1ac470851869b"
+    },
+    "refund_example": {
+      "id": "BO-GK-005.refund_example",
+      "status": "example",
+      "business": {
+        "value": {
+          "cake_minor": 10000,
+          "delivery_minor": 2000,
+          "cake_percent": 50,
+          "cake_refund_minor": 5000,
+          "delivery_refund_minor": 2000,
+          "total_refund_minor": 7000,
+          "currency": "GBP"
+        },
+        "type": "dict",
+        "unit": "GBP pence / percent",
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Owner repeats £100 cake, £20 delivery, £50 cake refund at 50%, £20 unperformed-delivery refund = £70. This does not replace the £100 delivery starting price.",
+      "data_contract": "refund",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            96,
+            103
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "fad3b1c0f2e0deeb3f6044e38c1a53f19d8eccb1629bdcb5a98f7c56231a2863"
+    },
+    "money_precision": {
+      "id": "BO-GK-005.money_precision",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "currency": "GBP",
+          "storage": "integer_pence",
+          "base_prices": "whole_GBP",
+          "whole_display": "£100",
+          "fractional_display": "£85.50",
+          "discount_refund_rounding": "nearest_penny_half_up"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current approved interview-r1; GK-019 canonical reconciliation",
+        "conditions": [
+          "General allocation is a technical derivation; current 50% half-penny targets favour customer."
+        ],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Current interview values; technical derivations remain in GK-019 contracts, not owner quotations.",
+      "data_contract": "tax",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-005.money_precision",
+          "revision_sha256": "1e522bdb814c26e90dc124243cdd448ed793f43e504bbbaea304e834253d9400",
+          "extent": "Explicitly replaced portions; source history retained."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-005:2026-10-05:money-enquiries-photos",
+        "revision_sha256": "d81c3b3d31935f13798c11ee473b1d010bf1eebad028b16a96323b913ababfed",
+        "lines": [
+          [
+            1,
+            2
+          ]
+        ],
+        "attribution": "Sasha interview/readback; not direct chef authorship",
+        "approval_basis": "Explicit replies in approved GK-005 interview-r1 and input-stage closure; no legal compliance approval."
+      },
+      "effective_from": null,
+      "effective_date_note": "Planning approval is not production policy activation.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "6abacbecde4959cdb8da9e21",
+          "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+          "lines": [
+            [
+              107,
+              107
+            ]
+          ],
+          "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+          "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+        }
+      ],
+      "revision_sha256": "00d05c48b7740f9c461555d76b0d8b7593346a77554e786cde74833ca53e2d73"
+    },
+    "policy_confirmation": {
+      "id": "BO-GK-005.policy_confirmation",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "policy": "BO-GK-003 current manual-handover-r2",
+          "deadline_hours_before_original_handover": 120,
+          "before_percent": 100,
+          "at_or_after_percent": 50,
+          "chef_cancel_percent": 100,
+          "both_cake_types": true,
+          "moves_reset_deadline": false
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current approved interview-r1; GK-019 canonical reconciliation",
+        "conditions": [
+          "GK delivery separately collected and chef-only refunded; personal statutory-rights route remains."
+        ],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Current interview values; technical derivations remain in GK-019 contracts, not owner quotations.",
+      "data_contract": "refund",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-005.policy_confirmation",
+          "revision_sha256": "2f5119c21e407c99baf9b08e9c9d339ebd02a09151099059f81ba02f8d43bdce",
+          "extent": "Explicitly replaced portions; source history retained."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-005:2026-10-05:refund-vat-examples",
+        "revision_sha256": "6a4e48516811ca1e3932e24d55a9e0cbf17f7a5293b4c076f68906180f194c47",
+        "lines": [
+          [
+            1,
+            2
+          ]
+        ],
+        "attribution": "Sasha interview/readback; not direct chef authorship",
+        "approval_basis": "Explicit replies in approved GK-005 interview-r1 and input-stage closure; no legal compliance approval."
+      },
+      "effective_from": null,
+      "effective_date_note": "Planning approval is not production policy activation.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "6abacbecde4959cdb8da9e21",
+          "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+          "lines": [
+            [
+              113,
+              115
+            ],
+            [
+              123,
+              123
+            ]
+          ],
+          "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+          "approval_basis": "Line 123 explicitly calls the >4 days / 50% rule agreed business policy; line 125 requires legal review."
+        }
+      ],
+      "revision_sha256": "ec00c29bb54823acc4af36fb6ff71fd645e63eeafbb0ec8e37748642b84b200f"
+    },
+    "statutory_notice": {
+      "id": "BO-GK-005.statutory_notice",
+      "status": "confirmed",
+      "business": {
+        "value": "“Nothing in this cancellation and refund policy affects the customer’s statutory rights where a product is faulty, not as described or otherwise does not meet applicable legal requirements.”",
+        "type": "str",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Exact owner-supplied customer publication wording preserves statutory rights for faulty/not-as-described/noncompliant products; legal adequacy unverified.",
+      "data_contract": "legal",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            117,
+            119
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "d25f45b31760cc9f7aea44c1456a0e3349fa1cd7a8b37649b3e65ca136978b6e"
+    },
+    "internal_legal_note": {
+      "id": "BO-GK-005.internal_legal_note",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "customer_visible": false,
+          "before_terms_publication": "final legal proportionality check of retained 50%"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Qualified review/evidence pending."
+        ]
+      },
+      "interpretation_en": "Internal note for Sasha/developer must not appear on customer website. Legal proportionality of retaining 50% still needs final review before Terms & Conditions publication.",
+      "data_contract": "legal",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            121,
+            121
+          ],
+          [
+            125,
+            127
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "0086fc206db6b5b1a5c5afc71c440eb583c501d74c4af3035b590649c83b2d94"
+    },
+    "customer_data": {
+      "id": "BO-GK-005.customer_data",
+      "status": "confirmed",
+      "business": {
+        "value": [
+          "full name",
+          "email",
+          "phone number",
+          "Instagram username",
+          "order information",
+          "collection / delivery date",
+          "flavour",
+          "size",
+          "agreed design and order details",
+          "customer design references",
+          "payment / refund information",
+          "necessary order-related communication"
+        ],
+        "type": "list",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Owner permits storing these categories for order placement/fulfillment; no general permission for marketing or unrelated use.",
+      "data_contract": "privacy",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            133,
+            146
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "d09c5fa04c80a154f6b1b544c01b4c8e56a8337fc8066a6278536f3c19046397"
+    },
+    "privacy_incomplete": {
+      "id": "BO-GK-005.privacy_incomplete",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "continuation_recovered": true,
+          "business_decisions_supplied": true,
+          "final_legal_and_provider_inventory_review": "GK-037"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current approved interview-r1; GK-019 canonical reconciliation",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Actual provider/storage inventory and final Privacy/Cookie content await implementation and GK-037."
+        ]
+      },
+      "interpretation_en": "Current interview values; technical derivations remain in GK-019 contracts, not owner quotations.",
+      "data_contract": "privacy",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-005.privacy_incomplete",
+          "revision_sha256": "f15630c4050553fcb9734443fb6a1099d01bf523b6e927f752278e4bfa85efce",
+          "extent": "Explicitly replaced portions; source history retained."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6ac2e59ae65291bd0dab65dd",
+        "revision_sha256": "f5a40aad0307b1ad742671dd36639b2d15e6fc3ee4e21385e95fdd429e8083a2",
+        "lines": [
+          [
+            1,
+            234
+          ]
+        ],
+        "attribution": "Sasha interview/readback; not direct chef authorship",
+        "approval_basis": "Explicit replies in approved GK-005 interview-r1 and input-stage closure; no legal compliance approval."
+      },
+      "effective_from": null,
+      "effective_date_note": "Planning approval is not production policy activation.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "6abacbecde4959cdb8da9e21",
+          "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+          "lines": [
+            [
+              148,
+              148
+            ]
+          ],
+          "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+          "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+        }
+      ],
+      "revision_sha256": "09a0717c6d27720be4101331d0225a4836d7a37ebbe9630dc5d3226a0238be43"
+    },
+    "recipe_changes": {
+      "id": "BO-GK-005.recipe_changes",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "approver": "Elina",
+          "accepted_order_changes_require_customer_agreement": true,
+          "decline_or_no_response": "original_if_feasible_else_chef_cancel_full_refund"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current approved interview-r1; GK-019 canonical reconciliation",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Current interview values; technical derivations remain in GK-019 contracts, not owner quotations.",
+      "data_contract": "allergen",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-005:2026-10-05:address-recipe-change",
+        "revision_sha256": "a4bf62673d567d354dad0115fe02b2ae304620d3a0ecfafd699ce3cf7fed2da4",
+        "lines": [
+          [
+            1,
+            4
+          ]
+        ],
+        "attribution": "Sasha interview/readback; not direct chef authorship",
+        "approval_basis": "Explicit replies in approved GK-005 interview-r1 and input-stage closure; no legal compliance approval."
+      },
+      "effective_from": null,
+      "effective_date_note": "Planning approval is not production policy activation.",
+      "revision_sha256": "56ef7236b2b40b0f231db66d6145593a53181b2af8acb9b9ee8e5c847e59b6bf"
+    },
+    "coating_decor": {
+      "id": "BO-GK-005.coating_decor",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "all_sizes_flavours_standard": "Swiss meringue buttercream",
+          "permitted_additions": [
+            "sugar pearls",
+            "fruits",
+            "berries"
+          ],
+          "other_edible_decor": "prior_chef_agreement"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current approved interview-r1; GK-019 canonical reconciliation",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Current interview values; technical derivations remain in GK-019 contracts, not owner quotations.",
+      "data_contract": "allergen",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-005:2026-10-05:coating-whole-prices",
+        "revision_sha256": "bacc92157e7a351a7c157fc5cab9ae72ed1f624baca860f395537c1bb6842b33",
+        "lines": [
+          [
+            1,
+            5
+          ]
+        ],
+        "attribution": "Sasha interview/readback; not direct chef authorship",
+        "approval_basis": "Explicit replies in approved GK-005 interview-r1 and input-stage closure; no legal compliance approval."
+      },
+      "effective_from": null,
+      "effective_date_note": "Planning approval is not production policy activation.",
+      "revision_sha256": "69be0d5f064eeeb7f97af17f9445e9a7efb44b27d1e6503f5c1d4693b95c7d31"
+    },
+    "retention_enquiries": {
+      "id": "BO-GK-005.retention_enquiries",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "months": 6,
+          "anchor": "last_substantive_customer_conversation",
+          "automated_reminders_reset": false,
+          "outcome": "delete_or_anonymise"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current approved interview-r1; GK-019 canonical reconciliation",
+        "conditions": [
+          "Necessary private legal/dispute evidence may be retained with review."
+        ],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Current interview values; technical derivations remain in GK-019 contracts, not owner quotations.",
+      "data_contract": "privacy",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-005:2026-10-05:money-enquiries-photos",
+        "revision_sha256": "d81c3b3d31935f13798c11ee473b1d010bf1eebad028b16a96323b913ababfed",
+        "lines": [
+          [
+            1,
+            2
+          ]
+        ],
+        "attribution": "Sasha interview/readback; not direct chef authorship",
+        "approval_basis": "Explicit replies in approved GK-005 interview-r1 and input-stage closure; no legal compliance approval."
+      },
+      "effective_from": null,
+      "effective_date_note": "Planning approval is not production policy activation.",
+      "revision_sha256": "e78b76811d39d8a4f217cc5c53da6dc9e09ed97eff49725efc5885506c5fb906"
+    },
+    "retention_photos": {
+      "id": "BO-GK-005.retention_photos",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "ordinary_days_after_fulfilment": 30,
+          "specific_permission_months_after_fulfilment": 3,
+          "permitted_scopes": [
+            "website",
+            "Instagram",
+            "private_design_reference"
+          ],
+          "withdrawal": "remove_original_and_controlled_public_posts",
+          "dispute": "necessary_private_evidence_only"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current approved interview-r1; GK-019 canonical reconciliation",
+        "conditions": [
+          "No current permission to publish a particular customer photo; no perpetual default permission."
+        ],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Current interview values; technical derivations remain in GK-019 contracts, not owner quotations.",
+      "data_contract": "privacy",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-005:2026-10-05:photo-permission",
+        "revision_sha256": "164d15b4081d384b8348fb2bf740968d48af0a197601aeea285c5cef975ddb96",
+        "lines": [
+          [
+            1,
+            3
+          ]
+        ],
+        "attribution": "Sasha interview/readback; not direct chef authorship",
+        "approval_basis": "Explicit replies in approved GK-005 interview-r1 and input-stage closure; no legal compliance approval."
+      },
+      "effective_from": null,
+      "effective_date_note": "Planning approval is not production policy activation.",
+      "revision_sha256": "88d81500fac584c249ee4610a4c2f5dfbbc4a40254fa224ba744246c8b1209d2"
+    },
+    "retention_orders_accounts": {
+      "id": "BO-GK-005.retention_orders_accounts",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "order_details_years_after_fulfilment_or_cancellation": 2,
+          "inactive_account_months_without_login_or_order": 24,
+          "warning_days_before_delete": 30,
+          "shorter_photo_schedule_preserved": true,
+          "financial_records": "separate_applicable_HMRC_retention",
+          "operational_access": "Elina",
+          "technical_support": "Sasha_necessary_only",
+          "future_staff": "scoped_roles_no_current_grant"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current approved interview-r1; GK-019 canonical reconciliation",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Financial rules, legal holds, provider deletion and backup expiry must be verified in GK-037."
+        ]
+      },
+      "interpretation_en": "Current interview values; technical derivations remain in GK-019 contracts, not owner quotations.",
+      "data_contract": "privacy",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-005:2026-10-05:order-account-access",
+        "revision_sha256": "bde812be81d82a8ad58b50dfb249a025b423f40bbe8702475d1f5c0998c259bf",
+        "lines": [
+          [
+            1,
+            3
+          ]
+        ],
+        "attribution": "Sasha interview/readback; not direct chef authorship",
+        "approval_basis": "Explicit replies in approved GK-005 interview-r1 and input-stage closure; no legal compliance approval."
+      },
+      "effective_from": null,
+      "effective_date_note": "Planning approval is not production policy activation.",
+      "revision_sha256": "fd2391c57cbab22f7ec7038d7c0b48404f311fbbe92e72320f1d937ad91f944a"
+    },
+    "browser_analytics": {
+      "id": "BO-GK-005.browser_analytics",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "essential": "sign_in_checkout",
+          "device_favourites_years": 1,
+          "non_sensitive_draft_days": 30,
+          "personal_photos_persisted_in_browser": false,
+          "statistics": [
+            "aggregate_visits",
+            "pageviews",
+            "loading_performance",
+            "basic_checkout_steps",
+            "repeat_visit_estimates"
+          ],
+          "excluded_pages": [
+            "account",
+            "admin"
+          ],
+          "advertising_trackers": false,
+          "session_replay": false,
+          "analytics_requires_prior_consent": true,
+          "excluded_analytics_data": [
+            "names",
+            "emails",
+            "order_details"
+          ],
+          "checkout_scope": "basic steps only, no page content or order details"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current approved interview-r1; GK-019 canonical reconciliation",
+        "conditions": [
+          "Explicit consent before analytics; decline or withdrawal prevents tracking.",
+          "Account/admin browsing, names/emails/order details and session recordings excluded."
+        ],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Sasha accepts consented basic checkout-step and repeat-visit statistics, resolving the prior checkout exclusion. Other exclusions, no advertising trackers/replay, browser photo ban and non-analytics storage periods remain. Actual consent/retention/provider implementation and legal wording are still verified in GK-037.",
+      "data_contract": "privacy",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-005.browser_analytics",
+          "revision_sha256": "463a0c5183466a9f429b0445d8769c99b536588324670cd52d0894599475573e",
+          "extent": "Consented basic checkout steps/repeat visits now allowed; account/admin and personal/order content remain excluded."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-005:2026-10-05:browser-analytics-review",
+        "revision_sha256": "8a2dbb5fea22308a21ef0783afdc9f1ec2ac89031073f5521e99e7af9884f97e",
+        "lines": [
+          [
+            1,
+            5
+          ]
+        ],
+        "attribution": "Sasha interview/readback; not direct chef authorship",
+        "approval_basis": "Explicit replies in approved GK-005 interview-r1 and input-stage closure; no legal compliance approval."
+      },
+      "effective_from": null,
+      "effective_date_note": "Planning approval is not production policy activation.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-019:2026-10-05:Q3",
+          "revision_sha256": "4a0827426dc271c79df5e652c36882062935bc8bc67ccc8977439234eac2aa98",
+          "lines": [
+            [
+              1,
+              5
+            ]
+          ],
+          "attribution": "Sasha explicit agree to stated recommendation",
+          "approval_basis": "Specific analytics scope approval, not legal signoff or production activation."
+        }
+      ],
+      "revision_sha256": "4857b543dcb411451ce2580e4b1a117b3fe16d6d96db40b997bdbfa2f524dcc5"
+    },
+    "service_email": {
+      "id": "BO-GK-005.service_email",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "service_order_emails": true,
+          "advertising_newsletter_subscription": false,
+          "future_marketing_requires_separate_decision": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current approved interview-r1; GK-019 canonical reconciliation",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Current interview values; technical derivations remain in GK-019 contracts, not owner quotations.",
+      "data_contract": "privacy",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6ac2e59ae65291bd0dab65dd",
+        "revision_sha256": "f5a40aad0307b1ad742671dd36639b2d15e6fc3ee4e21385e95fdd429e8083a2",
+        "lines": [
+          [
+            1,
+            234
+          ]
+        ],
+        "attribution": "Sasha interview/readback; not direct chef authorship",
+        "approval_basis": "Explicit replies in approved GK-005 interview-r1 and input-stage closure; no legal compliance approval."
+      },
+      "effective_from": null,
+      "effective_date_note": "Planning approval is not production policy activation.",
+      "revision_sha256": "2a665d626d6165ef44557ae4825dd26304ceb8cb61841898daf24706d6799e13"
+    },
+    "current_refund_example": {
+      "id": "BO-GK-005.current_refund_example",
+      "status": "example",
+      "business": {
+        "value": {
+          "cake_before_discount_minor": 10100,
+          "discount_percent": 15,
+          "cake_paid_minor": 8585,
+          "delivery_paid_minor": 2000,
+          "paid_total_minor": 10585,
+          "refund_percent": 50,
+          "target_minor": 5293,
+          "cake_refund_minor": 4293,
+          "delivery_refund_minor": 1000
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current approved interview-r1; GK-019 canonical reconciliation",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Current interview values; technical derivations remain in GK-019 contracts, not owner quotations.",
+      "data_contract": "refund",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-005:2026-10-05:refund-vat-examples",
+        "revision_sha256": "6a4e48516811ca1e3932e24d55a9e0cbf17f7a5293b4c076f68906180f194c47",
+        "lines": [
+          [
+            1,
+            2
+          ]
+        ],
+        "attribution": "Sasha interview/readback; not direct chef authorship",
+        "approval_basis": "Explicit replies in approved GK-005 interview-r1 and input-stage closure; no legal compliance approval."
+      },
+      "effective_from": null,
+      "effective_date_note": "Planning approval is not production policy activation.",
+      "revision_sha256": "7e75e5793a1a59ffe8d71b1656c2fc89188c3556e30b6d6303a0120acc2c6adc"
+    }
+  },
+  "questions": {
+    "missing_tail": {
+      "id": "BO-GK-005.question.missing_tail",
+      "source_decisions": [
+        "BO-GK-005.privacy_incomplete",
+        "BO-GK-005.customer_data"
+      ],
+      "question_uk": "Коментар закінчується словами «Збираються лише дан». Будь ласка, передайте продовження. Потрібні правила строків зберігання/видалення замовлень, запитів, фото й листування, даних у браузері, статистики, листів про замовлення та реклами; розробник підготує зрозумілу таблицю для погодження.",
+      "why_en": "Current source is incomplete; unknown must not become zero retention, consent or indefinite storage.",
+      "status": "unanswered"
+    },
+    "official_evidence": {
+      "id": "BO-GK-005.question.official_evidence",
+      "source_decisions": [
+        "BO-GK-005.food_status",
+        "BO-GK-005.vat"
+      ],
+      "question_uk": "Коли з’явиться публічний запис Food Hygiene Rating 5/5, надайте посилання/дату або безпечне підтвердження органу. Для VAT збережімо джерело перевірки поточного статусу без документів особи.",
+      "why_en": "Owner reports are preserved separately from independently verified regulatory/tax facts.",
+      "status": "unanswered"
+    },
+    "food_detail": {
+      "id": "BO-GK-005.question.food_detail",
+      "source_decisions": [
+        "BO-GK-005.flavours",
+        "BO-GK-005.allergens",
+        "BO-GK-005.cross_contact",
+        "BO-GK-005.handover_label"
+      ],
+      "question_uk": "Надайте актуальний склад/рецептурні версії для восьми смаків і приклад етикетки конкретного замовлення. Хто перевіряє зміни складу/постачальника та узгоджує зміну алергенів у вже оплаченому замовленні?",
+      "why_en": "Allergens are supplied, but full ingredients/quantities, substitutions and label verification remain open.",
+      "status": "unanswered"
+    },
+    "legal_rounding": {
+      "id": "BO-GK-005.question.legal_rounding",
+      "source_decisions": [
+        "BO-GK-005.money_precision",
+        "BO-GK-005.policy_confirmation",
+        "BO-GK-005.statutory_notice",
+        "BO-GK-005.internal_legal_note"
+      ],
+      "question_uk": "Потрібна фінальна перевірка фахівцем пропорційності 50% та умов 4 днів перед публікацією Terms & Conditions. Розробник також підготує приклад округлення частки пенні. Чи правило BO-GK-003 замінює окреме правило готових тортів у BO-GK-001? У фразі «до двох десяткових знаків» чи потрібно завжди показувати два знаки (наприклад, £100.00), чи можна без кінцевих нулів? Це лише приклад формату, не нова ціна.",
+      "why_en": "No invented legal conclusion, rounding method or silent supersession; internal note never customer-facing.",
+      "status": "unanswered"
+    }
+  },
+  "previous_decision_revisions": [
+    {
+      "id": "BO-GK-005.money_precision",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "currency": "GBP",
+          "display_decimal_places": 2
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Half-penny rounding and component allocation method."
+        ]
+      },
+      "interpretation_en": "GBP calculations and correct display to two decimal places, consistently across checkout/payment/refunds. “двох” is preserved in source; no rounding mode was supplied.",
+      "data_contract": "tax",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            107,
+            107
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "194a2b85d995db912122064db833b0acbbc261c50ab937017caf2893fad5df79"
+    },
+    {
+      "id": "BO-GK-005.public_identity",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "trading_name": "GK Cake London",
+          "instagram": "@gk.cake.london",
+          "email": "gk.cake.london@gmail.com"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Owner supplies these contacts expressly for publication. Current Instagram differs from older @gk.cake; account-control verification is separate.",
+      "data_contract": "business",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            5,
+            7
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "572747de969557ecb13adf40c0014b0c8a63edfd438c8253d309bfce7921ecbb"
+    },
+    {
+      "id": "BO-GK-005.food_status",
+      "status": "reported_fact",
+      "business": {
+        "value": {
+          "food_business_registered": true,
+          "inspection_completed": true,
+          "rating_written": "5/5",
+          "public_record_available": false,
+          "support_contacted": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Relevant authority, official record/date/reference and permission/evidence for public rating claim."
+        ]
+      },
+      "interpretation_en": "Owner reports registration, completed inspection and 5/5 rating. Online record not yet visible/updated; support contacted, public evidence to follow. Independently unverified.",
+      "data_contract": "business",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            11,
+            17
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "16640dcb76cae03e4e4803e3bd488add6fec7f6c9bb96532253313bca173812f"
+    },
+    {
+      "id": "BO-GK-005.allergens",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "all_flavours": [
+            "EGGS",
+            "MILK",
+            "CEREALS CONTAINING GLUTEN (WHEAT)",
+            "SOYBEANS"
+          ],
+          "additional": {
+            "Chocolate Oreo": [
+              "SULPHITES"
+            ],
+            "Snickers": [
+              "PEANUTS"
+            ]
+          },
+          "prominent": {
+            "Snickers": [
+              "PEANUTS"
+            ]
+          },
+          "visible_before_purchase": true,
+          "owner_verified_date": "2026-09-28"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Owner-verified allergen declarations on 28.09.2026: four common allergens; Oreo additionally sulphites; Snickers additionally peanuts, prominently displayed. Show flavour-specific information before purchase. Not independent ingredient/safety verification.",
+      "data_contract": "allergen",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            38,
+            51
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "6467127af412fcb23dce9f493b35d515a78c7d500e7d75cac2df8f23706a7afe"
+    },
+    {
+      "id": "BO-GK-005.vat",
+      "status": "reported_fact",
+      "business": {
+        "value": {
+          "uk_vat_registered": false,
+          "vat_added_separately": false,
+          "owner_confirmed_date": "2026-09-28",
+          "update_on_status_change": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Independent tax verification and future effective-date treatment."
+        ]
+      },
+      "interpretation_en": "Owner reports not UK VAT registered on 28.09.2026; do not add VAT separately. Update website information/calculation if status changes. This does not establish a legal exemption, tax rate of 0%, or verified tax compliance.",
+      "data_contract": "tax",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            78,
+            90
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "d6b607a50e55d9edfccaf114f5593761e6b00836216bdcd9ce4390f3c3925750"
+    },
+    {
+      "id": "BO-GK-005.money_precision",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "currency": "GBP",
+          "maximum_display_decimal_places": 2,
+          "written": "до двох десяткових знаків",
+          "fixed_trailing_zeros": null
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Half-penny rounding and component allocation method.",
+          "Fixed trailing-zero display versus up-to-two-place display is not established by the source."
+        ]
+      },
+      "interpretation_en": "GBP calculations with correct display «до двох десяткових знаків» (up to two decimal places), consistently across checkout/payment/refunds. Fixed trailing-zero formatting and rounding mode were not supplied.",
+      "data_contract": "tax",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            107,
+            107
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "1e522bdb814c26e90dc124243cdd448ed793f43e504bbbaea304e834253d9400"
+    },
+    {
+      "id": "BO-GK-005.policy_confirmation",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "policy": "BO-GK-003",
+          "more_than_days": 4,
+          "refund_percent": 50
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Ready-cake exception scope; legal review still required."
+        ]
+      },
+      "interpretation_en": "Explicitly states the >4-day 50% rule is agreed business policy and BO-GK-003 governs. This is narrow business confirmation; no explicit statement replaces BO-GK-001 ready-cake rule.",
+      "data_contract": "refund",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            113,
+            115
+          ],
+          [
+            123,
+            123
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Line 123 explicitly calls the >4 days / 50% rule agreed business policy; line 125 requires legal review."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "2f5119c21e407c99baf9b08e9c9d339ebd02a09151099059f81ba02f8d43bdce"
+    },
+    {
+      "id": "BO-GK-005.privacy_incomplete",
+      "status": "incomplete",
+      "business": {
+        "value": null,
+        "type": "unknown",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Missing continuation; purposes/basis/retention/deletion per data category; images, local storage, analytics, transactional versus marketing email."
+        ]
+      },
+      "interpretation_en": "The actual saved comment ends mid-sentence: «Збираються лише дан». CLI and browser agree. Do not complete the sentence or invent retention, deletion, browser-storage, analytics or email policy.",
+      "data_contract": "privacy",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            148,
+            148
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "f15630c4050553fcb9734443fb6a1099d01bf523b6e927f752278e4bfa85efce"
+    },
+    {
+      "id": "BO-GK-005.browser_analytics",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "essential": "sign_in_checkout",
+          "device_favourites_years": 1,
+          "non_sensitive_draft_days": 30,
+          "personal_photos_persisted_in_browser": false,
+          "statistics": [
+            "aggregate_visits",
+            "pageviews",
+            "loading_performance"
+          ],
+          "excluded_pages": [
+            "account",
+            "admin",
+            "checkout"
+          ],
+          "advertising_trackers": false,
+          "session_replay": false
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current approved interview-r1; GK-019 canonical reconciliation",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "GK-004 separately accepts opt-in checkout journeys/returning-visitor estimates. Exact overlap needs explicit reconciliation, not silent supersession."
+        ]
+      },
+      "interpretation_en": "Current interview values; technical derivations remain in GK-019 contracts, not owner quotations.",
+      "data_contract": "privacy",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-005:2026-10-05:browser-analytics-review",
+        "revision_sha256": "8a2dbb5fea22308a21ef0783afdc9f1ec2ac89031073f5521e99e7af9884f97e",
+        "lines": [
+          [
+            1,
+            5
+          ]
+        ],
+        "attribution": "Sasha interview/readback; not direct chef authorship",
+        "approval_basis": "Explicit replies in approved GK-005 interview-r1 and input-stage closure; no legal compliance approval."
+      },
+      "effective_from": null,
+      "effective_date_note": "Planning approval is not production policy activation.",
+      "revision_sha256": "463a0c5183466a9f429b0445d8769c99b536588324670cd52d0894599475573e"
+    }
+  ],
+  "revision_notes": [
+    {
+      "decision_id": "BO-GK-005.money_precision",
+      "from_revision": "194a2b85d995db912122064db833b0acbbc261c50ab937017caf2893fad5df79",
+      "to_revision": "1e522bdb814c26e90dc124243cdd448ed793f43e504bbbaea304e834253d9400",
+      "reason": "Independent-review correction of English/display interpretation; original owner evidence unchanged. Not a new owner decision or supersession."
+    }
+  ],
+  "canonical_revision": "gk019-owner-r5",
+  "question_reconciliation": {
+    "revision": "gk019-owner-r2",
+    "business_interview": "resolved_by_interview_r1_except_cross_card_analytics_scope",
+    "deferred_verification": "GK-037",
+    "old_questions_are_historical": true
+  }
+}

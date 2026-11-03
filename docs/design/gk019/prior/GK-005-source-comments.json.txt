@@ -1,0 +1,1394 @@
+{
+  "schema_version": 1,
+  "ticket": "GK-005",
+  "board": {
+    "retrieved_at": "2026-10-04T20:59:11.639752+00:00",
+    "command": [
+      "boards",
+      "get",
+      "--board",
+      "6ab846cadeac31eff3e42507"
+    ],
+    "returncode": 0,
+    "payload": {
+      "ok": true,
+      "data": {
+        "id": "6ab846cadeac31eff3e42507",
+        "name": "GK Business Owner Board",
+        "desc": "A simple Trello workflow for the GK Cakes system project, designed so your AI Agent can quickly sort work by status and move cards through a clear path from idea to done.",
+        "closed": false,
+        "url": "https://trello.com/b/cAQFJIOQ/gk-business-owner-board"
+      }
+    }
+  },
+  "card_snapshots": [
+    {
+      "role": "owner",
+      "retrieved_at": "2026-10-04T20:59:17.660291+00:00",
+      "source_modified_at": null,
+      "modified_at_note": "cards get does not expose description revision time",
+      "card": {
+        "id": "6ab85908163fa9bc11351373",
+        "name": "[BO-GK-005][O040] Надати дані бізнесу, алергени та правила для клієнтів",
+        "desc": "### Контекст\n\nЩоб на сайті були правдиві дані бізнесу, безпечна інформація про їжу та зрозумілі умови для клієнтів.\n\n**Результат вашої роботи:** Пакет перевірених даних і текстів для публікації з переліком питань, які ще потребують фахової перевірки.\n\n### Коли починати\n\nПочинайте з наявних даних бізнесу й рецептів. Для незрозумілих юридичних/податкових пунктів попросіть розробника підготувати конкретне запитання та джерело.\n\n### Допомога розробника\n\nРозробник підготує чернетки сторінок і прості приклади сум; пояснить, які дані сайт збирає, навіщо й де показує. Актуальні вимоги та спірні податкові/юридичні питання перевіряються за належними джерелами або з фахівцем. Ви не повинні самостійно писати юридичний документ.\n\n### Що зробити\n\n1. Надайте назву бізнесу, публічні контакти й відомий статус реєстрації харчового бізнесу. Напишіть, ким і коли це підтверджено; документи особи не додавайте до картки.\n2. Перевірте склад/алергени кожного товару та можливий випадковий контакт з іншими алергенами на кухні. Погодьте, як ця інформація буде видима до покупки й під час видачі.\n3. Надайте відомий податковий статус. Разом із розробником і, за потреби, фахівцем перевірте умови продажу/повернень та приклади податків і округлення.\n4. Перегляньте пояснення про дані клієнтів: що зберігаємо, скільки часу, як видаляємо замовлення/запити/фото; що сайт зберігає в браузері. Окремо розгляньте листи про замовлення, рекламу й статистику.\n\n### Приклад або пояснення\n\n«Не знаю, чи зареєстрований бізнес для VAT; потрібна перевірка» — корисна відповідь. Вона залишає питання відкритим. Вона не означає «податок не застосовується».\n\n### Що передати розробнику\n\nСкопіюйте форму й дайте відповіді тут у коментарі або повідомленням розробнику з кодом **BO-GK-005**. До файлів додайте доступне посилання або прикріпіть їх. Технічні назви/версії скопіюйте з підготовленого ним матеріалу.\n\n```text\nДля публікації: назва …; контакти …\nРеєстрація харчового бізнесу: відомий статус …; джерело/дата …\nСклад/алергени: документ …; перевірено мною …\nІнформація при видачі: де/як передаємо …\nПодатковий статус, зокрема британський VAT (ПДВ): …; хто підтвердив/дата …\nПриклади податків, округлення й сум повернення від розробника (посилання/версія): …; погоджую / питання …\nУмови продажу/повернень: переглянутий документ і версія …\nПриватність: погоджені дані, строки зберігання/видалення, браузер, статистика …\nЛисти про замовлення / рекламні листи: погоджений підхід …\nПитання до фахівця, на які ще немає відповіді …\nДата відповіді: …\nСтатус: часткова відповідь / готово до перевірки.\n```\n\n### Коли ваша частина готова\n\n- Для кожного тексту/рішення зазначені джерело, дата й погоджена версія; відкриті юридичні питання залишені відкритими.\n- Перевірені алергени для покупки й видачі; є погоджені податкові та грошові приклади.\n- Є явні рішення щодо приватності, браузерного зберігання, статистики, строків зберігання й видалення; документи особи не потрапляють у Trello.\n\nДля завершення потрібне ваше явне погодження саме заповнених правил/матеріалів або показаної версії та перевірка повноти розробником. «Не знаю», відсутні потрібні дані й зауваження, що потребують виправлення, залишають картку «На перевірці». Наведені приклади не вважаються вашими рішеннями.\n\n### Що буде далі\n\nРозробник поверне короткий підсумок українською, збереже вашу відповідь і використає погоджені дані в пов’язаній роботі. Завершення вашої картки не означає автоматичного завершення всієї функції. Якщо ви змінюєте попередню відповідь, зазначте, що саме вона замінює. Паролі, ключі, коди відновлення та документи особи сюди не додавайте.\n\nЗв’язок із загальним планом для розробника: [GK-005](https://trello.com/c/OWHhKPBT/19-gk-005p0o040w00-verify-uk-business-allergen-tax-and-privacy-content \"‌\"). Усі потрібні вам дії описані вище; читати технічну картку для відповіді не потрібно.",
+        "closed": false,
+        "idBoard": "6ab846cadeac31eff3e42507",
+        "idList": "6ab846cadeac31eff3e42505",
+        "due": null,
+        "url": "https://trello.com/c/PSsIz3tI/5-bo-gk-005o040-%D0%BD%D0%B0%D0%B4%D0%B0%D1%82%D0%B8-%D0%B4%D0%B0%D0%BD%D1%96-%D0%B1%D1%96%D0%B7%D0%BD%D0%B5%D1%81%D1%83-%D0%B0%D0%BB%D0%B5%D1%80%D0%B3%D0%B5%D0%BD%D0%B8-%D1%82%D0%B0-%D0%BF%D1%80%D0%B0%D0%B2%D0%B8%D0%BB%D0%B0-%D0%B4%D0%BB%D1%8F-%D0%BA%D0%BB%D1%96%D1%94%D0%BD%D1%82%D1%96%D0%B2"
+      },
+      "description_sha256": "0d31bb97f850a7e211a825bcfe427d637e4456c08d467f5ceaa492951cf23349",
+      "classification": "task instructions/proposals/examples, not owner answers"
+    },
+    {
+      "role": "parent",
+      "retrieved_at": "2026-10-04T20:59:19.234697+00:00",
+      "source_modified_at": null,
+      "modified_at_note": "cards get does not expose description revision time",
+      "card": {
+        "id": "6ab13b5a78ce79e5d2b0e208",
+        "name": "[GK-005][P0][O040][W00] Verify UK business, allergen, tax and privacy content",
+        "desc": "## Context\n\nOwner: Creator; Kind: Decision\nPriority: P0 — foundational or money/security/fulfillment correctness prerequisite.\nOrder: 40; Wave: 0; Parallel group: Creator decisions W00.\nRequirements: C05, C06, C09, C14, C15, A05, A11, S01, S02; Design/contract revision: planning r5, K01 K03 K08.\nAgent execution policy: not applicable (Creator-owned action).\nDepends on: none; deliverable: completed approved policy, setup/contract or tested implementation evidence from each listed prerequisite. All GK-020 dependents require B2 unless explicitly named B1.\nUnblocks: GK-011, GK-019, GK-027, GK-033, GK-036.\nSafe in parallel with: GK-001, GK-003, GK-004, GK-006, GK-007, GK-002. Independent Creator evidence collection; master reconciles overlapping policies before GK-019.\nConflicts with: shared contracts/schema/ADRs and adjacent modules; implementation owner coordinates shared edits, no same-wave implied safety.\nReadiness at publication: ready now for Creator action.\n\nThere is currently no application; this is an ordered planning packet. Verify existing food-business registration with relevant London local authority and current government/FSA/ICO guidance in provider-research.md. Supply legal/trading/contact details, VAT treatment, before-purchase and handover allergen information, customer promises/statutory-rights wording and retention/privacy/analytics classifications. This task does not authorize agent legal filing or guess exemptions.\n\nApplicable common rules: server owns prices/availability/state; GBP integer pence, UTC instants plus Europe/London display and date semantics; role/ownership checked on every action; Idempotency-Key and expected_version protect repeated/stale mutations; pending external result is not success/failure. No network calls under database locks. Detailed requirements and tests below remain mandatory even if linked files change.\n\nReferences: docs/design/contracts.md K01 K03 K08; docs/design/screens.md; docs/design/coverage.md; relevant docs/design/features/ packet; docs/planning/DELIVERY.md; SETUP.md. These are local unpushed planning artifacts; obtain this checkout's exact fingerprinted packet before execution.\n\n## To dos\n\nT1. Review current prerequisites and the concrete options/rules in Context; collect missing evidence (AC1).\nT2. Perform only the Creator action described, recording settings/decision versions and safe nonsecret evidence (AC1–AC3).\nT3. Check the acceptance examples, record remaining blockers and hand the approved output to dependent Agent tickets (AC3, AC4).\n\n## Not to dos\n\nDo not implement unrelated cleanup, register candidate alternatives, expose credentials, publish releases or deploy without the separate scoped authorization. Planning publication does not authorize application execution now. Do not mark Done without the board's acceptance.\n\n## Acceptance Criteria\n\nAC1. Chef/business owner records registration/status evidence and approved public contact/terms without exposing identity documents.\nAC2. Tax calculation/rounding and refund allocation examples are signed off; product and fulfillment copy includes allergens before purchase and at handover.\nAC3. Transactional versus marketing email, browser storage and analytics/retention decisions are explicit and versioned; unresolved legal points stay blocked.\nAC4. Required acceptance evidence is tied to exact input/output revision, checked by the appropriate reviewer/Creator and recorded on Trello. For implementation include relevant tests, all related PRs, required review/checks, merge and main CI; authorized release/deployment/smoke only when separately in scope.\n\nVerification: inspect the concrete decision/configuration and nonsecret evidence against AC1–AC3. No forced software red/green cycle for human work. Account creation follows accepted-provider gate; no secret values in Trello.\n\nPublication snapshot of the independently reviewed planning packet. Trello is the live execution record; application work has not started.\n\nVerified prerequisite cards:\n- None.\n\nVerified dependent cards:\n- GK-011: https://trello.com/c/ZhcwMqTc\n- GK-019: https://trello.com/c/lW3wuYq0\n- GK-027: https://trello.com/c/G8hLmSBU\n- GK-033: https://trello.com/c/3YbFGdmp\n- GK-036: https://trello.com/c/Dtl6mdxP",
+        "closed": false,
+        "idBoard": "6ab074a2b3c3763832ddf623",
+        "idList": "6ab074adb3c3763832de0087",
+        "due": null,
+        "url": "https://trello.com/c/OWHhKPBT/19-gk-005p0o040w00-verify-uk-business-allergen-tax-and-privacy-content"
+      },
+      "description_sha256": "939261f208bb1ae343a8fc3be0442eccada98f867aa26ab30c83aaaca335a8f4",
+      "classification": "task instructions/proposals/examples, not owner answers"
+    }
+  ],
+  "retrieval": {
+    "method": "Installed Scale-Flow Trello CLI using existing Keychain authentication; authenticated browser read-only cross-check",
+    "comments_returned": 1,
+    "pagination": "comments list exposes no limit/before/cursor flags. Browser comment view shows this one comment followed by original card-creation event, no older-comment/load-more control. No pagination pages offered.",
+    "completeness": "All currently exposed comments checked via CLI and browser; no assertion about deleted comments, earlier edited text or full historical revisions.",
+    "browser_check_recorded_at": "2026-10-04T21:08:24.665065+00:00",
+    "browser_comment_permalink": "https://trello.com/c/PSsIz3tI#comment-6abacbecde4959cdb8da9e21",
+    "browser_terminal_action_id": "6ab85908163fa9bc1135137e",
+    "source_content_incomplete": true,
+    "source_content_note": "Saved text ends «Збираються лише дан» in CLI and browser.",
+    "inaccessible_evidence": [
+      "Deleted/earlier comment revisions not exposed.",
+      "Missing privacy continuation not present in current comment."
+    ]
+  },
+  "attachments": {
+    "owner": {
+      "retrieved_at": "2026-10-04T20:59:18.640905+00:00",
+      "command": [
+        "attachments",
+        "list",
+        "--card",
+        "6ab85908163fa9bc11351373"
+      ],
+      "returncode": 0,
+      "payload": {
+        "ok": true,
+        "data": []
+      }
+    },
+    "parent": {
+      "retrieved_at": "2026-10-04T20:59:20.309494+00:00",
+      "command": [
+        "attachments",
+        "list",
+        "--card",
+        "6ab13b5a78ce79e5d2b0e208"
+      ],
+      "returncode": 0,
+      "payload": {
+        "ok": true,
+        "data": []
+      }
+    },
+    "referenced_version": null,
+    "note": "Both attachment lists returned empty; no file versions supplied. Future public hygiene record, separate instructions and invoice evidence are mentioned, not attached."
+  },
+  "parent_comments": {
+    "retrieved_at": "2026-10-04T20:59:19.768146+00:00",
+    "command": [
+      "comments",
+      "list",
+      "--card",
+      "6ab13b5a78ce79e5d2b0e208"
+    ],
+    "returncode": 0,
+    "payload": {
+      "ok": true,
+      "data": []
+    }
+  },
+  "comments": [
+    {
+      "id": "6abacbecde4959cdb8da9e21",
+      "type": "commentCard",
+      "author": {
+        "id": "6aba9a6ee5e52c67f1fbb09b",
+        "username": "elinahryhorian",
+        "fullName": "Elina Hryhorian"
+      },
+      "permalink": "https://trello.com/c/PSsIz3tI#comment-6abacbecde4959cdb8da9e21",
+      "permalink_evidence": "Observed browser timestamp link",
+      "attribution": "Owner business response: same author self-attributes verification as owner in BO-GK-005; no external identity check.",
+      "current_revision": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+      "revisions": [
+        {
+          "sha256_original_utf8": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+          "sha256_stored_utf8": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+          "source_timestamp": "2026-09-28T20:19:56.733Z",
+          "source_timestamp_meaning": "Trello action date; not proven last edit timestamp",
+          "retrieved_at": "2026-10-04T20:59:18.181083+00:00",
+          "text": "# BO-GK-005 — Дані бізнесу, алергени, податки та приватність\n\n## 1. Для публікації: дані бізнесу\n\n**Назва бізнесу:** GK Cake London\n**Instagram:** \\@gk.cake.london\n**Email:** [gk.cake.london@gmail.com](mailto:gk.cake.london@gmail.com \"‌\")\n\n### Реєстрація харчового бізнесу / Food Hygiene Rating\n\nGK Cake London зареєстрований як харчовий бізнес та пройшов Food Hygiene inspection.\n\n**Food Hygiene Rating: 5/5.**\n\nНаразі онлайн-запис із рейтингом ще не відображається / не оновився. Я вже звернулася до підтримки щодо цього.\n\n**Джерело:** підтверджено власницею GK Cake London. Публічне онлайн-джерело буде додано після оновлення запису / відповіді підтримки.\n\nДокументи, що посвідчують особу, до Trello або публічних матеріалів не додаються.\n\n---\n\n## 2. Склад / алергени\n\nАктуальні смаки:\n\n1. Banana Pudding\n2. Chocolate Raspberry\n3. Chocolate Cream Duo\n4. Chocolate & Banana\n5. Vanilla Raspberry\n6. White Chocolate Raspberry\n7. Chocolate Oreo\n8. Snickers\n\n### Алергени\n\n**Усі смаки містять:**\nEGGS, MILK, CEREALS CONTAINING GLUTEN (WHEAT), SOYBEANS.\n\n**Chocolate Oreo додатково містить:**\nSULPHITES.\n\n**Snickers додатково містить:**\nPEANUTS.\n\nДля Snickers інформація про **PEANUTS** повинна бути особливо помітною для клієнта.\n\nАлергени конкретного смаку повинні бути доступні клієнту **до оформлення покупки**.\n\n**Перевірено власницею GK Cake London: 28.09.2026.**\n\n### Cross-contact\n\nУсі торти готуються на одній кухні, де використовуються EGGS, MILK, CEREALS CONTAINING GLUTEN (WHEAT), SOYBEANS та PEANUTS.\n\n**Текст для публікації:**\n\n“Allergen notice: All cakes are prepared in the same kitchen where EGGS, MILK, CEREALS CONTAINING GLUTEN (WHEAT), SOYBEANS and PEANUTS are handled. While care is taken to minimise cross-contact, we cannot guarantee that products are completely free from traces of other allergens. If you have a severe allergy, please contact us before ordering.”\n\n---\n\n## 3. Інформація при видачі\n\nНа коробці торта розміщується **allergen label** з алергенами конкретного замовлення.\n\nІнформація на label повинна відповідати фактичному смаку / складу торта.\n\nТаким чином, allergen information надається клієнту:\n\n- до оформлення покупки на сайті;\n- повторно при отриманні замовлення на упаковці.\n\n---\n\n## 4. Податковий статус / VAT\n\nGK Cake London наразі **не зареєстрований для UK VAT**.\n\nVAT не додається окремо до вартості замовлення.\n\n**Підтверджено власницею GK Cake London: 28.09.2026.**\n\nЯкщо VAT status бізнесу зміниться, відповідна інформація та логіка розрахунку на сайті повинні бути оновлені.\n\n---\n\n## 5. Податки, округлення та refund calculations\n\nОскільки GK Cake London наразі не VAT registered, VAT окремо до ціни не додається.\n\nRefund calculations здійснюються відповідно до погоджених правил **BO-GK-003** та розраховуються від суми, фактично сплаченої клієнтом після застосованих discounts.\n\nDelivery fee розраховується окремо відповідно до BO-GK-003.\n\n**Приклад:**\n\nCake price: £100\nDelivery: £20\nCake refund: 50% = £50\nDelivery не була виконана: £20 refund\n\n**Total refund = £70.**\n\nЯкщо частина refund уже була успішно повернена, повторно повертається лише залишок. Pending refund не вважається completed refund.\n\nТехнічні грошові розрахунки на сайті повинні виконуватися в GBP з коректним відображенням до двох десяткових знаків та однаково застосовуватися в checkout, payment та refund calculations.\n\n---\n\n## 6. Умови продажу / повернень\n\nВикористовувати актуальну погоджену версію **BO-GK-003**.\n\nПравила BO-GK-003 є business cancellation/refund policy GK Cake London.\n\n### Текст для публікації для клієнтів\n\n“Nothing in this cancellation and refund policy affects the customer’s statutory rights where a product is faulty, not as described or otherwise does not meet applicable legal requirements.”\n\n### ВНУТРІШНЯ ПРИМІТКА ДЛЯ САШІ / РОЗРОБНИКА — НЕ ПУБЛІКУВАТИ НА САЙТІ\n\nПравило про **50% refund при скасуванні більш ніж за 4 дні** наразі є погодженою business policy GK Cake London.\n\nВодночас пропорційність утримання 50% вартості замовлення потрібно фінально перевірити з юридичної точки зору перед публікацією Terms & Conditions.\n\nЦя примітка є внутрішньою та **не повинна відображатися клієнтам на сайті**.\n\n---\n\n## 7. Customer data / приватність\n\nДля оформлення та виконання замовлення сайт може зберігати:\n\n- full name;\n- email;\n- phone number;\n- Instagram username;\n- order information;\n- collection / delivery date;\n- flavour;\n- size;\n- agreed design and order details;\n- customer design references;\n- payment / refund information;\n- необхідну order-related communication.\n\nЗбираються лише дан",
+          "redactions": [],
+          "coverage": [
+            {
+              "line": 1,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 2,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 3,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 4,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 5,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.public_identity"
+              ]
+            },
+            {
+              "line": 6,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.public_identity"
+              ]
+            },
+            {
+              "line": 7,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.public_identity"
+              ]
+            },
+            {
+              "line": 8,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 9,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 10,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 11,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.food_status"
+              ]
+            },
+            {
+              "line": 12,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.food_status"
+              ]
+            },
+            {
+              "line": 13,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.food_status"
+              ]
+            },
+            {
+              "line": 14,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.food_status"
+              ]
+            },
+            {
+              "line": 15,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.food_status"
+              ]
+            },
+            {
+              "line": 16,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.food_status"
+              ]
+            },
+            {
+              "line": 17,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.food_status"
+              ]
+            },
+            {
+              "line": 18,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 19,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.identity_documents"
+              ]
+            },
+            {
+              "line": 20,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 21,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 22,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 23,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 24,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 25,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.flavours"
+              ]
+            },
+            {
+              "line": 26,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.flavours"
+              ]
+            },
+            {
+              "line": 27,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.flavours"
+              ]
+            },
+            {
+              "line": 28,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.flavours"
+              ]
+            },
+            {
+              "line": 29,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.flavours"
+              ]
+            },
+            {
+              "line": 30,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.flavours"
+              ]
+            },
+            {
+              "line": 31,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.flavours"
+              ]
+            },
+            {
+              "line": 32,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.flavours"
+              ]
+            },
+            {
+              "line": 33,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.flavours"
+              ]
+            },
+            {
+              "line": 34,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.flavours"
+              ]
+            },
+            {
+              "line": 35,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 36,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 37,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 38,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.allergens"
+              ]
+            },
+            {
+              "line": 39,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.allergens"
+              ]
+            },
+            {
+              "line": 40,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.allergens"
+              ]
+            },
+            {
+              "line": 41,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.allergens"
+              ]
+            },
+            {
+              "line": 42,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.allergens"
+              ]
+            },
+            {
+              "line": 43,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.allergens"
+              ]
+            },
+            {
+              "line": 44,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.allergens"
+              ]
+            },
+            {
+              "line": 45,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.allergens"
+              ]
+            },
+            {
+              "line": 46,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.allergens"
+              ]
+            },
+            {
+              "line": 47,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.allergens"
+              ]
+            },
+            {
+              "line": 48,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.allergens"
+              ]
+            },
+            {
+              "line": 49,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.allergens"
+              ]
+            },
+            {
+              "line": 50,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.allergens"
+              ]
+            },
+            {
+              "line": 51,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.allergens"
+              ]
+            },
+            {
+              "line": 52,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 53,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 54,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 55,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.cross_contact"
+              ]
+            },
+            {
+              "line": 56,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.cross_contact"
+              ]
+            },
+            {
+              "line": 57,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.cross_contact"
+              ]
+            },
+            {
+              "line": 58,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.cross_contact"
+              ]
+            },
+            {
+              "line": 59,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.cross_contact"
+              ]
+            },
+            {
+              "line": 60,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 61,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 62,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 63,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 64,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 65,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.handover_label"
+              ]
+            },
+            {
+              "line": 66,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.handover_label"
+              ]
+            },
+            {
+              "line": 67,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.handover_label"
+              ]
+            },
+            {
+              "line": 68,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.handover_label"
+              ]
+            },
+            {
+              "line": 69,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.handover_label"
+              ]
+            },
+            {
+              "line": 70,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.handover_label"
+              ]
+            },
+            {
+              "line": 71,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.handover_label"
+              ]
+            },
+            {
+              "line": 72,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.handover_label"
+              ]
+            },
+            {
+              "line": 73,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 74,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 75,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 76,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 77,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 78,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.vat"
+              ]
+            },
+            {
+              "line": 79,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.vat"
+              ]
+            },
+            {
+              "line": 80,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.vat"
+              ]
+            },
+            {
+              "line": 81,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.vat"
+              ]
+            },
+            {
+              "line": 82,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.vat"
+              ]
+            },
+            {
+              "line": 83,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.vat"
+              ]
+            },
+            {
+              "line": 84,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.vat"
+              ]
+            },
+            {
+              "line": 85,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.vat"
+              ]
+            },
+            {
+              "line": 86,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.vat"
+              ]
+            },
+            {
+              "line": 87,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.vat"
+              ]
+            },
+            {
+              "line": 88,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.vat"
+              ]
+            },
+            {
+              "line": 89,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.vat"
+              ]
+            },
+            {
+              "line": 90,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.vat"
+              ]
+            },
+            {
+              "line": 91,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 92,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.refund_basis"
+              ]
+            },
+            {
+              "line": 93,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.refund_basis"
+              ]
+            },
+            {
+              "line": 94,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.refund_basis"
+              ]
+            },
+            {
+              "line": 95,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 96,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.refund_example"
+              ]
+            },
+            {
+              "line": 97,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.refund_example"
+              ]
+            },
+            {
+              "line": 98,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.refund_example"
+              ]
+            },
+            {
+              "line": 99,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.refund_example"
+              ]
+            },
+            {
+              "line": 100,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.refund_example"
+              ]
+            },
+            {
+              "line": 101,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.refund_example"
+              ]
+            },
+            {
+              "line": 102,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.refund_example"
+              ]
+            },
+            {
+              "line": 103,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.refund_example"
+              ]
+            },
+            {
+              "line": 104,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 105,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.refund_basis"
+              ]
+            },
+            {
+              "line": 106,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 107,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.money_precision"
+              ]
+            },
+            {
+              "line": 108,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 109,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 110,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 111,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 112,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 113,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.policy_confirmation"
+              ]
+            },
+            {
+              "line": 114,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.policy_confirmation"
+              ]
+            },
+            {
+              "line": 115,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.policy_confirmation"
+              ]
+            },
+            {
+              "line": 116,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 117,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.statutory_notice"
+              ]
+            },
+            {
+              "line": 118,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.statutory_notice"
+              ]
+            },
+            {
+              "line": 119,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.statutory_notice"
+              ]
+            },
+            {
+              "line": 120,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 121,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.internal_legal_note"
+              ]
+            },
+            {
+              "line": 122,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 123,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.policy_confirmation"
+              ]
+            },
+            {
+              "line": 124,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 125,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.internal_legal_note"
+              ]
+            },
+            {
+              "line": 126,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.internal_legal_note"
+              ]
+            },
+            {
+              "line": 127,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.internal_legal_note"
+              ]
+            },
+            {
+              "line": 128,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 129,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 130,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 131,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 132,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 133,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.customer_data"
+              ]
+            },
+            {
+              "line": 134,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.customer_data"
+              ]
+            },
+            {
+              "line": 135,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.customer_data"
+              ]
+            },
+            {
+              "line": 136,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.customer_data"
+              ]
+            },
+            {
+              "line": 137,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.customer_data"
+              ]
+            },
+            {
+              "line": 138,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.customer_data"
+              ]
+            },
+            {
+              "line": 139,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.customer_data"
+              ]
+            },
+            {
+              "line": 140,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.customer_data"
+              ]
+            },
+            {
+              "line": 141,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.customer_data"
+              ]
+            },
+            {
+              "line": 142,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.customer_data"
+              ]
+            },
+            {
+              "line": 143,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.customer_data"
+              ]
+            },
+            {
+              "line": 144,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.customer_data"
+              ]
+            },
+            {
+              "line": 145,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.customer_data"
+              ]
+            },
+            {
+              "line": 146,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.customer_data"
+              ]
+            },
+            {
+              "line": 147,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 148,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-005.privacy_incomplete"
+              ]
+            }
+          ],
+          "numeric_occurrences": [
+            {
+              "line": 1,
+              "occurrence": 1,
+              "written": "005",
+              "disposition": "identifier",
+              "decision_ids": []
+            },
+            {
+              "line": 3,
+              "occurrence": 1,
+              "written": "1",
+              "disposition": "irrelevant_metadata",
+              "decision_ids": []
+            },
+            {
+              "line": 13,
+              "occurrence": 1,
+              "written": "5",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-005.food_status"
+              ]
+            },
+            {
+              "line": 13,
+              "occurrence": 2,
+              "written": "5",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-005.food_status"
+              ]
+            },
+            {
+              "line": 23,
+              "occurrence": 1,
+              "written": "2",
+              "disposition": "irrelevant_metadata",
+              "decision_ids": []
+            },
+            {
+              "line": 27,
+              "occurrence": 1,
+              "written": "1",
+              "disposition": "irrelevant_metadata",
+              "decision_ids": [
+                "BO-GK-005.flavours"
+              ]
+            },
+            {
+              "line": 28,
+              "occurrence": 1,
+              "written": "2",
+              "disposition": "irrelevant_metadata",
+              "decision_ids": [
+                "BO-GK-005.flavours"
+              ]
+            },
+            {
+              "line": 29,
+              "occurrence": 1,
+              "written": "3",
+              "disposition": "irrelevant_metadata",
+              "decision_ids": [
+                "BO-GK-005.flavours"
+              ]
+            },
+            {
+              "line": 30,
+              "occurrence": 1,
+              "written": "4",
+              "disposition": "irrelevant_metadata",
+              "decision_ids": [
+                "BO-GK-005.flavours"
+              ]
+            },
+            {
+              "line": 31,
+              "occurrence": 1,
+              "written": "5",
+              "disposition": "irrelevant_metadata",
+              "decision_ids": [
+                "BO-GK-005.flavours"
+              ]
+            },
+            {
+              "line": 32,
+              "occurrence": 1,
+              "written": "6",
+              "disposition": "irrelevant_metadata",
+              "decision_ids": [
+                "BO-GK-005.flavours"
+              ]
+            },
+            {
+              "line": 33,
+              "occurrence": 1,
+              "written": "7",
+              "disposition": "irrelevant_metadata",
+              "decision_ids": [
+                "BO-GK-005.flavours"
+              ]
+            },
+            {
+              "line": 34,
+              "occurrence": 1,
+              "written": "8",
+              "disposition": "irrelevant_metadata",
+              "decision_ids": [
+                "BO-GK-005.flavours"
+              ]
+            },
+            {
+              "line": 51,
+              "occurrence": 1,
+              "written": "28.09.2026",
+              "disposition": "source_verification_date",
+              "decision_ids": [
+                "BO-GK-005.allergens"
+              ]
+            },
+            {
+              "line": 55,
+              "occurrence": 1,
+              "written": "одній",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-005.cross_contact"
+              ]
+            },
+            {
+              "line": 63,
+              "occurrence": 1,
+              "written": "3",
+              "disposition": "irrelevant_metadata",
+              "decision_ids": []
+            },
+            {
+              "line": 76,
+              "occurrence": 1,
+              "written": "4",
+              "disposition": "irrelevant_metadata",
+              "decision_ids": []
+            },
+            {
+              "line": 82,
+              "occurrence": 1,
+              "written": "28.09.2026",
+              "disposition": "source_verification_date",
+              "decision_ids": [
+                "BO-GK-005.vat"
+              ]
+            },
+            {
+              "line": 88,
+              "occurrence": 1,
+              "written": "5",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-005.vat"
+              ]
+            },
+            {
+              "line": 92,
+              "occurrence": 1,
+              "written": "003",
+              "disposition": "identifier",
+              "decision_ids": [
+                "BO-GK-005.refund_basis"
+              ]
+            },
+            {
+              "line": 94,
+              "occurrence": 1,
+              "written": "003",
+              "disposition": "identifier",
+              "decision_ids": [
+                "BO-GK-005.refund_basis"
+              ]
+            },
+            {
+              "line": 98,
+              "occurrence": 1,
+              "written": "100",
+              "disposition": "example",
+              "decision_ids": [
+                "BO-GK-005.refund_example"
+              ]
+            },
+            {
+              "line": 99,
+              "occurrence": 1,
+              "written": "20",
+              "disposition": "example",
+              "decision_ids": [
+                "BO-GK-005.refund_example"
+              ]
+            },
+            {
+              "line": 100,
+              "occurrence": 1,
+              "written": "50",
+              "disposition": "example",
+              "decision_ids": [
+                "BO-GK-005.refund_example"
+              ]
+            },
+            {
+              "line": 100,
+              "occurrence": 2,
+              "written": "50",
+              "disposition": "example",
+              "decision_ids": [
+                "BO-GK-005.refund_example"
+              ]
+            },
+            {
+              "line": 101,
+              "occurrence": 1,
+              "written": "20",
+              "disposition": "example",
+              "decision_ids": [
+                "BO-GK-005.refund_example"
+              ]
+            },
+            {
+              "line": 103,
+              "occurrence": 1,
+              "written": "70",
+              "disposition": "example",
+              "decision_ids": [
+                "BO-GK-005.refund_example"
+              ]
+            },
+            {
+              "line": 107,
+              "occurrence": 1,
+              "written": "двох",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-005.money_precision"
+              ]
+            },
+            {
+              "line": 111,
+              "occurrence": 1,
+              "written": "6",
+              "disposition": "irrelevant_metadata",
+              "decision_ids": []
+            },
+            {
+              "line": 113,
+              "occurrence": 1,
+              "written": "003",
+              "disposition": "identifier",
+              "decision_ids": [
+                "BO-GK-005.policy_confirmation"
+              ]
+            },
+            {
+              "line": 115,
+              "occurrence": 1,
+              "written": "003",
+              "disposition": "identifier",
+              "decision_ids": [
+                "BO-GK-005.policy_confirmation"
+              ]
+            },
+            {
+              "line": 123,
+              "occurrence": 1,
+              "written": "50",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-005.policy_confirmation"
+              ]
+            },
+            {
+              "line": 123,
+              "occurrence": 2,
+              "written": "4",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-005.policy_confirmation"
+              ]
+            },
+            {
+              "line": 125,
+              "occurrence": 1,
+              "written": "50",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-005.internal_legal_note"
+              ]
+            },
+            {
+              "line": 131,
+              "occurrence": 1,
+              "written": "7",
+              "disposition": "irrelevant_metadata",
+              "decision_ids": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

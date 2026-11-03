@@ -1,0 +1,61 @@
+{
+  "approval": "Sasha: approve; current conversation, after concrete completion-split publication question",
+  "started_at": "2026-10-05T21:14:05.932963+00:00",
+  "comments": {
+    "GK-019": {
+      "card_id": "6ab13b6dfb6d82ab64f2ca14",
+      "comment_id": "6ac4131e1104732c928699bd",
+      "url": "https://trello.com/c/lW3wuYq0#comment-6ac4131e1104732c928699bd",
+      "body_sha256": "d42c1583eec8b2b3d0201210f54391e8c2cd6c51b416efbcf698cd30598561e0",
+      "verified_exact": true
+    },
+    "GK-024": {
+      "card_id": "6ab13e39f3ed1fe1a887f758",
+      "comment_id": "6ac41320eaa1ef6e043079c9",
+      "url": "https://trello.com/c/J6zlPAc9#comment-6ac41320eaa1ef6e043079c9",
+      "body_sha256": "912b4cd99021305706b058b151a4cd6c408b5c7aab1d1874499a2fba5af2fa61",
+      "verified_exact": true
+    },
+    "GK-025": {
+      "card_id": "6ab13e450590793ed8940191",
+      "comment_id": "6ac41322e8b3e544254827ba",
+      "url": "https://trello.com/c/vyFTtISc#comment-6ac41322e8b3e544254827ba",
+      "body_sha256": "64bb8b106c36dc2a6cd2a752f77c6b65248b1c2e6607bd11d9096e70025fa992",
+      "verified_exact": true
+    },
+    "GK-026": {
+      "card_id": "6ab13e4b6672f4ac56b93269",
+      "comment_id": "6ac4132310c0196301f75198",
+      "url": "https://trello.com/c/xiEN4jvp#comment-6ac4132310c0196301f75198",
+      "body_sha256": "2de9e5d0d4be2afcb98a60ab9b9ec836addbdf6f762b1ee4603cb86f53f0ab25",
+      "verified_exact": true
+    },
+    "GK-011": {
+      "card_id": "6ab13b6a33c1143844e6e0d1",
+      "comment_id": "6ac4132507561727a8a8e8b9",
+      "url": "https://trello.com/c/ZhcwMqTc#comment-6ac4132507561727a8a8e8b9",
+      "body_sha256": "b2f558b9ddb4fcaed2836cb2dbbcd0ccfc91743afa03bdfa6e64a676fbb09545",
+      "verified_exact": true
+    }
+  },
+  "description": {
+    "card_id": "6ab13b6a33c1143844e6e0d1",
+    "original_sha256": "58ab2e7beabb61517a7cb50a5d1eaaaed843c11ad0d470aa1efe38674fb4d0a4",
+    "updated_sha256": "ecae7d95ee62194fcf1aa872387a51f6b90e95ef2af7d0b1242cd83c4bb1ce6a",
+    "preserved_original_prefix": true,
+    "verified_exact": true,
+    "amendment_file": "publication-description-amendment-compact.md",
+    "earlier_attempt": "Long amendment failed; fresh read confirmed original unchanged; compact equivalent applied"
+  },
+  "done_transition": {
+    "card_id": "6ab13b6a33c1143844e6e0d1",
+    "from_list": "6ab074adb3c3763832de0077",
+    "to_list": "6ab074aeb3c3763832de00c3",
+    "to_list_name": "🏁 Done",
+    "verified": true,
+    "verified_at": "2026-10-05T21:15:40.375621+00:00",
+    "url": "https://trello.com/c/ZhcwMqTc/24-gk-011p0o090w01-provision-selected-payment-and-email-test-accounts"
+  },
+  "downstream_descriptions_and_statuses_preserved": true,
+  "owner_card_untouched": true
+}

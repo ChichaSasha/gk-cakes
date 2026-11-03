@@ -1,0 +1,4032 @@
+{
+  "schema_version": 1,
+  "ticket": "GK-003",
+  "input_revision": "037d57fa3fc3254b357b6d33fb0e5baf0361990e7284984948ec3189618ba614",
+  "status_meaning": {
+    "confirmed": "Explicit statement from the attributed source; original chef statements and later Sasha-relayed answers are distinguished. Not blanket chef approval, complete-ticket acceptance, technical implementation or legal approval.",
+    "reported_fact": "Owner-attested fact, independent verification absent.",
+    "conflict": "Owner wording retained; competing owner rule not resolved.",
+    "example": "Owner calculation/example only, not configurable business value.",
+    "unresolved": "Explicit owner question requiring external evidence.",
+    "incomplete": "Source fragment; missing answer remains null.",
+    "proposed": "Explicit proposal, not accepted replacement of owner policy."
+  },
+  "normalization": {
+    "money": "GBP established in BO-GK-005; exact pounds × 100 = integer pence; no floats. Percent remains integer percent.",
+    "time": "Current actual GK-001 user reply explicitly confirms 120 elapsed hours and immutable original handover deadline; website window 24h, hold 15min; production clock 48h separate. Europe/London display; no unsupported calendar conversions.",
+    "unknown": "null means unknown or redacted, never zero/false/not-applicable; see field notes.",
+    "approval": "Direct statements adopted narrowly; no decision auto-supersedes a conflicting owner statement by recency.",
+    "current_handover": "manual-handover-r2; current handover.md and acceptance-cases.md control technical derivations; all source history retained"
+  },
+  "decisions": {
+    "request_fields": {
+      "id": "BO-GK-003.request_fields",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "channel": "Instagram",
+          "fields": [
+            "desired collection/delivery date",
+            "servings OR desired size",
+            "flavour/filling",
+            "full idea description",
+            "design and important details",
+            "colour palette if relevant"
+          ],
+          "references": {
+            "multiple_allowed": true,
+            "optional_with_sufficient_description": true,
+            "sources": [
+              "GK Cake London",
+              "other bakers",
+              "designers",
+              "Pinterest",
+              "Instagram",
+              "other sources"
+            ],
+            "combine_elements": true
+          }
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Custom requests via Instagram require enough information to evaluate design, work and price. One or multiple references can combine elements; a sufficiently described original idea may have no reference. Colour palette is conditional.",
+      "data_contract": "request",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            5,
+            19
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "870636834f4d617b79f1a1ac5080e8da9f9075c777cb6511142d6a1bd91f0fcf"
+    },
+    "order_contacts": {
+      "id": "BO-GK-003.order_contacts",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "customer_full_name": "always_required",
+          "different_payer_details": "required_if_another_person_pays",
+          "Instagram_account": "not_a_universal_requirement",
+          "payer_detail_fields": null
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user final website-only payment clarification",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "No exact additional payer-data field list supplied; use minimal provider/identity data, no identity or bank documents in ordinary forms."
+        ]
+      },
+      "interpretation_en": "Always collect customer full name and details of a different payer when applicable. Do not require a made-up Instagram account. Additional contact validations are technical/channel requirements, not newly invented universal business-required fields.",
+      "data_contract": "request",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.order_contacts",
+          "revision_sha256": "7193c983add1163d3bd2f3932b2cb7e29352a4c8cdb9bb1dd00d2d110bb8116f",
+          "extent": "Latest explicit website-only / 24-hour / contact clarification replaces conflicting earlier workflow."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:website-payment-24h",
+        "revision_sha256": "037d57fa3fc3254b357b6d33fb0e5baf0361990e7284984948ec3189618ba614",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user answer, not fabricated chef author.",
+        "approval_basis": "Explicit replacement from current clarification; derived technical details separately identified in handover."
+      },
+      "effective_from": null,
+      "effective_date_note": "User clarification received 2026-10-05; operational effective date remains unspecified.",
+      "revision_sha256": "6b2b3546181de5a4dbd20e171e8d4bfce4c71bf89b7e8ce0118ba02693320e28"
+    },
+    "communication": {
+      "id": "BO-GK-003.communication",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "primary": "Instagram",
+          "email_alternative": [
+            "companies",
+            "large orders",
+            "shoots",
+            "corporate clients",
+            "customer preference for formal email"
+          ]
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Instagram is primary for ordinary custom work. Email is possible for listed cases or customer preference. Collecting phone/email does not require communicating through them.",
+      "data_contract": "request",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            30,
+            34
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "0a1ca125294c6705f2f934d639d64ac283c49e6e1390b0da9ee4dae557ead445"
+    },
+    "agreement": {
+      "id": "BO-GK-003.agreement",
+      "status": "confirmed",
+      "business": {
+        "value": [
+          "final price",
+          "date",
+          "size/servings",
+          "flavour/filling",
+          "design/agreed details",
+          "collection/delivery method"
+        ],
+        "type": "list",
+        "unit": null,
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "All custom orders agreed manually; customer agrees these details and price before payment.",
+      "data_contract": "quote",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            38,
+            49
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "851a14526b0518376acf7d3e774b56d45b288b05fbc5354f4cdb4e66c6ee8a0c"
+    },
+    "paid_commitment": {
+      "id": "BO-GK-003.paid_commitment",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "payment_percent": 100,
+          "current_collection_channel": "website",
+          "accepted_order_requires": "verified_successful_full_payment_or_explicit_GK007_free_confirmation",
+          "unpaid_or_expired_entity": "order_template_or_payment_attempt_not_accepted_order",
+          "full_date_after_successful_payment": "order_accepted",
+          "separately_paid_GK_delivery": "separate_chef_entered_charge_not_unpaid_cake_order",
+          "free_order_has_provider_capture": false,
+          "late_payment": "actual paid liability; honour only with chef feasibility and explicit customer agreement, otherwise full return"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user final website-only payment clarification",
+        "conditions": [
+          "Known paid but insufficient preparation time is awaiting date-resolution, not unknown funds or fulfilled acceptance; no automatic full-date rejection. Q2 allows personal honour agreement or full return."
+        ],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Current accepted orders are paid; unpaid/expired drafts/templates are not accepted orders. Full payment accepts the order even if capacity filled. Website-only path replaces former current manual/offline residual-balance interpretation; separately agreed delivery charge remains separately paid. Q2 late-payment preparation cases retain actual paid funds but require feasible chef/customer agreement before fulfillment; otherwise full return.",
+      "data_contract": "quote",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.paid_commitment",
+          "revision_sha256": "1897ae90af90207dc6184df39cfbba38a150293e185996fe63274107198aad58",
+          "extent": "Latest explicit website-only / 24-hour / contact clarification replaces conflicting earlier workflow."
+        },
+        {
+          "decision_id": "BO-GK-003.paid_commitment",
+          "revision_sha256": "239ffb338a440ca4fb8d9ee96e08817a73047f0d04bd75148bb356ea75e1be4a",
+          "extent": "Explicit cross-card approved exception; all other values retained."
+        },
+        {
+          "decision_id": "BO-GK-003.paid_commitment",
+          "revision_sha256": "e9c64782501839bda7b2eddba732ac617ab19e584ebca29fc36687b23ed019ca",
+          "extent": "Only24h initiation/in-flight timing and late-paid preparation resolution; all other rules retained."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:website-payment-24h",
+        "revision_sha256": "037d57fa3fc3254b357b6d33fb0e5baf0361990e7284984948ec3189618ba614",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user answer, not fabricated chef author.",
+        "approval_basis": "Explicit replacement from current clarification; derived technical details separately identified in handover."
+      },
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-007:2026-10-05:free-order-reconciliation",
+          "revision_sha256": "b241ec6f5f6bfdb0bf4f019710acc5603be41be9256e500eec769c8156f191e7",
+          "lines": [
+            [
+              1,
+              9
+            ]
+          ],
+          "attribution": "Sasha interview, not direct Elina statement",
+          "approval_basis": "Approved interview and verified scope closure; technical integration only."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-019:2026-10-05:Q2",
+          "revision_sha256": "b2c418220bc1e4aa09f29ed8ce1ff786bf21757b42b3aa70eac07c8be5e26cbe",
+          "lines": [
+            [
+              1,
+              5
+            ]
+          ],
+          "attribution": "Sasha explicit approval; original spelling Aprove retained",
+          "approval_basis": "Approval of the complete preceding payment-timing recommendation; no publication/deployment authority."
+        }
+      ],
+      "revision_sha256": "d32d13aaa5e6774a31706df04dd3fceb4ceb15d6560d78e63fe9c612cb0026e8"
+    },
+    "quote_validity": {
+      "id": "BO-GK-003.quote_validity",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "payment_window_hours": 24,
+          "prior_sending_anchor_retained": true,
+          "source_sending_anchor": "original chef quote sent to customer",
+          "quote_alone_reserves_date": false,
+          "payment_disabled_after_expiry": "new_initiation_only; in-flight reconciled",
+          "repeat_payment_after_paid": false,
+          "window_applies_to": "starting_payment"
+        },
+        "type": "dict",
+        "unit": "hours from sending",
+        "scope": "Current user final website-only payment clarification",
+        "conditions": [
+          "Payment validly started within24h remains pending until authoritative outcome; local expiry is not proof of failure. No second payment while first unknown."
+        ],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "24h from sending is the window to start payment, equality disallows new initiation. In-flight payment reconciles after window; if paid too late for preparation, chef honours only if feasible and explicitly agreed with customer, otherwise full return. No second payment while unknown;48h preparation clock unchanged.",
+      "data_contract": "quote",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.quote_validity",
+          "revision_sha256": "2092f67b620fb1054fce5751b62f9765f7e3020e526a874b4b99fdc03f9ed6c8",
+          "extent": "Latest explicit website-only / 24-hour / contact clarification replaces conflicting earlier workflow."
+        },
+        {
+          "decision_id": "BO-GK-003.quote_validity",
+          "revision_sha256": "3cd40f5a0ec491548204c8d4a9cf27361e8478b760605dce2a24395f1fde28ab",
+          "extent": "Only24h initiation/in-flight timing and late-paid preparation resolution; all other rules retained."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:website-payment-24h",
+        "revision_sha256": "037d57fa3fc3254b357b6d33fb0e5baf0361990e7284984948ec3189618ba614",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user answer, not fabricated chef author.",
+        "approval_basis": "Explicit replacement from current clarification; derived technical details separately identified in handover."
+      },
+      "effective_from": null,
+      "effective_date_note": "User clarification received 2026-10-05; operational effective date remains unspecified.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-019:2026-10-05:Q2",
+          "revision_sha256": "b2c418220bc1e4aa09f29ed8ce1ff786bf21757b42b3aa70eac07c8be5e26cbe",
+          "lines": [
+            [
+              1,
+              5
+            ]
+          ],
+          "attribution": "Sasha explicit approval; original spelling Aprove retained",
+          "approval_basis": "Approval of the complete preceding payment-timing recommendation; no publication/deployment authority."
+        }
+      ],
+      "revision_sha256": "e73bc0443511f27b76984e7c269c84515d3ce33e649645e476949139b7c65d41"
+    },
+    "daily_limit": {
+      "id": "BO-GK-003.daily_limit",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "standard_cakes": 7,
+          "display": "actual_remaining_places",
+          "details_set_by": "chef_in_admin_panel"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Seven cakes per day, not seven orders; show actual remaining places. Current GK-001 defines handover-date counting and chef extras.",
+      "data_contract": "capacity",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.daily_limit",
+          "revision_sha256": "e8aa30df36cadba043bbb68634e849df227f8129c59d52d35c402c315e8cea16",
+          "scope": "Only explicit clarified portions; source history and unresolved cross-card conflicts retained."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            5,
+            5
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "revision_sha256": "9262a2df6bf6ace0743cf142f46eeecd63618dd5e0fcb7d28f8952c54e94c908"
+    },
+    "capacity_exception": {
+      "id": "BO-GK-003.capacity_exception",
+      "status": "confirmed",
+      "business": {
+        "value": true,
+        "type": "bool",
+        "unit": null,
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Chef authority in admin and extra-capacity business path supplied in current GK-001; detailed admission permissions remain technical design."
+        ]
+      },
+      "interpretation_en": "A full website calendar still permits a custom request. Manually assess workload, complexity, size/type, available time and production capability; approve over standard limit when feasible.",
+      "data_contract": "capacity",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            71,
+            77
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "199a8cd08f3d5138bc6bc6a8372949e6c1fd54e31f7d4df9bc4b4afb9e6fdbd0"
+    },
+    "pricing_factors": {
+      "id": "BO-GK-003.pricing_factors",
+      "status": "confirmed",
+      "business": {
+        "value": [
+          "metallised coating",
+          "large amount/complex piping",
+          "bows/additional decoration",
+          "cherries/special decor",
+          "fresh berries/fruits",
+          "fresh flowers",
+          "dome shape when it increases servings or work",
+          "other complex/additional design"
+        ],
+        "type": "list",
+        "unit": null,
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Base price may change for design complexity, decoration quantity, materials and added work. Listed extras may cost more; quote individually and let customer accept final price before payment. No surcharge amounts/tiers supplied.",
+      "data_contract": "quote",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            81,
+            96
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "fd1eb08620900ef822c105bf0d06abeb136cc854c7d6f7d83dc5d2af5d1687a3"
+    },
+    "guest_purchase": {
+      "id": "BO-GK-003.guest_purchase",
+      "status": "confirmed",
+      "business": {
+        "value": true,
+        "type": "bool",
+        "unit": null,
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Purchase without an account is allowed.",
+      "data_contract": "identity",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            100,
+            100
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "db66bacedc15c3f6fa14cd444ad2dd60a0b23b53b41f4aa125a369e0224000a2"
+    },
+    "reorder": {
+      "id": "BO-GK-003.reorder",
+      "status": "confirmed",
+      "business": {
+        "value": [
+          "price",
+          "date",
+          "availability",
+          "flavour/composition",
+          "design",
+          "other new-order details"
+        ],
+        "type": "list",
+        "unit": null,
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Reconfirm current details on every reorder; do not clone old commitments.",
+      "data_contract": "identity",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            102,
+            102
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "7c3c1552e96d257bd7be528d6fc6169adae1d864b51f3fca0f51d2637d7c6eaa"
+    },
+    "historical_claim": {
+      "id": "BO-GK-003.historical_claim",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "confirmation_actor": "chef",
+          "channel": "admin_panel",
+          "verified_customer_required": true,
+          "order_belongs_to_customer_required": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Chef verification evidence and insufficient-evidence outcome are not supplied; proposed deny/pending safeguard is in handover."
+        ]
+      },
+      "interpretation_en": "Only chef confirmation in admin links an old order to the verified customer. Existing identity-plus-order-proof requirement still applies; an Instagram handle or possession of payment reference alone is not identity proof.",
+      "data_contract": "identity",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.historical_claim",
+          "revision_sha256": "be080e5d072920ce02d2de0917a6a6bcf3bb03b0cd385c4f26a54aa3f4ba8675",
+          "scope": "Only explicit clarified portions; source history and unresolved cross-card conflicts retained."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            7,
+            7
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "revision_sha256": "c84121255514017cb71a9dcd1e1da84d31c2429482f95ab2dbd98067e41df298"
+    },
+    "payment_methods": {
+      "id": "BO-GK-003.payment_methods",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "current": "official_website",
+          "customer_order": true,
+          "chef_template_order": true,
+          "current_Revolut_intake": false,
+          "historical_Revolut_evidence_retained": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user final website-only payment clarification",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "All current orders are paid through the website, including Instagram arrangements entered by chef and shared as templates. Prior Revolut alternative is historical; preserve real old payment/refund provenance.",
+      "data_contract": "payment",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.payment_methods",
+          "revision_sha256": "b0223077026428f8ea1a3dbfd03529302cbb711fa8f06b881fa9fa09b599a86f",
+          "extent": "Latest explicit website-only / 24-hour / contact clarification replaces conflicting earlier workflow."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:website-payment-24h",
+        "revision_sha256": "037d57fa3fc3254b357b6d33fb0e5baf0361990e7284984948ec3189618ba614",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user answer, not fabricated chef author.",
+        "approval_basis": "Explicit replacement from current clarification; derived technical details separately identified in handover."
+      },
+      "effective_from": null,
+      "effective_date_note": "User clarification received 2026-10-05; operational effective date remains unspecified.",
+      "revision_sha256": "b7dcb6a590e92de522d61ad8af380bfd3dc53f6a8f9e83c4a00c8e573b99ee5e"
+    },
+    "cancellation_early": {
+      "id": "BO-GK-003.cancellation_early",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "cake_types": [
+            "made_to_order",
+            "ready_made"
+          ],
+          "basis": "actually_paid_total_after_discount_including_GK_chef_delivery",
+          "deadline": "original_handover_at_minus_120_elapsed_hours_saved_at_order_placement",
+          "date_time_moves_change_deadline": false,
+          "comparison": "strictly_before_deadline",
+          "refund_percent": 100,
+          "customer_may_cancel": true
+        },
+        "type": "dict",
+        "unit": "days / percent",
+        "scope": "Current reconciled GK-001/GK-003 user policy",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Both cake types: 100% of actually paid total strictly more than 120 elapsed hours before ORIGINAL handover; original deadline survives date/time moves. Replaces old >4-day/component rule.",
+      "data_contract": "refund",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.cancellation_early",
+          "revision_sha256": "d746208df4bbf3c609e448a84718ec9076f586dadc1c9ec5753479483bdfc925",
+          "extent": "Explicit clarified replacement; prior wording preserved as history."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:delivery-clarification",
+        "revision_sha256": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+        "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+      },
+      "effective_from": null,
+      "effective_date_note": "User clarification received 2026-10-05; operational effective date remains unspecified.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:clarification-1",
+          "revision_sha256": "a51fd7c0287d7c55163b3ac4d55c6f938152cb6f31b96762c2327ad1909b8923",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-deadline",
+          "revision_sha256": "e60097641c674bf1d1fa0d55c5d9ffd000ee15a8656419d95f3d186fe267aa28",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-scope",
+          "revision_sha256": "eb7d5d38c3852fc8fbe42c7fd2aca79e157af24b51c473027d225cd957dc3095",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        }
+      ],
+      "revision_sha256": "92751b1e4b59d9ec750e05776846849bf56679e5ef4e92c787b8296f3f487b70"
+    },
+    "cancellation_late": {
+      "id": "BO-GK-003.cancellation_late",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "cake_types": [
+            "made_to_order",
+            "ready_made"
+          ],
+          "basis": "actually_paid_total_after_discount_including_GK_chef_delivery",
+          "deadline": "original_handover_at_minus_120_elapsed_hours_saved_at_order_placement",
+          "date_time_moves_change_deadline": false,
+          "comparison": "at_or_after_deadline",
+          "refund_percent": 50,
+          "customer_may_cancel": true
+        },
+        "type": "dict",
+        "unit": "days / percent",
+        "scope": "Current reconciled GK-001/GK-003 user policy",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Both cake types: exactly 50% total at equality or later, including no-show/after handover. Original deadline never moves; replaces old zero-refund rule.",
+      "data_contract": "refund",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.cancellation_late",
+          "revision_sha256": "9e9303042dd72835f9c480ad9e1703fc573e8d36006286127a17e7f5bce31165",
+          "extent": "Explicit clarified replacement; prior wording preserved as history."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:delivery-clarification",
+        "revision_sha256": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+        "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+      },
+      "effective_from": null,
+      "effective_date_note": "User clarification received 2026-10-05; operational effective date remains unspecified.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:clarification-1",
+          "revision_sha256": "a51fd7c0287d7c55163b3ac4d55c6f938152cb6f31b96762c2327ad1909b8923",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-deadline",
+          "revision_sha256": "e60097641c674bf1d1fa0d55c5d9ffd000ee15a8656419d95f3d186fe267aa28",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-scope",
+          "revision_sha256": "eb7d5d38c3852fc8fbe42c7fd2aca79e157af24b51c473027d225cd957dc3095",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        }
+      ],
+      "revision_sha256": "b44d62dccb5defcafed270ced4ff29ad5f8cdd5194873c8c46e2597c2ec28a4b"
+    },
+    "started_or_ready": {
+      "id": "BO-GK-003.started_or_ready",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "cake_types": [
+            "made_to_order",
+            "ready_made"
+          ],
+          "basis": "actually_paid_total_after_discount_including_GK_chef_delivery",
+          "deadline": "original_handover_at_minus_120_elapsed_hours_saved_at_order_placement",
+          "date_time_moves_change_deadline": false,
+          "states": [
+            "production_started",
+            "cake_ready"
+          ],
+          "customer_may_cancel": true,
+          "refund_policy": "100_percent_before_fixed_deadline_else_50_percent"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current reconciled GK-001/GK-003 user policy",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Production/ready state does not override the unified fixed-deadline policy. Earlier answer established cancellation and 50%; explicit cross-card unified replacement determines 100/50 timing.",
+      "data_contract": "refund",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.started_or_ready",
+          "revision_sha256": "e90b592f39b6d8a3be70b83fdb5d272cf9af2e23b5c3c62c588c547a0e140a09",
+          "extent": "Explicit clarified replacement; prior wording preserved as history."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:delivery-clarification",
+        "revision_sha256": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+        "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+      },
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:clarification-1",
+          "revision_sha256": "a51fd7c0287d7c55163b3ac4d55c6f938152cb6f31b96762c2327ad1909b8923",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-deadline",
+          "revision_sha256": "e60097641c674bf1d1fa0d55c5d9ffd000ee15a8656419d95f3d186fe267aa28",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-scope",
+          "revision_sha256": "eb7d5d38c3852fc8fbe42c7fd2aca79e157af24b51c473027d225cd957dc3095",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        }
+      ],
+      "revision_sha256": "ada433c04f10f14591bc101bb1fa7cf7ca5b38908a2c0519bbf3ad29fd5f8fa4"
+    },
+    "after_handover": {
+      "id": "BO-GK-003.after_handover",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "cake_types": [
+            "made_to_order",
+            "ready_made"
+          ],
+          "basis": "actually_paid_total_after_discount_including_GK_chef_delivery",
+          "deadline": "original_handover_at_minus_120_elapsed_hours_saved_at_order_placement",
+          "date_time_moves_change_deadline": false,
+          "refund_percent": 50,
+          "ordinary_route": "personal_chef_contact",
+          "statutory_rights_preserved": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current reconciled GK-001/GK-003 user policy",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Exactly 50% after handover under unified policy; direct chef contact remains the supplied exception/operational route. Replaces old blanket exclusion; statutory rights retained.",
+      "data_contract": "refund",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.after_handover",
+          "revision_sha256": "e13d70cecf7d8d5b247be5999c43c3308a7ac7b53d0179a30b7120bd2a5793a3",
+          "extent": "Explicit clarified replacement; prior wording preserved as history."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:delivery-clarification",
+        "revision_sha256": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+        "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+      },
+      "effective_from": null,
+      "effective_date_note": "User clarification received 2026-10-05; operational effective date remains unspecified.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:clarification-1",
+          "revision_sha256": "a51fd7c0287d7c55163b3ac4d55c6f938152cb6f31b96762c2327ad1909b8923",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-deadline",
+          "revision_sha256": "e60097641c674bf1d1fa0d55c5d9ffd000ee15a8656419d95f3d186fe267aa28",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-scope",
+          "revision_sha256": "eb7d5d38c3852fc8fbe42c7fd2aca79e157af24b51c473027d225cd957dc3095",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        }
+      ],
+      "revision_sha256": "9aa41d7dcb5c50aa1e5c744439681190225c0badbee1f16e3a62518170ad34be"
+    },
+    "no_show": {
+      "id": "BO-GK-003.no_show",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "cake_types": [
+            "made_to_order",
+            "ready_made"
+          ],
+          "basis": "actually_paid_total_after_discount_including_GK_chef_delivery",
+          "deadline": "original_handover_at_minus_120_elapsed_hours_saved_at_order_placement",
+          "date_time_moves_change_deadline": false,
+          "refund_percent": 50,
+          "rescheduling": "current GK-001 chef-mediated rules"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current reconciled GK-001/GK-003 user policy",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Exactly 50% at no-show including paid GK chef delivery. Explicit unified replacement supersedes older no-refund/no-delivery-refund wording.",
+      "data_contract": "move",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.no_show",
+          "revision_sha256": "3a778d85f86f5192b745921eef9a22ff9353291603e3f920528368ac9c5a5b18",
+          "extent": "Explicit clarified replacement; prior wording preserved as history."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:delivery-clarification",
+        "revision_sha256": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+        "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+      },
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:clarification-1",
+          "revision_sha256": "a51fd7c0287d7c55163b3ac4d55c6f938152cb6f31b96762c2327ad1909b8923",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-deadline",
+          "revision_sha256": "e60097641c674bf1d1fa0d55c5d9ffd000ee15a8656419d95f3d186fe267aa28",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-scope",
+          "revision_sha256": "eb7d5d38c3852fc8fbe42c7fd2aca79e157af24b51c473027d225cd957dc3095",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        }
+      ],
+      "revision_sha256": "ca5fb5c08f5c27d46de93afc0affefcfc25a70b3672c5d670d19252e23cab73f"
+    },
+    "business_cancellation": {
+      "id": "BO-GK-003.business_cancellation",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "cake_types": [
+            "made_to_order",
+            "ready_made"
+          ],
+          "basis": "actually_paid_total_after_discount_including_GK_chef_delivery",
+          "deadline": "original_handover_at_minus_120_elapsed_hours_saved_at_order_placement",
+          "date_time_moves_change_deadline": false,
+          "refund_percent": 100,
+          "trigger": "chef_personally_cancels"
+        },
+        "type": "dict",
+        "unit": "percent of actually paid total",
+        "scope": "Current reconciled GK-001/GK-003 user policy",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Chef cancellation returns 100% actually paid total. No old customer-breach exception silently retained in this explicit current rule.",
+      "data_contract": "refund",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.business_cancellation",
+          "revision_sha256": "8936261d1b06d613d17666f2588a1f14c543a49bc1c67e529663d07fda0eaaf6",
+          "extent": "Explicit clarified replacement; prior wording preserved as history."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:delivery-clarification",
+        "revision_sha256": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+        "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+      },
+      "effective_from": null,
+      "effective_date_note": "User clarification received 2026-10-05; operational effective date remains unspecified.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:clarification-1",
+          "revision_sha256": "a51fd7c0287d7c55163b3ac4d55c6f938152cb6f31b96762c2327ad1909b8923",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-deadline",
+          "revision_sha256": "e60097641c674bf1d1fa0d55c5d9ffd000ee15a8656419d95f3d186fe267aa28",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-scope",
+          "revision_sha256": "eb7d5d38c3852fc8fbe42c7fd2aca79e157af24b51c473027d225cd957dc3095",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        }
+      ],
+      "revision_sha256": "1d0666613a0155e65c8effc54b053cb75b9633ea4f6066b4f2d07fc73bafd4ba"
+    },
+    "refund_allocation": {
+      "id": "BO-GK-003.refund_allocation",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "cake_types": [
+            "made_to_order",
+            "ready_made"
+          ],
+          "basis": "actually_paid_total_after_discount_including_GK_chef_delivery",
+          "deadline": "original_handover_at_minus_120_elapsed_hours_saved_at_order_placement",
+          "date_time_moves_change_deadline": false,
+          "cake_basis": "actually_paid_after_discount",
+          "GK_delivery_paid_separately": true,
+          "GK_delivery_price_entered_by": "chef_admin_panel",
+          "GK_delivery_refund_actor": "chef",
+          "GK_delivery_refund_channel": "admin_panel_separate_refund",
+          "customer_arranged_delivery": "not_GK_collection"
+        },
+        "type": "dict",
+        "unit": "percent",
+        "scope": "Current reconciled GK-001/GK-003 user policy",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Multi-item rounding granularity/residue remains a technical proposal; no invented third-party courier refund."
+        ]
+      },
+      "interpretation_en": "Unified percentage applies to paid cake plus paid GK-chef delivery. Delivery is separately priced/paid and refunded only by chef separately via admin. One entitlement can span distinct collections; do not apply the total independently to each collection.",
+      "data_contract": "refund",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.refund_allocation",
+          "revision_sha256": "4f702607db584b26cbdb7b8463fc98ddbe1369d8802f3b452603989f85e4bb8e",
+          "extent": "Explicit clarified replacement; prior wording preserved as history."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:delivery-clarification",
+        "revision_sha256": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+        "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+      },
+      "effective_from": null,
+      "effective_date_note": "User clarification received 2026-10-05; operational effective date remains unspecified.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:clarification-1",
+          "revision_sha256": "a51fd7c0287d7c55163b3ac4d55c6f938152cb6f31b96762c2327ad1909b8923",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-deadline",
+          "revision_sha256": "e60097641c674bf1d1fa0d55c5d9ffd000ee15a8656419d95f3d186fe267aa28",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-scope",
+          "revision_sha256": "eb7d5d38c3852fc8fbe42c7fd2aca79e157af24b51c473027d225cd957dc3095",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        }
+      ],
+      "revision_sha256": "13ac4cf71789897e0d0f22f8031b6b2757527849460201ec4660472a65fdcef3"
+    },
+    "refund_example_delivery": {
+      "id": "BO-GK-003.refund_example_delivery",
+      "status": "example",
+      "business": {
+        "value": {
+          "cake_minor": 10000,
+          "delivery_minor": 2000,
+          "paid_minor": 12000,
+          "cake_percent": 50,
+          "cake_refund_minor": 5000,
+          "delivery_refund_minor": 2000,
+          "total_refund_minor": 7000,
+          "currency": "GBP"
+        },
+        "type": "dict",
+        "unit": "GBP pence / percent",
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Owner example: £100 cake + £20 delivery = £120 paid; eligible 50% cake and unperformed delivery give £50 + £20 = £70. £20 is illustrative, not a GK Delivery tariff.",
+      "data_contract": "refund",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            178,
+            184
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "ca62786ca0843998eca9976382dd185cc13222ffd9d486900b47ef1e4f3b3e2f"
+    },
+    "refund_example_discount": {
+      "id": "BO-GK-003.refund_example_discount",
+      "status": "example",
+      "business": {
+        "value": {
+          "original_cake_minor": 12000,
+          "discount_minor": 2000,
+          "paid_cake_minor": 10000,
+          "cake_percent": 50,
+          "refund_minor": 5000,
+          "currency": "GBP"
+        },
+        "type": "dict",
+        "unit": "GBP pence / percent",
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Owner example: £120 cake less £20 discount = £100 paid; 50% refund is £50. Not a catalog price or discount setting.",
+      "data_contract": "refund",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            186,
+            194
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "cc9ad49addb8b8c44dd6da2d34c9f45362b3025987aefbc34f66afa4d9c8e7cc"
+    },
+    "refund_example_remaining": {
+      "id": "BO-GK-003.refund_example_remaining",
+      "status": "example",
+      "business": {
+        "value": {
+          "target_minor": 7000,
+          "succeeded_minor": 2000,
+          "remaining_minor": 5000,
+          "currency": "GBP",
+          "pending_is_completed": false
+        },
+        "type": "dict",
+        "unit": "GBP pence",
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Original source example retained; numeric pending-then-failed technical cases M06–M09 are now supplied in acceptance-cases.md."
+        ]
+      },
+      "interpretation_en": "Owner example: £70 total owed less £20 already successfully returned means £50 still owed. Pending is shown separately and is not completed. This does not authorize dispatching the remaining obligation while a pending refund may still succeed.",
+      "data_contract": "refund",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            196,
+            202
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "7ca7ac5e3dce8ba0adfadc9a259895306089cbf7f57fd511e4044256c6ad70fb"
+    },
+    "offline_evidence": {
+      "id": "BO-GK-003.offline_evidence",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "confirmation_actor": "chef",
+          "order_reference": "unique_reference_given_by_chef_when_accepting_order",
+          "customer_uses_reference_for_payment": true,
+          "mark_paid_only_after_matching_actual_payment": true,
+          "original_evidence_required": [
+            "invoice",
+            "actual successful payment",
+            "date",
+            "amount",
+            "linked order"
+          ],
+          "refund_evidence": [
+            "actual refund/transfer confirmation",
+            "amount"
+          ]
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Historical/offline evidence and reconciliation only; current intake uses website",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Technical safe evidence display and minimum access in GK-019/021; no current offline-paid switch."
+        ]
+      },
+      "interpretation_en": "Retain chef-reference-matched actual Revolut evidence for historical payments/refunds or unexpected transfers; no current Revolut checkout option. Preserve real duplicate/excess-payment facts and reconcile them.",
+      "data_contract": "payment",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.offline_evidence",
+          "revision_sha256": "820d271ff4eb47c1e824ad608f1bc19fc352d8baa399354ccdf0d00dc14cf4f9",
+          "scope": "Only explicit clarified portions; source history and unresolved cross-card conflicts retained."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            7,
+            7
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "revision_sha256": "f4d4cfc1169cf31bc513667b2e71cfa8c7841553d54f4a6ddca02345071f0658"
+    },
+    "legal_questions": {
+      "id": "BO-GK-003.legal_questions",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "reviewer": "lawyer_to_be_hired",
+          "before": "final_product_launch",
+          "review_scope": [
+            "50% retention proportionality",
+            "time boundaries",
+            "100% prepayment",
+            "large/wedding orders"
+          ],
+          "review_completed": false
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "No appointed lawyer, review report or legal approval supplied."
+        ]
+      },
+      "interpretation_en": "A lawyer will be hired before final product launch. Original GK-005 requirement for legal review before publishing final Terms also remains.",
+      "data_contract": "legal",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.legal_questions",
+          "revision_sha256": "90df419df861a45845dd7db0bf0f990973f0d7fff603397b299ab12c3c881a5c",
+          "scope": "Only explicit clarified portions; source history and unresolved cross-card conflicts retained."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            9,
+            9
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "revision_sha256": "4a752427c7d009de03370c4b5852e98ccc960b473c6e0ea333bf247ed99b040e"
+    },
+    "cancelled_order": {
+      "id": "BO-GK-003.cancelled_order",
+      "data_contract": "refund",
+      "supersedes": [],
+      "status": "confirmed",
+      "interpretation_en": "A cancelled order cannot be reopened; a new order is needed. Expired/unpaid actions were not separately answered.",
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "business": {
+        "value": {
+          "may_reopen": false,
+          "new_order_required": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Do not silently extend no-reopen to unpaid/expired states."
+        ]
+      },
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            3,
+            3
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "revision_sha256": "265a1ad16a301a4586cf169d59e7ae6142fcd7f8d073b92212a09b4eb26cac30"
+    },
+    "resale": {
+      "id": "BO-GK-003.resale",
+      "data_contract": "refund",
+      "supersedes": [],
+      "status": "confirmed",
+      "interpretation_en": "Cancelled started/ready cake may be listed at 50% cost for the already agreed handover dates. This is optional resale, not automatic relisting or a new shelf-life period.",
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "business": {
+        "value": {
+          "optional": true,
+          "price_percent": 50,
+          "retain_original_handover_dates": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Resale price basis after discount; publication decision, stock linkage and photo rights require GK-019/022/023/027 reconciliation."
+        ]
+      },
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            3,
+            3
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "revision_sha256": "9630c59aac99a1edf3b4e8309b05b0e4ba49cf9eb67294b02d1fe4a9ab3b485c"
+    },
+    "admin_exception": {
+      "id": "BO-GK-003.admin_exception",
+      "data_contract": "refund",
+      "supersedes": [],
+      "status": "confirmed",
+      "interpretation_en": "No predefined system exception workflow; exceptional matters go through personal chef communication. Current unified 100/50 post-handover and chef-cancellation policy governs amounts; do not restore old blanket exclusions.",
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "business": {
+        "value": {
+          "automatic_exceptions": "none_supplied",
+          "manual_contact_channels": [
+            "Instagram",
+            "WhatsApp",
+            "email"
+          ],
+          "decision_actor": "chef",
+          "unspecified_matters": "personally_by_administrator"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Personal contact does not authorize arbitrary financial records; exact safe admin design remains GK-019."
+        ]
+      },
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            3,
+            3
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "revision_sha256": "8b0ae0f483a3e6f5cac2e5fcb165b99d3bfdb17e88f17f34395483214a4a7f92"
+    },
+    "delivery_failure": {
+      "id": "BO-GK-003.delivery_failure",
+      "data_contract": "refund",
+      "supersedes": [],
+      "status": "confirmed",
+      "interpretation_en": "Full delivery charge is owed when delivery failed through GK fault. It is a specific service-failure obligation, net of any actual delivery refunds already succeeded; current separate chef-only delivery operation and unified ordinary cancellation policy otherwise apply.",
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "business": {
+        "value": {
+          "cause": "GK fault",
+          "delivery_not_performed": true,
+          "delivery_refund_percent": 100
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            3,
+            3
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "revision_sha256": "84744f10d3be93cfe1ed21c34a2a0fa90a589c9e71a0a50021616557fe0c9ee1"
+    },
+    "checkout_hold": {
+      "id": "BO-GK-003.checkout_hold",
+      "data_contract": "quote",
+      "supersedes": [],
+      "status": "confirmed",
+      "interpretation_en": "A 15-minute technical hold is permitted during payment only. Merely sending a quote does not reserve the date.",
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "business": {
+        "value": {
+          "duration_minutes": 15,
+          "scope": "during_payment_only",
+          "quote_reserves_date": false
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Customer wording, hold-start/expiry/in-flight-payment reconciliation belong in GK-019/025; provider compatibility not verified."
+        ]
+      },
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            5,
+            5
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "revision_sha256": "9cb711ccd6ccf1a0285e5a1485a9baeab905cce2515108414dedb1e66f524c33"
+    },
+    "manual_order_link": {
+      "id": "BO-GK-003.manual_order_link",
+      "data_contract": "payment",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.manual_order_link",
+          "revision_sha256": "dd06aa7ef2a90e28e3cd05cd49bd64f2840c237560170ae22bf6f67bec109fc2",
+          "extent": "Latest explicit website-only / 24-hour / contact clarification replaces conflicting earlier workflow."
+        }
+      ],
+      "status": "confirmed",
+      "interpretation_en": "Previously proposed chef-created order link is now explicitly selected by the user as the Instagram/manual-agreement path.",
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "business": {
+        "value": {
+          "admin_creates_order_template": true,
+          "share_customer_payment_link": true,
+          "customer_agrees_all_entered_terms_before_website_payment": true,
+          "payment_window_hours": 24
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user final website-only payment clarification",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:website-payment-24h",
+        "revision_sha256": "037d57fa3fc3254b357b6d33fb0e5baf0361990e7284984948ec3189618ba614",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user answer, not fabricated chef author.",
+        "approval_basis": "Explicit replacement from current clarification; derived technical details separately identified in handover."
+      },
+      "revision_sha256": "a9c38b8b79fe82958e878fbf4add21e23902c8a9d693009b88d3a0354fcae93f"
+    },
+    "publication_preference": {
+      "id": "BO-GK-003.publication_preference",
+      "data_contract": "privacy",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.publication_preference",
+          "revision_sha256": "11b76e63ba4293788da27042ec294ec953f4fdab2f02da494af56844820d3f2c",
+          "extent": "Explicit cross-card approved exception; all other values retained."
+        }
+      ],
+      "status": "confirmed",
+      "interpretation_en": "User requests terms-based photo publication by default unless the customer opts out. Record as product preference; lawful basis, third-party images and public wording need GK-005 review, not an asserted valid consent.",
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "business": {
+        "value": {
+          "terms_include_publication": true,
+          "default_allowed": true,
+          "customer_may_opt_out": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [
+          "Personal customer photos require specific scoped permission under GK-005; general order-photo preference does not authorize third-party image publication."
+        ],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "GK-005 privacy review and exact scope of publishable photos; no public photo publication authorized by this intake."
+        ]
+      },
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            7,
+            7
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-005:2026-10-05:photo-permission",
+          "revision_sha256": "f18e7827c37f578035766b70aa5a25df3a38b5d17483301c4575ceffda3cb491",
+          "lines": [
+            [
+              1,
+              2
+            ]
+          ],
+          "attribution": "Sasha interview, not direct Elina statement",
+          "approval_basis": "Approved interview and verified scope closure; technical integration only."
+        }
+      ],
+      "revision_sha256": "28f303d9eeaab12a74b76f56be7452ec19133e848a5fcc03dcccce7ae816cae5"
+    },
+    "refund_rounding": {
+      "id": "BO-GK-003.refund_rounding",
+      "data_contract": "refund",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.refund_rounding",
+          "revision_sha256": "bf8671b8f612becfc82de4753fa7b345a5581523b645bbb6e0e5b4f42bceddba",
+          "extent": "Explicit cross-card approved exception; all other values retained."
+        }
+      ],
+      "status": "confirmed",
+      "interpretation_en": "GK-005 approved nearest-penny half-up for discounts/refunds. For the current100/50 rates this agrees with earlier customer-favour half pennies. Aggregate allocation is technical, not independently rounded line payouts.",
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "business": {
+        "value": {
+          "fractional_penny": "nearest_penny_half_up",
+          "50_percent_half_penny": "in_customer_favour"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            9,
+            9
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-005:2026-10-05:penny-rounding",
+          "revision_sha256": "a093581c7c6ea9602f830c9aeb66c8c32665c7dbb9349a3cd5474ab9bc1b0289",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Sasha interview, not direct Elina statement",
+          "approval_basis": "Approved interview and verified scope closure; technical integration only."
+        }
+      ],
+      "revision_sha256": "30cfa5efb56de891b8f82449b0df13d85772038b7f9eaf302b882f576daa8e7b"
+    },
+    "refund_execution": {
+      "id": "BO-GK-003.refund_execution",
+      "data_contract": "refund",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.refund_execution",
+          "revision_sha256": "e0bef3e243bb8ba1767473fa1d4eeddb5afa52d5a76e8df8eb74e34cf36f79ad",
+          "extent": "Explicit clarified replacement; prior wording preserved as history."
+        },
+        {
+          "decision_id": "BO-GK-003.refund_execution",
+          "revision_sha256": "d15cebd8e1853abde4645e313f3a33e1dc763486bf5430ebdbf2f9212d21d6b2",
+          "extent": "Adds approved verified alternative refund route; previous whole-remainder and separate delivery rules retained."
+        }
+      ],
+      "status": "confirmed",
+      "interpretation_en": "No intentional splitting of an owed refund within a collection. Specific new delivery instruction requires a separate chef refund for its separately paid collection. Whole-order target stays durable if only one collection refund succeeds. Sasha now permits a verified alternative payout with proof only when the provider definitively cannot return an owed refund; pending or unknown prior returns block it. Same obligation, no second entitlement.",
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "business": {
+        "value": {
+          "attempt": "whole_remaining_obligation",
+          "intentional_split": false,
+          "on_failure": "record_error",
+          "partial_success_expected": false,
+          "separate_GK_delivery_refund": "chef_only_separate_collection",
+          "accounting_interpretation": "whole_remaining_component_obligation_per_actual_collection",
+          "actual_partial_unknown_outcomes": "preserve_and_reconcile",
+          "alternative_payout": {
+            "authority": "chef",
+            "only_when": "provider_definitively_cannot_return_owed_refund",
+            "recipient": "verified",
+            "proof_required": true,
+            "prior_pending_or_unknown": "blocks_all_routes"
+          }
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current reconciled GK-001/GK-003 user policy",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Component decomposition is explicit technical interpretation, not an invented provider all-or-nothing guarantee."
+        ]
+      },
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:delivery-clarification",
+        "revision_sha256": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+        "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+      },
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-019:2026-10-06:Q5",
+          "revision_sha256": "9fe0c747291530f8217c9ed336e42e4d9051a235a6a485fb3b8ed837ab322eae",
+          "lines": [
+            [
+              1,
+              3
+            ]
+          ],
+          "attribution": "Sasha explicit yes to stated recommendation",
+          "approval_basis": "Alternative owed-refund route only; no new collection channel or money execution authorized."
+        }
+      ],
+      "revision_sha256": "3128f6b278c963f17c1a45a72d8d0c20aada03125e5cbb78aac54adfdc2fee3d"
+    }
+  },
+  "questions": {
+    "refund_matrix": {
+      "id": "BO-GK-003.question.refund_matrix",
+      "source_decisions": [
+        "BO-GK-003.cancellation_early",
+        "BO-GK-003.cancellation_late",
+        "BO-GK-003.started_or_ready",
+        "BO-GK-003.after_handover",
+        "BO-GK-003.business_cancellation",
+        "BO-GK-003.no_show"
+      ],
+      "question_uk": "Уточніть окремо: чи може клієнт скасувати вже розпочатий/готовий торт без повернення його ціни? Які правила для неоплаченого, простроченого й уже скасованого замовлення та порушення умов клієнтом? Чи при неявці повертається невиконана доставка? Якщо GK скасовує після виконаної доставки, чи 100% включають її?",
+      "why_en": "Complete action matrix and precedence; no implied manager override or broad refund denial.",
+      "status": "answered_with_technical_handover",
+      "answer_source": {
+        "source_id": "chat:GK-003:2026-10-05:delivery-clarification",
+        "sha256": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+        "supporting_sources": [
+          "chat:GK-001:2026-10-05:clarification-1",
+          "chat:GK-001:2026-10-05:refund-deadline",
+          "chat:GK-001:2026-10-05:refund-scope"
+        ]
+      },
+      "remaining": "Technical derivations and downstream prerequisites explicitly recorded in handover; no original refund-policy conflict remains."
+    },
+    "payment_capacity": {
+      "id": "BO-GK-003.question.payment_capacity",
+      "source_decisions": [
+        "BO-GK-003.paid_commitment",
+        "BO-GK-003.quote_validity",
+        "BO-GK-003.daily_limit",
+        "BO-GK-003.capacity_exception"
+      ],
+      "question_uk": "Пропозиція діє 48 годин від надсилання без бронювання. Чи допускаєте коротке технічне утримання місця під час checkout? Що саме показувати про кількість доступних місць? Що вважаємо моментом надсилання і чи можна оплатити рівно через 48 годин?",
+      "why_en": "Reconcile checkout holds, numeric availability and quote expiry without promising unpaid booking.",
+      "status": "answered_with_technical_handover",
+      "answer_source": {
+        "source_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "line": 5
+      },
+      "remaining": "Technical derivations and downstream prerequisites explicitly recorded in handover; no original refund-policy conflict remains."
+    },
+    "proof_payment": {
+      "id": "BO-GK-003.question.proof_payment",
+      "source_decisions": [
+        "BO-GK-003.historical_claim",
+        "BO-GK-003.payment_methods",
+        "BO-GK-003.offline_evidence",
+        "BO-GK-003.order_contacts"
+      ],
+      "question_uk": "Які докази достатні для прив’язки старого замовлення та підтвердження Revolut-оплати/повернення, хто це перевіряє? Чи всі чотири контакти потрібні для кожного типу замовлення, і як замовити клієнту без Instagram?",
+      "why_en": "Verification authority and conditional required fields remain unspecified; bank originals stay private.",
+      "status": "answered_with_technical_handover",
+      "answer_source": {
+        "source_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "line": 7
+      },
+      "remaining": "Technical derivations and downstream prerequisites explicitly recorded in handover; no original refund-policy conflict remains."
+    },
+    "refund_examples": {
+      "id": "BO-GK-003.question.refund_examples",
+      "source_decisions": [
+        "BO-GK-003.refund_example_remaining",
+        "BO-GK-003.refund_allocation",
+        "BO-GK-003.legal_questions"
+      ],
+      "question_uk": "Потрібно погодити приклад: частина повернення очікується, потім не вдалася. Розробник підготує суми та залишок зобов’язання. Також погодимо округлення половини пенні й розподіл між кількома позиціями; хто перевірить пропорційність утримання 50% та правила 4 днів із фахівцем?",
+      "why_en": "Pending obligation must not be mistaken for immediately safe payout; examples lack rounding and legal signoff.",
+      "status": "answered_with_technical_handover",
+      "answer_source": {
+        "source_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "line": 9
+      },
+      "remaining": "Technical derivations and downstream prerequisites explicitly recorded in handover; no original refund-policy conflict remains."
+    }
+  },
+  "previous_decision_revisions": [
+    {
+      "id": "BO-GK-003.started_or_ready",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "states": [
+            "production_started",
+            "cake_ready"
+          ],
+          "cake_refund_percent": 0,
+          "delivery_unperformed_refund_percent": 100
+        },
+        "type": "dict",
+        "unit": "percent",
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Customer action permission for each state; ready-stock-specific policy conflict."
+        ]
+      },
+      "interpretation_en": "Started/ready: no cake refund, unperformed delivery fee refunded fully. The owner states money treatment, not an explicit self-cancel command permission for each state.",
+      "data_contract": "refund",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            134,
+            144
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "cb55fc37f5e96bcd918be8a0e7c07486830912c490371f2d8420faf35ed6664e"
+    },
+    {
+      "id": "BO-GK-003.no_show",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "refund": false,
+          "move_if_possible": "next available working day under rescheduling rules",
+          "sunday_to_monday": false,
+          "second_missed_collection": "may_dispose_without_refund"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Refund scope incl unperformed delivery; Sunday-to-next-Thursday not authorized; repeated date moves."
+        ]
+      },
+      "interpretation_en": "Missed collection of ready cake: no refund; possible next-day move under stated rules. Sunday cannot move to Monday (nonworking). If missed again on agreed moved day, cake may be disposed of without refund.",
+      "data_contract": "move",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            154,
+            160
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "4f2d8bf3183e114e1f332a7d2443d6b3826ddcfd37d4d489cd889d8c9c89e33f"
+    },
+    {
+      "id": "BO-GK-003.paid_commitment",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "payment_percent": 100,
+          "date_reserved_only_after": "successful_full_payment",
+          "full_date_at_payment": "cannot_confirm"
+        },
+        "type": "dict",
+        "unit": "percent",
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Technical checkout hold versus owner no-reservation promise; capture recovery/consent; payment-time capacity race."
+        ]
+      },
+      "interpretation_en": "Only successful full payment places the order and reserves production date/space. During quote validity other customers may fill it; if full at payment it cannot be confirmed, offer another date or option.",
+      "data_contract": "quote",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            51,
+            51
+          ],
+          [
+            59,
+            63
+          ],
+          [
+            110,
+            112
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "f5eb44301e2bdc26bda41c15a74a1fd5cc365e9f3c428b72a7c4f1e728782aec"
+    },
+    {
+      "id": "BO-GK-003.daily_limit",
+      "status": "confirmed",
+      "business": {
+        "value": 7,
+        "type": "int",
+        "unit": "orders/day",
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Multi-cake order counting; does display mean numeric remaining slots or standard total?"
+        ]
+      },
+      "interpretation_en": "Website displays standard available slots on each workday; daily limit 7 orders. BO-GK-001 says cakes. Public numerical availability conflicts with the older flags-only draft.",
+      "data_contract": "capacity",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            69,
+            69
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "e8aa30df36cadba043bbb68634e849df227f8129c59d52d35c402c315e8cea16"
+    },
+    {
+      "id": "BO-GK-003.historical_claim",
+      "status": "confirmed",
+      "business": {
+        "value": "prove_order_belongs_to_customer",
+        "type": "str",
+        "unit": null,
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Link an old order to an account only after verifying it belongs to that customer; exact verification mechanism not supplied.",
+      "data_contract": "identity",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            104,
+            104
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "be080e5d072920ce02d2de0917a6a6bcf3bb03b0cd385c4f26a54aa3f4ba8675"
+    },
+    {
+      "id": "BO-GK-003.offline_evidence",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "payment": [
+            "invoice",
+            "successful payment confirmation/bank transaction",
+            "payment date",
+            "amount",
+            "linked order"
+          ],
+          "refund": [
+            "completed refund/transfer evidence",
+            "amount"
+          ]
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Store evidence linking successful Revolut payment and any actual refund to order/date/amount. Bank/payment documents belong in protected storage, with safe references in context.",
+      "data_contract": "payment",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            208,
+            215
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "820d271ff4eb47c1e824ad608f1bc19fc352d8baa399354ccdf0d00dc14cf4f9"
+    },
+    {
+      "id": "BO-GK-003.legal_questions",
+      "status": "unresolved",
+      "business": {
+        "value": [
+          "fairness/proportionality of 50% / 0% cancellation charges",
+          "justification of more-than-4 / 4-or-less boundary",
+          "separate custom/perishable/large/wedding wording",
+          "100% prepayment and refund wording"
+        ],
+        "type": "list",
+        "unit": null,
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Owner explicitly asks for qualified UK consumer-law review; these policies do not establish legal compliance.",
+      "data_contract": "legal",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            219,
+            224
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "90df419df861a45845dd7db0bf0f990973f0d7fff603397b299ab12c3c881a5c"
+    },
+    {
+      "id": "BO-GK-003.cancellation_early",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "more_than_days": 4,
+          "cake_refund_percent": 50,
+          "delivery_unperformed_refund_percent": 100
+        },
+        "type": "dict",
+        "unit": "days / percent",
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Calendar/elapsed days; ready-cake 3-day exception conflict; legal proportionality."
+        ]
+      },
+      "interpretation_en": "Paid, production not started, more than 4 days before collection/delivery: customer may cancel, 50% of actually paid cake price plus all unperformed delivery fee. BO-GK-005 explicitly confirms this business policy, legal review pending.",
+      "data_contract": "refund",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            120,
+            126
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "a77a049db1b85c14b2cf04b73b27763f86a89853e68849432a530e33691676a2"
+    },
+    {
+      "id": "BO-GK-003.cancellation_late",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "days_or_less": 4,
+          "cake_refund_percent": 0,
+          "delivery_unperformed_refund_percent": 100,
+          "customer_may_cancel": true
+        },
+        "type": "dict",
+        "unit": "days / percent",
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Scope for already-started/ready states; day arithmetic; legal review."
+        ]
+      },
+      "interpretation_en": "At 4 days or less, customer may cancel but cake is not refunded; unperformed delivery fee returned fully. Cancellation permission is separate from refund entitlement.",
+      "data_contract": "refund",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            128,
+            132
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "0e6ed5d55e18931df7ed5dd00be74beb16125cbaeb67e231a72d5bbda417c79b"
+    },
+    {
+      "id": "BO-GK-003.refund_allocation",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "cake_basis": "actually_paid_after_discount",
+          "delivery_unperformed_percent": 100,
+          "delivery_performed_percent": 0
+        },
+        "type": "dict",
+        "unit": "percent",
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Fractional-penny rounding and multi-line allocation; business-cancellation exception precedence."
+        ]
+      },
+      "interpretation_en": "Apply percentage only to cake amount actually paid after discount; handle delivery separately, full refund if unperformed, none if performed. Never calculate cake refund from original undiscounted price.",
+      "data_contract": "refund",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            168,
+            176
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "159226aadcd278fb052817cbeb326ccda04e139284265ab4e7bd12c4bfc2f696"
+    },
+    {
+      "id": "BO-GK-003.cancellation_early",
+      "status": "conflict",
+      "business": {
+        "value": {
+          "more_than_days": 4,
+          "cake_refund_percent": 50,
+          "delivery_unperformed_refund_percent": 100
+        },
+        "type": "dict",
+        "unit": "days / percent",
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Calendar/elapsed days; ready-cake 3-day exception conflict; legal proportionality.",
+          "Current GK-001 >5-day total-price rule and 2026-10-05 GK-003 state/delivery answers are not reconciled. Historical values are not active fallback defaults."
+        ]
+      },
+      "interpretation_en": "Paid, production not started, more than 4 days before collection/delivery: customer may cancel, 50% of actually paid cake price plus all unperformed delivery fee. BO-GK-005 explicitly confirms this business policy, legal review pending.",
+      "data_contract": "refund",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            120,
+            126
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "d746208df4bbf3c609e448a84718ec9076f586dadc1c9ec5753479483bdfc925"
+    },
+    {
+      "id": "BO-GK-003.cancellation_late",
+      "status": "conflict",
+      "business": {
+        "value": {
+          "days_or_less": 4,
+          "cake_refund_percent": 0,
+          "delivery_unperformed_refund_percent": 100,
+          "customer_may_cancel": true
+        },
+        "type": "dict",
+        "unit": "days / percent",
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Scope for already-started/ready states; day arithmetic; legal review.",
+          "Current GK-001 >5-day total-price rule and 2026-10-05 GK-003 state/delivery answers are not reconciled. Historical values are not active fallback defaults."
+        ]
+      },
+      "interpretation_en": "At 4 days or less, customer may cancel but cake is not refunded; unperformed delivery fee returned fully. Cancellation permission is separate from refund entitlement.",
+      "data_contract": "refund",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            128,
+            132
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "9e9303042dd72835f9c480ad9e1703fc573e8d36006286127a17e7f5bce31165"
+    },
+    {
+      "id": "BO-GK-003.started_or_ready",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "states": [
+            "production_started",
+            "cake_ready"
+          ],
+          "customer_may_cancel": true,
+          "refund_percent": 50,
+          "basis": null
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Cake-only versus total-order basis; precedence at time cutoffs and against new GK-001 >5-day policy."
+        ]
+      },
+      "interpretation_en": "Customer may cancel a started/ready cake with 50% refund. This replaces the older zero-cake-refund statement for those states; refund component/basis and conflict with GK-001 remain unresolved.",
+      "data_contract": "refund",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.started_or_ready",
+          "revision_sha256": "cb55fc37f5e96bcd918be8a0e7c07486830912c490371f2d8420faf35ed6664e",
+          "scope": "Only explicit clarified portions; source history and unresolved cross-card conflicts retained."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            3,
+            3
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "revision_sha256": "e90b592f39b6d8a3be70b83fdb5d272cf9af2e23b5c3c62c588c547a0e140a09"
+    },
+    {
+      "id": "BO-GK-003.after_handover",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "ordinary_cancellation": false,
+          "ordinary_refund": false,
+          "statutory_rights_preserved": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "After customer handover ordinary cancellation/refund is not offered; nonconformity and mandatory consumer rights remain. This is owner wording, not verified law.",
+      "data_contract": "refund",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            146,
+            150
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "e13d70cecf7d8d5b247be5999c43c3308a7ac7b53d0179a30b7120bd2a5793a3"
+    },
+    {
+      "id": "BO-GK-003.no_show",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "refund": false,
+          "unperformed_delivery_refund": false,
+          "rescheduling": "current GK-001 chef-mediated rules"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "GK-001 any-time 50% wording conflicts until scope is resolved."
+        ]
+      },
+      "interpretation_en": "No-show has no refund, explicitly including unperformed delivery. Date moves remain governed by current GK-001, not restored old Sunday defaults.",
+      "data_contract": "move",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.no_show",
+          "revision_sha256": "4f2d8bf3183e114e1f332a7d2443d6b3826ddcfd37d4d489cd889d8c9c89e33f",
+          "scope": "Only explicit clarified portions; source history and unresolved cross-card conflicts retained."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            3,
+            3
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "revision_sha256": "3a778d85f86f5192b745921eef9a22ff9353291603e3f920528368ac9c5a5b18"
+    },
+    {
+      "id": "BO-GK-003.business_cancellation",
+      "status": "confirmed",
+      "business": {
+        "value": 100,
+        "type": "int",
+        "unit": "percent of actually paid total",
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Customer breach cases and exceptions; delivery already performed interaction."
+        ]
+      },
+      "interpretation_en": "When GK cancels an already confirmed order for reasons other than customer breach of agreed terms, refund 100% actually paid. Customer-breach policy not supplied.",
+      "data_contract": "refund",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            164,
+            164
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "8936261d1b06d613d17666f2588a1f14c543a49bc1c67e529663d07fda0eaaf6"
+    },
+    {
+      "id": "BO-GK-003.refund_allocation",
+      "status": "conflict",
+      "business": {
+        "value": {
+          "cake_basis": "actually_paid_after_discount",
+          "delivery_unperformed_percent": 100,
+          "delivery_performed_percent": 0
+        },
+        "type": "dict",
+        "unit": "percent",
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Fractional-penny rounding and multi-line allocation; business-cancellation exception precedence.",
+          "Current GK-001 >5-day total-price rule and 2026-10-05 GK-003 state/delivery answers are not reconciled. Historical values are not active fallback defaults."
+        ]
+      },
+      "interpretation_en": "Apply percentage only to cake amount actually paid after discount; handle delivery separately, full refund if unperformed, none if performed. Never calculate cake refund from original undiscounted price.",
+      "data_contract": "refund",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            168,
+            176
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "4f702607db584b26cbdb7b8463fc98ddbe1369d8802f3b452603989f85e4bb8e"
+    },
+    {
+      "id": "BO-GK-003.refund_execution",
+      "data_contract": "refund",
+      "supersedes": [],
+      "status": "confirmed",
+      "interpretation_en": "Submit the whole amount owed, e.g. 50 rather than intentional 20+30. This is an operational preference, not proof that external/legacy partials or unknown outcomes cannot occur. Keep actual successes, pending reservations and remaining obligation.",
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "business": {
+        "value": {
+          "attempt": "entire_amount_owed_in_one_operation",
+          "intentional_split": false,
+          "on_failure": "record_error",
+          "partial_success_expected": false
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Original prior-partial and pending-then-failed recovery requirements remain; derived examples require review."
+        ]
+      },
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            9,
+            9
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "revision_sha256": "e0bef3e243bb8ba1767473fa1d4eeddb5afa52d5a76e8df8eb74e34cf36f79ad"
+    },
+    {
+      "id": "BO-GK-003.admin_exception",
+      "data_contract": "refund",
+      "supersedes": [],
+      "status": "confirmed",
+      "interpretation_en": "No predefined administrator exceptions supplied, including after handover; exceptional/unaddressed matters go through personal chef communication. This does not remove mandatory customer rights or establish arbitrary paid/refund switches.",
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "business": {
+        "value": {
+          "automatic_exceptions": "none_supplied",
+          "manual_contact_channels": [
+            "Instagram",
+            "WhatsApp",
+            "email"
+          ],
+          "decision_actor": "chef",
+          "unspecified_matters": "personally_by_administrator"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "No exhaustive breach definition, exception amounts/evidence or performed-delivery precedence supplied."
+        ]
+      },
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            3,
+            3
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "revision_sha256": "cdf4a9230e73992844ce783d219efd47d95ea6b285f6172c98805592e75bcbb4"
+    },
+    {
+      "id": "BO-GK-003.quote_validity",
+      "status": "confirmed",
+      "business": {
+        "value": 48,
+        "type": "int",
+        "unit": "hours from sending",
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Exact expiry equality and delivery evidence for sent_at."
+        ]
+      },
+      "interpretation_en": "Custom agreed offer valid for 48 hours from sending to customer, without date reservation; after 48 hours price/date/other terms may be revised. This is not the production 48-hour clock.",
+      "data_contract": "quote",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            55,
+            57
+          ],
+          [
+            65,
+            65
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "2092f67b620fb1054fce5751b62f9765f7e3020e526a874b4b99fdc03f9ed6c8"
+    },
+    {
+      "id": "BO-GK-003.payment_methods",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "primary": "online checkout",
+          "exception": "Revolut invoice",
+          "examples": [
+            "large",
+            "corporate"
+          ],
+          "same_policy": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Selected orders may pay by Revolut invoice; same payment/cancellation/refund rules as checkout. This is a business method choice, not provider setup or integration approval.",
+      "data_contract": "payment",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            108,
+            108
+          ],
+          [
+            114,
+            116
+          ],
+          [
+            206,
+            206
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "b0223077026428f8ea1a3dbfd03529302cbb711fa8f06b881fa9fa09b599a86f"
+    },
+    {
+      "id": "BO-GK-003.manual_order_link",
+      "data_contract": "payment",
+      "supersedes": [],
+      "status": "proposed",
+      "interpretation_en": "Sasha proposes admin-entered order shared by link for agreement and official-site payment. This does not replace confirmed Revolut support.",
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "business": {
+        "value": {
+          "admin_creates_order": true,
+          "share_customer_payment_link": true,
+          "customer_agrees_all_entered_terms_before_website_payment": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            7,
+            7
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "revision_sha256": "dd06aa7ef2a90e28e3cd05cd49bd64f2840c237560170ae22bf6f67bec109fc2"
+    },
+    {
+      "id": "BO-GK-003.order_contacts",
+      "status": "confirmed",
+      "business": {
+        "value": [
+          "full name",
+          "phone number",
+          "Instagram username",
+          "email"
+        ],
+        "type": "list",
+        "unit": null,
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Format/length checks and non-Instagram customer path; do not invent values."
+        ]
+      },
+      "interpretation_en": "Additional contacts for placing a custom order; requirement scope beyond custom orders needs design review.",
+      "data_contract": "request",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            21,
+            26
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "7193c983add1163d3bd2f3932b2cb7e29352a4c8cdb9bb1dd00d2d110bb8116f"
+    },
+    {
+      "id": "BO-GK-003.paid_commitment",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "payment_percent": 100,
+          "date_reserved_only_after": "successful_full_payment",
+          "full_date_after_successful_payment": "order_accepted"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Late/duplicate/mismatched payments and chef cancellation remain technical/policy reconciliation; GK-001 offline residual-balance exception retained."
+        ]
+      },
+      "interpretation_en": "Website commitment requires successful full payment. If payment succeeded but capacity is now full, the order is nevertheless accepted; do not force a replacement date or automatic cancellation merely for capacity.",
+      "data_contract": "quote",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.paid_commitment",
+          "revision_sha256": "f5eb44301e2bdc26bda41c15a74a1fd5cc365e9f3c428b72a7c4f1e728782aec",
+          "scope": "Only explicit clarified portions; source history and unresolved cross-card conflicts retained."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            5,
+            5
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "revision_sha256": "1897ae90af90207dc6184df39cfbba38a150293e185996fe63274107198aad58"
+    },
+    {
+      "id": "BO-GK-003.offline_evidence",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "confirmation_actor": "chef",
+          "order_reference": "unique_reference_given_by_chef_when_accepting_order",
+          "customer_uses_reference_for_payment": true,
+          "mark_paid_only_after_matching_actual_payment": true,
+          "original_evidence_required": [
+            "invoice",
+            "actual successful payment",
+            "date",
+            "amount",
+            "linked order"
+          ],
+          "refund_evidence": [
+            "actual refund/transfer confirmation",
+            "amount"
+          ]
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Online-pending/offline race procedure; insufficient/duplicate evidence; exact permissions and safe evidence display unresolved."
+        ]
+      },
+      "interpretation_en": "Chef supplies an order-specific reference; customer includes it on transfer; chef matches actual payment to the order before marking paid. Preserve original safe payment/refund evidence requirements.",
+      "data_contract": "payment",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.offline_evidence",
+          "revision_sha256": "820d271ff4eb47c1e824ad608f1bc19fc352d8baa399354ccdf0d00dc14cf4f9",
+          "scope": "Only explicit clarified portions; source history and unresolved cross-card conflicts retained."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            7,
+            7
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "revision_sha256": "0a367f6a401aab6239a5ca988f9ea353a8976edd99759763411d1c5bda325c92"
+    },
+    {
+      "id": "BO-GK-003.delivery_failure",
+      "data_contract": "refund",
+      "supersedes": [],
+      "status": "confirmed",
+      "interpretation_en": "Return all delivery charges if delivery was not performed due to GK fault. Other unperformed-delivery cases are not newly resolved.",
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "business": {
+        "value": {
+          "cause": "GK fault",
+          "delivery_not_performed": true,
+          "delivery_refund_percent": 100
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Precedence with GK-001 total-price policy and GK cancellation after performed delivery."
+        ]
+      },
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            3,
+            3
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "revision_sha256": "84c7e5686616c4f4eb5e5e568f453254e7c7fe2f0f02c76f4abb5cc30d888348"
+    },
+    {
+      "id": "BO-GK-003.refund_example_remaining",
+      "status": "example",
+      "business": {
+        "value": {
+          "target_minor": 7000,
+          "succeeded_minor": 2000,
+          "remaining_minor": 5000,
+          "currency": "GBP",
+          "pending_is_completed": false
+        },
+        "type": "dict",
+        "unit": "GBP pence",
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "No numeric pending-then-failed example supplied."
+        ]
+      },
+      "interpretation_en": "Owner example: £70 total owed less £20 already successfully returned means £50 still owed. Pending is shown separately and is not completed. This does not authorize dispatching the remaining obligation while a pending refund may still succeed.",
+      "data_contract": "refund",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            196,
+            202
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "0a320b79b881b8b06bb175baf28f09d5e1f0e7610d8b9a8e13936ab2d5729ed9"
+    },
+    {
+      "id": "BO-GK-003.refund_rounding",
+      "data_contract": "refund",
+      "supersedes": [],
+      "status": "confirmed",
+      "interpretation_en": "Round a refund fractional penny in the customer's favour; multi-item allocation granularity is still unresolved.",
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "business": {
+        "value": {
+          "fractional_penny": "in_customer_favour"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Per-item versus final-order rounding and discount/tax residue allocation."
+        ]
+      },
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            9,
+            9
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "revision_sha256": "92133d0b3ae9ee0c4bb8c2e31af01b1fa5c1ca37a49d1ce5bb1638a33e75b740"
+    },
+    {
+      "id": "BO-GK-003.capacity_exception",
+      "status": "confirmed",
+      "business": {
+        "value": true,
+        "type": "bool",
+        "unit": null,
+        "scope": "BO-GK-003 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Recorded actor/authority and exact exception admission mechanism."
+        ]
+      },
+      "interpretation_en": "A full website calendar still permits a custom request. Manually assess workload, complexity, size/type, available time and production capability; approve over standard limit when feasible.",
+      "data_contract": "capacity",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abac3d56b4b97c36cd21b0c",
+        "revision_sha256": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+        "lines": [
+          [
+            71,
+            77
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "200c3d64096f1d6fce0211d16564d8678fdd67939a37bd276710d586dd49cc8c"
+    },
+    {
+      "id": "BO-GK-003.order_contacts",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "customer_full_name": "always_required",
+          "different_payer_details": "required_if_another_person_pays",
+          "Instagram_account": "not_a_universal_requirement",
+          "payer_detail_fields": null
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user final website-only payment clarification",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "No exact additional payer-data field list supplied; use minimal provider/identity data, no identity or bank documents in ordinary forms."
+        ]
+      },
+      "interpretation_en": "Always collect customer full name and details of a different payer when applicable. Do not require a made-up Instagram account. Additional contact validations are technical/channel requirements, not newly invented universal business-required fields.",
+      "data_contract": "request",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.order_contacts",
+          "revision_sha256": "7193c983add1163d3bd2f3932b2cb7e29352a4c8cdb9bb1dd00d2d110bb8116f",
+          "extent": "Latest explicit website-only / 24-hour / contact clarification replaces conflicting earlier workflow."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:website-payment-24h",
+        "revision_sha256": "037d57fa3fc3254b357b6d33fb0e5baf0361990e7284984948ec3189618ba614",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user answer, not fabricated chef author.",
+        "approval_basis": "Explicit replacement from current clarification; derived technical details separately identified in handover."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "eea774cb72df44ec00d7a0bb28454155341b14dc00e42771f00bd7fa15b3f2c2"
+    },
+    {
+      "id": "BO-GK-003.quote_validity",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "payment_window_hours": 24,
+          "prior_sending_anchor_retained": true,
+          "source_sending_anchor": "original chef quote sent to customer",
+          "quote_alone_reserves_date": false,
+          "payment_disabled_after_expiry": true,
+          "repeat_payment_after_paid": false
+        },
+        "type": "dict",
+        "unit": "hours from sending",
+        "scope": "Current user final website-only payment clarification",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Customer has 24 hours to confirm/pay via site or chef-created template link; payment then disabled. This replaces earlier 48-hour quote/payment validity; the separate production +48h clock is unchanged. Exact server expiry at equality is a stated technical boundary interpretation in handover.",
+      "data_contract": "quote",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.quote_validity",
+          "revision_sha256": "2092f67b620fb1054fce5751b62f9765f7e3020e526a874b4b99fdc03f9ed6c8",
+          "extent": "Latest explicit website-only / 24-hour / contact clarification replaces conflicting earlier workflow."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:website-payment-24h",
+        "revision_sha256": "037d57fa3fc3254b357b6d33fb0e5baf0361990e7284984948ec3189618ba614",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user answer, not fabricated chef author.",
+        "approval_basis": "Explicit replacement from current clarification; derived technical details separately identified in handover."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "491d273160444ce26e2be95b20e9f0c7da07084d3d3287c7db22a26e58110939"
+    },
+    {
+      "id": "BO-GK-003.payment_methods",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "current": "official_website",
+          "customer_order": true,
+          "chef_template_order": true,
+          "current_Revolut_intake": false,
+          "historical_Revolut_evidence_retained": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user final website-only payment clarification",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "All current orders are paid through the website, including Instagram arrangements entered by chef and shared as templates. Prior Revolut alternative is historical; preserve real old payment/refund provenance.",
+      "data_contract": "payment",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.payment_methods",
+          "revision_sha256": "b0223077026428f8ea1a3dbfd03529302cbb711fa8f06b881fa9fa09b599a86f",
+          "extent": "Latest explicit website-only / 24-hour / contact clarification replaces conflicting earlier workflow."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:website-payment-24h",
+        "revision_sha256": "037d57fa3fc3254b357b6d33fb0e5baf0361990e7284984948ec3189618ba614",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user answer, not fabricated chef author.",
+        "approval_basis": "Explicit replacement from current clarification; derived technical details separately identified in handover."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "ee6d206bcef6c234535608c8d564ed18206e16d0b78061b91410901144c55242"
+    },
+    {
+      "id": "BO-GK-003.cancellation_early",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "cake_types": [
+            "made_to_order",
+            "ready_made"
+          ],
+          "basis": "actually_paid_total_after_discount_including_GK_chef_delivery",
+          "deadline": "original_handover_at_minus_120_elapsed_hours_saved_at_order_placement",
+          "date_time_moves_change_deadline": false,
+          "comparison": "strictly_before_deadline",
+          "refund_percent": 100,
+          "customer_may_cancel": true
+        },
+        "type": "dict",
+        "unit": "days / percent",
+        "scope": "Current reconciled GK-001/GK-003 user policy",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Both cake types: 100% of actually paid total strictly more than 120 elapsed hours before ORIGINAL handover; original deadline survives date/time moves. Replaces old >4-day/component rule.",
+      "data_contract": "refund",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.cancellation_early",
+          "revision_sha256": "d746208df4bbf3c609e448a84718ec9076f586dadc1c9ec5753479483bdfc925",
+          "extent": "Explicit clarified replacement; prior wording preserved as history."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:delivery-clarification",
+        "revision_sha256": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+        "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:clarification-1",
+          "revision_sha256": "a51fd7c0287d7c55163b3ac4d55c6f938152cb6f31b96762c2327ad1909b8923",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-deadline",
+          "revision_sha256": "e60097641c674bf1d1fa0d55c5d9ffd000ee15a8656419d95f3d186fe267aa28",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-scope",
+          "revision_sha256": "eb7d5d38c3852fc8fbe42c7fd2aca79e157af24b51c473027d225cd957dc3095",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        }
+      ],
+      "revision_sha256": "f8e9bf62572695dbf9eb9000383596f53059e8573ee4fdf2c7c3d2b317470135"
+    },
+    {
+      "id": "BO-GK-003.cancellation_late",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "cake_types": [
+            "made_to_order",
+            "ready_made"
+          ],
+          "basis": "actually_paid_total_after_discount_including_GK_chef_delivery",
+          "deadline": "original_handover_at_minus_120_elapsed_hours_saved_at_order_placement",
+          "date_time_moves_change_deadline": false,
+          "comparison": "at_or_after_deadline",
+          "refund_percent": 50,
+          "customer_may_cancel": true
+        },
+        "type": "dict",
+        "unit": "days / percent",
+        "scope": "Current reconciled GK-001/GK-003 user policy",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Both cake types: exactly 50% total at equality or later, including no-show/after handover. Original deadline never moves; replaces old zero-refund rule.",
+      "data_contract": "refund",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.cancellation_late",
+          "revision_sha256": "9e9303042dd72835f9c480ad9e1703fc573e8d36006286127a17e7f5bce31165",
+          "extent": "Explicit clarified replacement; prior wording preserved as history."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:delivery-clarification",
+        "revision_sha256": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+        "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:clarification-1",
+          "revision_sha256": "a51fd7c0287d7c55163b3ac4d55c6f938152cb6f31b96762c2327ad1909b8923",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-deadline",
+          "revision_sha256": "e60097641c674bf1d1fa0d55c5d9ffd000ee15a8656419d95f3d186fe267aa28",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-scope",
+          "revision_sha256": "eb7d5d38c3852fc8fbe42c7fd2aca79e157af24b51c473027d225cd957dc3095",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        }
+      ],
+      "revision_sha256": "7ad5885af372fdf95d7ed322914e060f2f47bf6c64130f766d35216784907b4a"
+    },
+    {
+      "id": "BO-GK-003.after_handover",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "cake_types": [
+            "made_to_order",
+            "ready_made"
+          ],
+          "basis": "actually_paid_total_after_discount_including_GK_chef_delivery",
+          "deadline": "original_handover_at_minus_120_elapsed_hours_saved_at_order_placement",
+          "date_time_moves_change_deadline": false,
+          "refund_percent": 50,
+          "ordinary_route": "personal_chef_contact",
+          "statutory_rights_preserved": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current reconciled GK-001/GK-003 user policy",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Exactly 50% after handover under unified policy; direct chef contact remains the supplied exception/operational route. Replaces old blanket exclusion; statutory rights retained.",
+      "data_contract": "refund",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.after_handover",
+          "revision_sha256": "e13d70cecf7d8d5b247be5999c43c3308a7ac7b53d0179a30b7120bd2a5793a3",
+          "extent": "Explicit clarified replacement; prior wording preserved as history."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:delivery-clarification",
+        "revision_sha256": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+        "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:clarification-1",
+          "revision_sha256": "a51fd7c0287d7c55163b3ac4d55c6f938152cb6f31b96762c2327ad1909b8923",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-deadline",
+          "revision_sha256": "e60097641c674bf1d1fa0d55c5d9ffd000ee15a8656419d95f3d186fe267aa28",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-scope",
+          "revision_sha256": "eb7d5d38c3852fc8fbe42c7fd2aca79e157af24b51c473027d225cd957dc3095",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        }
+      ],
+      "revision_sha256": "b6c6965adfeea0178aa074b559bc4047fdcf04898a74cc64c9cad6dd237cccf1"
+    },
+    {
+      "id": "BO-GK-003.business_cancellation",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "cake_types": [
+            "made_to_order",
+            "ready_made"
+          ],
+          "basis": "actually_paid_total_after_discount_including_GK_chef_delivery",
+          "deadline": "original_handover_at_minus_120_elapsed_hours_saved_at_order_placement",
+          "date_time_moves_change_deadline": false,
+          "refund_percent": 100,
+          "trigger": "chef_personally_cancels"
+        },
+        "type": "dict",
+        "unit": "percent of actually paid total",
+        "scope": "Current reconciled GK-001/GK-003 user policy",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Chef cancellation returns 100% actually paid total. No old customer-breach exception silently retained in this explicit current rule.",
+      "data_contract": "refund",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.business_cancellation",
+          "revision_sha256": "8936261d1b06d613d17666f2588a1f14c543a49bc1c67e529663d07fda0eaaf6",
+          "extent": "Explicit clarified replacement; prior wording preserved as history."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:delivery-clarification",
+        "revision_sha256": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+        "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:clarification-1",
+          "revision_sha256": "a51fd7c0287d7c55163b3ac4d55c6f938152cb6f31b96762c2327ad1909b8923",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-deadline",
+          "revision_sha256": "e60097641c674bf1d1fa0d55c5d9ffd000ee15a8656419d95f3d186fe267aa28",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-scope",
+          "revision_sha256": "eb7d5d38c3852fc8fbe42c7fd2aca79e157af24b51c473027d225cd957dc3095",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        }
+      ],
+      "revision_sha256": "5a19bbe61677a1eaf3be16c6b9601e3b8b2bd9378d7b24045fe1251dbb0cd89f"
+    },
+    {
+      "id": "BO-GK-003.refund_allocation",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "cake_types": [
+            "made_to_order",
+            "ready_made"
+          ],
+          "basis": "actually_paid_total_after_discount_including_GK_chef_delivery",
+          "deadline": "original_handover_at_minus_120_elapsed_hours_saved_at_order_placement",
+          "date_time_moves_change_deadline": false,
+          "cake_basis": "actually_paid_after_discount",
+          "GK_delivery_paid_separately": true,
+          "GK_delivery_price_entered_by": "chef_admin_panel",
+          "GK_delivery_refund_actor": "chef",
+          "GK_delivery_refund_channel": "admin_panel_separate_refund",
+          "customer_arranged_delivery": "not_GK_collection"
+        },
+        "type": "dict",
+        "unit": "percent",
+        "scope": "Current reconciled GK-001/GK-003 user policy",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Multi-item rounding granularity/residue remains a technical proposal; no invented third-party courier refund."
+        ]
+      },
+      "interpretation_en": "Unified percentage applies to paid cake plus paid GK-chef delivery. Delivery is separately priced/paid and refunded only by chef separately via admin. One entitlement can span distinct collections; do not apply the total independently to each collection.",
+      "data_contract": "refund",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.refund_allocation",
+          "revision_sha256": "4f702607db584b26cbdb7b8463fc98ddbe1369d8802f3b452603989f85e4bb8e",
+          "extent": "Explicit clarified replacement; prior wording preserved as history."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:delivery-clarification",
+        "revision_sha256": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+        "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:clarification-1",
+          "revision_sha256": "a51fd7c0287d7c55163b3ac4d55c6f938152cb6f31b96762c2327ad1909b8923",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-deadline",
+          "revision_sha256": "e60097641c674bf1d1fa0d55c5d9ffd000ee15a8656419d95f3d186fe267aa28",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        },
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-001:2026-10-05:refund-scope",
+          "revision_sha256": "eb7d5d38c3852fc8fbe42c7fd2aca79e157af24b51c473027d225cd957dc3095",
+          "lines": [
+            [
+              1,
+              1
+            ]
+          ],
+          "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+          "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+        }
+      ],
+      "revision_sha256": "08842d29879ae5615c8301d34d852332edb2a7c41176d6ff268c027b01b42894"
+    },
+    {
+      "id": "BO-GK-003.paid_commitment",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "payment_percent": 100,
+          "current_collection_channel": "website",
+          "accepted_order_requires": "verified_successful_full_payment",
+          "unpaid_or_expired_entity": "order_template_or_payment_attempt_not_accepted_order",
+          "full_date_after_successful_payment": "order_accepted",
+          "separately_paid_GK_delivery": "separate_chef_entered_charge_not_unpaid_cake_order"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user final website-only payment clarification",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Current accepted orders are paid; unpaid/expired drafts/templates are not accepted orders. Full payment accepts the order even if capacity filled. Website-only path replaces former current manual/offline residual-balance interpretation; separately agreed delivery charge remains separately paid.",
+      "data_contract": "quote",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.paid_commitment",
+          "revision_sha256": "1897ae90af90207dc6184df39cfbba38a150293e185996fe63274107198aad58",
+          "extent": "Latest explicit website-only / 24-hour / contact clarification replaces conflicting earlier workflow."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:website-payment-24h",
+        "revision_sha256": "037d57fa3fc3254b357b6d33fb0e5baf0361990e7284984948ec3189618ba614",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user answer, not fabricated chef author.",
+        "approval_basis": "Explicit replacement from current clarification; derived technical details separately identified in handover."
+      },
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "revision_sha256": "239ffb338a440ca4fb8d9ee96e08817a73047f0d04bd75148bb356ea75e1be4a"
+    },
+    {
+      "id": "BO-GK-003.refund_rounding",
+      "data_contract": "refund",
+      "supersedes": [],
+      "status": "confirmed",
+      "interpretation_en": "Round a refund fractional penny in the customer's favour; multi-item allocation granularity is still unresolved.",
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "business": {
+        "value": {
+          "fractional_penny": "in_customer_favour"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Customer-favour rounding is supplied; aggregate ceil and largest-remainder allocation are explicit technical derivations in O3/M10/M11/M16, not chef quotations."
+        ]
+      },
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            9,
+            9
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "revision_sha256": "bf8671b8f612becfc82de4753fa7b345a5581523b645bbb6e0e5b4f42bceddba"
+    },
+    {
+      "id": "BO-GK-003.publication_preference",
+      "data_contract": "privacy",
+      "supersedes": [],
+      "status": "confirmed",
+      "interpretation_en": "User requests terms-based photo publication by default unless the customer opts out. Record as product preference; lawful basis, third-party images and public wording need GK-005 review, not an asserted valid consent.",
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "business": {
+        "value": {
+          "terms_include_publication": true,
+          "default_allowed": true,
+          "customer_may_opt_out": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user-supplied GK-003 follow-up; chef source retained separately",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "GK-005 privacy review and exact scope of publishable photos; no public photo publication authorized by this intake."
+        ]
+      },
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:user-follow-up",
+        "revision_sha256": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+        "lines": [
+          [
+            7,
+            7
+          ]
+        ],
+        "attribution": "Sasha supplied these answers in this task alongside chef answers; not a new direct chef-authored Trello comment. Parenthetical website-link proposal is Sasha's proposal.",
+        "approval_basis": "User requests converting this evidence and marking Done; only express answers are recorded, missing policy and legal approval are not inferred."
+      },
+      "revision_sha256": "11b76e63ba4293788da27042ec294ec953f4fdab2f02da494af56844820d3f2c"
+    },
+    {
+      "id": "BO-GK-003.quote_validity",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "payment_window_hours": 24,
+          "prior_sending_anchor_retained": true,
+          "source_sending_anchor": "original chef quote sent to customer",
+          "quote_alone_reserves_date": false,
+          "payment_disabled_after_expiry": true,
+          "repeat_payment_after_paid": false
+        },
+        "type": "dict",
+        "unit": "hours from sending",
+        "scope": "Current user final website-only payment clarification",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Customer has 24 hours to confirm/pay via site or chef-created template link; payment then disabled. This replaces earlier 48-hour quote/payment validity; the separate production +48h clock is unchanged. Exact server expiry at equality is a stated technical boundary interpretation in handover.",
+      "data_contract": "quote",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.quote_validity",
+          "revision_sha256": "2092f67b620fb1054fce5751b62f9765f7e3020e526a874b4b99fdc03f9ed6c8",
+          "extent": "Latest explicit website-only / 24-hour / contact clarification replaces conflicting earlier workflow."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:website-payment-24h",
+        "revision_sha256": "037d57fa3fc3254b357b6d33fb0e5baf0361990e7284984948ec3189618ba614",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user answer, not fabricated chef author.",
+        "approval_basis": "Explicit replacement from current clarification; derived technical details separately identified in handover."
+      },
+      "effective_from": null,
+      "effective_date_note": "User clarification received 2026-10-05; operational effective date remains unspecified.",
+      "revision_sha256": "3cd40f5a0ec491548204c8d4a9cf27361e8478b760605dce2a24395f1fde28ab"
+    },
+    {
+      "id": "BO-GK-003.paid_commitment",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "payment_percent": 100,
+          "current_collection_channel": "website",
+          "accepted_order_requires": "verified_successful_full_payment_or_explicit_GK007_free_confirmation",
+          "unpaid_or_expired_entity": "order_template_or_payment_attempt_not_accepted_order",
+          "full_date_after_successful_payment": "order_accepted",
+          "separately_paid_GK_delivery": "separate_chef_entered_charge_not_unpaid_cake_order",
+          "free_order_has_provider_capture": false
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current user final website-only payment clarification",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Current accepted orders are paid; unpaid/expired drafts/templates are not accepted orders. Full payment accepts the order even if capacity filled. Website-only path replaces former current manual/offline residual-balance interpretation; separately agreed delivery charge remains separately paid.",
+      "data_contract": "quote",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.paid_commitment",
+          "revision_sha256": "1897ae90af90207dc6184df39cfbba38a150293e185996fe63274107198aad58",
+          "extent": "Latest explicit website-only / 24-hour / contact clarification replaces conflicting earlier workflow."
+        },
+        {
+          "decision_id": "BO-GK-003.paid_commitment",
+          "revision_sha256": "239ffb338a440ca4fb8d9ee96e08817a73047f0d04bd75148bb356ea75e1be4a",
+          "extent": "Explicit cross-card approved exception; all other values retained."
+        }
+      ],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:website-payment-24h",
+        "revision_sha256": "037d57fa3fc3254b357b6d33fb0e5baf0361990e7284984948ec3189618ba614",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user answer, not fabricated chef author.",
+        "approval_basis": "Explicit replacement from current clarification; derived technical details separately identified in handover."
+      },
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "supporting_provenance": [
+        {
+          "source_file": "source-comments.json",
+          "comment_id": "chat:GK-007:2026-10-05:free-order-reconciliation",
+          "revision_sha256": "b241ec6f5f6bfdb0bf4f019710acc5603be41be9256e500eec769c8156f191e7",
+          "lines": [
+            [
+              1,
+              9
+            ]
+          ],
+          "attribution": "Sasha interview, not direct Elina statement",
+          "approval_basis": "Approved interview and verified scope closure; technical integration only."
+        }
+      ],
+      "revision_sha256": "e9c64782501839bda7b2eddba732ac617ab19e584ebca29fc36687b23ed019ca"
+    },
+    {
+      "id": "BO-GK-003.refund_execution",
+      "data_contract": "refund",
+      "supersedes": [
+        {
+          "decision_id": "BO-GK-003.refund_execution",
+          "revision_sha256": "e0bef3e243bb8ba1767473fa1d4eeddb5afa52d5a76e8df8eb74e34cf36f79ad",
+          "extent": "Explicit clarified replacement; prior wording preserved as history."
+        }
+      ],
+      "status": "confirmed",
+      "interpretation_en": "No intentional splitting of an owed refund within a collection. Specific new delivery instruction requires a separate chef refund for its separately paid collection. Whole-order target stays durable if only one collection refund succeeds.",
+      "effective_from": null,
+      "effective_date_note": "User chat received 2026-10-05; no operational effective date supplied.",
+      "business": {
+        "value": {
+          "attempt": "whole_remaining_obligation",
+          "intentional_split": false,
+          "on_failure": "record_error",
+          "partial_success_expected": false,
+          "separate_GK_delivery_refund": "chef_only_separate_collection",
+          "accounting_interpretation": "whole_remaining_component_obligation_per_actual_collection",
+          "actual_partial_unknown_outcomes": "preserve_and_reconcile"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "Current reconciled GK-001/GK-003 user policy",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Component decomposition is explicit technical interpretation, not an invented provider all-or-nothing guarantee."
+        ]
+      },
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "chat:GK-003:2026-10-05:delivery-clarification",
+        "revision_sha256": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+        "lines": [
+          [
+            1,
+            1
+          ]
+        ],
+        "attribution": "Direct Sasha user clarification; no fabricated chef/Trello author.",
+        "approval_basis": "Explicit current reply; supporting GK-001 scope/deadline replies read from exact saved sources."
+      },
+      "supporting_provenance": [],
+      "revision_sha256": "d15cebd8e1853abde4645e313f3a33e1dc763486bf5430ebdbf2f9212d21d6b2"
+    }
+  ],
+  "canonical_revision": "gk019-owner-r6"
+}

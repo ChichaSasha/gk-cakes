@@ -1,0 +1,33 @@
+{
+ "checked_at": "2026-11-02T19:40:38.579129+00:00",
+ "family": "Instrument Serif",
+ "license": "SIL Open Font License 1.1 (poc/assets/fonts/OFL-InstrumentSerif.txt)",
+ "source_listing": "https://api.github.com/repos/google/fonts/contents/ofl/instrumentserif",
+ "files": {
+  "InstrumentSerif-Regular.ttf": {
+   "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/instrumentserif/InstrumentSerif-Regular.ttf",
+   "sha256": "498efd461f6ddfcb7a111bf9a565709d2085d48201d501ead960d93e84ffbb88"
+  },
+  "InstrumentSerif-Italic.ttf": {
+   "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/instrumentserif/InstrumentSerif-Italic.ttf",
+   "sha256": "08939b8bdf534afec24ae0ef5e03f948940cd9a8fe08e7fecbad040e62327385"
+  },
+  "OFL-InstrumentSerif.txt": {
+   "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/instrumentserif/OFL.txt",
+   "sha256": "129ed7618959716959f2941fdd5b49e0ad6e6c1d78726761786a00253d865521"
+  }
+ },
+ "use": "Display headings only; Manrope (r06) remains for navigation, body, labels, buttons and forms. Unmodified files, served locally; no runtime font CDN request.",
+ "comparison": "Rendered specimen against Cormorant Garamond and Manrope-only on 2026-11-02; Instrument Serif chosen as modern editorial rather than classical/bridal. Aesthetic recommendation, not an objective ranking.",
+ "manrope": {
+  "role": "All functional text (navigation, body, labels, buttons, forms) \u2014 r06 Creator-accepted family, unchanged files",
+  "provenance_record": "docs/design/sessions/visual-foundation/gk-015-r06/font-evidence.json",
+  "provenance_record_sha256": "da1eb7e7d31cae29fcc8ca3dfd6678e1c4e44a2c9caac18b008ad0c9cadceb4f",
+  "files": {
+   "Manrope-variable.ttf": "3ae11c49db0455a3cc33e37d380f20fdb8c7f8b41dc07625c177e3d87a9d6ae6",
+   "OFL-Manrope.txt": "58172e0c0fac2cda8a37b348164bb55e44b0e69051e557e92b1d3f6910141f7b",
+   "description.html": "e5634b4e305fc2630136815e24ae338531de7eeff7cd3721be924b1f1ffc2155"
+  },
+  "matches_r07_copy": true
+ }
+}

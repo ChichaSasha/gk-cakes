@@ -1,0 +1,47 @@
+{
+ "checked_at": "2026-11-02T20:49:16.771793+00:00",
+ "creator_request_verbatim": "I don't like this cake on a table is not in png, as idea is it's background is the same as website background, so I need you to update this, so we have the same cake on the table, but with the background that has the same colour as website or no background color at alll, so background is website itself",
+ "source": {
+  "file": "gk-015-r08/poc/assets/hero-reference.webp",
+  "sha256": "97f9c76907f1ddabf564724ac8ffeaecb04f9a91e7bf623166966be2e01f3da7",
+  "provenance": "gk-015-r04/higgsfield-evidence.json (Creator-requested GPT Image 2 extraction of the selected reference; reference-derived POC imagery, not a product photograph)",
+  "matches_r04_evidence": true
+ },
+ "output": {
+  "file": "poc/assets/hero-cake-stand.png",
+  "sha256": "137f419f720da3f4e577c38ff38ed99150e7c1e8aa7b0c9c0994ad2f5ba97234",
+  "size": [
+   936,
+   1031
+  ]
+ },
+ "method": "On-device Apple Vision VNGenerateForegroundInstanceMaskRequest (macOS 27.2). The soft subject mask became the alpha channel of the ORIGINAL pixels; then a lossless crop to the subject bounds + 24px. No generation, retouching, recolouring or paid image service.",
+ "tools": {
+  "tools/extract.swift": "68f301fb2ba458cf98daf3dd0e51276e05647f0df4355a81be8cb04511b9bc3e",
+  "tools/verifypx.swift": "b52860108921efd8f166999deb0adcd0a181b9a8514717a4c986fc9833a321e3",
+  "tools/extract-report.json": "5e1672715818a0f13223d3fc91dcc4aae54e9e3eab6c96f53cfe266e08635c1d",
+  "tools/island.swift": "bd8c85350796263ffd4351022f4820dbd8871582b43814e9dc0fa2080e9cc151",
+  "tools/island-report.json": "123c45d7d92e81e129573c477440a56119bb591b462a3cf688ec0879e081e314"
+ },
+ "pixel_check": {
+  "checked_visible_pixels": 495436,
+  "rgb_mismatches": 0,
+  "transparent_pixels": 469580,
+  "command": "swift tools/verifypx.swift <source.webp> poc/assets/hero-cake-stand.png 563 95"
+ },
+ "notes": "One foreground instance (cake, flowers and stand). Enclosed gaps are transparent, including the pocket cleaned in step 2. Limitations: soft edges retain the original backdrop grey (a halo on dark colours only; not visible on Satin, Porcelain or Brushed); the leaf edge bordering the cleaned pocket keeps its feathered grey. A thin natural contact shadow under the base was kept by the mask; the page adds a soft CSS ground shadow. PNG is 875 KB (lossless, straight alpha); production should use an optimised derivative.",
+ "steps": [
+  {
+   "step": "Apple Vision subject mask applied as alpha + lossless crop",
+   "tool": "tools/extract.swift",
+   "report": "tools/extract-report.json",
+   "intermediate_sha256": "98fd9f944baa4b6b76e5d03b9a569ff35d538f8483bba30a6285d9b0a1c54843"
+  },
+  {
+   "step": "Alpha-only cleanup of one enclosed backdrop pocket between a calla tip and the cake (review-r09 F4): neutral-grey pixels (RGB 185\u2013215, chroma \u226410) in x 708\u2013723, y 550\u2013580 set to alpha 0; RGB never modified",
+   "tool": "tools/island.swift",
+   "report": "tools/island-report.json",
+   "cleared_pixels": 327
+  }
+ ]
+}

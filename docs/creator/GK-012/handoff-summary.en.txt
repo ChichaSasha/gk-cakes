@@ -1,0 +1,47 @@
+GK-012 decision/setup handoff — interview r4, 2026-10-05
+
+Sasha explicitly accepted this consolidated handoff and authorized publishing it
+to GK-012 while keeping the ticket open. This is not a Done claim.
+
+Domain: gkcake.com purchased through Cloudflare. Sasha confirms DNS management
+access, automatic renewal with valid payment, two-factor authentication and Elina's
+ability to recover/manage the domain if Sasha is unavailable. Sasha administers;
+the business owner funds it. No additional registration or purchase was performed.
+
+Approved HTTPS addresses:
+- Customer site: gkcake.com; www.gkcake.com redirects to it.
+- Admin: gkcake.com/admin, sharing the UI deployment with staff authorization.
+- Production API: api.gkcake.com.
+- Test UI/admin: staging.gkcake.com and staging.gkcake.com/admin.
+- Test API: staging-api.gkcake.com; separate test credentials and synthetic data.
+
+Email: GK Cakes <orders@gkcake.com>; Reply-To gk.cake.london@gmail.com for order
+and login emails. Sasha explicitly chose GK Cakes to resolve the GK-011 conflict.
+The GK-011 current selection is amended; its old GK Cake London test evidence is
+preserved. Provider settings were not changed by this documentation update.
+
+Instagram: Elina controls @gk.cake.london and can log in/read DMs, reported by Sasha.
+Use https://ig.me/m/gk.cake.london. Sasha approves “Copy request & open Instagram”:
+one tap attempts to copy the summary and open the DM; customer pastes and sends.
+Retain selectable summary/request reference for manual copying and retry. General
+contact links can open the DM directly. No assumed text-prefill or DM-sent claim.
+
+Reported link-opening results: Mac opens the correct DM in Instagram web; iPhone
+opens the DM in the Instagram app; Android success reported in response to the
+Android check, without app/browser detail. These do not test the combined button,
+clipboard, pasting or failure fallback, and were not independently observed.
+
+Agent public-DNS checks passed for both Cloudflare nameservers, the rsend/send
+CNAMEs and the resend._domainkey TXT key, matching Sasha's export. This establishes
+published DNS, not private registration/account settings or email delivery.
+
+Remaining technical work: coordinate exact login callbacks/environment settings
+with GK-020/021 when the implementation exists; reconcile K02/GK-027 with the approved
+combined interaction; test copy/open/paste and fallback on supported devices.
+These remain explicit and are not waived or represented as passed.
+
+AC1 evidence collected; AC2/AC3 partial for the named technical gaps. AC4 records
+Sasha's acceptance and this authorized publication; remaining technical evidence
+is still required. Keep GK-012 open pending that evidence.
+No implementation, deployment, independent review or direct new Elina approval
+is claimed. Detailed source: docs/creator/GK-012/README.md, interview r4.

@@ -1,0 +1,90 @@
+## Context
+
+Owner: Agent; Kind: Implementation
+Priority: P0 — foundational/safety prerequisite.
+Order: 140; Wave: 2; Parallel group: none.
+Requirements: S06, S07, D01, D02; Design/contract revision: GK-019 r6.2, K00 K09.
+Agent execution policy: gpt-6-astra / high; fresh scoped worker; fresh independent reviewer.
+Required input: brief, input-revision.json, gk019-owner-r4, ADRs/contracts r6.2 and exact GK-019 manifest, feature/screens, prerequisite evidence, SETUP and DELIVERY.
+Execution check: skills/gk-plan/references/execution-check.md at start/resume; record requested/effective model, history, input hashes and checked readback. Pending.
+Depends on: GK-019; deliverable: accepted policy/setup or tested implementation outputs; GK-020 means completed B2.
+Unblocks: GK-013, GK-014, GK-021, GK-024, GK-022, GK-023, GK-034.
+Safe in parallel with: none.
+Conflicts: shared contracts/schema/router/migrations; master coordinates edits.
+Readiness at publication: blocked / specified but dependent: GK-019 accepted policy/provider/identity contracts pending. Technical stack already accepted. Execution has two named deliverables B1 and B2; GK-013 may consume B1 while this card stays Review. All other dependents require B2, including verified merge/main CI and Creator acceptance.
+
+Proposed Go net/http+pgx+SQL migrations backend with SvelteKit Node UI; actual accepted ADR-0001 required. Create minimum runnable health/config/migration/contract-test setup and separate component builds. PR checks must validate real code; do not add placeholder pass jobs.
+
+Rules: server-owned price/capacity/state; GBP pence, UTC/Europe/London; role+ownership; expected_version+Idempotency-Key; unknown stays pending; no network under DB locks.
+
+Wire/state (approved GK-019 successor required):
+
+Auth: Authorization: Bearer verified access token. Actor-specific K00 checks: active scoped guest proof; customer current session/account plus ownership without staff role; staff additionally active local capability/scope; GET foreign order ->404, wrong role ->403. Error {error:{code:"STALE_VERSION",message:"Refresh this order",request_id:"opaque",retryable:false}}. Existing-object mutation carries expected_version and Idempotency-Key; same key/different body ->409 KEY_REUSED.
+
+Release manifest contains component, trusted main commit_sha, artifact_digest, version and compatible counterpart/schema bounds. release:published with ui-vX.Y.Z/api-vX.Y.Z selects one component; missing/red exact-main-CI ->deny deploy. UI/API additive v1 compatibility, migration lock, separate app/migration/deploy secrets. Proposed config names DATABASE_URL, AUTH_URL/issuer/audience, PAYMENT_SECRET, PAYMENT_WEBHOOK_SECRET, EMAIL_API_KEY, EMAIL_WEBHOOK_SECRET, STORAGE_WRITE_KEY; secrets backend/CI protected stores only.
+
+Proposed: API10s/DB2s/provider5s; retries1m/5m/15m/1h then manager, alert15m. Validate; retain unknown funds.
+
+Mandatory AC1–AC3 rules:
+
+Technical r3 gateway: typed SECURITY DEFINER domain functions, nonlogin/non-superuser table owner, trusted fixed search_path, no runtime schema CREATE/DDL/SET ROLE owner, revoke PUBLIC EXECUTE. API/worker runtime cannot directly DML/TRUNCATE protected financial/resource/lifecycle/snapshot tables; function-specific EXECUTE and worker observation/dispatch grants. First red real-role test attempts each forbidden operation and expects denial, then proves one permitted atomic command. Migrations/repairs preserve dispatch freeze and invariants.
+
+## To dos
+
+T1. Red: smallest AC1–AC3 fixture assertion; infrastructure failure is not red.
+T2. Implement data/API/UI/recovery with snapshots/auth/idempotency (AC1–AC3).
+T3. Integrate migrations/consumers/audit/notices; verify real DB/provider failures (AC1–AC3).
+T4. Green -> refactor -> rerun affected checks; record revision/results (AC4).
+T5. Complete B1: reviewed bootstrap branch/PR, green real component checks, exact check names and pinned commands. Keep GK-020 in Review; hand B1 evidence to Creator GK-013 without requiring this card Done. After GK-013 G1 configures and verifies required checks/reviews and native auto-merge availability, complete B2: revalidate current PR/base, satisfy review, enable native auto-merge, record merge and resulting main CI, then request Creator acceptance (AC4). No gate bypass or manual/direct-main shortcut.
+
+## Not to dos
+
+No unrelated cleanup, registrations, leaked secrets or releases/deployments without authority. No app execution now; Done needs Creator acceptance.
+
+## Acceptance Criteria
+
+AC1. Red config test rejects missing secret/origin and unsafe production/test mixing; secret values never enter errors/frontend bundles.
+AC2. Bootstrap pins supported toolchain/lockfiles, supplies exact unit/API/UI/Postgres/migration commands and demonstrates failing assertion then green; no SQLite replacement for Postgres.
+AC3. PR CI and main CI build both components; empty/previous-schema migration and graceful job shutdown fixtures run. No branch push deploys.
+AC4. Record exact input/tested revision, results, independent review and Creator acceptance on Trello; account for all related PRs, required review/checks, native auto-merges and main CI. Release/deploy/smoke only when separately authorized and in scope.
+
+Test commands: no application runner exists yet. This bootstrap card can become Ready when GK-019 is accepted and its model/context and local-tool prerequisites are checked; its own future commands are outputs, not start prerequisites. Establish a runnable minimal harness during T1, then show an assertion failing for the intended missing behavior rather than an environment failure. GK-020 supplies verified pinned commands before dependent implementation starts. Proposed Go commands: go test ./..., go test -race ./..., go test -tags=integration ./... against disposable real PostgreSQL; UI npm run check, npm test, npm run build and approved browser runner. Bootstrap replaces proposals with verified exact commands. Provider sandbox scenarios require controlled test account/recipient and real identifiers; mocks do not prove provider behavior. No checks below ran during planning.
+
+Proposed current specification; prior publication text preserved in GK-019 evidence/cards.json. Independent review and approval apply only to the exact current revision. Trello is the live execution record; application work has not started.
+
+Verified prerequisite cards:
+- GK-019: https://trello.com/c/lW3wuYq0
+- Completion gate for B2, not start: GK-013: https://trello.com/c/KpxlodVh
+
+Verified dependent cards:
+- GK-013: https://trello.com/c/KpxlodVh
+- GK-014: https://trello.com/c/47tZfEoI
+- GK-021: https://trello.com/c/zEfCJtWD
+- GK-024: https://trello.com/c/J6zlPAc9
+- GK-022: https://trello.com/c/tcV2Ilpz
+- GK-023: https://trello.com/c/NHHBokl1
+- GK-034: https://trello.com/c/L9d2rl39
+
+## GK-019 proposed contract amendment — r6.2 / UNPUBLISHED
+
+Owner, title, unrelated scope/labels and list remain unchanged. This dated amendment
+replaces contradictory historical policy/provider examples and adds the acceptance
+evidence below; it does not assert implementation readiness or completed tests.
+
+Contract inputs: K00/K09/K10/K11; docs/design/contracts.md r6.2, owner-data-contract.md
+gk019-owner-r4, gk019/schema.json r1.2 and output-manifest.json exact hashes.
+Required current evidence: GK-019; GK-010/012 setup; GK-013 before B2. Refresh live prerequisites and comments before
+execution; a Done setup card proves only its accepted scope.
+
+Behavior: Go API/jobs + SvelteKit customer/admin; Supabase sandbox flbgymxjelzexgoxrcss, private business schema, separate runtime/migration/backup credentials. Approved endpoints gkcake.com/admin, api.gkcake.com, staging.gkcake.com/admin, staging-api.gkcake.com; real values/callback origins must be produced. B2 approved bucket/prefixes in GK-010.
+
+Acceptance extension: B1 supplies exact runnable toolchain/tests, migrations and environment inventory to GK-013; B2 follows gates. Verify real-role denial, TLS verify-full, empty/upgrade migrations and no browser secrets. Reserve K11 schema/config primitives; GK-024 implements the coordinator before dispatch. No claim of implemented backups.
+
+Execution: apply model/context check; then smallest failing meaningful behavior
+case, coherent implementation, focused green checks, required wider checks and
+fresh independent review. Design tickets instead produce/review exact artifacts.
+No application test, UI approval, release or deployment is supplied by this amendment.
+Questions Q3–Q5 apply only where named; unresolved branches stay blocked.
+
+Full brief requirements and nonconflicting safety/verification criteria remain.
+Repository packet is local/unpushed; obtain exact files, not merely a path string.

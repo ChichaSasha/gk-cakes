@@ -1,0 +1,25 @@
+{
+  "colour_space" : "kCGColorSpaceSRGB",
+  "crop_xywh" : [
+    563,
+    95,
+    936,
+    1031
+  ],
+  "instances" : 1,
+  "method" : "Apple Vision VNGenerateForegroundInstanceMaskRequest (on-device segmentation, no generation); mask applied as alpha to original pixels",
+  "opaque_pixels" : 418208,
+  "padding_px" : 24,
+  "partial_alpha_pixels" : 77555,
+  "source_non_opaque_pixels" : 0,
+  "source_size" : [
+    1920,
+    1275
+  ],
+  "subject_bbox_alpha_gt_8" : [
+    587,
+    119,
+    1474,
+    1101
+  ]
+}

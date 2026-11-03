@@ -1,0 +1,14 @@
+{
+  "decision": "Q3 accepted",
+  "user_reply_exact": "agree",
+  "question_exact": "Next, analytics: I recommend tracking basic checkout steps and repeat visits only after consent, excluding names, emails, order details, account/admin browsing and session recordings. This would help identify where customers abandon purchases.\n\nApprove that scope, or keep analytics limited to public pages?",
+  "source_id": "chat:GK-019:2026-10-05:Q3",
+  "source_sha256": "4a0827426dc271c79df5e652c36882062935bc8bc67ccc8977439234eac2aa98",
+  "model_observed": "gpt-6-astra/high",
+  "model_evidence": "latest host turn_context",
+  "history": "continued master; independent continued reviewer",
+  "readback": "Only consented basic checkout steps and repeat visits; no account/admin browsing,names,email,order details or replay. No legal/activation claim. Existing provider/retention choice retained.",
+  "prior_output_manifest_sha256": "745aa0ae082fa82ecd7db1b7eaeb2c4ec097a793ffe99088f061ce6cdd1724fd",
+  "live_refresh_file": "evidence/q3-resume-live.json",
+  "live_refresh_sha256": "e34ceb91793a880c0776be27335277fb9b744d0bb239fc4658a95bc83f4bbda3"
+}

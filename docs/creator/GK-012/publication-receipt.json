@@ -1,0 +1,28 @@
+{
+  "card_id": "6ab13b7169adf9df4b5d6177",
+  "card_url": "https://trello.com/c/nveiC5IF",
+  "authorized_action": "Publish accepted r4 handoff; keep card open; do not change list",
+  "list_before": "6ab074adb3c3763832de0077",
+  "list_name_before": "📥 Backlog",
+  "source_sha256": "16d53052cb163e2113af1dc9823d45e78eca6f1da7439743f4d9f95610887e08",
+  "comments": [
+    {
+      "part_file": "docs/creator/GK-012/publication-parts/part-1.txt",
+      "id": "6ac40a6b6f1051e7686af3ca",
+      "sha256": "2e24c7f7d767db30993bdefcbb948901710f0e34e126666187c084a38b081144",
+      "published_at_utc": "2026-10-05T20:36:59.360707+00:00",
+      "verified_sha256": "2e24c7f7d767db30993bdefcbb948901710f0e34e126666187c084a38b081144"
+    },
+    {
+      "part_file": "docs/creator/GK-012/publication-parts/part-2.txt",
+      "id": "6ac40a6c6b66a1a00822b666",
+      "sha256": "e6a25cf1f573df647ec8a71caf4c09ba6e8068227d1fe8107235adf9b2f5f168",
+      "published_at_utc": "2026-10-05T20:37:00.590128+00:00",
+      "verified_sha256": "e6a25cf1f573df647ec8a71caf4c09ba6e8068227d1fe8107235adf9b2f5f168"
+    }
+  ],
+  "verified": true,
+  "verified_at_utc": "2026-10-05T20:37:17.415656+00:00",
+  "closed_after": false,
+  "list_after": "6ab074adb3c3763832de0077"
+}

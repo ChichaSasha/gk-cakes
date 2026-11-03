@@ -1,0 +1,111 @@
+{
+  "ticket": "GK-007",
+  "revision": "scope-split-r1",
+  "date": "2026-10-05",
+  "authorization": {
+    "source": "current Codex conversation",
+    "answer_verbatim": "B",
+    "question_context": "Approve summary, create separate deferred-input follow-up, publish decisions and close GK-007 and owner-input card as completed policy stage; validated recipe/grocery costing remains dependent on follow-up."
+  },
+  "approval_scope": "policy-stage completion, not validated deferred data or implementation",
+  "main": {
+    "id": "6ab13b60b3c3763832398591",
+    "url": "https://trello.com/c/iJqMyuN1/21-gk-007p0o060w00-set-discounts-recipe-scaling-and-ingredient-accounting-rules",
+    "idList": "6ab074aeb3c3763832de00c3",
+    "idBoard": "6ab074a2b3c3763832ddf623"
+  },
+  "owner": {
+    "id": "6ab8590a8875c790cb8ee334",
+    "url": "https://trello.com/c/ES15alvX/7-bo-gk-007o060-%D0%BF%D0%BE%D0%B3%D0%BE%D0%B4%D0%B8%D1%82%D0%B8-%D0%B7%D0%BD%D0%B8%D0%B6%D0%BA%D0%B8-%D1%80%D0%B5%D1%86%D0%B5%D0%BF%D1%82%D0%B8-%D1%82%D0%B0-%D0%BE%D0%B1%D0%BB%D1%96%D0%BA-%D1%96%D0%BD%D0%B3%D1%80%D0%B5%D0%B4%D1%96%D1%94%D0%BD%D1%82%D1%96%D0%B2",
+    "idList": "6ab846cadeac31eff3e42506",
+    "idBoard": "6ab846cadeac31eff3e42507"
+  },
+  "follow_up": {
+    "id": "6ac3de21c1a03b52e291f13c",
+    "url": "https://trello.com/c/tVlu0Wkg/51-gk-038-measure-component-yields-and-complete-recipe-costing-inputs",
+    "idList": "6ab074adb3c3763832de0077",
+    "idBoard": "6ab074a2b3c3763832ddf623"
+  },
+  "final_list_names": {
+    "main": "🏁 Done",
+    "owner": "🏁 Done",
+    "follow_up": "📥 Backlog"
+  },
+  "published_comments": [
+    {
+      "card": "main",
+      "comment_id": "6ac3ded976e43d7a6b6b9c46",
+      "file": "docs/creator/GK-007/trello-main-1.txt",
+      "sha256": "0a769027f8ff83c75ce31baae81abf383965930e2abf6de97f55a9dded09e01a",
+      "exact_readback_match": true
+    },
+    {
+      "card": "main",
+      "comment_id": "6ac3dedae8ca609df319bece",
+      "file": "docs/creator/GK-007/trello-main-2.txt",
+      "sha256": "779277265c26f995f7a6f744538ed54d196869d1f0a12bb2a48500222c15776c",
+      "exact_readback_match": true
+    },
+    {
+      "card": "main",
+      "comment_id": "6ac3dedaa03015ebc3c986bb",
+      "file": "docs/creator/GK-007/trello-main-3.txt",
+      "sha256": "bf6a1c858455ec0e200339a739436f888e20f5ff53b3d8792efeb0dbccea4305",
+      "exact_readback_match": true
+    },
+    {
+      "card": "owner",
+      "comment_id": "6ac3dedbe99681f1ce512fa9",
+      "file": "docs/creator/GK-007/trello-owner-1.txt",
+      "sha256": "612da14a9c85d05bed6f9e891687fe77572dd05aa764d51618139404c0a5897a",
+      "exact_readback_match": true
+    },
+    {
+      "card": "owner",
+      "comment_id": "6ac3dedb91cca37a1d414c62",
+      "file": "docs/creator/GK-007/trello-owner-2.txt",
+      "sha256": "521c944810d57f28ad4fb8838a18100b4bf0daa67e548c9ea67715de800d7ade",
+      "exact_readback_match": true
+    },
+    {
+      "card": "owner",
+      "comment_id": "6ac3dedcacbad9aa8ce6887e",
+      "file": "docs/creator/GK-007/trello-owner-3.txt",
+      "sha256": "b35d7c0df1baa0ebf1b62b54d9ba5909186e6a423c3cf2e5ddf49a22687d62cb",
+      "exact_readback_match": true
+    },
+    {
+      "card": "owner",
+      "comment_id": "6ac3dedc20ba7a7ff89bf79a",
+      "file": "docs/creator/GK-007/trello-owner-4.txt",
+      "sha256": "e96172d52a4b0d523402423e829c641110f8112f8acb0947fb47fea32302141c",
+      "exact_readback_match": true
+    }
+  ],
+  "follow_up_description_sha256": "236ef04e6017272a4b4383997947754035613a604a9d04ce01ebc7fa053e2f5e",
+  "readback": {
+    "both_done": true,
+    "follow_up_open": true,
+    "follow_up_description_exact": true,
+    "original_descriptions_preserved": true
+  },
+  "automatic_approval_review": {
+    "action": "add dependency comments to GK-019/GK-022/GK-032",
+    "result": "rejected before execution",
+    "reason": "Additional shared-data mutations outside approved GK-007 two-card publication/closure scope.",
+    "resolution": "No adjacent-card writes attempted again; dependencies are explicit in authorized follow-up GK-038. Draft notices remain unpublished."
+  },
+  "checks": {
+    "owner_intake": "passed, existing three packets; not GK-007 semantic coverage",
+    "gk007": "40 contextualized answers, original workbook copy and hashes, local links, seven Decimal arithmetic checks; exact Trello readback",
+    "independent_review": "not performed; same-session checks and user acceptance"
+  },
+  "git": "local uncommitted/unpushed planning artifacts; no implementation commit implied",
+  "artifact_sha256": {
+    "docs/creator/GK-007/README.md": "096a8c3237053f328a1cedc1677e3988aadee83f8b40a0a3a2eff2dc247ec53a",
+    "docs/creator/GK-007/closure-scope-2026-10-05.md": "5c8eedb81ba68e410e2c874053782515a8e6ec05605fdbde29bad8f7433aa9db",
+    "docs/creator/GK-007/interview-2026-10-05.md": "a171c851183eff1a0c9552ff2686f9bf96420dc4b2edd1a7c7b04c577a3ef198",
+    "docs/creator/GK-007/interview-2026-10-05.json": "43a637aa33e94233830c37338d293c655868434cd2e3f09ca133d909f85e5069",
+    "docs/design/tickets/GK-038.md": "6dbb1fab328cc32a26772be7e418af7bb6f62a261050a56e0fc60773b2ac1196"
+  }
+}

@@ -1,0 +1,24 @@
+# Commerce and fulfillment — GK-019 r6
+
+Status: reconciled technical packet; independent review pending. No application tests
+or visual approval claimed. Prior assessment retained as [historical text](../gk019/prior/commerce.md.txt).
+
+Requirements: C05 C06 C10 C15–C17 A01 A03 A07 A08 A12 S01 S02 S06 S07. Owning tickets: GK-017/019/023/025/026/030/031.
+Normative shared contract: [r6 K03/K04/K05/K06/K11](../contracts.md); [typed schema](../gk019/schema.json);
+[source decisions](../creator-decisions.md); [open decisions](../gk019/questions.md).
+
+## Scope and ownership
+
+Orders owns immutable agreement/price/policy and lifecycle; payments owns actual collection/refund evidence and reservations; scheduling owns soft handover workload and exclusive physical cake stock.100/50 policy unaffected by production, fixed original deadline. Code use/stock/recovery are transactional through shared command gateway; no provider calls under locks. No paid switch for current manual orders: chef template follows website payment/free path.
+
+Existing [screen IDs](../screens.md) remain the design-session inputs. GK-015 visual
+artifacts are owned by another context; this packet grants no visual approval. Current
+behavior changes and exact revisions go through the [GK-015 handoff](../gk019/GK-015-handoff.md).
+
+## Verification and dependency boundary
+
+Real PostgreSQL two admitted last-place payments both accepted; one physical cake allocated once; concurrent refunds bounded; producer/cancel race preserves entitlement; delivery refund separate;15m/24h/success are separate; accepted Q2 late paid requires explicit feasible chef/customer agreement or full return, unknown never prompts replacement; recovery crash phases tested.
+
+Use [amended ticket specifications](../gk019/amendments/README.md) for exact acceptance
+extensions and prerequisite sources. Existing release/authorization/capability gates
+remain. Tests above are required future implementation evidence, not document checks.

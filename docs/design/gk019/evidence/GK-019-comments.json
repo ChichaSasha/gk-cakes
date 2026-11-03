@@ -1,0 +1,31 @@
+{
+  "ok": true,
+  "data": [
+    {
+      "id": "6ac4131e1104732c928699bd",
+      "type": "commentCard",
+      "date": "2026-10-05T21:14:06.997Z",
+      "memberCreator": {
+        "id": "6ab07430e77c7ae74e433bb8",
+        "username": "sashachicha13",
+        "fullName": "sashachicha13"
+      },
+      "data": {
+        "text": "GK-011 approved provisioning handoff / 2026-10-05 / r16\n\nSasha explicitly approved the completion split and publication to these five tickets, with Done for GK-011 alone. Parent: https://trello.com/c/ZhcwMqTc . This supplies account-provisioning evidence; application integration work below remains mandatory. No independent review, application tests, release or production deployment is claimed.\n\nStripe: owner-created GK Cake London organisation, GK Cake account/project, GK Cake London sandbox; sandbox account acct_1UNHEgPqGToF2ulH. User-run GET /v1/account returned GB and gbp using the saved test credential. Dashboard default API version 2026-08-26.dahlia; actual SDK/event version must be pinned by the adapter. Sasha has Super Administrator access; both logins use MFA; business/payout verification reported completed by Sasha.\n\nAccepted currently enabled methods: Cards, Cartes Bancaires, Apple Pay, Amazon Pay, Kakao Pay, MB WAY, Naver Pay, Onelink (copied UI label), PAYCO, Revolut Pay, Samsung Pay, Satispay, Bancontact, BLIK, EPS, Klarna and Pix. Google Pay stays disabled; other disabled or future-added methods are not approved by this snapshot. Qualification of each applicable method remains required.\n\nResend Free; Ireland eu-west-1; Sending enabled, Receiving disabled; gkcake.com verified, all user-confirmed. Current sender: GK Cakes <orders@gkcake.com>; Reply-To and controlled recipient: gk.cake.london@gmail.com. Test ID 01a10dbc-6000-76de-9d3e-e6a5843ba602, created 2026-10-05 20:23:31.746000+00, supplied provider last_event=delivered, user-confirmed mailbox receipt. That historical test used the previous GK Cake London display name; it is not a test of the amended name.\n\nSetup keys are saved in shared Bitwarden items GK Cakes Sandbox — Stripe API key and GK Cakes Sandbox — Resend sending key. The former is a broad sandbox setup key; the latter is Sending access restricted to gkcake.com. No secret values are published. Runtime deployment, least privilege and webhook secrets remain application work.\n\nLocal source packet (not a remotely accessible attachment): docs/creator/GK-011/publication-source-r16.md SHA-256 0bf02d7bbaef614542f20be15e0d6b0a1f11a3575c987e5ac21252ea94dd92d7; closure-scope-accepted.md SHA-256 279c630dfa444c35653f97f89e8e0d328e66882bf1bf046ed7cc4796c7a91254. Full current handoff is recorded in the parent scope amendment and these comments; obtain the exact local packet for execution.\n\nRequired before this ticket is accepted:\nReconcile the accepted method set and current sender into contracts. Replace proposed card-only assumptions where necessary; retain full upfront payment, authoritative provider success, unknown-state handling and current owner payment-window policy. Surface any method incompatibility for an explicit decision rather than silently dropping a method or accepting uncertain funds as paid.\n\nExisting requirements, dependencies and status remain unchanged. GK-020 supplies the real runtime; GK-035/GK-037 retain integrated/prelaunch checks. No automatic Ready or Done transition."
+      }
+    },
+    {
+      "id": "6ac2f7d8d13f6ea2629043e6",
+      "type": "commentCard",
+      "date": "2026-10-05T01:05:28.894Z",
+      "memberCreator": {
+        "id": "6ab07430e77c7ae74e433bb8",
+        "username": "sashachicha13",
+        "fullName": "sashachicha13"
+      },
+      "data": {
+        "text": "GK-005 scope split / 2026-10-05: business input accepted; see closure decisions at https://trello.com/c/OWHhKPBT . Deferred legal, actual privacy/provider and label verification transferred to https://trello.com/c/Zarzv2Qo (GK-037), after GK-035 and before GK-036. This transfer does not block implementation. Other prerequisites remain; no Ready transition is implied. Read docs/creator/GK-005/interview-2026-10-05.md and source/evidence manifests; older decision JSON alone is incomplete. GK-019 owns canonical owner-data JSON/SQL/admin/contract reconciliation of interview-r1 before affected implementation. Preserve source/comment hashes and superseded evidence."
+      }
+    }
+  ]
+}

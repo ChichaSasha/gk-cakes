@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "data": [
+    {
+      "id": "6ac2f7dd2c644d3b434cad96",
+      "type": "commentCard",
+      "date": "2026-10-05T01:05:33.307Z",
+      "memberCreator": {
+        "id": "6ab07430e77c7ae74e433bb8",
+        "username": "sashachicha13",
+        "fullName": "sashachicha13"
+      },
+      "data": {
+        "text": "GK-005 scope split / 2026-10-05: sandbox acceptance may use accepted GK-005 business input and finish before the deferred legal/privacy/product-label gate GK-037. Provide actual implemented UI/API/schema/provider evidence to https://trello.com/c/Zarzv2Qo . Gate order is GK-035 -> GK-037 -> GK-036; GK-035 does not depend on GK-037. Other existing prerequisites and sandbox acceptance checks remain."
+      }
+    }
+  ]
+}

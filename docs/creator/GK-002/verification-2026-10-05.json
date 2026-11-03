@@ -1,0 +1,43 @@
+{
+  "recorded_at": "2026-10-05T01:27:09.404345+00:00",
+  "revision": "interview-r4-complete",
+  "review_kind": "same-session self-check, not independent",
+  "checks": [
+    {
+      "command": "python3 scripts/check_owner_intake.py",
+      "result": "PASS; covers existing 3 canonical owner packets, not the new GK-002 interview schema"
+    },
+    {
+      "command": "python3 scripts/check_planning_kit.py",
+      "result": "PASS"
+    },
+    {
+      "check": "Focused local evidence assertions",
+      "result": "PASS: 86 asset fingerprints; 37 image integrity checks; three complete approved examples; six exact base prices; zero open scoped business questions."
+    }
+  ],
+  "outputs_sha256": {
+    "docs/creator/GK-002/README.md": "2490b1f9bde90de432b3b5b9dfa71ac39970b313b3db5d2aed40bccb9b09b5e1",
+    "docs/creator/GK-002/interview-2026-10-05.json": "4d153e8b597ade2c196f19609bc1674b09a2ff515a3bbaf8d33764e9113c5f29",
+    "docs/creator/GK-002/assets/price-list-2026-10-05.jpg": "0f350be666594f1bf4404c2ea7b0ab9499fcad54f3fde4011c4344fc77faa636",
+    "docs/creator/GK-002/closure-summary.en.txt": "dbbb11d53bcfc859f89b1dc3b2c03b98e6d1fa8add95c472403226a61b349e1c",
+    "docs/creator/GK-002/closure-summary.uk.txt": "4151779120c82a97be43a03b3b73349245b3024b27111f6e38f8e551eaa3455c"
+  },
+  "live_trello_recheck": {
+    "date": "2026-10-05",
+    "parent": {
+      "card_id": "6ab13b631596908322f9a7d3",
+      "list_id": "6ab074adb3c3763832de0087",
+      "description_sha256": "021b52b9aa36f153d9cab7e6b07f393191ec7310ba8de76b40674c23eb00b4fd",
+      "comments": 0
+    },
+    "owner": {
+      "card_id": "6ab8590b33bd0173303847de",
+      "list_id": "6ab846cadeac31eff3e42503",
+      "description_sha256": "95cfa834e0dd7b29dc05bf2ce4150fc4a8d3fabbf6c69e8b5fc4d25bab8219e7",
+      "comments": 0
+    }
+  },
+  "external_writes": [],
+  "remaining": "User authorisation to publish prepared evidence and move both cards to Done. Downstream recipe, final-label and screen-design work stays separate."
+}

@@ -1,0 +1,749 @@
+{
+  "schema_version": 1,
+  "ticket": "GK-005",
+  "input_revision": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+  "status_meaning": {
+    "confirmed": "Explicit owner business statement, not whole-ticket completion or legal approval. Unresolved semantics still block affected implementation.",
+    "reported_fact": "Owner-attested fact, independent verification absent.",
+    "conflict": "Owner wording retained; competing owner rule not resolved.",
+    "example": "Owner calculation/example only, not configurable business value.",
+    "unresolved": "Explicit owner question requiring external evidence.",
+    "incomplete": "Source fragment; missing answer remains null."
+  },
+  "normalization": {
+    "money": "GBP established in BO-GK-005; exact pounds × 100 = integer pence; no floats. Percent remains integer percent.",
+    "time": "No day-to-hour or month-to-day conversion. Recurring local clock strings unchanged; Europe/London from creator-decisions r2, not inferred from owner text.",
+    "unknown": "null means unknown or redacted, never zero/false/not-applicable; see field notes.",
+    "approval": "Direct statements adopted narrowly; no decision auto-supersedes a conflicting owner statement by recency."
+  },
+  "decisions": {
+    "public_identity": {
+      "id": "BO-GK-005.public_identity",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "trading_name": "GK Cake London",
+          "instagram": "@gk.cake.london",
+          "email": "gk.cake.london@gmail.com"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Owner supplies these contacts expressly for publication. Current Instagram differs from older @gk.cake; account-control verification is separate.",
+      "data_contract": "business",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            5,
+            7
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "572747de969557ecb13adf40c0014b0c8a63edfd438c8253d309bfce7921ecbb"
+    },
+    "food_status": {
+      "id": "BO-GK-005.food_status",
+      "status": "reported_fact",
+      "business": {
+        "value": {
+          "food_business_registered": true,
+          "inspection_completed": true,
+          "rating_written": "5/5",
+          "public_record_available": false,
+          "support_contacted": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Relevant authority, official record/date/reference and permission/evidence for public rating claim."
+        ]
+      },
+      "interpretation_en": "Owner reports registration, completed inspection and 5/5 rating. Online record not yet visible/updated; support contacted, public evidence to follow. Independently unverified.",
+      "data_contract": "business",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            11,
+            17
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "16640dcb76cae03e4e4803e3bd488add6fec7f6c9bb96532253313bca173812f"
+    },
+    "identity_documents": {
+      "id": "BO-GK-005.identity_documents",
+      "status": "confirmed",
+      "business": {
+        "value": false,
+        "type": "bool",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Do not attach identity documents to Trello or public materials.",
+      "data_contract": "privacy",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            19,
+            19
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "badde9c3e9d37abb6c5c2e49e6e5935705b64c040f7cf656d93353237c8688ef"
+    },
+    "flavours": {
+      "id": "BO-GK-005.flavours",
+      "status": "confirmed",
+      "business": {
+        "value": [
+          "Banana Pudding",
+          "Chocolate Raspberry",
+          "Chocolate Cream Duo",
+          "Chocolate & Banana",
+          "Vanilla Raspberry",
+          "White Chocolate Raspberry",
+          "Chocolate Oreo",
+          "Snickers"
+        ],
+        "type": "list",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Eight current flavour names, preserved exactly; no ingredient quantities, serving sizes or recipes supplied.",
+      "data_contract": "allergen",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            25,
+            34
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "40dd38fa5b00dd83de4db9b89c44348e6f9afea012e893e6624d9f2cd312f9b0"
+    },
+    "allergens": {
+      "id": "BO-GK-005.allergens",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "all_flavours": [
+            "EGGS",
+            "MILK",
+            "CEREALS CONTAINING GLUTEN (WHEAT)",
+            "SOYBEANS"
+          ],
+          "additional": {
+            "Chocolate Oreo": [
+              "SULPHITES"
+            ],
+            "Snickers": [
+              "PEANUTS"
+            ]
+          },
+          "prominent": {
+            "Snickers": [
+              "PEANUTS"
+            ]
+          },
+          "visible_before_purchase": true,
+          "owner_verified_date": "2026-09-28"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Owner-verified allergen declarations on 28.09.2026: four common allergens; Oreo additionally sulphites; Snickers additionally peanuts, prominently displayed. Show flavour-specific information before purchase. Not independent ingredient/safety verification.",
+      "data_contract": "allergen",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            38,
+            51
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "6467127af412fcb23dce9f493b35d515a78c7d500e7d75cac2df8f23706a7afe"
+    },
+    "cross_contact": {
+      "id": "BO-GK-005.cross_contact",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "handled": [
+            "EGGS",
+            "MILK",
+            "CEREALS CONTAINING GLUTEN (WHEAT)",
+            "SOYBEANS",
+            "PEANUTS"
+          ],
+          "notice": "“Allergen notice: All cakes are prepared in the same kitchen where EGGS, MILK, CEREALS CONTAINING GLUTEN (WHEAT), SOYBEANS and PEANUTS are handled. While care is taken to minimise cross-contact, we cannot guarantee that products are completely free from traces of other allergens. If you have a severe allergy, please contact us before ordering.”"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Single shared kitchen; owner-supplied exact English publication notice says precautions do not guarantee freedom from traces, and asks severe-allergy customers to contact before ordering. Preserve contains and cross-contact separately; do not add sulphites to this list by inference.",
+      "data_contract": "allergen",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            55,
+            59
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "ea64ed35e3a1b117c665c6c2d0629ee267f1bca7a0dac159e9d7f87cb1bdb35a"
+    },
+    "handover_label": {
+      "id": "BO-GK-005.handover_label",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "on": "cake box",
+          "per_order": true,
+          "match_actual_flavour_composition": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Place allergen label on cake box matching actual order flavour/composition; information provided before purchase and again on packaging at handover.",
+      "data_contract": "allergen",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            65,
+            72
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "5be2d4916b3e0f88202bed0a2601f5852543efd616635caa8f953451907f9646"
+    },
+    "vat": {
+      "id": "BO-GK-005.vat",
+      "status": "reported_fact",
+      "business": {
+        "value": {
+          "uk_vat_registered": false,
+          "vat_added_separately": false,
+          "owner_confirmed_date": "2026-09-28",
+          "update_on_status_change": true
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Independent tax verification and future effective-date treatment."
+        ]
+      },
+      "interpretation_en": "Owner reports not UK VAT registered on 28.09.2026; do not add VAT separately. Update website information/calculation if status changes. This does not establish a legal exemption, tax rate of 0%, or verified tax compliance.",
+      "data_contract": "tax",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            78,
+            90
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "d6b607a50e55d9edfccaf114f5593761e6b00836216bdcd9ce4390f3c3925750"
+    },
+    "refund_basis": {
+      "id": "BO-GK-005.refund_basis",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "policy": "BO-GK-003",
+          "basis": "actually_paid_after_discount",
+          "delivery_separate": true,
+          "only_remaining_owed": true,
+          "pending_is_completed": false
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Use BO-GK-003 actual-paid-after-discount cake basis, delivery separately, return only outstanding obligation; pending is not completed.",
+      "data_contract": "refund",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            92,
+            94
+          ],
+          [
+            105,
+            105
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "b88edd40a350d7947f14771faa85425748b89735dab04c46dcd1ac470851869b"
+    },
+    "refund_example": {
+      "id": "BO-GK-005.refund_example",
+      "status": "example",
+      "business": {
+        "value": {
+          "cake_minor": 10000,
+          "delivery_minor": 2000,
+          "cake_percent": 50,
+          "cake_refund_minor": 5000,
+          "delivery_refund_minor": 2000,
+          "total_refund_minor": 7000,
+          "currency": "GBP"
+        },
+        "type": "dict",
+        "unit": "GBP pence / percent",
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Owner repeats £100 cake, £20 delivery, £50 cake refund at 50%, £20 unperformed-delivery refund = £70. This does not replace the £100 delivery starting price.",
+      "data_contract": "refund",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            96,
+            103
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "fad3b1c0f2e0deeb3f6044e38c1a53f19d8eccb1629bdcb5a98f7c56231a2863"
+    },
+    "money_precision": {
+      "id": "BO-GK-005.money_precision",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "currency": "GBP",
+          "maximum_display_decimal_places": 2,
+          "written": "до двох десяткових знаків",
+          "fixed_trailing_zeros": null
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Half-penny rounding and component allocation method.",
+          "Fixed trailing-zero display versus up-to-two-place display is not established by the source."
+        ]
+      },
+      "interpretation_en": "GBP calculations with correct display «до двох десяткових знаків» (up to two decimal places), consistently across checkout/payment/refunds. Fixed trailing-zero formatting and rounding mode were not supplied.",
+      "data_contract": "tax",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            107,
+            107
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "1e522bdb814c26e90dc124243cdd448ed793f43e504bbbaea304e834253d9400"
+    },
+    "policy_confirmation": {
+      "id": "BO-GK-005.policy_confirmation",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "policy": "BO-GK-003",
+          "more_than_days": 4,
+          "refund_percent": 50
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Ready-cake exception scope; legal review still required."
+        ]
+      },
+      "interpretation_en": "Explicitly states the >4-day 50% rule is agreed business policy and BO-GK-003 governs. This is narrow business confirmation; no explicit statement replaces BO-GK-001 ready-cake rule.",
+      "data_contract": "refund",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            113,
+            115
+          ],
+          [
+            123,
+            123
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Line 123 explicitly calls the >4 days / 50% rule agreed business policy; line 125 requires legal review."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "2f5119c21e407c99baf9b08e9c9d339ebd02a09151099059f81ba02f8d43bdce"
+    },
+    "statutory_notice": {
+      "id": "BO-GK-005.statutory_notice",
+      "status": "confirmed",
+      "business": {
+        "value": "“Nothing in this cancellation and refund policy affects the customer’s statutory rights where a product is faulty, not as described or otherwise does not meet applicable legal requirements.”",
+        "type": "str",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Exact owner-supplied customer publication wording preserves statutory rights for faulty/not-as-described/noncompliant products; legal adequacy unverified.",
+      "data_contract": "legal",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            117,
+            119
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "d25f45b31760cc9f7aea44c1456a0e3349fa1cd7a8b37649b3e65ca136978b6e"
+    },
+    "internal_legal_note": {
+      "id": "BO-GK-005.internal_legal_note",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "customer_visible": false,
+          "before_terms_publication": "final legal proportionality check of retained 50%"
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Qualified review/evidence pending."
+        ]
+      },
+      "interpretation_en": "Internal note for Sasha/developer must not appear on customer website. Legal proportionality of retaining 50% still needs final review before Terms & Conditions publication.",
+      "data_contract": "legal",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            121,
+            121
+          ],
+          [
+            125,
+            127
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "0086fc206db6b5b1a5c5afc71c440eb583c501d74c4af3035b590649c83b2d94"
+    },
+    "customer_data": {
+      "id": "BO-GK-005.customer_data",
+      "status": "confirmed",
+      "business": {
+        "value": [
+          "full name",
+          "email",
+          "phone number",
+          "Instagram username",
+          "order information",
+          "collection / delivery date",
+          "flavour",
+          "size",
+          "agreed design and order details",
+          "customer design references",
+          "payment / refund information",
+          "necessary order-related communication"
+        ],
+        "type": "list",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": []
+      },
+      "interpretation_en": "Owner permits storing these categories for order placement/fulfillment; no general permission for marketing or unrelated use.",
+      "data_contract": "privacy",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            133,
+            146
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "d09c5fa04c80a154f6b1b544c01b4c8e56a8337fc8066a6278536f3c19046397"
+    },
+    "privacy_incomplete": {
+      "id": "BO-GK-005.privacy_incomplete",
+      "status": "incomplete",
+      "business": {
+        "value": null,
+        "type": "unknown",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Missing continuation; purposes/basis/retention/deletion per data category; images, local storage, analytics, transactional versus marketing email."
+        ]
+      },
+      "interpretation_en": "The actual saved comment ends mid-sentence: «Збираються лише дан». CLI and browser agree. Do not complete the sentence or invent retention, deletion, browser-storage, analytics or email policy.",
+      "data_contract": "privacy",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            148,
+            148
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "f15630c4050553fcb9734443fb6a1099d01bf523b6e927f752278e4bfa85efce"
+    }
+  },
+  "questions": {
+    "missing_tail": {
+      "id": "BO-GK-005.question.missing_tail",
+      "source_decisions": [
+        "BO-GK-005.privacy_incomplete",
+        "BO-GK-005.customer_data"
+      ],
+      "question_uk": "Коментар закінчується словами «Збираються лише дан». Будь ласка, передайте продовження. Потрібні правила строків зберігання/видалення замовлень, запитів, фото й листування, даних у браузері, статистики, листів про замовлення та реклами; розробник підготує зрозумілу таблицю для погодження.",
+      "why_en": "Current source is incomplete; unknown must not become zero retention, consent or indefinite storage.",
+      "status": "unanswered"
+    },
+    "official_evidence": {
+      "id": "BO-GK-005.question.official_evidence",
+      "source_decisions": [
+        "BO-GK-005.food_status",
+        "BO-GK-005.vat"
+      ],
+      "question_uk": "Коли з’явиться публічний запис Food Hygiene Rating 5/5, надайте посилання/дату або безпечне підтвердження органу. Для VAT збережімо джерело перевірки поточного статусу без документів особи.",
+      "why_en": "Owner reports are preserved separately from independently verified regulatory/tax facts.",
+      "status": "unanswered"
+    },
+    "food_detail": {
+      "id": "BO-GK-005.question.food_detail",
+      "source_decisions": [
+        "BO-GK-005.flavours",
+        "BO-GK-005.allergens",
+        "BO-GK-005.cross_contact",
+        "BO-GK-005.handover_label"
+      ],
+      "question_uk": "Надайте актуальний склад/рецептурні версії для восьми смаків і приклад етикетки конкретного замовлення. Хто перевіряє зміни складу/постачальника та узгоджує зміну алергенів у вже оплаченому замовленні?",
+      "why_en": "Allergens are supplied, but full ingredients/quantities, substitutions and label verification remain open.",
+      "status": "unanswered"
+    },
+    "legal_rounding": {
+      "id": "BO-GK-005.question.legal_rounding",
+      "source_decisions": [
+        "BO-GK-005.money_precision",
+        "BO-GK-005.policy_confirmation",
+        "BO-GK-005.statutory_notice",
+        "BO-GK-005.internal_legal_note"
+      ],
+      "question_uk": "Потрібна фінальна перевірка фахівцем пропорційності 50% та умов 4 днів перед публікацією Terms & Conditions. Розробник також підготує приклад округлення частки пенні. Чи правило BO-GK-003 замінює окреме правило готових тортів у BO-GK-001? У фразі «до двох десяткових знаків» чи потрібно завжди показувати два знаки (наприклад, £100.00), чи можна без кінцевих нулів? Це лише приклад формату, не нова ціна.",
+      "why_en": "No invented legal conclusion, rounding method or silent supersession; internal note never customer-facing.",
+      "status": "unanswered"
+    }
+  },
+  "previous_decision_revisions": [
+    {
+      "id": "BO-GK-005.money_precision",
+      "status": "confirmed",
+      "business": {
+        "value": {
+          "currency": "GBP",
+          "display_decimal_places": 2
+        },
+        "type": "dict",
+        "unit": null,
+        "scope": "BO-GK-005 stated business rule",
+        "conditions": [],
+        "exceptions": [],
+        "unresolved_semantics": [
+          "Half-penny rounding and component allocation method."
+        ]
+      },
+      "interpretation_en": "GBP calculations and correct display to two decimal places, consistently across checkout/payment/refunds. “двох” is preserved in source; no rounding mode was supplied.",
+      "data_contract": "tax",
+      "supersedes": [],
+      "provenance": {
+        "source_file": "source-comments.json",
+        "comment_id": "6abacbecde4959cdb8da9e21",
+        "revision_sha256": "c8930238a9c62512ea1192bb012169cbcb44901b3c1fb64f8060f325b3d11916",
+        "lines": [
+          [
+            107,
+            107
+          ]
+        ],
+        "attribution": "Direct first-person business answer by Trello author; same author explicitly self-attributes owner-verified facts in BO-GK-005. No board membership/status inference.",
+        "approval_basis": "Explicit rule in cited wording; ready-for-review submission is not blanket approval. Legal compliance unverified."
+      },
+      "effective_from": null,
+      "effective_date_note": "Statement dated 2026-09-28; no operational effective date supplied.",
+      "revision_sha256": "194a2b85d995db912122064db833b0acbbc261c50ab937017caf2893fad5df79"
+    }
+  ],
+  "revision_notes": [
+    {
+      "decision_id": "BO-GK-005.money_precision",
+      "from_revision": "194a2b85d995db912122064db833b0acbbc261c50ab937017caf2893fad5df79",
+      "to_revision": "1e522bdb814c26e90dc124243cdd448ed793f43e504bbbaea304e834253d9400",
+      "reason": "Independent-review correction of English/display interpretation; original owner evidence unchanged. Not a new owner decision or supersession."
+    }
+  ]
+}

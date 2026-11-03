@@ -1,0 +1,71 @@
+## Context
+
+Owner: Creator; Kind: Decision
+Priority: P0 — foundational or money/security/fulfillment correctness prerequisite.
+Order: 340; Wave: 12; Parallel group: none; sequential integration by default.
+Requirements: D01, D02; Design/contract revision: GK-019 r6.5, K09.
+Agent execution policy: not applicable (Creator-owned action).
+Depends on: GK-035, GK-005, GK-037; deliverable: completed approved policy, setup/contract or tested implementation evidence from each listed prerequisite. All GK-020 dependents require B2 unless explicitly named B1.
+Unblocks: none.
+Safe in parallel with: none approved; master can authorize disjoint work after contract/file review.
+Conflicts with: shared contracts/schema/ADRs and adjacent modules; implementation owner coordinates shared edits, no same-wave implied safety.
+Readiness at publication: blocked / specified but dependent: Full sandbox and business acceptance pending.
+
+There is currently no application; this is an ordered planning packet. Review complete sandbox acceptance, business readiness, selected spend/restore evidence and exact candidate UI/API/schema artifacts. Decide whether to authorize named first production component release(s) with actor/target/time scope. This planning card is not release permission.
+
+Applicable common rules: server owns prices/availability/state; GBP integer pence, UTC instants plus Europe/London display and date semantics; role/ownership checked on every action; Idempotency-Key and expected_version protect repeated/stale mutations; pending external result is not success/failure. No network calls under database locks. Detailed requirements and tests below remain mandatory even if linked files change.
+
+References: docs/design/contracts.md K09; docs/design/screens.md; docs/design/coverage.md; relevant docs/design/features/ packet; docs/planning/DELIVERY.md; SETUP.md. These are local unpushed planning artifacts; obtain this checkout's exact fingerprinted packet before execution.
+
+## To dos
+
+T1. Review current prerequisites and the concrete options/rules in Context; collect missing evidence (AC1).
+T2. Perform only the Creator action described, recording settings/decision versions and safe nonsecret evidence (AC1–AC3).
+T3. Check the acceptance examples, record remaining blockers and hand the approved output to dependent Agent tickets (AC3, AC4).
+
+## Not to dos
+
+Do not implement unrelated cleanup, register candidate alternatives, expose credentials, publish releases or deploy without the separate scoped authorization. Planning publication does not authorize application execution now. Do not mark Done without the board's acceptance.
+
+## Acceptance Criteria
+
+AC1. [GK-037](https://trello.com/c/Zarzv2Qo) is Done with legal, actual privacy/provider and food-label acceptance for this exact release candidate. Creator explicitly accepts or declines exact versions/targets and names release operator; unresolved risks remain visible.
+AC2. Production payment/email/account/domain policy and recovery evidence complete; no test-mode secret or fake content is live.
+AC3. If authorized, separate release operation records published tag, deployment/smoke evidence and rollback owner; no automatic deployment from this decision card.
+AC4. Required acceptance evidence is tied to exact input/output revision, checked by the appropriate reviewer/Creator and recorded on Trello. For implementation include relevant tests, all related PRs, required review/checks, merge and main CI; authorized release/deployment/smoke only when separately in scope.
+
+Verification: inspect the concrete decision/configuration and nonsecret evidence against AC1–AC3. No forced software red/green cycle for human work. Account creation follows accepted-provider gate; no secret values in Trello.
+
+Proposed current specification; prior publication text preserved in GK-019 evidence/cards.json. Independent review and approval apply only to the exact current revision. Trello is the live execution record; application work has not started.
+
+Verified prerequisite cards:
+- GK-037: https://trello.com/c/Zarzv2Qo
+- GK-035: https://trello.com/c/qtUe3uom
+- GK-005: https://trello.com/c/OWHhKPBT
+
+Verified dependent cards:
+- None.
+
+## GK-019 proposed contract amendment — r6.5 / UNPUBLISHED
+
+Owner, title, unrelated scope/labels and list remain unchanged. This dated amendment
+replaces contradictory historical policy/provider examples and adds the acceptance
+evidence below; it does not assert implementation readiness or completed tests.
+
+Contract inputs: K09/K10/K11; docs/design/contracts.md r6.5, owner-data-contract.md
+gk019-owner-r7, gk019/schema.json r1.5 and output-manifest.json exact hashes.
+Required current evidence: GK-035 then GK-037; all original release gates retained. Refresh live prerequisites and comments before
+execution; a Done setup card proves only its accepted scope.
+
+Behavior: Launch requires GK-035 tested revision plus GK-037 final legal/privacy/product gate, applicable GK-038 validated data, analytics readiness, recovery and budget evidence. Sasha alone authorizes exact production component release.
+
+Acceptance extension: Verify main CI, staged tested artifact digest, prerequisite evidence and explicit release authority; independent UI/API CD and smoke/rollback. No automatic launch from input-stage Done or this amendment.
+
+Execution: apply model/context check; then smallest failing meaningful behavior
+case, coherent implementation, focused green checks, required wider checks and
+fresh independent review. Design tickets instead produce/review exact artifacts.
+No application test, UI approval, release or deployment is supplied by this amendment.
+Remaining Q4 qualification gates apply only where named; unresolved branches stay blocked.
+
+Full brief requirements and nonconflicting safety/verification criteria remain.
+Repository packet is local/unpushed; obtain exact files, not merely a path string.

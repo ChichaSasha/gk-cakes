@@ -1,0 +1,11 @@
+GK-015 visual foundation approved — revision r12 / 2026-11-03
+
+Creator approval: "record r12 as the approved version instead" (after "Looks good, thank you"). Supersedes the earlier r11 approval. Done transition authorized: "Yes, please post the approval and move the card to Done."
+
+Approved revision: GK-015-r12 — docs/design/sessions/visual-foundation/gk-015-r12/output-manifest.json SHA256 fdadcfd144388c0e71961edfb72ea25561eaa6af884b54971815fa1c10666702 (local/unpushed; obtain these exact bytes before implementation).
+
+What r12 contains: the r10 "liquid chrome atelier" design (lighter satin-silver/pearl surface, transparent hero cake, glass header and filter bar), the r10 cake-picture hover with shine sweep, zoom/tilt and cursor highlight — now mouse/trackpad only, driven by the whole card (heart keeps the effect and rises with the tile), keyboard focus lift kept, reduced motion respected — and a frosted layer that closes the gap above the sticky Shop filter bar. All POC transactions remain simulated.
+
+Evidence and limits: r10/r11 passed independent review and their suites; r12 changes were verified with targeted local browser checks (desktop, tablet touch, keyboard, reduced motion, filter bar, no errors/overflow). The full suite was not rerun for r12 and r12 has no separate independent review.
+
+Still open (not covered by this approval): canonical logo record (composite.png is the Creator's POC choice); a fresh integration review before affected UI implementation tickets (GK-016/017/018 design sessions, GK-028/029/030 UI) become Ready; actual availability, owned-order time picker and payment qualification belong to implementation. The card description is unchanged.

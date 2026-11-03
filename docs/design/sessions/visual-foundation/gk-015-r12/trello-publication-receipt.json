@@ -1,0 +1,24 @@
+{
+ "ticket": "GK-015",
+ "card_id": "6ab13b744675c2d1ae30ce9f",
+ "card_url": "https://trello.com/c/POD3I6sM",
+ "approved_revision": "GK-015-r12",
+ "manifest_sha256": "fdadcfd144388c0e71961edfb72ea25561eaa6af884b54971815fa1c10666702",
+ "authorization": {
+  "approval_verbatim": "record r12 as the approved version instead",
+  "publish_and_done_verbatim": "Yes, please post the approval and move the card to Done."
+ },
+ "comment": {
+  "id": "6ae939b0f56bea11cb9c5064",
+  "date": "2026-11-03T01:32:32.411Z",
+  "sha256": "8045affe1916e759f61b8687c31b9275a2ced0a53f6bc940b6a36b2ff0e114a2",
+  "verified_exact": true
+ },
+ "done_transition": {
+  "from": "📥 Backlog",
+  "to": "🏁 Done",
+  "verified": true
+ },
+ "description_unchanged": true,
+ "verified_at": "2026-11-03T01:32:34.169433+00:00"
+}

@@ -1,0 +1,138 @@
+# Creator decisions — GK-001 handover reconciliation r5, 2026-10-05
+
+Current owner evidence: [GK-001](../creator/GK-001/README.md),
+[GK-003](../creator/GK-003/README.md), [GK-005](../creator/GK-005/README.md).
+Read all applicable source-comments/decisions JSON and the
+[owner data contract](owner-data-contract.md) before affected design/tests/SQL/admin
+work; record exact input hashes. These contain the original Ukrainian, faithful
+English interpretation, narrow attribution, confirmed portions, conflicts and gaps.
+Sasha is developer; Elina Hryhorian is the self-attributed owner author in Trello.
+Submission for review does not approve an entire ticket or establish compliance.
+
+## Current GK-001 handover
+
+[manual-handover-r2](../creator/GK-001/handover.md) and current JSON incorporate
+Sasha's main-card answer and explicit 2026-10-05 chat clarifications; original chef
+wording and prior revisions remain in source-comments/decisions and handover-history.
+This is not direct chef authorship. Seven cakes count by handover date; two cakes use
+two places; chef-entered extras are separate and both simultaneous last-place orders
+may be accepted subject to chef cancellation. Reducing the limit from 7 to 5 preserves
+all 7 accepted cakes; only the chef personally may cancel an order, refunding 100%.
+Full payment anchors +48 elapsed hours; confirmation starts preparation and scheduled
+effect survives late processing. Date changes are chef-mediated; no restored refund
+right after a date move. Delivery uses pickup hours, chef quotes via email/Instagram/
+WhatsApp and the original from £100 floor. The later GK-003 website-only instruction
+supersedes the off-site residual-balance exception for new intake: chef-created
+templates also collect through the site, within 24 hours. GK delivery is separately
+paid and chef/admin refunds its allocation separately; one total refund entitlement
+must not be paid once per collection. Read the [current GK-003 handover](../creator/GK-003/handover.md)
+for exact sources, its separate review and publication evidence.
+Admin schedule exceptions and later editable courier placeholder content are requested.
+For both made-to-order and ready-made cakes, refund the full order including delivery:
+100% strictly more than 120 elapsed hours before ORIGINAL handover, exactly 50% at
+equality/later, including no-show and after handover. At placement save the original
+deadline; date/time moves never change it. Chef cancellation returns 100%. Explicit
+user replies in `source-comments.json` (`chat:GK-001:2026-10-05:refund-deadline` and
+`:refund-scope`) replace older 3/4-day/component/state rules, now history only.
+Minimum lead time is 192 elapsed hours. Uncertain dates/month endpoints are resolved
+personally with the chef through admin, not guessed automatic calendar boundaries.
+
+## Original established statements — read with current GK-001 handover above
+
+- `BO-GK-001.work_week`, `.daily_limit`, `.capacity_exceptions`: Thursday–Sunday,
+  up to 7 cakes/day, no automatic complexity weights; manual extra-order review.
+  `BO-GK-003.daily_limit` earlier said 7 orders/day; new GK-001 clarification resolves
+  cake counting for this handover and marks older strict admission design for review.
+- `BO-GK-001.lead_time`, `.booking_horizon`, `.wedding_recommendation`: 8–10 days,
+  ordinary next two months, wedding 7–8 months, recommendation approximately two
+  months or earlier for wedding/tiered. Preserve ranges and unknown day/month semantics.
+- `.production_start`, `.ready_preparation`: 48 hours after placement, earlier
+  manual confirmation starts ordinary work; ready preparation separately records
+  actual start. This replaces the unapproved pickup-minus-X design assumption;
+  the later answer now establishes successful full payment as anchor and confirmation
+  as preparation start; consult current JSON before using the earlier description.
+- `.pickup_hours`, `.pickup_slot`, `.move_time`, `.move_date`, `.refund_follows_move`:
+  Thu 11:00–17:00, Fri 10:00–17:00, Sat 12:30–15:00, Sun 11:00–12:00; 60-minute
+  slots, no separate slot order cap. Same-day self-move at least 6 hours before
+  current slot, equality allowed. Next-day date move only Thu→Fri→Sat→Sun with space,
+  no more than one day. Refund rule follows new date/time; no automatic production reset.
+- `.pickup_location`, `.address_release`: only St Katharine Docks public; full
+  address in protected source, sent approximately two days before or earlier if needed.
+- `.fulfillment_modes`, `.customer_courier`, `.gk_delivery`, `.delivery_geography`:
+  free Collection; customer-arranged/paid courier with responsibility transfer at
+  handover and full balance paid; GK Delivery quoted per address from £100 with GK
+  responsible until customer handover. No fixed zones/automated tariffs; normally
+  London, distant/outside requests may be separately confirmed.
+- `BO-GK-003.request_fields` through `.agreement`, `.pricing_factors`: manual bespoke
+  agreement, explicit required/conditional fields and optional/multiple references;
+  Instagram primary, email alternatives; quoted design extras have no supplied rates.
+- `.guest_purchase`, `.historical_claim`, `.reorder`: guest allowed; prove historical
+  ownership; reconfirm current price/date/availability/composition/design on reorder.
+- `.quote_validity`, `.paid_commitment`, `.payment_methods`, `.offline_evidence`:
+  quote 48 hours from sending without booking; 100% successful payment before booking;
+  checkout primary, selected Revolut invoices permitted with protected proof and same rules.
+- `.cancellation_early`, `.cancellation_late`, `.started_or_ready`, `.refund_allocation`:
+  paid/not-started >4 days returns 50% actually paid discounted cake price; <=4 days
+  permits cancellation but returns no cake price; started/ready no cake refund;
+  unperformed delivery fully returned, performed delivery not. `BO-GK-005.policy_confirmation`
+  explicitly endorses this business rule. `BO-GK-001.ready_cancellation` separately
+  says >3 days/50% paid and last 3 days/no refund: unresolved ready-cake scope conflict.
+- `.business_cancellation`, `.after_handover`, `.no_show`: GK cancels confirmed order
+  other than customer breach → 100% actually paid; ordinary cancellation/refund after
+  handover unavailable with statutory rights preserved; no-show and optional disposal
+  rules captured with outstanding exception/allocation questions.
+- Exact owner refund examples: £100 + £20 = £120 paid; £50 + £20 = £70 refund;
+  £120 − £20 = £100, 50% = £50; £70 target − £20 succeeded = £50 owed. Pending is
+  separate, not completed or safe to pay twice. £20 delivery is an example, not a tariff.
+- `BO-GK-005.public_identity`: GK Cake London, @gk.cake.london,
+  gk.cake.london@gmail.com, expressly public. `.food_status` reports registration,
+  inspection and 5/5; public record pending and unverified. `.vat` reports not VAT
+  registered and no VAT added separately; no legal zero-rate/exemption conclusion.
+- `.flavours`, `.allergens`, `.cross_contact`, `.handover_label`: eight exact flavours;
+  common EGGS/MILK/WHEAT GLUTEN/SOYBEANS; Oreo adds SULPHITES, Snickers prominent
+  PEANUTS; exact shared-kitchen warning, flavour-specific information before purchase
+  and order-specific box label matching actual composition. Full ingredient recipes missing.
+- `.money_precision`: GBP, «до двох десяткових знаків» (up to two decimal places), exact pence possible; fixed trailing-zero display and rounding mode
+  unresolved. `.statutory_notice` is customer copy; `.internal_legal_note` must never
+  render publicly. `.customer_data` permits listed order-purpose categories; source
+  ends mid-sentence, so retention/deletion/browser/analytics/email choices remain unknown.
+
+All identifiers above resolve in the linked per-card decisions.json dictionaries.
+The exact full lists, source conditions/exceptions and narrow approval evidence are
+there; this index does not replace them. Technical mappings are proposals. Operational
+effective dates were not supplied; statement dates are not policy activation dates.
+Only the explicitly stated refund supersession above is adopted. Other card criteria
+remain separate; live status and publication evidence are in the handover receipt.
+
+## Earlier r2 record — retained historical provenance
+
+The following preserves the earlier combined-Creator/user record verbatim. It does
+not establish that Sasha and the owner are the same person. Owner answers above
+replace conflicting unapproved proposals; old X/zone/guest unknowns are not current
+defaults. Budget/provider/brand decisions outside this intake retain their prior status.
+
+# Creator decisions — r2, 2026-09-21
+
+Current user response (authoritative): launch UK, currently London only; British
+pounds (GBP); UK timezone (technical mapping Europe/London); reasonable service
+budget up to GBP100/month, preferably lower initially and increased gradually;
+made-to-order plus occasional ready-made stock. Existing logo, desired metallic
+chrome colour, no approved web design. Asset itself not yet supplied.
+
+Production-start intent: order status managed manually by admin OR X hours before
+pickup, with X configured by admin. Exact X and arbitration after pickup changes
+are unresolved. Proposed earliest trigger with persisted cutoff and no automatic
+reopening on pickup move is awaiting Creator answer. Do not treat scheduling job
+latency as extended cancellation eligibility: every relevant command must check
+effective cutoff under the order lock using server time.
+
+These facts supersede corresponding unknowns in input-r1/shared-r1. Original brief
+and POC remain preserved. Financial pilot r1 predates this reply and must be updated.
+Use this file with source input fingerprints; current decision revision r2.
+
+Still open: production capacity weights/count and lead times; pickup windows/X and
+slot units; delivery area/address/fees/windows/responsibility; tax/legal business
+status/allergen/cross-contact/cancellation wording; discount eligibility/stacking;
+refund allocations; quote mandatory fields/guest claim/reorder details; inventory
+units/consumption; recovery targets; account/domain ownership and exact spend quote;
+release-only deployment interpretation and release publisher; actual brand files.

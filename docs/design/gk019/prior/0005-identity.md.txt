@@ -1,0 +1,32 @@
+# ADR-0005: Identity, Instagram and privacy boundaries
+
+Business-input update 2026-10-04: [owner-data-contract.md](../owner-data-contract.md)
+and [intake](../../creator/README.md) replace corresponding unapproved policy
+assumptions below. Technical acceptance here does not approve new policy integration.
+Load exact source/decision revisions; affected integration remains GK-019 review.
+
+
+Status: proposed
+Date: 2026-09-21; revision: r3
+Decision owner: planning master for reversible technical choices; Creator for policy/spend/account ownership. Technical approver: pending qualified Astra identity assessment in final review; customer packet recommends, does not independently approve. Creator policy/spend approver: pending, no fabricated approval.
+Affected requirements: C03 C04 C07 C08 C12 C13 C18 A02. Consumers: feature packets, shared contracts and mapped tickets.
+
+## Context and options
+
+Managed identity with local active roles versus custom passwords; user-sent Instagram summary versus unsupported website-as-user messaging.
+
+## Recommendation
+
+Verify token issuer/audience/signature/expiry, then role and resource ownership. Never link historical orders by typed email or Instagram handle alone. Copy-summary/open-profile is fallback, not proof of sending; retain a recoverable draft.
+
+## Evidence and consequences
+
+[Evidence](../contracts.md) checked 2026-09-21. Documentation research is not an integration test. The option minimizes operated components but still requires explicit authorization, recovery and user-facing workflow work; no free-tier production guarantee. Costs and unknowns are recorded in provider research.
+
+## Verification and change path
+
+Guest purchase is owner-confirmed; exact claim proof and Instagram account control remain open; device tests and account ownership checks remain future evidence. No Instagram API messaging integration promised.
+
+Supersedes: contradictory POC proposal for this topic only; original input remains unchanged. Superseded by: none. A change invalidates affected contract sections, feature recommendations and ticket readiness; rerun independent integration review before promotion.
+
+Reconciliation r3: contracts.md is authoritative for exact gateway/lock order, late-payment full-return, external observation quarantine, timed-start materialization, notification generation/recipient fencing and exact inventory quantities. Pending statements in the original option analysis refer to Creator/provider/implementation evidence, not acceptance of these technical boundaries.

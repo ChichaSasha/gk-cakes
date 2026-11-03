@@ -1,0 +1,10 @@
+{
+  "id": "6ab074afb3c3763832de01e1",
+  "name": "Instructions (open this card)",
+  "desc": "Use this board as the single source of truth for GK Cakes work.\n\n**How the statuses work:**\n- **Backlog** = not ready yet, still being defined, or waiting for decisions\n- **Ready** = clearly defined and can start immediately\n- **In Progress** = someone or the AI Agent is actively working on it\n- **Review** = needs checking, testing, or approval\n- **Done** = finished and accepted\n\n**How the AI Agent should move cards:**\n- Put unclear ideas in Backlog\n- Move to Ready only when the task is specific enough to start\n- Move to In Progress when work begins\n- Move to Review when the work is complete enough to check\n- Move to Done after approval\n\nKeep card titles short and specific so the agent can identify them easily. You can archive this card later if the workflow is already familiar.",
+  "closed": false,
+  "idBoard": "6ab074a2b3c3763832ddf623",
+  "idList": "6ab074adb3c3763832de0077",
+  "due": null,
+  "url": "https://trello.com/c/dQaUsCa3/1-instructions-open-this-card"
+}

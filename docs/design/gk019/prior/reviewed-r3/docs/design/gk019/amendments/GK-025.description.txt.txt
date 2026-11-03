@@ -1,0 +1,93 @@
+## Context
+
+Owner: Agent; Kind: Implementation
+Priority: P0 — foundational/safety prerequisite.
+Order: 240; Wave: 7; Parallel group: none.
+Requirements: C02, C05, C10, C15, C16, S01, S06, S07; Design/contract revision: GK-019 r6.2, K03 K04.
+Agent execution policy: gpt-6-astra / high; fresh scoped worker; fresh independent reviewer.
+Required input: brief, input-revision.json, gk019-owner-r4, ADRs/contracts r6.2 and exact GK-019 manifest, feature/screens, prerequisite evidence, SETUP and DELIVERY.
+Execution check: skills/gk-plan/references/execution-check.md at start/resume; record requested/effective model, history, input hashes and checked readback. Pending.
+Depends on: GK-021, GK-022, GK-023, GK-024, GK-011, GK-003, GK-007; deliverable: accepted policy/setup or tested implementation outputs; GK-020 means completed B2.
+Unblocks: GK-026, GK-027, GK-031, GK-033, GK-030.
+Safe in parallel with: none.
+Conflicts: shared contracts/schema/router/migrations; master coordinates edits.
+Readiness at publication: blocked / specified but dependent: Policy/provider/auth/catalog/capacity/notification prerequisites pending.
+
+Quote server-side GBP totals; 100% payment of current accepted quote, immutable configuration/recipe/policy/discount snapshot. Atomically reserve all resources and discount usage, create collection job; hosted Checkout only after commit. Verify signed events and account/currency/amount, reconcile unknown/late outcomes.
+
+Rules: server-owned price/capacity/state; GBP pence, UTC/Europe/London; role+ownership; expected_version+Idempotency-Key; unknown stays pending; no network under DB locks.
+
+Wire/state (approved GK-019 successor required):
+
+POST /api/v1/checkout/quotes {lines:[{variant_id,quantity:1}],production_date:"2026-10-20",pickup_slot_id,discount_code} ->quote_id/version/expiry, server GBP item/discount/delivery/tax/total snapshots. Percentage proposal basis points, rounded once half-up then largest-remainder line allocation; free delivery affects approved chef delivery only. Wrong currency/negative/overflow ->422, changed amount/version ->409 PRICE_CHANGED. Tax/eligibility/stacking needs approved GK-005/007.
+
+POST /api/v1/checkouts {quote_id,quote_version,pickup_slot_id,consented_policy_version,contact} +Idempotency-Key ->202 {operation_id,state:"pending",poll_after_seconds:3}. Atomic order+all resource/discount holds+collection job. Provider calls outside locks; signed inbox dedup by account/environment/event. Verified captured amount/currency records succeeded funds; order confirms only if its applicable handover promise is satisfied. Q2 late success enters paid_awaiting_agreement and blocks production/fulfillment until feasible chef/customer honour agreement, otherwise full return. Unknown retains holds and never permits replacement payment. Terminal-unpaid frees; late paid unfulfillable needs durable full refund/manager recovery before checkout exposure.
+
+Proposed: API10s/DB2s/provider5s; retries1m/5m/15m/1h then manager, alert15m. Validate; retain unknown funds.
+
+Mandatory AC1–AC3 rules:
+
+This ticket owns the MINIMUM FULL-RETURN CORE: refund_goal, provider dispatch/idempotency/reconciliation and observation quarantine needed for unfulfillable late capture, delivered before enabling any collection. GK-026 adds customer/admin cancellation and partial allocation without a duplicate subsystem. Cancelled/expired lifecycle is never reopened by late capture; default is recorded funds + full-return goal + manager recovery, no fulfillment. Proposed reacquisition/new-order consent path remains blocked on policy. Provider actual session expiry is measured from provider creation; persist returned expiry and dispatch_started_at/key/body before request. Never-dispatched cleanup races admission under order lock; cleanup-wins means zero call, admission-wins unknown retains resources. Check provider minimum payment window fits cutoff. Verify terminal-unpaid excludes unresolved underlying payment. Red tests cover these races plus quarantine fixture capture10000p/local unknown10000p/external succeeded5000p -> allocation10000p, observation5000p, available0, possible15000p exposure; no new admitted dispatch.
+
+## To dos
+
+T1. Red: smallest AC1–AC3 fixture assertion; infrastructure failure is not red.
+T2. Implement data/API/UI/recovery with snapshots/auth/idempotency (AC1–AC3).
+T3. Integrate migrations/consumers/audit/notices; verify real DB/provider failures (AC1–AC3).
+T4. Green -> refactor -> rerun affected checks; record revision/results (AC4).
+T5. Complete AC4 review/delivery/acceptance evidence; no implied deployment.
+
+## Not to dos
+
+No unrelated cleanup, registrations, leaked secrets or releases/deployments without authority. No app execution now; Done needs Creator acceptance.
+
+## Acceptance Criteria
+
+AC1. Red money fixtures verify 1001+1000p at 10%=200p under approved policy, allocations sum, usage cap concurrent, wrong currency/overflow/client price rejected; changed quote needs explicit reapproval.
+AC2. Real PostgreSQL: duplicate quote/key creates one order/collection; one physical cake allocated once; both admitted last-place day payments accepted. No partial holds on failure. Provider timeout reuses original operation; return URL alone never confirms; free confirmation has no fake capture and requires K11.
+AC3. Expiry releases only verified terminal-unpaid; late capture on genuinely terminal purchase preserves terminal lifecycle and creates durable full-return goal/chef resolution without fulfillment; ongoing valid payment is not terminal merely due to15m/24h or a filled date; accepted Q2 requires feasible chef/customer honour agreement or full return for late paid; replacement order needs separately approved consent. Provider sandbox duplicate/out-of-order/lost-response cases recorded.
+AC4. Record exact input/tested revision, results, independent review and Creator acceptance on Trello; account for all related PRs, required review/checks, native auto-merges and main CI. Release/deploy/smoke only when separately authorized and in scope.
+
+Test prerequisite: GK-020 B2 verifies pinned runners before this card is Ready. Planned Go: go test ./..., go test -race ./..., go test -tags=integration ./... with disposable PostgreSQL; UI: npm run check, npm test, npm run build + approved browser runner. Provider cases use controlled sandbox accounts/recipients and actual IDs; mocks are not provider proof. No application tests ran during planning.
+
+Proposed current specification; prior publication text preserved in GK-019 evidence/cards.json. Independent review and approval apply only to the exact current revision. Trello is the live execution record; application work has not started.
+
+Verified prerequisite cards:
+- GK-021: https://trello.com/c/zEfCJtWD
+- GK-022: https://trello.com/c/tcV2Ilpz
+- GK-023: https://trello.com/c/NHHBokl1
+- GK-024: https://trello.com/c/J6zlPAc9
+- GK-011: https://trello.com/c/ZhcwMqTc
+- GK-003: https://trello.com/c/ftGtoGNB
+- GK-007: https://trello.com/c/iJqMyuN1
+
+Verified dependent cards:
+- GK-026: https://trello.com/c/xiEN4jvp
+- GK-027: https://trello.com/c/G8hLmSBU
+- GK-031: https://trello.com/c/6moC1CyN
+- GK-033: https://trello.com/c/3YbFGdmp
+- GK-030: https://trello.com/c/BkYDridR
+
+## GK-019 proposed contract amendment — r6.2 / UNPUBLISHED
+
+Owner, title, unrelated scope/labels and list remain unchanged. This dated amendment
+replaces contradictory historical policy/provider examples and adds the acceptance
+evidence below; it does not assert implementation readiness or completed tests.
+
+Contract inputs: K03/K04/K05/K11; docs/design/contracts.md r6.2, owner-data-contract.md
+gk019-owner-r4, gk019/schema.json r1.2 and output-manifest.json exact hashes.
+Required current evidence: GK-020 B2/GK-023/GK-024; GK-019; GK-011; current method inventory. Refresh live prerequisites and comments before
+execution; a Done setup card proves only its accepted scope.
+
+Behavior: Keep all17 accepted labels: Cards, Cartes Bancaires, Apple Pay, Amazon Pay, Kakao Pay, MB WAY, Naver Pay, Onelink, PAYCO, Revolut Pay, Samsung Pay, Satispay, Bancontact, BLIK, EPS, Klarna, Pix. Google Pay off. Qualify each eligible method and mapping; no future automatic additions/FX.24h initiation,15m hold, provider expiry and actual full success separate. Free path no capture; delivery separate collection.
+
+Acceptance extension: Real PostgreSQL and sandbox: duplicate/unknown create, completed-unpaid, wrong amount/currency/account, async success/failure, return before webhook, physical stock exclusion, soft overcapacity acceptance, terminal-unpaid release and minimal full-return recovery. Pending never authorizes replacement. Q2 accepted: after late success enter paid_awaiting_agreement; honour only if chef feasible and customer explicitly agrees, otherwise full return; waiting blocks preparation/fulfillment, original anchors retained. Q4/Q5 gates named; no card-only implementation. K11 protection required before dispatch/confirmation.
+
+Execution: apply model/context check; then smallest failing meaningful behavior
+case, coherent implementation, focused green checks, required wider checks and
+fresh independent review. Design tickets instead produce/review exact artifacts.
+No application test, UI approval, release or deployment is supplied by this amendment.
+Questions Q3–Q5 apply only where named; unresolved branches stay blocked.
+
+Full brief requirements and nonconflicting safety/verification criteria remain.
+Repository packet is local/unpushed; obtain exact files, not merely a path string.

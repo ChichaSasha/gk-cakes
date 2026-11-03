@@ -1,0 +1,28 @@
+{
+  "date": "2026-10-05",
+  "method": "Host dig +time=2 +tries=1 +short, system resolver; read-only",
+  "scope": "Public records only; not an authenticated Resend configuration comparison",
+  "queries": [
+    {
+      "name": "resend._domainkey.gkcake.com",
+      "type": "TXT",
+      "answer": ["p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDLvpAJ3vJRxM4A8/uJYRnbfiyswPFfpi66DzvTpulU1t2rvOtTO9XvSPZbpDXF+MccI9Cb3ddW+ophtH8BFIM17KBosDOqdHyE5VEjDvwAxjYLehk1y3xoyu8cxGbDvilj3lb3KtHHVr3V4N5RhnxGWGYPsvqTL0CUCZ1ixzDbMwIDAQAB"]
+    },
+    {
+      "name": "send.gkcake.com",
+      "type": "MX",
+      "answer": ["send.forge.rmta.net.", "10 feedback.forge.rmta.net."]
+    },
+    {
+      "name": "send.gkcake.com",
+      "type": "TXT",
+      "answer": ["send.forge.rmta.net.", "v=spf1 ip4:52.3.252.119 ip4:44.222.39.36 ip4:199.249.231.0/24 ~all"]
+    },
+    {
+      "name": "_dmarc.gkcake.com",
+      "type": "TXT",
+      "answer": []
+    }
+  ],
+  "limitations": "Each host query exited 0. Empty short answer is not a full authoritative negative response. Sandbox attempt failed with socket permission denial; successful host reads used normal escalation. Do not replace observed provider records with guessed documentation examples. DKIM is a public key, not an API credential."
+}

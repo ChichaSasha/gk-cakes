@@ -1,0 +1,412 @@
+# Financial pilot — cancellation, production and refunds
+
+Status: proposed decision packet r3, 2026-09-21. C06, A01, S02; supporting
+A02/A03, C05/C08/C14, S06/S07. No application, approved screens, accepted provider,
+implementation checks or provider sandbox results exist. Independent review pending.
+
+## Execution and inputs
+
+- Role: bounded financial feature author. Requested `gpt-6-astra` / high; master
+  reports accepted explicit spawn; effective model/effort unknown; **requested-only**.
+  History fresh (`fork_turns=none`); independence not-applicable (author).
+- Read AGENTS.md, gk-feature, execution-check, artifact and Trello contracts,
+  PROJECT-BRIEF, DELIVERY, shared-r1 and input-revision.json; refreshed Creator r2,
+  shared contracts K00/K05 and architecture operational defaults. Base input `input-r1`,
+  HEAD `bb96a89681bcf2fa1c663a02eacbe039e20e6363`; individual dirty-source hashes
+  in [input-revision](../input-revision.json). Shared-r1 SHA-256:
+  `54f6fe7b16470087d7d22ce7f9d215e675bdfa2b968b5bab70775a4419640ea6`.
+- Creator r2 supersedes base unknowns: UK, London only, GBP, Europe/London,
+  service budget <= GBP100/month (prefer lower), hybrid made-to-order/ready stock.
+  Current Creator source SHA-256: `c822159b5a2d97c117e493aa8f4c106ee46329ed1fdbbf761cbc76342dc043b6`.
+  Refreshed readback sent before r2 edits; master instructed proceeding.
+  r3 narrowly addresses independent reviewer finding on external-refund quarantine;
+  readback sent before correction; independent re-review pending.
+- Readback sent and master go-ahead received before substantive design. Inputs
+  sufficient for options; insufficient for policy-dependent implementation.
+- Only this file may be written. Preserve initial staged/untracked work; no app
+  implementation, external mutation or delegation. Master owns integration and
+  publication. This packet proposes shared changes, never privately accepts them.
+
+## Outcome, boundaries and choices
+
+The customer can cancel an eligible order and see the refund's actual progress.
+The chef can cancel and return the full payment, or issue a partial refund, without
+competing requests returning more than was captured. Starting production competes
+with cancellation on one database row. Order cancellation is distinct from refund
+completion; provider uncertainty remains a reserved obligation with a recovery owner.
+
+| Decision | Small option and alternative | Recommendation / acceptance owner |
+| --- | --- | --- |
+| Production boundary | Creator selected manual start OR admin-configured X hours before pickup; alternatives for pickup edits are frozen cutoff or recomputation | Recommend earliest manual/timed trigger, frozen cutoff that pickup changes never extend. X and rescheduling behavior await Creator answer; positive eligibility additionally requires server time strictly before cutoff. Hybrid ready-stock interpretation also needs an explicit policy. |
+| Customer refund | Full remaining captured payment on eligible cancellation; alternatively policy-based deductions | Full remaining payment is simplest candidate, but C06 alone does not approve deductions or allocation. Creator decides UK policy and wording; no legal interpretation is approved here. |
+| Admin cancellation | Full return in confirmed/in_production/ready, with reason; alternatively narrower exception matrix | A01 requires full-return capability. Creator decides the state matrix, including completed orders; no customer entitlement inferred from an admin exception. |
+| Partial allocation | Chef chooses component amounts bounded by purchased refundable components; alternatively server prorates agreed components | Explicit allocation avoids hidden rounding but adds chef input. Creator must decide tax/delivery/discount allocation; server derives component ceilings from snapshots. Implementation blocked. |
+| Transaction design | One PostgreSQL transaction and parent order lock; alternative serializable transactions | Parent lock plus restricted mutation path is sufficient for a single order; simpler operationally. Real PostgreSQL interleaving checks still mandatory. |
+| Provider | One selected payment provider; alternative manual provider-dashboard operation | Evaluate Stripe as a candidate, not selected. Dashboard-only operation cannot by itself give this website's coordinated pending state. No multi-provider framework. |
+
+Proposed scope is one capture per order in confirmed launch currency GBP, collected at 100% under
+C05. Master must accept that limitation and define duplicate/late capture handling
+in checkout before implementation readiness. Financial rows still identify each
+capture; an unexpected second capture freezes automatic refunds and opens a
+discrepancy for reconciliation, rather than dropping money from the record.
+Manual/offline payments need explicit provenance and a separate human-confirmed
+return path; never send a provider refund for an offline payment. Neither path is
+silently declared covered by this pilot.
+
+This packet does not design checkout/expiry, stock consumption, scheduling or email
+transport. Their integration requirements below remain mandatory master-owned work.
+No refund restores perishable stock. Performance proposal: short per-order local
+transactions and indexed recovery scans; no numeric SLA accepted. Bootstrap measures
+lock wait and API latency under an agreed small-shop workload, then proposes budgets.
+
+## Proposed screens and permission
+
+All IDs below are proposals for master reconciliation; no sketches/approval exist.
+
+| Screen / requirements | Actor, entry/action/exit | Data and validation | States, copy, recovery and accessibility | Verification / slice |
+| --- | --- | --- | --- | --- |
+| F-CANCEL / C06,C08 | Signed-in owner enters from order detail, reviews saved policy/refund estimate, confirms cancellation, returns to order detail | Order version, policy version, paid/returned/pending amounts and currency; eligibility checked again server-side | Loading disables submit; eligible shows “Cancel order”; success “Order cancelled. Your refund is being processed.”; race “Production has started. Contact the chef for help.”; network uncertainty “Checking your cancellation”; same operation is retrieved/retried | Mobile and desktop approved sketch; keyboard focus returns to status, live status announcement, labelled errors; slice FIN-UI |
+| F-REFUND / A01,S02,A02 | Refund-authorised chef opens order, chooses cancel + full return or amount/components, enters reason, previews and confirms | Captured/confirmed returned/reserved/available; proposed amount with exact currency display; positive integer minor units, nonempty reason, allocation sum and component ceilings, stale version | Empty “No payment to refund”; pending “Refund in progress”; confirmed “Payment provider confirmed the refund”; unknown “Checking the refund — do not issue another”; blocked shows contact/reconcile action; refresh before a new operation | Permission matrix, amount error announcements, no colour-only status, mobile amount/review flow; FIN-CORE/RECOVERY/UI |
+| F-PRODUCTION / A03,C06 | Production-authorised chef starts confirmed order from order detail | Expected order version and eligibility; explicit confirmation that this records physical production start | Cancel-first: “This order was cancelled”; start-first: `in_production`; stale refresh; no hidden backdating or reopening cancelled order | Real concurrent request check plus approved chef sketch; FIN-CORE/UI |
+
+Customer APIs expose only owned order status and safe refund summaries; unknown and
+foreign IDs both return 404. Staff capability `orders.start_production` is distinct
+from `payments.refund` and `orders.cancel_admin`; admin cancel + refund needs both
+relevant capabilities. Require authenticated server-side checks and CSRF protection
+where cookie sessions are chosen. Read permission is not refund permission. Never
+reveal provider credentials, raw error responses or another customer's existence.
+
+## Proposed data and constraints
+
+Use existing modules from shared-r1 in one backend/database. All IDs UUID except
+opaque provider IDs. Instants UTC RFC3339, stored as timestamptz; policy snapshots
+hold IANA shop timezone only when a local-time rule is approved. Money is signed
+64-bit integer minor units with a validated ISO currency; accepted inputs must be
+positive and within persisted captured/component totals, using overflow-safe sums.
+Examples use fictional amounts in confirmed launch currency `GBP`; display shop time as Europe/London. Timed cutoff is an absolute UTC instant derived from an unambiguous pickup instant minus approved elapsed X hours, not a subtraction on ambiguous local clock text.
+
+| Entity / owner | Minimum fields and constraints | Purpose and query |
+| --- | --- | --- |
+| order / Orders | id, owner_id, lifecycle, version, production_started_at?, production_start_source?, production_cutoff_at, pickup_slot_id, cancelled_at?, policy_snapshot (including X), purchase_snapshot | Parent serialization row. Confirmed -> in_production OR cancelled under lock; completed never customer-eligible. Snapshot and proposed frozen cutoff are immutable; approved exceptional changes need a separate audited contract. |
+| payment_capture / Payments | id, order_id FK, provider_account, provider_charge_id, captured_minor > 0, currency, captured_at, reconciliation_state | Unique provider account + charge; authoritative captured funds. Index order_id. New capture insertion also locks order. |
+| refund_goal / Payments | id, order_id FK, cancellation_id UNIQUE, target_minor, policy_version, status open/satisfied/needs_attention | Durable total-return obligation for cancellation: target approved by policy, A01 full target equals captured payment. Prevents a pending partial refund failure leaving a cancelled order under-refunded unnoticed. |
+| refund_operation / Payments | id, capture_id FK, goal_id?, amount_minor > 0, allocation_snapshot, state, provider_refund_id?, provider_key UNIQUE per account, immutable request_fingerprint, first_dispatch_at?, next_attempt_at?, attempts, lease_token?, lease_until?, actor_id, reason | States reserved/submitting/pending/unknown/requires_action/succeeded/failed/cancelled. Unique provider account + nonnull provider_refund_id. Index capture_id and due unresolved work. Serves as durable provider intent; no duplicate queue needed. |
+| command / Orders-Payments API | principal_id, kind, key, fingerprint, order_id, result_reference; UNIQUE(principal_id,kind,order_id,key) | Persist accepted command and reference in business transaction. Scope separates customer cancellation/admin refund/start actions. |
+| audit / Orders-Payments | operation_id, actor/source, before/after, reason, timestamp, safe provider reference | Append in same transaction, immutable to runtime update/delete. No secret or raw customer payload. |
+| provider_observation / Payments | account/environment/provider_refund_id UNIQUE, capture_id FK, amount/currency, observed provider status, observed_at, safe evidence reference, reconciliation disposition, matched_operation_id? | Verified provider financial fact stored outside spendable allocation ledger while unmatched/conflicting; retains evidence revisions and discrepancy history. Index capture_id + unresolved disposition. No reservation or spendable balance implied. |
+| provider_inbox / Payments | account, event_id UNIQUE together, event_type, object_id, received_at, processed_at?, safe failure code | Verified durable event receipt; object reconciliation consumer. Only necessary fields, not unlimited raw webhook bodies. |
+| notification_intent / Notifications | business operation + milestone + recipient UNIQUE; template/version, order/refund references | Consumer sends cancellation/requested/confirmed/failed milestones with honest wording; use master's shared durable notification design. |
+
+`reserved_total` is the sum of operations in reserved/submitting/pending/unknown/
+requires_action; `returned_total` is the sum currently confirmed succeeded.
+For the **controlled allocation ledger** of each capture:
+`0 <= reserved_total + returned_total <= captured_minor`. Unmatched/conflicting
+external provider facts live in provider_observation until reconciled and are not
+forced into this capped ledger. Any unresolved financial observation/discrepancy
+sets capture reconciliation_state=quarantined and spendable `available=0`, regardless
+of the ledger subtraction. Display controlled reservations/returns separately from
+observed external amounts and worst-case unresolved exposure; never claim the
+ledger cap proves the provider has not over-refunded.
+Never free an unknown amount because a timeout, worker lease or idempotency key
+expired. No mutable balance counter is necessary: lock the order, then calculate
+from its few indexed capture/refund rows. Cross-row sums cannot be a ordinary row
+CHECK: restrict business table writes to reviewed database routines (or a single
+equivalently enforced mutation gateway) that take the lock and validate the sum.
+Before Ready choose the concrete enforcement; migrations/admin maintenance must
+obey it too. Direct uncontrolled SQL writes invalidate this guarantee.
+
+Partial allocations and succeeded/reserved component sums cannot exceed the
+approved refundable purchased component values. Keep discount application and
+tax/delivery breakdown from immutable checkout snapshots; do not prorate original
+undiscounted prices or independently round each refund without the accepted rule.
+Full-return target includes all payment already returned/reserved, not an extra
+full charge. A refund goal is not itself an additional reservation.
+
+Retain command identity, operation and safe provider evidence while obligations
+remain unresolved; never delete unresolved records on a timer. Exact financial,
+audit and personal-data retention/pseudonymisation requires approved UK retention
+policy and business/legal details. Names/addresses belong to existing order/contact records, not this ledger.
+Backup/restore tests must show unresolved intents and inbox identities survive;
+after restore freeze dispatch until provider reconciliation establishes no lost
+external successes. Do not replay the restored queue blindly.
+
+## Atomic operations and lock order
+
+Canonical lock order for every related writer: order rows in UUID order -> capture
+rows in UUID order -> refund rows in UUID order -> scheduling capacity/hold rows in
+master-agreed key order -> append audit/notification/command rows. Normal request
+touches one order. Worker claim uses a short separate transaction and releases its
+row lock before entering this order-first path. Scheduling must never acquire an
+order lock after capacity; master must reconcile checkout/reschedule with this rule.
+No network calls while holding these locks. PostgreSQL row locks serialize competing
+writers until transaction end; consistent acquisition order reduces deadlocks.
+[PostgreSQL locking documentation](https://www.postgresql.org/docs/current/explicit-locking.html), checked 2026-09-21.
+
+1. **Customer cancel:** authenticate, locate owned order, begin and lock order;
+   resolve existing command (same fingerprint returns original reference; changed
+   fingerprint conflicts). Check current state positively against approved policy,
+   expected version and snapshot. After the order lock, sample server wall clock
+   (`clock_timestamp()`, not transaction-start time). If the frozen cutoff is due,
+   atomically materialise the permitted timed-start transition/audit/intents, commit
+   that transition and return cancellation-ineligible without any refund intent.
+   Delayed scheduler delivery never extends eligibility. For proposed policy only
+   `confirmed` with no manual start and current time < cutoff is eligible.
+   Lock captures/refunds, reject/freeze discrepancy as appropriate, set cancelled,
+   create goal and reserve remaining amount `target - returned - active_reserved`
+   (zero means no new provider operation), release appropriate production/pickup
+   commitments through scheduling in this transaction, write audit, cancellation
+   notification and command, increment version, commit. Failure rolls all back.
+2. **Start production:** manual API and due-job caller use the same order lock and
+   transition routine; only confirmed -> in_production. Manual call checks staff
+   capability/version; job authenticates internally and uses persisted cutoff, not
+   a user-supplied time. Before cutoff the job is a no-op; at/after cutoff it applies
+   one timed transition. Unique business transition identity `(order_id, production
+   start)` makes repeated jobs/manual commands no-ops or original-result replays
+   once applied; never duplicate inventory/notification effects. Store source and
+   effective start (manual action time or frozen cutoff) separately from recorded-at.
+   If a manual action arrives after the timed cutoff, record timed effective start;
+   whichever caller materialises it cannot rewrite when eligibility ended.
+   Set history/notification atomically.
+   If cancel committed first, manual request returns 409 and due job no-ops with no
+   production mutation. If start committed first, customer cancel returns 409 and
+   creates no goal/refund. A caller waiting before cutoff but acquiring the lock
+   exactly at cutoff loses cancellation eligibility.
+3. **Admin partial refund:** same lock order; amount/allocations/auth/reason checked;
+   `amount <= captured - returned - active_reserved`; reserve once, audit, durable
+   notification intent and command commit together. Lifecycle stays unchanged.
+4. **Admin cancel + full return:** use approved separate state matrix and the same
+   transaction as (1). Target is full captured payment; prior confirmed/pending
+   partial refunds count towards it. No additional refund when all funds reserved.
+   A cancelled order may still have an open goal; reloading it is recovery, not a
+   second cancellation. Other partial commands cannot consume beyond the goal/limit.
+5. **Resolve outcome:** retrieve evidence outside locks; under order-first locks
+   verify expected lease/reconciliation generation and unchanged capture identity,
+   apply new authoritative status, recompute goal satisfaction and emit each status
+   notification once. Failed/cancelled operations release reservation only with
+   definitive provider evidence. If the goal becomes underfunded, mark needs_attention
+   and show exact shortfall; an authorised retry reserves that shortfall under lock.
+   Do not silently consider the full return finished after a failed partial attempt.
+
+**Pickup move integration (proposal awaiting approval):** lock the order before
+old/new slots, sample server time and enforce the effective production cutoff. At
+or after it, materialise timed start before applying the approved pickup-move
+policy; a move never restores cancellation eligibility. Under the recommended
+frozen rule, moving earlier/later leaves production_cutoff_at unchanged; whether
+that makes an earlier pickup infeasible is revalidated by scheduling and can reject
+the move without changing the original slot. If Creator selects recomputation,
+the replacement policy must explicitly arbitrate earlier/later cutoff changes and
+rewrite these race tests before readiness. Admin X changes affect new commitments
+only under the proposed snapshot rule; existing orders never silently reopen.
+A missing X/cutoff blocks policy-dependent confirmation/start/cancel rather than
+substituting an invented number. Ready-stock cake production predates its sale;
+Creator must define the order-level preparation/cancellation boundary for that
+branch before applying made-to-order timed-start rules to it.
+
+If an external refund not in the app is discovered, record its verified identity,
+amount, status and evidence revision in **provider_observation**, outside the capped
+allocation ledger, under the same order lock; atomically quarantine the capture.
+Do not first attempt an import that must violate the controlled ledger sum. Set
+available=0; block new reservations, recovery payouts and new provider-create
+dispatch. Record every distinct provider fact, even an observed actual total above
+capture. The chef sees local confirmed/unknown amounts, observed external returns,
+possible total exposure and the discrepancy, not a falsely balanced account.
+
+Quarantine retains all unknown reservations; it does not revoke an already sent
+request. A worker checks quarantine under the order lock immediately before marking
+an operation dispatching, then releases locks before the call. A request already
+in flight (or crossing that external boundary concurrently) can still complete;
+its result remains evidence to reconcile, not proof that the freeze was instantaneous
+at the provider. No further create is admitted after the quarantine gate. Provider
+limits are a required capability, but the local schema must represent their failure.
+
+Reconcile complete provider records and identities outside locks, then atomically
+apply supported dispositions under the order-first gateway: (a) bind an observation
+to its existing operation and reclassify its reservation; (b) release/reclassify a
+local reservation only with definitive nonexecution/failure evidence; (c) import a
+distinct external return into the controlled ledger only when the cap remains valid.
+An unmatched observation does not by itself prove which local request failed. If
+safe reconciliation is impossible or actual external returns exceed capture,
+retain quarantine, evidence and economic exposure as an explicit discrepancy for
+manager/provider resolution; never reduce an observed amount or erase an unknown
+operation to make the invariant pass. Unfreeze only after every material observation
+is matched/disposed with evidence, unresolved external requests are accounted for,
+and the allocation invariant and provider balance agree. Keep the observation/audit
+history after import. Disputes/chargebacks use the same freeze and evidence path
+pending provider-specific resolution to avoid double reimbursement.
+
+## API, idempotency and provider recovery
+
+Proposed JSON API `/api/v1`, following shared K00. Nonnull required fields; optional fields omitted, not empty or
+null. No currency conversion. Safe GET responses may include nullable timestamps
+and provider references only for authorised staff. Version mismatch gives 409;
+client refreshes and reconfirms changed amounts, never silently changes a request.
+
+| Producer -> consumer | Request | Response and failure |
+| --- | --- | --- |
+| Customer UI -> Orders `POST /api/v1/orders/{id}/cancel` | `Idempotency-Key: UUID`, `{ "expected_version": 7 }`; refund amount computed on server | 202 `{ "operation_id": "UUID", "state": "pending", "poll_after_seconds": 3, "cancellation_id": "UUID", "order_state": "cancelled", "refund_state": "pending", "refund_goal_id": "UUID" }`; 409 `CANCELLATION_NOT_ELIGIBLE` / `STALE_VERSION`; missing policy disables action with 409 `POLICY_UNAVAILABLE` |
+| Chef UI -> Orders `POST /api/v1/admin/orders/{id}/cancel` | key, `{ "expected_version": 7, "reason": "Chef unavailable" }` | 202 same operation reference; confirmed preview shows remaining payment and prior refunds; 403 capability denial |
+| Chef UI -> Payments `POST /api/v1/admin/orders/{id}/refunds` | key, `{ "expected_version": 7, "amount_minor": 2500, "currency": "GBP", "allocations": [{"component_id":"cake-line-1", "amount_minor":2500}], "reason":"Agreed adjustment" }` | 202 `{ "operation_id":"UUID", "state":"pending", "poll_after_seconds":3, "refund_id":"UUID", "refund_state":"reserved", "amount_minor":2500, "currency":"GBP" }`; 422 `INVALID_AMOUNT`/`INVALID_ALLOCATION`; 409 `REFUND_LIMIT`/`RECONCILIATION_REQUIRED` |
+| Chef UI -> Orders `POST /api/v1/admin/orders/{id}/start-production` | key, `{ "expected_version": 7 }` | 200 current operation/order reference; 409 `STATE_CONFLICT` |
+| UI -> Orders/Payments GET own order / staff refund | existing identity/role; order or refund UUID | 200 safe summary; 401 unauthenticated, 404 absent/foreign, 403 staff capability denial |
+| Provider -> Payments webhook | Provider-authenticated event/account/object reference | Verify signature/raw bytes using selected SDK, durable inbox then 2xx; invalid signature 400, unavailable DB 5xx for delivery retry; never acknowledge undurable receipt |
+
+Authorized `GET /api/v1/operations/{id}` returns the current operation/refund summary.
+Errors follow K00: `{ "error": { "code":"STALE_VERSION", "message":"Refresh this order", "request_id":"UUID", "retryable":false } }`.
+
+All mutating payloads reject unknown financial fields; 400 malformed/key absent,
+409 `KEY_REUSED` for reused key with different canonical payload. Fingerprint
+includes method, route/order, amount/currency/allocations/reason/expected version.
+Replays reauthorise current actor before exposing original result. Store accepted
+command identities without automatic expiry until the retention policy and reuse
+semantics are approved; no assumption that a fresh browser key makes cancellation
+eligible again. Unique goal + cancelled state prevent a second cancellation under
+a different key. Distinct authorised partial commands remain distinct refunds.
+
+Operational proposals follow [architecture](../architecture.md), not competing
+packet-specific constants: API deadline 10s; DB transaction lock/statement budget
+2s; provider request 5s from durable job; lease 60s with heartbeat/fencing. At most
+three database conflict retries with jitter inside the request deadline; async
+acceptance target within 3s. Client timeout triggers GET/same-key replay. Job retry
+delays 1m/5m/15m/1h then manager attention, always constrained by provider idempotency
+retention and uncertainty. Reconciliation uses the proposed five-minute maintenance
+cadence; alert oldest urgent unresolved operation after 15m. Exhausted attempts
+remain discoverable. Creator recovery targets and sandbox latency/fault evidence
+must validate these proposals; no SLA or on-time scheduler guarantee. Production
+cutoff safety depends on command-time checks, not that five-minute job cadence.
+
+Create provider key once from opaque operation UUID/account/environment, never
+from personal data. Worker leases avoid routine duplicate delivery, but expired
+leases do not prove an old network request stopped. Concurrent workers must use
+the same immutable provider key/body. Persist first_dispatch_at before sending;
+claim completion with lease token/generation; stale responses schedule reconciliation
+rather than overwriting newer evidence. Known refund ID means retrieve status,
+not another create. Unknown response means keep reservation and look up evidence.
+
+For Stripe **candidate only**, idempotent POST requests replay the saved response,
+including 500s; keys may be removed after at least 24 hours, and reuse after pruning
+can create a new operation. Therefore no blind refund POST at/after the selected
+provider's safe retention boundary. Establish its request deadline margin in the
+spike. Past that boundary, lookup/reconcile or require staff investigation; elapsed
+time or an empty search alone is not proof of no refund. A new operation/key is
+permitted only after definitive nonexecution/failure evidence and fresh balance
+validation. [Stripe idempotency](https://docs.stripe.com/api/idempotent_requests), checked 2026-09-21.
+
+Stripe supports multiple partial refunds with a charge-total cap, may hold refunds
+pending when its available balance is insufficient, and refunds can later fail.
+Some methods require customer action and can move from succeeded back to
+requires_action. Local mapping must preserve reservation/attention across those
+provider-specific transitions; succeeded is not an irreversible enum shortcut.
+Provider-confirmed success is not proof of receipt in the customer's bank.
+[Stripe refunds](https://docs.stripe.com/refunds), checked 2026-09-21.
+
+Webhook duplicates/out-of-order payloads are hints for retrieval, not unconditional
+state assignments. Coalesce work per capture with a generation/lease, retrieve the
+current provider object outside locks and reject stale worker results. Reconcile
+again if another event arrived during retrieval; preserve audit of corrections.
+Never overwrite success with an older pending event. Verify signatures and account,
+environment, charge, amount and currency before applying any provider fact.
+[Stripe webhooks](https://docs.stripe.com/webhooks), checked 2026-09-21.
+Reconciliation includes complete paginated capture refund records and unresolved
+operations, not only delivered webhooks. No provider claim here is integration proof.
+
+```mermaid
+sequenceDiagram
+  participant C as Customer
+  participant API as Orders/Payments
+  participant DB as PostgreSQL
+  participant Chef
+  participant W as Refund worker
+  participant P as Provider
+  C->>API: Cancel (key, version)
+  API->>DB: Lock order; verify server time before frozen cutoff
+  Chef->>DB: Start production through same API/lock
+  API->>DB: Cancel + goal + reserve + release holds + audit/email intent
+  API->>DB: Commit
+  DB-->>Chef: Cancelled; production start rejected
+  API-->>C: Cancelled; refund pending
+  W->>DB: Claim durable refund, commit lease/dispatch time
+  W->>P: Refund with persistent key
+  P--xW: Outcome lost / timeout
+  W->>DB: Unknown; reservation retained
+  W->>P: Reconcile same operation
+  P-->>W: Authoritative refund status
+  W->>DB: Lock order; apply evidence + audit/email intent
+```
+
+Compatibility: add fields/endpoints first; old UI must display an unknown refund
+state conservatively as processing and must never infer refunded from cancelled.
+Backend supports previous deployed UI until an agreed window expires. Add nullable
+provider metadata and backfill before stronger constraints; no destructive down
+migration deleting financial evidence. FIN-RECOVERY precedes enabling financial UI
+or dispatch; API/UI release separately through DELIVERY, release separately authorised.
+
+## Planned verification and exact slice acceptance
+
+All checks below are **planned**, not executed. No application runner exists;
+bootstrap must supply and verify concrete commands for unit, API, real-PostgreSQL
+migrations/concurrency and provider sandbox tests. Infrastructure failure is not a
+red test. Keep these Agent slices Backlog until those commands and policy/provider
+prerequisites are embedded in the master's self-contained tickets.
+
+Common execution policy: fresh Astra/high for financial correctness; recheck model,
+history, input hashes and readback via execution-check at start/resumption. Each
+slice: write relevant failing behavioural check -> implement minimal vertical
+behaviour -> run green/integration -> independent review -> PR required CI/review,
+native auto-merge, resulting main CI evidence. No release inferred. Each ticket
+must carry the concrete approved rules/payloads above, not only a link here.
+
+| Proposed slice / owner / prerequisite | To dos and acceptance (stable AC names for master tickets) |
+| --- | --- |
+| FIN-POLICY / Creator / confirmed UK/hybrid inputs and remaining business rules | Record positive customer states, manual/timed production-start meaning, X and pickup-change cutoff semantics, admin exception matrix (explicit completed decision), full-return rule and component/tax/discount/delivery allocation. AC-P1: approved version with concrete eligible/ineligible examples and at least one prior partial-refund example. AC-P2: confirmed UK/London/GBP/Europe/London/hybrid facts carried through policy review; X, ready-stock order preparation boundary, refund allocation and content review evidence recorded or affected behavior remains blocked. |
+| FIN-PROVIDER / Agent + separate Creator setup / provider shortlist and budget | Bounded selected-provider sandbox spike before provider choice acceptance. AC-S1: create a captured test payment, refund partially twice, verify cumulative cap and actual returned identifiers/status. AC-S2: injected lost response + same key does not create a second refund; document retention boundary/recovery after it. AC-S3: duplicate/reordered signed events, pending/failure/action mapping, dashboard refund discovery and dispute freeze have observable evidence or named capability blocker. AC-S4: only sandbox secrets in protected store; account/MFA/billing owned by Creator, no real payment. |
+| FIN-CORE / Agent / approved FIN-POLICY, checkout capture/snapshot contract, capacity release contract, auth, PostgreSQL/runner bootstrap | T1 red AC-C1–C7, T2 schema/routines/API, T3 integrate durable notifications and capacity, T4 green migration/concurrency checks. AC-C1: paid confirmed order with capture 10000, no refunds, eligible customer cancel yields exactly one cancelled transition, target/reservation 10000, released holds and durable audit/notification/command; repeated key same result, changed payload 409. AC-C2: another customer 404 and staff without capability 403, no mutation; customer in awaiting_payment/in_production/ready/completed/expired/cancelled cannot create new cancellation/refund under proposed positive policy. Accepted policy replaces fixtures before Ready. AC-C3: before the frozen cutoff, two real PostgreSQL sessions deliberately hold order lock: cancel-first gives cancelled + one goal and production 409; start-first gives in_production + cancel 409 + zero refund intent. AC-C4: capture 10000, returned 2000, unknown 3000, two simultaneous partial requests 4000/4000 yield one accepted and one limit rejection (total 9000); full cancellation then reserves only 1000. AC-C5: simulated failure after cancellation update but before commit rolls back cancellation, reservations, audit, capacity release and notifications together; stale version rejected with no writes; direct unauthorised financial table mutation rejected. |
+| FIN-RECOVERY / Agent / FIN-CORE and accepted provider spike / required before exposure | T1 red AC-R1–R7, T2 worker/inbox/reconciler and authorised recovery, T3 fault injection/sandbox/restore, T4 green. AC-R1: crash before call, after provider acceptance before DB update, and overlapping expired leases produce at most one provider refund per operation; unknown keeps full reservation. AC-R2: duplicate and reverse-order events plus stale worker responses cannot regress from current authoritative state; cross-account/amount/currency mismatch quarantined without applying funds. AC-R3: capture 10000 with 4000 pending partial and 6000 cancellation refund; 4000 definitively fails: goal remains open/needs_attention with shortfall 4000, authorised retry reserves exactly 4000, final success alone satisfies full return; amount is never silently lost. AC-R4: retention deadline elapsed with unknown outcome causes no new provider POST/key and alerts chef; reconciliation can bind webhook-before-response by operation/provider identity. AC-R5: capture 10000p has local unknown reservation 10000p; discover a distinct succeeded dashboard refund 5000p. Persist its unique provider observation outside allocations, keep unknown 10000p, controlled ledger sum 10000p, available 0 and quarantine; show observed external 5000p and possible exposure 15000p. Duplicate discovery adds no second financial fact; no new reservation/create dispatch. If provider proves local nonexecution, atomically release 10000p and import 5000p, leaving available 5000p only after full reconciliation/unfreeze. If provider proves local success too, retain evidence of actual 15000p returned and an over-refund discrepancy with available 0; never coerce it into the capped ledger or discard either fact. A provider observation matching the local operation instead reclassifies that reservation exactly once. Disputes and pre-freeze in-flight completion remain quarantined evidence until resolved. AC-R6: provider-confirmed success followed by authoritative failure/action-required is audited, goal reopens as needed, no automatic second payout, customer/admin wording corrected. AC-R7: restore containing pre-success intent cannot replay a payout before provider reconciliation; pending/requested and confirmed email intents each emitted once, delivery evidence separate. |
+| FIN-UI / Agent / approved visual session, FIN-CORE+RECOVERY, identity/customer detail | T1 red API/UI state fixtures, T2 proposed screens with accepted sketches, T3 walkthrough. AC-U1: owner can preview/cancel and returns to cancelled order with pending/refund progress; chef can preview full return including previous partial amounts or valid partial components. AC-U2: race/stale/limit/unknown/failure states show the exact safe actions in screen table; repeated click/network timeout reuses identity; recovery action never silently creates a new refund. AC-U3: Creator reviews actual coloured mobile/desktop sketches with buttons and records exact-version approval before UI implementation; keyboard/focus/error announcements and readable contrast checked against implemented revision. AC-U4: required tests/review/PR/merge/main CI evidence recorded; no claim of deployment absent authorised release/smoke evidence. |
+
+Additional deterministic FIN-CORE acceptance, under the frozen-cutoff proposal:
+**AC-C6:** frozen cutoff `2026-10-25T01:30:00Z`, cancellation lock acquired at
+`01:29:59.999Z` succeeds; at `01:30:00Z` or later it creates no refund, even if the
+job never ran. Begin the transaction before cutoff and release a competing lock
+at cutoff to prove timestamp is sampled after locking. Test a London DST transition
+using an explicit pickup instant and approved fixture X; fixture X is not policy.
+**AC-C7:** barrier-controlled pickup move versus cancellation and due-job sessions:
+move-first before cutoff retains cutoff; subsequent cancel before it may win;
+cancel-first makes move reject and keeps holds released; after cutoff, moving pickup
+later cannot reopen cancellation or suppress exactly one timed-start transition.
+Earlier move that violates readiness rejects and preserves old slot. Verify the
+same outcomes when job/manual-start calls arrive twice in reversed order, with
+exactly one history/inventory/notification effect. Policy-dependent moves after
+production remain governed by the approved pickup policy, not implicitly permitted.
+Creator choosing recomputation invalidates AC-C7 until its replacement is reviewed.
+
+Additional FIN-CORE boundary checks: zero/negative/overflow amounts, wrong currency,
+allocation sum mismatch, simultaneous distinct cancellation keys, all 10000 already
+reserved (zero new refund), all already returned (goal satisfied), a refund exactly
+at the limit, and mutation of a paid snapshot. FIN-RECOVERY tests use actual selected
+provider sandbox for idempotency/status behavior plus controlled network faults;
+mocks alone cannot prove it. Real PostgreSQL checks require separate connections
+and deterministic barriers, not timing sleeps or a process-local mutex.
+
+Parallelism: policy and provider research may proceed independently after shared
+UK/provider feasibility inputs; design sketches can explore unchanged UI
+requirements. FIN-CORE/RECOVERY share Orders/Payments schema and routines and are
+sequential. FIN-UI can only integrate accepted contract revisions. No ticket IDs,
+Trello links, commands or measured results invented here; master assigns actual
+planning keys and cross-feature prerequisites and includes this acceptance content.
+
+## Master integration / unresolved decisions
+
+1. Accept/revise transaction ownership and global order-first lock order with
+   scheduling; cancellation must atomically release holds and production must not
+   reopen cancelled orders or allow a delayed job/pickup move to extend cancellation.
+   Earliest trigger/frozen cutoff is a proposal pending Creator acceptance. A separate asynchronous release weakens the proposed
+   atomic outcome and needs an explicit revised contract/test.
+2. Reconcile refund goal semantics, captured-only refunds, missing offline-payment
+   path, late/duplicate captures and dispute treatment with checkout/manual orders.
+   None may use invented captured funds or bypass financial routines.
+3. Creator X/reschedule/refund/ready-stock policy, provider choice, retention, recovery owner and targets remain
+   blocked; confidence high in reservation/parent-lock approach, provider/account
+   suitability and actual business entitlement unverified.
+4. Add notification milestones/consumer, staff permissions, proposed screen IDs,
+   technical bootstrap commands and component compatibility to shared contracts.
+   Independent review must inspect this exact file revision before pilot acceptance.

@@ -1,0 +1,24 @@
+# ADR-0004: Handover capacity, physical stock and pickup
+
+Status: proposed integration revision; independent review pending
+Date: 2026-10-05; revision: r4 / GK-019
+Owner: planning master for technical integration; Sasha/original owner for attributed business decisions.
+Affected requirements: C10 C11 C15 C16 C17 A07 A08 A12 S03.
+
+## Context and options
+
+Reject one-winner day-capacity rule because current owner explicitly accepts simultaneous last-place payments. Retain one-winner finite physical stock to prevent selling one cake twice.60-minute overlapping appointments within confirmed hours; Saturday30-minute starts, other starts explicitly configured by chef. Date move chef-only, same-day self-move>=6h.
+
+## Decision proposed for technical acceptance
+
+Seven cakes per handover date is a soft standard workload limit. Tentative demand is advisory; already-admitted genuine full payments may exceed it. Physical ready stock remains exclusive. Chef extras outside standard count; reducing limit preserves commitments. No per-slot count cap.192h ordinary minimum and original120h refund deadline are distinct.
+
+Governing detail: [contracts r6](../contracts.md) K01/K04/K06; [owner mapping](../owner-data-contract.md); [decision register](../creator-decisions.md). Business values are already approved where attributed; this status concerns their technical integration.
+
+## Consequences and verification
+
+Q1 ready/resale lead exception and Q2 late success remain named gates. Test two last-place payments, finite cake exclusion,7→5 with7, DST/equality, slot moves and unchanged refund/production clocks using real PostgreSQL.
+
+Documentation checks are not implementation or provider tests. No extra vendor, deployment or public policy is activated. Any material contract change invalidates affected ticket readiness and requires re-review.
+
+Supersedes prior r3 execution defaults for this topic; [exact historical text](../gk019/prior/0004-scheduling.md.txt) and original evidence remain. Source and output hashes are recorded in the GK-019 manifests; no old review verdict is carried forward.

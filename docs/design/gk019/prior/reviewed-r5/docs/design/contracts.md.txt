@@ -1,0 +1,655 @@
+# Shared contracts — r6.4 / GK-019
+
+Status: technical design draft for independent review. Business choices below are
+accepted inputs, not new owner quotations. Exact sources and starting hashes are
+in [input manifest](gk019/input-manifest.json); current owner fields are in
+[owner-data-contract](owner-data-contract.md). Open choices are isolated in the
+[decision queue](gk019/questions.md). Do not implement a blocked branch. No application,
+provider integration test, release or deployment is claimed. Prior r5 is retained
+as [historical text](gk019/prior/contracts.md.txt); it is not a fallback contract.
+
+## K00 — ownership, identity, wire and transactions
+
+Go API owns prices, eligibility, state and authorization; SvelteKit customer/admin
+UI consumes `/api/v1` HTTPS JSON. UUID IDs, lower_snake_case, integer versions,
+GBP signed 64-bit integer pence with checked arithmetic; no floats. Inputs reject
+unknown fields; omitted patch fields remain unchanged, explicit null clears only
+named nullable fields. UTC RFC3339 instants; local dates and recurrence use
+Europe/London, never a fixed UTC offset. Reject nonexistent local times; ambiguous
+DST input must specify an offset. Time rules use the persisted server receipt instant
+of an authenticated, syntactically valid command; record actual commit time separately.
+Duplicate command reuses its original instant. A cancellation preview is not receipt
+of a cancellation request. Recheck ownership, version and state after locks.
+
+Mutations require Idempotency-Key and existing-object expected_version. Unique
+(actor or guest capability, command, resource, key) plus canonical body hash:
+same request returns saved operation; changed input yields409 KEY_REUSED. Money
+identities survive provider key expiry. Ordinary command keys retained30d with
+business uniqueness preventing duplicate effects afterward. Ambiguous commits are
+looked up before retry. Async202 returns operation_id,state,poll_after_seconds=3;
+GET /operations/{id} requires identical ownership. 400 malformed;401 no identity;
+403 capability denied;404 missing/not-owned;409 stale/state/key/price conflict;
+422 invalid input;429 Retry-After;503 unavailable. Error body
+`{error:{code,message,request_id,retryable}}` never exposes SQL/provider/private data.
+
+Supabase manages authentication. Select browser SDK bearer sessions, private pages
+rendering a shell only; API verifies ES256 signature via fixed configured JWKS,
+issuer, audience=authenticated, expiry/nbf, subject and session identity. Keep
+access token in memory; refresh persistence must use the provider-supported session
+store qualified in GK-021 with CSP and XSS checks. No tokens in URLs/logs; private
+responses no-store, clear caches on sign-out. Authorization is actor-specific:
+guest order commands require an active order-bound capability and its permitted
+command scope; authenticated customers require a current provider session/account
+and ownership, with no staff membership requirement; staff require current provider
+session/account plus active locally granted capability and object scope. Claims
+require the authenticated customer branch and chef approval. Recheck revocation
+and replay after locks. Provider session-check outage fails closed for authenticated
+sensitive mutations; it does not impose provider login on guests. GK-021 must prove
+logout/disable, guest revocation, cross-order denial and replay behavior,
+not infer immediate JWT revocation from sign-out. Runtime variables/callback paths
+are produced by GK-020 then explicit exact allowlists tested by GK-021; no wildcard.
+
+Guests use an unguessable scoped order capability, digest only in DB, revocable,
+private no-store; exchange link into memory then remove from URL before other requests.
+Persist order_guest_capability independently of custom_request, binding digest,
+order, allowed commands and revocation; rotate by revoking the old digest atomically.
+Claim approval revokes outstanding guest capabilities and audits the transition.
+No automatic account association by email, payer, address or Instagram. Historical
+claim requires verified account + order evidence + chef confirmation. Pending claim
+reveals no order details. Store safe evidence reference, approving chef and immutable
+association audit; reject insufficient proof. Proposed challenge expires after30m,
+single-use and bound to subject/order; generic404 on absent/expired/foreign proof.
+
+Current production business authority is Elina as chef; Sasha has necessary technical
+support access, not ordinary business override. Sandbox first manager approval is
+GK-010's verified closing comment, subject22ac712e-4e38-48bb-a56d-fa7809ccc13f,
+project flbgymxjelzexgoxrcss. Infrastructure Owner is not an application role.
+Capabilities: chef manages policy/catalog/date exceptions/cancellations/refunds/claims;
+fulfillment can prepare/ready/dispatch/handover only; technical support gets bounded
+audited access and no routine money/content authority. Future roles grant nothing now.
+
+Global lock order: command identity/unique quote conversion before resources; then
+orders UUID → collections UUID → refund/goal rows UUID → config rows type/ID →
+handover-day, finished-cake-lot, pickup-slot, delivery-window, discount resources
+by rank then ID → reservations → ingredient/component lots ID → history/audit/intents.
+Skip untouched ranks. Pure config/stock edits never acquire an order afterward.
+No network under locks. Transactional domain commands enforce lifecycle, sums,
+capability and version; runtime cannot bypass with direct lifecycle DML. Security
+Definer gateway: nonlogin nonsuperuser owner, explicit EXECUTE grants, no PUBLIC
+execute/create, trusted qualified names/fixed search_path with pg_temp last, no
+runtime SET ROLE/DDL/TRUNCATE. Distinct API/worker/migration/backup credentials.
+Real-role denial, rollback and concurrent-sum checks remain GK-020/023/025/026.
+
+## K01 — catalog, images and availability
+
+GET /cakes, /cakes/{id}, /availability?from&to, /schedule: cursor max50/default20;
+date range max31 local dates. Separate inspiration and purchasable variant. Return
+exact image_revision_id, URL/alt/dimensions, servings, price, recipe/allergen revision,
+stock_mode and actual remaining standard cake places. Remaining=max(0,limit−accepted
+standard cakes−active tentative holds); overlaps may exceed limit, never show negative
+places or customer detail. Chef extras are shown only privately, outside standard count.
+No public full address, order/identity detail or private calendar. Dates are advisory.
+
+Variants own immutable recipe/allergen/price versions. No automatic size scaling;
+component recipes can scale under K07. Archive referenced catalog rows. All eight
+flavours/all sizes retain EGGS, MILK, WHEAT(GLUTEN), SOYA; Oreo adds SULPHITES,
+Snickers PEANUTS prominent. Keep exact shared-kitchen notice separately. Standard
+Swiss meringue buttercream all sizes/flavours; pearls/fruit/berries permitted, other
+edible decor chef-agreed. Missing approved disclosure disables buying, not enquiry.
+Accepted composition changes require customer agreement; no response/decline means
+original if feasible, else chef cancellation/full return. Final supplier/box-label
+verification is GK-037; missing yields/cost data is GK-038, never zero.
+
+Uploads use immutable unique keys and pending→ready metadata after validation;
+10MB/image is a proposed technical ceiling to validate against approved assets.
+Public catalog read; backend-authorized writes; private references in custom-private.
+Pinning and cleanup serialize on image row; cleanup tombstone rejects a new pin.
+Never replace a customer's selected image A with current image B without reselection.
+Ready-stock/resale maps to the same physical lot; one physical cake cannot be sold
+or consumed twice. Resale requires chef release, safe condition/expiry, approved
+photo rights, unchanged original handover dates and explicit base price×50%.
+No automatic publication/restock or new raw-ingredient consumption. Q1 is accepted:
+chef may approve shorter lead for a specific ready-made/resale cake. Preserve the
+original resale handover date, safe expiry and exclusive physical stock; base amount
+is explicitly entered by chef. This does not shorten ordinary made-to-order lead.
+
+## K02 — requests, agreement, history and Instagram
+
+POST /custom-requests requires desired_date, servings OR size, flavour/filling,
+description/design/important details, relevant palette and chosen contact channel;
+references optional when description sufficient and may be multiple. At placement
+customer_full_name required; distinct payer_name if another payer, provider-required
+billing fields only. No universal Instagram/phone/document demand. Email for service
+notices is requested explicitly; alternate communication is chef-agreed, not fabricated.
+
+Paired inspiration_id/image_revision_id both omitted/null for generic request, or
+both supplied; half-pair422 INVALID_REFERENCE_PAIR. Validate association/access;
+PATCH changes pair atomically with expected_version. POST /custom-requests/{id}/summary
+requires key,version,matching image_revision_id (null generic); freezes summary and
+pins exact authorized image bytes/metadata. Stale409 STALE_VERSION; inaccessible
+409 REFERENCE_UNAVAILABLE, no silent substitution. Signed private image retrieval
+requires request owner/capability or chef. Retention and erasure in K09 override pins;
+archive alone does not destroy permitted retained evidence.
+
+Primary action: “Copy request & open Instagram” attempts clipboard and
+https://ig.me/m/gk.cake.london from one gesture. Customer pastes/sends there. Preserve
+summary/reference and selectable text if either action fails; retry must not create
+a new request. General contact opens link alone. Never claim DM sent, auto-paste or
+verified delivery. GK-012 reports link-opening tests only; GK-027 must test actual
+combined button and fallback on supported devices. No Instagram Send API dependency.
+
+Chef creates versioned website template from agreement: exact design, flavour,
+size/servings, date/time, mode, price, policies, recipe/allergen versions and evidence.
+Customer reviews before payment. Pre-order authorization is explicit: public
+storefront quote creation accepts a fresh browser-crypto256-bit guest proof and
+stores only its digest bound to that quote/version (or authenticated owner subject).
+Retries require that same proof and key; guessed quote IDs confer no access. Custom
+requests likewise bind their own guest proof or owner. A chef-template link uses
+an independently generated buyer proof bound to that template/version, stored as a
+digest, revocable, no-store and removed from URL before other requests. No implicit
+binding by payer/email; reissue revokes old proof without resetting sent_at.
+
+Checkout/free confirmation verifies the quote/template proof or authenticated owner
+before any resource reservation. In the same creation transaction, bind the new
+pending/free order to its owner or an order_guest_capability digest, using the same
+presented guest secret with new order-scoped allowed commands; atomically mark that
+template/version converted. Retry returns the same order under the original proof
+without minting a second order. The order grant remains independently revocable even
+when the source template/request expires or is erased. Free confirmation still waits
+for K11 securing; a capability is not proof of funds or accepted confirmation.
+
+Store sent_at once; expires_at=sent_at+24 elapsed
+hours. For storefront, sent_at is the instant the reviewable quote is first returned.
+Resending same version does not reset; expiry/equality rejects a new initiation.
+Template is not accepted order; at most one live collection/converted order per
+version. New changed agreement receives new version/window only after earlier
+collection is proven terminal or safely reconciled. Current intake website-only;
+historical Revolut/unexpected actual transfers remain evidence, not a paid switch.
+
+GET /me/orders and detail are owner-only snapshots; safe timeline and derived
+allowed_actions. Payer identity does not transfer ownership. Unknown enums enable
+no new action. Reorder validates current price/allergens/date/design and requires
+review, never clones old totals or photo permission. Archived source offers request
+similar with authorized history only; public detail404. Favourites unique customer+
+cake set membership; explicit device merge via per-item PUT/DELETE keys. Profile
+Instagram optional private plain text, not identity proof.
+
+## K03 — prices, discounts, separate delivery and free orders
+
+POST /checkout/quotes accepts variant quantities, handover date/slot, fulfillment
+mode, optional code; server returns immutable proposed totals and versions. No
+client amount/fee override. Money is pence; whole display £100, fractional £85.50.
+Current attested non-VAT registration means no separately added VAT; no exemption/
+zero-rate claim. Changed tax treatment preserves accepted totals; unpaid changed
+quotes need agreement. All numeric bounds reject overflow and negative amounts.
+
+One percentage OR free-delivery code per order. Percent applies to agreed cake price
+including decoration, custom/reduced/resale cakes, never delivery. D=round_half_up
+(sum_eligible*bps/10000); allocate floor proportional shares then largest remainders,
+ties stable line ID. Sum allocations=D. £10.01+£10.00 at10% →£2 off split£1/£1;
+£10.05 at10% →£1.01 off. Save exact applied version and allocation. Code may have
+expiry/total/per-customer limits; per-customer limit requires sign-in. Reserve use
+atomically; consume at paid/free confirmation; cancellation never restores it.
+Only proven-unpaid abandonment releases use; unknown remains reserved.
+
+GK Delivery individually quoted by chef from£100, accepted address/window, no zones
+or automatic tariffs; outside/distant London separately reviewed. Website collects
+delivery through a separate collection attached to the same order. A free-delivery
+code waives the whole eligible GK fee within per-code maximum driving distance;
+chef records measured distance/source and approves eligibility, no invented radius
+or route-provider dependency. No waiver of customer-paid third-party courier.
+
+One order-level code_application owns usage across cake and delivery, never two
+redemptions. Chef may attach a later delivery quote to the same versioned order;
+apply its previously accepted free-delivery code only after distance/eligibility
+review. If no code was selected at cake confirmation, no silent retroactive code:
+explicit reviewed order amendment and atomic limits check required. Changed amount
+requires agreement; no double use, retrospective price edit or refund-goal drift.
+
+Zero cake amount: explicit free confirmation commits handover allocation and code
+use without a provider collection. It anchors +48h preparation and passes K11
+recovery gate. A payable separate delivery remains awaiting separate payment and
+cannot be dispatched unpaid; its payment never restarts cake preparation/deadline.
+No cash refund on unpaid amounts; actual delivery payments retain refund rules.
+
+## K04 — checkout, soft capacity, payment authority and clocks
+
+POST /checkouts requires quote/version, agreed policy revision, contact, resource
+selection and scoped key. Atomic price/policy validation, pending purchase snapshots,
+15-minute tentative hold, code-use reservation, collection operation+durable job.
+Response202 is “Payment pending”, never accepted. Price conflict409 returns a new
+reviewable quote; unavailable physical stock leaves no partial reservation.
+
+Standard seven cakes per handover date, quantity counts cakes. Chef-approved extras
+outside standard counter. Handover capacity is a soft workload limit, not a finite
+physical item. Admission checks committed standard count (and selected quantity)
+under day lock; tentative holds are visible advisory demand, not exclusive ownership
+of the last cake place. Thus two admitted concurrent last-place payments can both
+succeed and be accepted. Once committed count reaches limit, new ordinary admissions
+stop; already-admitted valid payments retain acceptance and chef may personally
+cancel with100% return. Over-capacity alert never erases paid obligations. Reducing
+limit7→5 with7 accepted preserves7. Finite ready stock remains exclusively reserved
+and cannot use this soft-capacity rule; no physical-cake oversell.
+
+Separate clocks:
+
+| Clock | Meaning and equality |
+| --- | --- |
+| quote sent+24h | New initiation disallowed at/after; resending unchanged link never extends |
+| local attempt admitted+15m | Reconciliation/expire request trigger; not proof of failed funds |
+| actual Stripe session expires_at | Save provider-returned value; independently qualified against link deadline |
+| authoritative successful full cake payment | Paid booking and +48h clock anchor; not redirect/webhook arrival time |
+| free confirmation | Replaces payment anchor only for free cake order |
+| original handover−120h | Immutable refund boundary; compare accepted cancellation command instant |
+
+Minimum ordinary lead time192 elapsed hours from full payment/free confirmation to
+handover, equality allowed. Accepted Q1 allows a chef-approved shorter lead for a
+specific ready-made/resale cake only. Record immutable lead_time_exception binding
+physical cake, template/version, handover, latest confirmation instant, chef identity,
+reason and approval time. Latest confirmation cannot be after handover or override
+safe expiry; resale handover stays original. New initiation checks current active
+approval and binds its immutable scope to the payment attempt. For paid confirmation,
+evaluate that scope at authoritative successful-payment time, not webhook arrival:
+approved_at<=success_at<=latest_confirmation_at and revoked_at absent or
+success_at<revoked_at. Free confirmation uses the persisted valid command receipt
+instant under the same comparisons. Equality at latest confirmation is allowed;
+equality at revocation is not. A success before revocation remains eligible even if
+observed afterward. Unknown/disputed success time stays in reconciliation/Q2. Another
+cake or different agreed handover/version cannot reuse the scoped approval. No automatic extension or blanket zero-day default. Reissuing an
+unaccepted agreement requires explicit chef approval; accepted promises are preserved.
+Q2 is accepted:24h permits starting payment, not a guarantee that every method
+finishes within24h. Initiation must satisfy current lead/scope eligibility; it cannot
+use the late-payment path to bypass an already missed ordinary/approved lead limit.
+An in-flight payment remains pending/unknown until authoritative result; no replacement
+payment while it may succeed. If paid success occurs too late for the applicable
+preparation promise, record paid_awaiting_agreement and notify chef/customer. Actual
+funds remain succeeded; do not display an accepted handover promise yet. Honour only
+when chef records feasibility and the customer explicitly agrees to that handover,
+otherwise create a full-return goal for all actual paid order collections, net prior
+returns. Customer decline or chef inability selects full return, never the ordinary50%
+cancellation charge. Waiting for agreement blocks production/fulfillment and automatic
+preparation transitions; preserve scheduled paid_at+48h anchor, materializing any due
+status only after honour agreement. Silence never counts as agreement. Do not invent
+a new decision timeout: retain a visible chef-owned pending case until resolved.
+Store resolution/version, feasibility actor/time and customer agreement evidence.
+Honour rechecks original date, physical availability/safety and K11; no automatic
+date move, stale agreement, duplicate notice or charge. Full return follows K05
+serialized operations, separate chef delivery action and accepted Q5 evidenced alternative return.
+Unknown timestamps reconcile before categorizing timely/late; no guessed backdating.
+Refund and preparation anchors stay unchanged; delayed observation alone is not lateness.
+New initiation also requires recovery readiness and valid agreed terms. No second
+collection while an earlier one may succeed. Quotes/holds are not accepted bookings.
+
+Before external create, persist operation key/body/account/environment and K11
+recovery envelope. Worker dispatches outside locks, records started_at and actual
+provider IDs/expiry. Unknown create outcome retains same identity, reconciles by
+metadata/provider evidence, never creates a blind replacement. Signed Stripe webhook
+inbox unique(account,environment,event_id), acknowledge only durable receipt; job
+retrieves current object and verifies local operation, account, mode, currency and
+exact amount. A completed session alone is not success. For nonzero orders require
+session payment_status=paid and linked successful fully collected PaymentIntent/
+charge evidence reconciling to the full expected GBP integration amount (including
+authoritative conversion evidence where presentment differs). Authorization/requires_capture,
+processing, unpaid, no_payment_required on nonzero, and return URL are not paid.
+No partial-payment acceptance. Different event IDs cannot repeat booking/notice.
+
+Provider success may precede webhook delivery: persist authoritative success evidence
+and effective instant separately from observed_at. If exact completion instant is
+unavailable, do not backdate by guessing; reconcile and mark clock evidence unknown.
+Provider payout delay, fees or a buyer's Klarna installment schedule do not by
+themselves mean the shop collected less; qualify merchant payment evidence.
+
+At15m request expiry only for an open session; processing/unknown remains pending.
+Never-dispatched cleanup only when started_at null and operation atomically closed
+so stale worker cannot dispatch. Otherwise release stock/code only after proof of
+terminal-unpaid session AND no successful/unresolved underlying funds. Expiry failure,
+provider outage and missing provider ID retain money uncertainty. Customer sees
+“Still checking payment; do not pay again”; chef queue owns follow-up.
+
+Valid payment underway before expiry is not a cancelled order simply because the
+local timer elapsed or date capacity filled. Accept it once matching full funds and
+all applicable promises are satisfied, even over standard day limit. Genuine payment
+after a separately cancelled/terminal purchase, wrong amount/currency, duplicated
+collection, impossible physical-stock promise or disputed timing enters reconciliation;
+retain actual funds, freeze further dispatch/fulfillment and give chef an actionable
+resolution. No silent reopening or automatic new charge. Full-return recovery is
+mandatory for terminal orders that cannot be fulfilled; accepted Q2 governs late
+lead-time agreement or full return. An unresolved outcome never implies refund already sent.
+
+All17 accepted labels must remain in the qualification inventory: Cards, Cartes
+Bancaires, Apple Pay, Amazon Pay, Kakao Pay, MB WAY, Naver Pay, Onelink, PAYCO,
+Revolut Pay, Samsung Pay, Satispay, Bancontact, BLIK, EPS, Klarna, Pix. Google Pay
+remains disabled; future additions require approval. “Onelink” is the UK name for Link per current Stripe support documentation;
+preserve the accepted UK label. Actual API/account mapping and bundled funding-source
+controls still need qualification; see method inventory. No silent method removal. Snapshot a dedicated accepted method
+configuration and detect drift; do not default to every future dashboard addition.
+Provider eligibility can hide a method for a particular customer/amount/currency,
+but every accepted method needs a recorded qualification outcome, not silent removal.
+Q4 currency accepted: optional Stripe Adaptive Pricing for eligible customers;
+shop prices, quote totals, policy goals and accounting stay GBP integer pence.
+Checkout offers provider-disclosed converted amount/fees and applicable regional
+charges, with GBP choice via an eligible method. Do not promise every method in GBP.
+No shop-built exchange calculator or independent foreign-currency price list.
+Verify the pinned Checkout/PaymentIntent integration amount/currency against the
+GBP quote; separately retain provider presentment amount/currency and conversion
+proof. Any charge/balance evidence in another currency must reconcile through the
+provider's documented conversion to that GBP obligation, not a raw numeric equality
+or guessed exchange rate. Missing/contradictory conversion evidence stays unknown.
+Use currency-specific minor units; presentment is not always two-decimal pence.
+Refund requests/policy goals stay in original integration GBP; store actual provider
+presentment-return evidence and explain the provider's original-rate treatment.
+Do not add customer conversion fees to GK revenue or silently subtract them from
+owed shop refunds. Current optional conversion does not approve non-GBP settlement.
+Method/FX/refund behavior still requires sandbox qualification; Q4 bundle decision
+and any incompatible settlement remain explicit gates.
+[Method qualification](gk019/payment-methods.md) owns evidence and required sandbox cases.
+
+## K05 — cancellation, production and refunds
+
+Separate lifecycle awaiting_payment→confirmed→in_production→ready→completed;
+late known success may enter paid_awaiting_agreement→confirmed or cancelled/full-return;
+cancelled terminal branch for unfulfilled accepted orders. Payment states
+created,pending,unknown,succeeded,failed,cancelled; free order has payment_requirement
+none, no fake payment row. Fulfillment separate awaiting_handover/out_for_delivery/
+completed/exception. Completed/no-show history is retained; post-handover personal
+chef refund request creates financial case, never rewinds fulfilled history.
+
+Both cake types: save original_handover_at and full_refund_deadline_at=original−120h
+at placement. Before boundary100%; at/after50% actually paid after discounts including
+separate GK delivery; no-show/post-handover50%; chef cancellation100%. Moves never
+change original deadline. Explicit customer confirmation shows amount before cancel;
+at boundary change refresh preview and require reconfirmation. Production state
+never causes zero entitlement. Customer/chef actions lock same order; if production
+wins first, customer cancellation still permitted under same deadline rule. Scheduled
+preparation at payment/free-confirmation+48h has scheduled effective_at and separate
+observed/actual times. Earlier chef start takes effect immediately; auto status does
+not deduct ingredients or assert that chef physically began work.
+
+Target=nearest-penny-half-up(rate×actual paid aggregate). Current50% half-penny
+rounding favours customer. Allocate total by floor+largest remainder, stable cake
+then delivery collection/component ID ties; each allocation≤actual paid. One target,
+not a whole-order refund per collection. Chef-only delivery refund remains separate
+operation; cake cancellation records delivery obligation immediately and makes it
+visible pending chef action. Overall complete only when all obligations succeeded.
+GK-caused unperformed delivery raises its target to100% delivery, net prior refunds;
+never adds a second independent duplicate target. Example8585p cake+2000p delivery:
+50%=5293p, cake4293p+delivery1000p; full10585p. £20 is a fixture, not tariff.
+
+Count every actual succeeded return S and reserved/submitting/pending/unknown/
+requires_action reservation R exactly once, across all order collections. The
+policy target T is a cumulative whole-order obligation, not another payout.
+Ordinary remaining entitlement=max(0,T−sum(S)−sum(R)); no collection allocation
+may consume more than this aggregate remainder, even if its nominal share is unpaid.
+For cake10000+delivery2000, prior cake return6000 already exhausts a50% target6000:
+new cake0, new delivery0. Preserve actual over-target returns; never claw back or
+hide them. If prior actuals exceed a nominal collection share but not the whole
+entitlement, pause automatic allocation and require chef-confirmed revised allocations
+whose sum is the remaining entitlement and each fits its collection balance.
+
+A distinct approved obligation (for example GK-caused failed delivery) records its
+explicit collection floor, net that collection's prior returns; it is not duplicated
+on retry. Before dispatch, merge it into one versioned order goal sufficient for
+that floor plus already returned/reserved money elsewhere, capped by actual paid.
+Example prior cake6000 plus unperformed delivery2000: outstanding delivery2000,
+combined goal8000; this authorized service-failure obligation is distinct from the
+ordinary50% goal6000. Keep reason and original policy target visible.
+
+For each collection C, new refund≤C−S−R and the aggregate remaining goal. At most
+one unresolved refund operation per collection: reserved, submitting, pending,
+unknown or requires_action blocks every new dispatch for that collection. A higher
+goal may be recorded while waiting but sends no additional POST. Only after a
+definitive prior outcome attempt the entire remaining allocation once. Cake and
+separately paid delivery may proceed independently within the single order goal,
+with delivery chef-only. No deliberate20+30 split of50 owed. Goals are obligations, not extra
+reserved money. Record partial/external outcomes even if not intended. Pending then
+failed reopens remaining obligation; unknown never releases balance on a timer or
+provider-key expiry. No automatic payout after contradictory success correction.
+
+Refund states reserved,submitting,pending,unknown,requires_action,succeeded,failed,
+cancelled. Customer action creates policy target; chef may create bounded partial
+refund goal for agreed exception, amount/allocations/reason/version/key mandatory.
+Separate capability for chef cancellation, refunds and recovery. Additional goodwill
+cannot exceed actual collected funds through refund API. External observation table
+preserves unmatched/over-refund/dispute facts; quarantine blocks new dispatch. Example
+10000p collection+unknown10000p local+external5000p return: preserve possible15000p
+exposure, no clipping or second call. Match identities using complete provider pages
+and definitive nonexecution; audit correction/unfreeze. Financial report deduplicates
+by provider/account/environment/object. Restore freezes sends until reconciliation.
+
+Provider refund time limits do not erase accepted entitlement. Keep outstanding
+liability when adapter cannot return it. Q5 accepted: chef may arrange a verified
+alternative payout only after definitive provider unavailability, with evidence.
+Reuse refund_operation and the same collection/order goal: channel provider or
+manual_alternative, never a parallel unbounded ledger. Before showing an instruction
+to pay externally, lock the order/collection, reconcile all known outcomes, prove no
+prior unresolved operation, reserve the whole remaining allocation, and protect the
+prepared operation under K11. The reservation blocks provider workers and other
+manual payouts. Record unavailable-provider evidence, chef capability, immutable
+preview/version, verified recipient evidence reference, GBP obligation, transfer
+amount/currency and operation key. Changes to recipient/amount invalidate preview.
+No raw bank details in logs, tickets or analytics; protected evidence access only.
+A submitted/manual transfer is pending, not succeeded; unknown transfer outcome
+blocks every retry/channel until definitive reconciliation. Require unique bank/
+transfer evidence identity and verified successful outcome before reducing liability
+once. Protect outcome under K11 before publishing success; failed protection retains
+the reservation/unknown state. Match later provider events to their actual operation;
+duplicate observation is deduped, genuinely additional money is preserved and
+quarantined, never hidden as a duplicate. Do not invent a Stripe refund ID for a bank
+transfer. Separate chef delivery action, aggregate bounds, whole remainder and
+restore freeze still apply. This route repays existing obligations only; it does
+not approve offline collection or a new bank integration. Foreign-currency alternative
+payout requires a separate agreed conversion/fee basis; until then liability remains
+open rather than guessing recipient reimbursement. GK-025 must include minimal terminal
+collection-return recovery before any collection; GK-026 completes policy refunds.
+
+## K06 — schedule, moves, delivery and fulfillment
+
+Thu11:00–17:00; Fri10:00–17:00; Sat12:30–15:00; Sun11:00–12:00 London local.
+60-minute appointments, overlap allowed, end within window; no per-slot order cap.
+Saturday starts12:30,13:00,13:30,14:00. Other exact starts explicitly entered/approved
+by chef before publishing schedule, no inferred universal grid. Holidays/blackouts
+can be configured; policy version affects new bookings only. Month horizons remain
+ordinary2 and wedding7–8 months with chef resolution of uncertain endpoints, not
+30-day conversion. Concrete date approval is stored; do not auto-confirm uncertainty.
+
+POST /orders/{id}/pickup accepts same-day target_slot_id,version,key. Require at
+least6h before current slot start, equality allowed; no reset by browser preview.
+Lock order+old/new slots canonically, move atomically or keep original. No per-slot
+count rejection; still require open fitting slot. Date changes only by chef after
+customer agreement, feasibility/shelf-life review; no automatic next-day/weekend
+skip. Preserve original refund deadline and preparation anchor, keep old/new history.
+Closed/booked slots cannot silently change existing commitments. Versioned admin
+schedule edits list affected bookings; explicit per-order agreed amendments needed.
+
+Collection free, public locality St Katharine Docks. Exact address protected; chef
+can send authorized notice about48h before or earlier when needed, unique audited
+intent. Customer-arranged courier pays own courier; responsibility transfers at
+handover. GK Delivery responsibility through customer handover; hours match pickup,
+chef quote and paid/waived separate collection required before dispatch. Delivery
+failure is actionable, not automatic completed. Placeholder courier content stays
+nonpublic until chef approval. Future courier uses a reference/status mapping only.
+
+## K07 — recipes, component batches, stock and grocery estimates
+
+Separate recipe per size, versioned snapshots; no automatic cake-size scaling.
+Components scale proportionally. Plan midpoint of ranges; exact decimal strings
+and numeric quantities at0.01g/ml, half-up. Whole items stay integer;2.5 eggs requires
+another multiplier/recipe. No unmeasured1g/ml or50g/egg conversion. Cost uses latest
+recorded purchase price/as-of, separate from fixed customer selling price.
+
+At chef-confirmed actual component start, deduct planned raw inputs from chef-selected
+batches; ready records actual finished yield and chef-entered expiry. At cake assembly
+start, deduct selected finished components+direct ingredients, never their raw inputs
+again. Automatic48h status moves no stock. Corrections append reasoned linked deltas;
+unique movement identity prevents retry double deduction. Negative stock permitted
+with explicit warning/reason, remains negative/flagged. Every ingredient/component
+batch requires expiry date; usable through that London date, blocked next midnight.
+No automatic batch selection or disposal. Expired stock remains physical until disposal
+or reasoned expiry correction. No refund/cancellation restock; chef reviews actual
+used/wasted/reusable returns. Remove only unconsumed cancelled demand.
+
+Forecast outstanding planned demand less linked actual use, include earlier unmet
+commitments; free confirmed included, drafts/unpaid separate; ready/resale contributes
+no new recipe demand. Missing yield/conversion/price is incomplete, never zero.
+Buy ceil(shortage/pack_size) whole packs and budget whole-pack price; consumed-cost
+estimate separate.500g need,1000g pack678p →one pack678p; consumed estimate339p.
+GK-038 gates validated recipes/grocery costs, not contract work or all implementation.
+
+## K08 — email, audit and operational evidence
+
+Current From `GK Cakes <orders@gkcake.com>`, Reply-To `gk.cake.london@gmail.com`.
+Resend Free, Ireland eu-west-1, verified sending domain user-reported; receiving off.
+Old GK Cake London-name delivery test is historical evidence only; test amended name
+in GK-024. Supabase auth email sender must match; actual SMTP/template integration
+remains GK-021/024. Signed application webhooks and DMARC review are not setup passes.
+
+Transaction inserts notice intent+job+audit atomically, unique transition/recipient/
+template revision. States queued,sending,accepted,delivered_to_server,bounced,failed,
+unknown; retain adverse/out-of-order facts. No inbox/read guarantee. Stable key/body,
+first_dispatch_at, append-only attempts, owner/generation/live lease fencing. Unknown
+send reconciles within verified provider idempotency window; after expiry requires
+chef-reviewed deliberate resend with possible-duplicate warning, never blind retry.
+
+Custom message preview: subject≤200/body≤10000, transactional purpose only, reject
+subject CR/LF. Preview binds chef/order/recipient version/exact body hash;15m TTL.
+Send requires unchanged preview/hash/versions/key; no replacement recipient/body.
+Changes require new preview; preview never sends. No marketing/newsletter/bulk send.
+Revoked recipient suspends unsent intent, never silently retargets. Reconcile endpoint
+creates zero-send evidence job; successor resend retains chain, reason and explicit
+possible_duplicate acknowledgment. Financial notices distinguish requested/pending
+from successful return. Provider evidence and GK recovery safeguards remain separate.
+
+## K09 — relational schema, privacy and compatible releases
+
+[Schema](gk019/schema.json) lists owned typed relations, keys/constraints and query
+indexes; it is design input, not migration. FK relationships for customers, recipe,
+policy, capture/refund, resources and source revisions; JSON only bounded immutable
+presentation/provider evidence, never generic operational settings. Private business
+schema, no browser DB grants. Preserve accounting facts through anonymization.
+
+Enquiries6 months from last substantive customer conversation; auto reminder does
+not reset. Order details/messages/nonpersonal references2 years after fulfillment/
+cancellation. Personal photos deleted within30d after handover; specific chef-use
+permission3 months from handover, removal of originals/controlled public posts at
+expiry or earlier withdrawal. Necessary dispute evidence private with reviewed hold,
+not continued public use. Unfulfilled cancelled photo job uses cancellation as cleanup
+trigger (technical privacy-conservative rule), no indefinite wait for handover.
+
+Account/profile/favourites/basic history:24 months inactive since login/new order,
+warning then30 days to return; shorter details/photo expiry still applies. Financial
+records use separately verified statutory schedule (GK-037), not a reason to keep
+all PII. Deletion revokes capabilities, releases pins, purges controlled copies and
+carries tombstones into restore/recovery replay. Active dispute holds scope/reason/
+review date/release actor. Access Elina; Sasha necessary support only. Personal-photo
+permission is specific, never blanket order-photo opt-out permission for third-party
+images. Private legal address obtained from protected authorized source before final
+legal content. Internal review notes never customer text. GK-037 is prelaunch gate.
+
+Device favourites expire one calendar year after explicit save/edit; nonsensitive
+draft30d after edit, reads do not reset (technical choices). User clear supported;
+no persistent personal photos. Month/year arithmetic uses London calendar anniversaries,
+clamp missing day to month-end, preserving local clock with explicit DST resolution;
+retention deadlines are not192/120h order rules. Provider/backups deletion inventories
+remain verified in GK-037. Restore points30d distinct from business retention; current
+recovery copies only for still-retained records, propagate deletion without restoring PII.
+
+API v1 additive; clients ignore unknown response fields and fail safe on enums.
+Breaking change v2 or explicit phased migration; new API capability before UI enables
+it. Expand→API→UI→observe→authorized cleanup; old/new UI compatibility fixtures.
+Separate ui-v/api-v artifacts; API/jobs same revision. No destructive blind down-migrate.
+
+## K10 — providers, analytics and readiness
+
+Accepted package: Go/SvelteKit, Railway Pro, Supabase Pro Micro production London+
+separate Free sandbox, B2 EU Central, Stripe UK, Resend Free, UptimeRobot Solo,
+PostHog Cloud EU Free, Cloudflare gkcake.com. Budget allowance£61, hard£100,
+>£10 cumulative increase from accepted baseline requires business-owner approval;
+actual tax/FX/usage must be checked before activation. Domain purchased per GK-012.
+Setup Done means recorded provisioning, not working application integration.
+
+PostHog chosen with opt-in/no replay, standard provider retention (no promised fixed
+purge); separate analytics dashboard. Q3 accepted: basic checkout-step events and
+repeat-visit estimates only after explicit analytics consent. Decline leaves shopping
+fully usable. Technical implementation uses a small allowlist of step enums (checkout
+opened, review reached, payment handoff) with no DOM/form capture, free text, raw URL,
+query, referrer, customer/order/quote/payment IDs or other order details. Public page
+statistics use safe route categories, not arbitrary path values. No names/emails,
+account/admin browsing, identity association, advertising or session recording.
+No analytics SDK load, identifier/storage, request or pre-consent event queue before
+consent. Disable automatic pageviews/autocapture and default-property leakage; inspect
+actual network payloads including SDK-added properties. Consent withdrawal stops
+collection, clears pending event queues and optional identifiers/storage; later consent
+starts a new pseudonymous browser identity, never reconnecting prior identity.
+Repeat visits are a consenting-browser estimate, not identified people; no account
+identify/alias or cross-device linking. Keep essential checkout/auth storage separate
+from optional analytics. No analytics code runs on account/admin routes; navigation
+there must not emit a pageview or referrer leak. Provider retention remains separately
+accepted; withdrawal does not assert historical provider erasure. GK-037 verifies
+actual consent inventory/storage/deletion and public wording before launch. DB finance:
+gross actual captures−successful refunds across provider and verified alternative
+routes (deduplicate by operation plus external evidence identity); discount not subtracted twice; unknown fees
+null/incomplete; discrepancy/over-refund visible. Visits are not unique people.
+Local-day report bounds are London midnight[from,day-after-to), including23/25h days.
+
+Release policy approved: independent specialist AI review→fix→affected recheck loop,
+required CI→native auto-merge→main CI. Staging automatically deploys green merged
+revision; production only a separately Sasha-authorized component release of tested
+revision. GK-013 must prove GitHub gate support, no bypass. GK-035 integrated tests;
+GK-037 legal/privacy/product prelaunch; GK-036 launch. None authorized in this run.
+
+## K11 — confirmed-order recovery contract
+
+Approved goal: no lost confirmed order/change details or essential attachment bytes;
+independent daily DB+object restore points30d; nonessential upload loss≤24h; routine
+recovery≤3 support hours, daily10:00–23:00 London, clock pauses overnight. These are
+targets requiring GK-034/035 evidence, not current guarantees. Ordinary DB outbox
+alone cannot meet zero confirmed loss if primary DB disappears before backup.
+
+Use immutable encrypted recovery envelopes in independent B2, ordered per aggregate,
+with operation ID, expected prior revision/hash, exact accepted payload/snapshots,
+attachment hashes+recoverable bytes, provider/account/environment and immutable
+external-operation key/body. No credentials or unnecessary PII in logs/manifests.
+A per-order durable command reservation serializes revisions; other conflicting
+commands wait/retry while its recovery phase is incomplete. Do not hold SQL locks
+during B2/Stripe/Resend calls. Persist prepared envelope and verify independent
+acknowledgment before payment dispatch/free confirmation or accepted order-change
+commit. Missing B2 readiness blocks new checkout/changes with recoverable503/202.
+
+Envelope is intent, never proof of paid/committed state. After main commit, append
+outcome/version acknowledgment independently before exposing a confirmed response
+or confirmation email. A DB commit followed by failed acknowledgment remains
+confirmation_pending; reconciliation reuses same operation, not a second mutation.
+For provider success while B2 is down, keep actual paid liability and the predispatch
+envelope; show payment received/confirmation being secured, alert chef, stop further
+collections. Provider success is reconstructed from authoritative account evidence,
+not erased because final independent acknowledgment is missing. Free outcomes require
+an independently durable outcome before confirmation is visible. Essential blobs
+must be copied before their accepted reference is committed.
+
+Before every money/email dispatch, independently retain its immutable dispatch intent
+and identity, then mark local started; missing return acknowledgment is unknown.
+Independent completion evidence records outcomes without pretending cross-provider
+atomicity. Restore freezes outgoing payment/refund/email jobs; choose validated DB
+snapshot, restore object bytes, replay ordered prepared/outcome envelopes with unique
+operation IDs and prior-version checks, apply deletion/hold rules, then reconcile all
+provider operations in loss window including those without local IDs. Ambiguous
+prepared operations cannot be blindly executed; unresolved facts go to chef queue.
+No reopening until order/attachment manifests, balances, pending reservations and
+send identities reconcile. Restore must demonstrate no duplicate charge/refund/email.
+
+Delivery ownership: GK-020 establishes schema/config access. GK-024 implements
+the minimal K11 coordinator, independent B2 prepared/outcome records, essential
+blob copying and dispatch journal before its first email dispatch. This explicitly
+extends its ownership to shared recovery code/schema and B2 integration, coordinating
+shared migration files; it is not email-files-only. GK-025/026/027 already depend on
+GK-024 and cannot expose confirmation or dispatch until this prerequisite passes.
+GK-034 consumes this protocol for scheduled backups, operational alerting and restore
+tooling; it may work on disjoint release workflow files early, but its recovery
+integration requires GK-024. GK-035 proves the complete system.
+
+GK-024 must test crashes at each protocol phase with synthetic operations. GK-034/035
+then test lost primary DB after payment/free/order
+change, unavailable B2, stale competing revision, lost response, deleted attachment,
+retention expiry and unresolved provider calls. Performance/cost overhead is measured;
+no claim the£1 allowance or proposed latency budget is already sufficient. Block
+activation if this protocol cannot meet the target; no silent downgrade to daily RPO.

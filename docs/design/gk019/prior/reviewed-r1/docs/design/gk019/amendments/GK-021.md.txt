@@ -1,0 +1,23 @@
+## GK-019 proposed contract amendment — r6 / UNPUBLISHED
+
+Owner, title, unrelated scope/labels and list remain unchanged. This dated amendment
+replaces contradictory historical policy/provider examples and adds the acceptance
+evidence below; it does not assert implementation readiness or completed tests.
+
+Contract inputs: K00/K02/K09; docs/design/contracts.md r6, owner-data-contract.md
+gk019-owner-r2, gk019/schema.json r1 and output-manifest.json exact hashes.
+Required current evidence: GK-020 B2; GK-019; GK-010/012. Refresh live prerequisites and comments before
+execution; a Done setup card proves only its accepted scope.
+
+Behavior: Supabase issuer/audience/JWKS from verified GK-010 sandbox. First sandbox manager subject22ac712e-4e38-48bb-a56d-fa7809ccc13f explicitly approved in closure. Infrastructure role not app role. Actor-specific authorization supersedes historical blanket staff-role checks: guest order grant with revocation; customer current session/account plus ownership without staff role; staff additionally active capability/scope. Independent order_guest_capability persists direct-checkout grants. Approved claim revokes guest grants. Current sender GK Cakes for auth.
+
+Acceptance extension: Test eligible guest payment/free/cancellation without login; revoked/foreign grant denial; ordinary customer without staff role; disabled staff/technical support money denial. Real token/session/role/ownership rejection, logout/disable/replay, refresh storage/CSP, exact callback allowlists from GK-020 and foreign redirect denial. Failed provider validation blocks sensitive mutation. No application access test inherited from auth.users read.
+
+Execution: apply model/context check; then smallest failing meaningful behavior
+case, coherent implementation, focused green checks, required wider checks and
+fresh independent review. Design tickets instead produce/review exact artifacts.
+No application test, UI approval, release or deployment is supplied by this amendment.
+Questions Q1–Q5 apply only where named; unresolved branches stay blocked.
+
+Full brief requirements and nonconflicting safety/verification criteria remain.
+Repository packet is local/unpushed; obtain exact files, not merely a path string.

@@ -1,0 +1,23 @@
+## GK-019 proposed contract amendment — r6.1 / UNPUBLISHED
+
+Owner, title, unrelated scope/labels and list remain unchanged. This dated amendment
+replaces contradictory historical policy/provider examples and adds the acceptance
+evidence below; it does not assert implementation readiness or completed tests.
+
+Contract inputs: K08/K11; docs/design/contracts.md r6.1, owner-data-contract.md
+gk019-owner-r3, gk019/schema.json r1.1 and output-manifest.json exact hashes.
+Required current evidence: GK-020 B2; GK-019; GK-010 B2 setup and GK-011/012. Refresh live prerequisites and comments before
+execution; a Done setup card proves only its accepted scope.
+
+Behavior: Current sender GK Cakes <orders@gkcake.com>, Reply-To gk.cake.london@gmail.com; Resend Free eu-west-1 sending-only. Historical delivered test used prior display name. Transactional intent+job+audit, immutable preview/recipient, fenced worker and unknown-outcome reconciliation. BEFORE first send, implement minimal K11 shared recovery coordinator, independent B2 prepared/outcome journal and essential blob copy; ownership explicitly includes shared recovery schema/code/B2, coordinating migrations, superseding email-only parallel boundary.
+
+Acceptance extension: Test current display name, signed webhook correlation/duplicates/adverse ordering, recipient changed after preview, timeout/crash/provider-idempotency expiry, deliberate resend warning and recovery freeze. Test K11 phase crashes, B2 outage and primary loss with synthetic operations before dependent GK-025/026/027 dispatch/confirmation. DMARC and actual secret deployment remain required. No marketing.
+
+Execution: apply model/context check; then smallest failing meaningful behavior
+case, coherent implementation, focused green checks, required wider checks and
+fresh independent review. Design tickets instead produce/review exact artifacts.
+No application test, UI approval, release or deployment is supplied by this amendment.
+Questions Q2–Q5 apply only where named; unresolved branches stay blocked.
+
+Full brief requirements and nonconflicting safety/verification criteria remain.
+Repository packet is local/unpushed; obtain exact files, not merely a path string.

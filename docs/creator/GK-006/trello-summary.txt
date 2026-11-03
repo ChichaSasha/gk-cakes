@@ -1,0 +1,18 @@
+GK-006 decision handover — interview-r1, 2026-10-05
+
+Sasha confirmed in the decision interview:
+
+1. Production deploys only from an explicitly authorized published component release. Merge/main CI never deploys production by itself.
+2. A small staging environment hosts UI/backend with test data and sandbox payments, separate from production data/credentials. Every merge automatically reaches staging after successful CI on that exact main revision. Test before production release; a changed version requires staging verification again.
+3. Sasha is the sole production-release approver. The agent can prepare releases and publish a specific version only after Sasha's explicit authorization. Sasha can also publish directly.
+4. Checks + LOOP [independent specialist AI reviews in separate contexts → feedback → fixes → rerun affected checks/reviews] → native auto-merge. Select reviewer expertise for the areas touched. Failed required checks or unresolved blocking findings prevent merge; decisions needing Sasha return to Sasha. No routine human PR approval was selected.
+5. ui-vX.Y.Z groups customer/admin interfaces; api-vX.Y.Z groups backend/background jobs. Independent releases require compatibility with the deployed counterpart; both may be authorized together.
+6. Sasha administers repository/hosting/environments and controls access grants/revocation, with no additional routine human admins initially. Separate staging/production data and credentials and UI/API deployment permissions. PR checks/routine agent work receive no production secrets; authorized deployment jobs use protected scoped credentials. Private credentials never enter browser code. Existing business-owner billing/account identity/emergency recovery remains unchanged.
+
+AC1 and AC3: explicit Creator decision evidence recorded locally with verbatim replies and hashes.
+AC2 named limitation: github.com CLI verification returned HTTP 401, also without inherited token overrides. Repository plan, visibility, permissions, branch protections and native-auto-merge capability are UNVERIFIED. No bypass or alternative merge mechanism is approved. GK-013 must resolve access and prove gates using GK-020 B1 before GK-020 B2/native auto-merge proceeds. An AI review transcript is not proof of GitHub enforcement.
+AC4: input/output fingerprints and same-session documentation checks accompany docs/creator/GK-006/. No independent review, application tests, configured protections or deployment evidence is claimed. Local files are in the current unpushed planning checkout; this summary carries the policy without relying on remote file access.
+
+GK-019 reconciles the approved policy into downstream contracts/tickets; GK-013 verifies/configures gates; GK-020/GK-034 implement and verify automatic staging and release-only production. Use the already accepted test-runtime budget; no new spend is approved. Historical published ticket bodies are preserved.
+
+Acceptance scope: Creator decision ticket, with the named AC2 verification limitation retained as a mandatory downstream gate. Infrastructure configuration, releases and deployment remain separate work. This handover authorizes no actual production release.

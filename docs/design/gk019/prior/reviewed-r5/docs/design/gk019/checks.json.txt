@@ -1,0 +1,149 @@
+{
+  "checked_at_utc": "2026-10-05 21:57:25 UTC",
+  "output_manifest_sha256": "463aaacb680b1e628b23b15c8d93eeb5aa85d61bbbc75d60c2af5539e958cda0",
+  "checks": [
+    {
+      "name": "planning-self",
+      "exit_code": 0,
+      "result": "Checker self-test passed"
+    },
+    {
+      "name": "planning",
+      "exit_code": 0,
+      "result": "Planning kit checks passed"
+    },
+    {
+      "name": "owner-self",
+      "exit_code": 0,
+      "result": "PASS: isolated in-memory multi-comment and retained-history regression checks"
+    },
+    {
+      "name": "owner",
+      "exit_code": 0,
+      "result": "PASS: 3 owner packets, 82 decisions, 331 numeric occurrences; identities, hashes, references, coverage, mapping, exact arithmetic and loading hooks."
+    },
+    {
+      "name": "roles",
+      "exit_code": 0,
+      "result": "PASS: 34 source mappings, 34 developer packets, 30 Ukrainian owner packets; guided sections/examples/anchors, IDs/order/dependencies/hashes/ACs/links and bootstrap milestones intact."
+    },
+    {
+      "name": "gk019",
+      "exit_code": 0,
+      "result": "PASS: design/owner links;40 requirements; dependency+milestone DAG;32 typed relations;17 methods;11 money fixtures;34 planned state cases;25 exact unpublished amendments;6 visual inputs unchanged. No application test claim."
+    },
+    {
+      "name": "whitespace",
+      "exit_code": 0,
+      "result": ""
+    }
+  ],
+  "subsequent_edit": "Only GK-026 proposed-description cutoff paragraph and corresponding amendment manifest/index changed after full check set; check_gk019.py reran successfully on final candidate.",
+  "negative_controls": [
+    "removed Pix rejected",
+    "nonexistent schema FK rejected",
+    "current dependency overlay cycle rejected"
+  ],
+  "not_run": [
+    "application tests: no application implementation",
+    "real PostgreSQL migrations/concurrency tests",
+    "Stripe/Resend integration tests",
+    "B2 recovery/restore tests"
+  ],
+  "limitations": [
+    "git diff --check ignores untracked documents; maintained document validator checked their links/format",
+    "frozen copied historical evidence READMEs retain original relative paths and were excluded from maintained-link checks",
+    "six baseline GK-015 visual files unchanged; new concurrently authored GK-015 session files are outside this task output ownership"
+  ],
+  "trello_writes": false,
+  "releases": false,
+  "deployments": false,
+  "independent_final_checks": {
+    "reviewer": "review_gk019",
+    "commands": [
+      "python3 -B scripts/check_gk019.py",
+      "python3 -B scripts/check_owner_intake.py",
+      "python3 -B scripts/check_planning_kit.py"
+    ],
+    "result": "all passed on final manifest,88 hashes verified before and after",
+    "verdict": "ready for scoped publication with Q1-Q5 blocked; not Done"
+  },
+  "handoff_delivery": {
+    "thread_id": "01a10df4-c402-7b11-a6e2-cfda4d1ec433",
+    "title": "Approve GK-015 visual foundation",
+    "scope": "read-only exact contract handoff sent; no visual edits requested"
+  },
+  "latest_workspace_recheck": {
+    "result": "FAILED after independently reviewed snapshot passed",
+    "command": "python3 scripts/check_gk019.py",
+    "error": "docs/creator/GK-002/README.md: missing local link ../../../photo_assets/logo/3000px-03.png",
+    "scope": "external concurrent asset disappearance; GK-019 changed no asset;88 reviewed output hashes unchanged",
+    "next_action": "GK-015/Creator reconciles intended asset replacement or restores approved source; rerun link check"
+  },
+  "q1_followup": {
+    "output_manifest_sha256": "0e511dbd53b828fb1af16f7007278806a6bcad3a16d73f242d2c834ff3a7486c",
+    "independent_verdict": "PASS scoped Q1 incorporation;89 hashes verified; Q2-Q5 blocked",
+    "owner_intake": "PASS82decisions",
+    "planning_kit": "PASS",
+    "full_gk019": "FAIL missing unchanged GK002 logo link; no full pass",
+    "limited_remaining_assertions": "PASS with exact known logo-link error suppressed in memory only:40requirements,33relations,17methods,11moneyfixtures,39plannedcases,25drafts,6visuals",
+    "trello_writes": false
+  },
+  "q2_followup": {
+    "output_manifest_sha256": "745aa0ae082fa82ecd7db1b7eaeb2c4ec097a793ffe99088f061ce6cdd1724fd",
+    "independent_verdict": "PASS scoped Q2 integration;90 hashes match",
+    "owner_intake": "PASS82decisions333numeric",
+    "planning_kit": "PASS",
+    "full_gk019": "FAIL existing missing GK002 logo link; downstream stages not run",
+    "limited_remaining_assertions": "PASS known logo error excluded in-memory only;40requirements34relations17methods11money44plannedcases25drafts6protectedvisuals",
+    "remaining_questions": [
+      "Q3",
+      "Q4",
+      "Q5"
+    ],
+    "trello_writes": false
+  },
+  "q3_followup": {
+    "output_manifest_sha256": "df92597305a5062f4e79a3d5b7174b6bd4f574332db15666d1c310684e7e4266",
+    "independent_verdict": "conditional PASS Q3 consistency;91 hashes verified",
+    "owner_intake": "PASS82decisions",
+    "planning_kit": "PASS",
+    "full_gk019": "FAIL known missing GK002 logo link",
+    "limited_remaining_assertions": "PASS exact known link excluded in memory only;40requirements35relations17methods11arithmetic48plannedcases25drafts6visuals",
+    "remaining_questions": [
+      "Q4",
+      "Q5"
+    ],
+    "trello_writes": false
+  },
+  "q5_currency_followup": {
+    "date": "2026-10-06",
+    "output_manifest_sha256": "f15556358b4cac4217d96d9537c27981e32915a8dd87cdcfe2bfd7e818e54c23",
+    "files_verified": 95,
+    "independent_reviewer": "review_gk019; author-independent continued; Astra/xhigh requested-only",
+    "independent_verdict": "conditional PASS; no new major finding",
+    "checks": {
+      "owner_intake": "PASS82decisions333numeric",
+      "owner_self_test": "PASS",
+      "planning_kit": "PASS",
+      "planning_self_test": "PASS",
+      "full_gk019": "PASS unchanged default checker;40requirements35relations17methods11arithmetic55plannedcases25drafts6protectedvisuals",
+      "git_diff_check": "PASS tracked diff only; untracked covered by document checks/manifests",
+      "source_and_manifest_hashes": "PASS"
+    },
+    "asset_note": "Document link failure resolved by explicit missing-asset evidence; approved logo still unavailable. No asset substitution or validator change.",
+    "remaining_gates": [
+      "Q4 current Onelink bundle unanswered",
+      "actual method/FX/refund sandbox qualification",
+      "non-GBP settlement if applicable",
+      "foreign alternative-return conversion terms if needed",
+      "GK037/038 downstream verification",
+      "approved logo availability for visual/content readiness",
+      "AC4 reviewed Trello publication approval and recording"
+    ],
+    "trello_writes": false,
+    "application_tests": false,
+    "releases": false,
+    "deployments": false
+  }
+}

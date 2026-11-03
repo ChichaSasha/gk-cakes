@@ -1,0 +1,14 @@
+GK-003 manual-handover-r2 — verification receipt — 2026-10-05
+
+Independent fresh reviewer: /root/gk003_final_review; requested gpt-6-astra/xhigh, requested-only effective-model evidence. Verdict: publication-ready; no remaining blocker/major finding. Original AC1-AC3 and expected O1-O3 covered; publishing these receipts completes AC4. User explicitly authorized main GK-003 Done. No new approval or legal/provider/application-test claim.
+
+Passed: check_owner_intake.py, check_planning_kit.py, check_role_packets.py; exact document arithmetic/source/import hash checks.
+
+Exact local packet fingerprints (SHA-256; files local/unpushed):
+handover.md: 7543d78f06cc555e9455cdc8072baa42190b95532cec5583f898ffefb6705bde
+acceptance-cases.md: 94144408d031ec03538938bc51bf4cd2cb701b82134439dea3823e5212a80647
+decisions.json: 324248cf5f3de58ff58c5719f02aa67bc4a53e350596d1b7db5ae77f1621147e
+source-comments.json: 72aeedd3f42eebada3e0185580706658b027d9a282d6c85a87b37213c2621d4c
+trello-handover.md: b5f9d6695fd01e97f15818fa35043ec0c84fa7ad148b01540b1d64c644f081e8
+
+Next: main card Done/readback under existing authorization. GK-019 consumes this packet and checks its other prerequisites; owner card and dependent statuses unchanged. Lawyer/public Terms/privacy and actual software/provider tests remain downstream.
