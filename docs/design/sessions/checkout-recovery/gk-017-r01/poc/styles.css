@@ -658,10 +658,16 @@ input[type=checkbox][aria-invalid=true]{outline:2px solid var(--error);outline-o
 .co-delivery-note p{margin:0 0 6px}.co-delivery-note p:last-child{margin:0}
 @media(max-width:760px){.co-steps{display:none}.co-step-short{display:block;margin:0 0 16px;font:500 12px/1.4 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}}
 /* GK-017 r01 review round 2: Continue always reachable on short desktop screens, busy state, error spacing. */
-@media(min-width:1051px){.co-summary{max-height:calc(100vh - 124px);overflow-y:auto;overscroll-behavior:contain}.co-summary .co-pay{position:sticky;bottom:0;z-index:2;box-shadow:0 -18px 22px 2px #fff,0 16px 0 10px #fff}}
+@media(min-width:1051px){.co-summary{max-height:calc(100vh - 124px);overflow-y:auto}.co-summary .co-pay{position:sticky;bottom:0;z-index:2;box-shadow:0 -18px 22px 2px #fff,0 16px 0 10px #fff}}
 .co-pay.is-busy{cursor:progress}.co-pay.is-busy svg{display:none}
 .co-pay.is-busy::after{content:'';width:16px;height:16px;flex:none;border-radius:50%;border:2px solid #ffffff66;border-top-color:#fff;animation:co-spin .8s linear infinite}
 @keyframes co-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.co-pay.is-busy::after{animation:none}}
 .co-card .field:has(+ .field-error:not([hidden])){margin-bottom:0}.co-card .field+.field-error{margin:6px 0 18px}
 .co-date{flex-wrap:wrap}
 .preview-note{margin:0 0 10px;padding:8px 12px;border:1px dashed var(--line);border-radius:12px;color:var(--muted)}
+/* GK-017 r01 review round 3: opaque pinned button in every state, stacked delivery note, chip focus, inline time zone. */
+@media(min-width:1051px){.co-summary .co-pay:is(:disabled,:hover,[aria-disabled=true]){box-shadow:0 -18px 22px 2px #fff,0 16px 0 10px #fff}.co-summary .co-pay:disabled{background:#e9eaea;color:#4a4e4e;opacity:1}}
+.co-assure{margin:16px 0 18px}
+.co-delivery-note{flex-direction:column;align-items:stretch}
+#code-chip-text:focus{outline:3px solid var(--focus);outline-offset:3px;border-radius:6px}
+.co-date>span{display:block}

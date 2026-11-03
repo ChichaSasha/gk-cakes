@@ -16,8 +16,8 @@ Writes: this folder only, on branch `sasha-chycha/gk-017-checkout-design` from m
 
 ## What the checkout shows (AC1)
 
-Five numbered sections plus an order summary (sticky on tall desktop screens; below the form on tablet,
-mobile and short laptop screens, with a "To pay now" line at the top):
+Five numbered sections plus an order summary (sticky on desktop, capped to the screen height with
+Continue pinned at its bottom; below the form on tablet and mobile, with a "To pay now" line at the top):
 
 1. **When and how** — date (change), Collect free · St Katharine Docks / Your own courier
    (responsibility passes to them at handover) / GK delivery from £100. The time list loads
@@ -78,7 +78,7 @@ Independent AI review on PR #6 (round 1, head fb04036): two specialist reviewers
 (checkout UX/accessibility; payments and refund-policy rules), both **revise**, no blockers. All findings
 fixed except those deferred to r02 (round 2 on 60fc88c: both revise, one major each — Continue
 out of reach on short desktop screens; FREEDELIVERY kept on a collection order after a date change — fixed
-with the minor items): delivery request form, already-past deadline
+with the minor items; round 3 on d4ee7f3: payments pass, UX revise — page scroll trapped over the summary — fixed): delivery request form, already-past deadline
 variant, free-order (£0) path, "last place taken" when Continue is pressed, and keeping typed details
 across a date change (prototype limitation, specified for the live shop). Record: PR #6 comments.
 
