@@ -231,6 +231,88 @@ Railway and Cloudflare notes from the first staging setup:
 - Migrations `0001` and `0002` applied, which also confirms PostgreSQL 16 or later
   (`GRANT ... WITH INHERIT FALSE, SET TRUE`).
 
+## Recovery journal (K11, GK-024)
+
+`internal/recovery` implements the minimal confirmed-order recovery protocol
+from [K11](../docs/design/contracts.md#k11--confirmed-order-recovery-contract)
+for outgoing dispatches (email now; payments and refunds later). Accepted
+order commands (confirmation, changes) are designed with GK-025 and are not
+supported yet. Every dispatch runs through `Coordinator.Dispatch`:
+
+1. reserve it in `business.recovery_operation`: one unresolved operation per
+   aggregate (`ErrBusy`), prior versions only increase (`ErrStale`);
+2. write the encrypted **prepared** envelope to B2 (reusing a copy already
+   there) and wait for B2's checksum acknowledgment, then mark it `prepared`;
+3. run the effect, only while outgoing effects are not frozen (checked again
+   right before it); an error means the outcome is unknown and the operation
+   stays `prepared`;
+4. record the outcome (`committed`), write the encrypted **outcome**
+   envelope, then mark it `secured`.
+
+Rules for callers:
+
+- The payload is the exact provider request (account, environment,
+  idempotency key, from, reply-to, recipient, subject, rendered body). After a
+  primary database loss it is the only copy, and the effect must be rebuilt
+  from it alone: Resend rejects a repeated key with a different body.
+- `ReplayUntil` is fixed at the first reservation, below the provider window
+  (for Resend's 24 hours: first dispatch + at most 23 hours), and can never be
+  extended. Until then a resumed dispatch repeats the identical request; from
+  then on an unknown outcome goes to `reconcile`, never to a new send. An
+  effect outcome that cannot be recorded also goes to `reconcile`.
+- Use the dispatch's own intent (for example the notification intent) as the
+  aggregate, not the order, so an unresolved email never blocks order work.
+  A successor resend uses the next prior version after `Coordinator.Resolve`
+  records the manager's outcome for the reconciling one.
+- Store phases on an autocommit connection or pool (`NewSQLStore` refuses a
+  transaction): no lock or transaction is held across B2 or provider calls.
+  Serialize work on one operation with the job lease.
+
+`Coordinator.Pending` lists prepared operations without an outcome from B2
+alone, so after a primary database loss they can be resumed against a
+restored database (a `reconcile` decision is not journalled; the deadline
+check reproduces it). `CopyBlob` stores an essential attachment's bytes before
+its reference is committed.
+
+Objects live under `recovery/<APP_ENV>/` in the sandbox bucket
+`gk-cakes-sandbox-backups-flbgymxjelzexgoxrcss`:
+`op/<aggregate>/<prior version>-<operation>.{prepared,outcome}` and
+`blob/<kid>-<keyed hash>`. Names contain only IDs, versions and keyed hashes.
+Contents are AES-256-GCM sealed in the application and bound to their object
+name, on top of B2's SSE-B2; the bucket keeps all versions, and the journal
+never deletes.
+
+Setup requirements (the code refuses any other key):
+
+- **B2 application key:** restricted to that one bucket and the name prefix
+  `recovery/` (or exactly `recovery/<APP_ENV>/`), with `listFiles`, `readFiles`
+  and `writeFiles` plus at most read-only capabilities: no `deleteFiles`, bucket
+  settings, retention or sharing. The B2 web console's access presets include
+  delete, so create it with the B2 CLI, for example
+  `b2 key create --bucket gk-cakes-sandbox-backups-flbgymxjelzexgoxrcss
+  --name-prefix recovery/ gk-recovery-staging listFiles,readFiles,writeFiles`.
+- **Encryption key:** `kid:base64(32 random bytes)`, for example `k1:` followed
+  by `openssl rand -base64 32`. Keep it in Bitwarden as well as the service
+  variables: without it the envelopes cannot be read. A comma-separated list
+  rotates keys (the first seals, all open).
+
+The tables and functions are owner-internal: domain gateway functions call
+them in the same transaction as their own state change, and no runtime role
+can call them directly (`gk_backup` may read the tables, as every business
+table). Restore tooling (as `gk_owner`) freezes all outgoing effects with
+`business.recovery_set_freeze(true, reason)`.
+
+Not yet:
+
+- runtime wiring and service variables (GK-024 email engine);
+- B2 Object Lock retention, restore tooling and the restore drill (GK-034
+  Milestone B, GK-035);
+- K09 retention for the journal: it keeps recipients and message bodies (and
+  later essential photos) until deleted, and this key cannot delete. Keeping
+  only current copies of still-retained records, 30-day restore points and
+  deletion tombstones carried into replay belong to GK-034 Milestone B with
+  the retention work.
+
 ## Not yet verified
 
 - Runtime-role denial and the gateway on the sandbox. They are proven on
