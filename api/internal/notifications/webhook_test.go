@@ -131,9 +131,23 @@ func TestParseEventKeepsOnlyMinimizedEvidence(t *testing.T) {
 	if err != nil || len(odd.Detail) != 0 || odd.IntentTag != "" || odd.Env != "" {
 		t.Fatalf("unsafe values were kept: %+v, %v", odd, err)
 	}
-	for _, bad := range []string{`{`, `{"type":""}`, `{"type":"Email Bounced"}`, `{"type":"email.sent","data":{"email_id":"bad id"}}`} {
+	for _, bad := range []string{`{`, `[]`, `{"type":""}`, `{"type":"Email Bounced"}`, `{"type":7}`, `{"type":"email"}`} {
 		if _, err := ParseEvent([]byte(bad)); !errors.Is(err, ErrMalformedEvent) {
 			t.Errorf("ParseEvent(%s) = %v, want ErrMalformedEvent", bad, err)
+		}
+	}
+	// Beyond the type, unexpected shapes are dropped, never fatal: a signed
+	// delivery that can never succeed would exhaust the provider's retries.
+	for _, odd := range []string{
+		`{"type":"email.sent","data":{"email_id":"bad id@example.org"}}`,
+		`{"type":"email.bounced","data":{"bounce":"Permanent","tags":"intent"}}`,
+		`{"type":"email.failed","created_at":12,"data":{"failed":true,"tags":[{"name":1},{"value":"x"}]}}`,
+		`{"type":"email.v2.sent","data":[]}`,
+		`{"type":"contact.updated","data":{"failed":true}}`,
+	} {
+		ev, err := ParseEvent([]byte(odd))
+		if err != nil || ev.ProviderMessageID != "" || ev.IntentTag != "" || ev.Env != "" || len(ev.Detail) != 0 || ev.CreatedAt != nil {
+			t.Errorf("ParseEvent(%s) = %+v, %v; want the type only", odd, ev, err)
 		}
 	}
 }
@@ -162,6 +176,9 @@ func TestReceiveIgnoresOtherEnvironmentsAndEventTypesWithoutStoring(t *testing.T
 		"an open":             `{"type":"email.opened","data":{"email_id":"m1","tags":{"env":"test"}}}`,
 		"a click":             `{"type":"email.clicked","data":{"email_id":"m1","tags":{"env":"test"}}}`,
 		"a domain event":      `{"type":"domain.updated","data":{"id":"d1"}}`,
+		"another environment with an unexpected shape": `{"type":"email.bounced","data":{"email_id":"x@y","bounce":"odd","tags":{"env":"production"}}}`,
+		"a newer event type":                           `{"type":"email.v2.sent","data":{"tags":{"env":"test"}}}`,
+		"a contact event":                              `{"type":"contact.updated","data":{"failed":true}}`,
 	} {
 		got, err := w.Receive(context.Background(), sign(t, secret, "msg_"+strings.ReplaceAll(name, " ", "_"), now, []byte(body)), []byte(body))
 		if err != nil || got != WebhookIgnored {

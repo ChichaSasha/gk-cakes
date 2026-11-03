@@ -147,67 +147,72 @@ type Event struct {
 }
 
 var (
-	eventTypePattern = regexp.MustCompile(`^[a-z]+(\.[a-z_]+){1,3}$`)
+	eventTypePattern = regexp.MustCompile(`^[a-z0-9_]{1,30}(\.[a-z0-9_]{1,30}){1,4}$`)
 	categoryPattern  = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
 )
 
-// ParseEvent extracts the evidence the inbox keeps from a verified body.
+// ParseEvent extracts the evidence the inbox keeps from a verified body. It is
+// lenient beyond the event type: a field with an unexpected shape or value is
+// dropped rather than failing the delivery (a signed event that can never be
+// accepted would exhaust the provider's retries and disable the endpoint).
+// Only a body that is not a JSON object with a plausible type is malformed.
 func ParseEvent(body []byte) (Event, error) {
-	var raw struct {
-		Type      string `json:"type"`
-		CreatedAt string `json:"created_at"`
-		Data      struct {
-			EmailID string          `json:"email_id"`
-			Tags    json.RawMessage `json:"tags"`
-			Bounce  *struct {
-				Type    string `json:"type"`
-				SubType string `json:"subType"`
-			} `json:"bounce"`
-			Failed *struct {
-				Reason string `json:"reason"`
-			} `json:"failed"`
-			Suppressed *struct {
-				Type string `json:"type"`
-			} `json:"suppressed"`
-		} `json:"data"`
+	var top struct {
+		Type      string          `json:"type"`
+		CreatedAt json.RawMessage `json:"created_at"`
+		Data      json.RawMessage `json:"data"`
 	}
-	if err := json.Unmarshal(body, &raw); err != nil || !eventTypePattern.MatchString(raw.Type) {
+	if err := json.Unmarshal(body, &top); err != nil || !eventTypePattern.MatchString(top.Type) {
 		return Event{}, ErrMalformedEvent
 	}
-	ev := Event{Type: raw.Type, Detail: map[string]string{}}
-	if t, err := time.Parse(time.RFC3339Nano, raw.CreatedAt); err == nil {
+	ev := Event{Type: top.Type, Detail: map[string]string{}}
+	if t, err := time.Parse(time.RFC3339Nano, jsonString(top.CreatedAt)); err == nil {
 		t = t.UTC()
 		ev.CreatedAt = &t
 	}
-	if raw.Data.EmailID != "" {
-		if !messageIDPattern.MatchString(raw.Data.EmailID) {
-			return Event{}, ErrMalformedEvent
-		}
-		ev.ProviderMessageID = raw.Data.EmailID
+	data := jsonObject(top.Data)
+	if id := jsonString(data["email_id"]); messageIDPattern.MatchString(id) {
+		ev.ProviderMessageID = id
 	}
-	tags := eventTags(raw.Data.Tags)
+	tags := eventTags(data["tags"])
 	if v := tags[intentTagName]; uuidPattern.MatchString(v) {
 		ev.IntentTag = v
 	}
 	if v := tags[envTagName]; envPattern.MatchString(v) {
 		ev.Env = v
 	}
-	category := func(key, value string) {
-		if categoryPattern.MatchString(value) {
-			ev.Detail[key] = value
+	category := func(key string, raw json.RawMessage) {
+		if v := jsonString(raw); categoryPattern.MatchString(v) {
+			ev.Detail[key] = v
 		}
 	}
-	if b := raw.Data.Bounce; b != nil {
-		category("bounce_type", b.Type)
-		category("bounce_sub_type", b.SubType)
+	if b := jsonObject(data["bounce"]); b != nil {
+		category("bounce_type", b["type"])
+		category("bounce_sub_type", b["subType"])
 	}
-	if f := raw.Data.Failed; f != nil {
-		category("failed_reason", f.Reason)
+	if f := jsonObject(data["failed"]); f != nil {
+		category("failed_reason", f["reason"])
 	}
-	if s := raw.Data.Suppressed; s != nil {
-		category("suppressed_type", s.Type)
+	if sup := jsonObject(data["suppressed"]); sup != nil {
+		category("suppressed_type", sup["type"])
 	}
 	return ev, nil
+}
+
+func jsonString(raw json.RawMessage) string {
+	var s string
+	if len(raw) == 0 || json.Unmarshal(raw, &s) != nil {
+		return ""
+	}
+	return s
+}
+
+func jsonObject(raw json.RawMessage) map[string]json.RawMessage {
+	var m map[string]json.RawMessage
+	if len(raw) == 0 || json.Unmarshal(raw, &m) != nil {
+		return nil
+	}
+	return m
 }
 
 // eventTags reads tags as Resend sends them in events (an object), or as a
@@ -217,13 +222,21 @@ func eventTags(raw json.RawMessage) map[string]string {
 	if len(raw) == 0 {
 		return tags
 	}
-	if json.Unmarshal(raw, &tags) == nil {
+	if obj := jsonObject(raw); obj != nil {
+		for k, v := range obj {
+			if s := jsonString(v); s != "" {
+				tags[k] = s
+			}
+		}
 		return tags
 	}
-	var list []Tag
+	var list []json.RawMessage
 	if json.Unmarshal(raw, &list) == nil {
-		for _, t := range list {
-			tags[t.Name] = t.Value
+		for _, item := range list {
+			t := jsonObject(item)
+			if name, value := jsonString(t["name"]), jsonString(t["value"]); name != "" && value != "" {
+				tags[name] = value
+			}
 		}
 	}
 	return tags
@@ -245,7 +258,12 @@ func (w *Webhook) Receive(ctx context.Context, h http.Header, body []byte) (stri
 	}
 	log := w.log.With("svix_id", id, "event_type", ev.Type)
 	if !recordedEvents[ev.Type] || ev.Env != w.env {
-		log.Info("email webhook event ignored", "event_env", ev.Env)
+		if recordedEvents[ev.Type] && ev.Env == "" && ev.IntentTag != "" {
+			// One of ours without its environment tag: should never happen.
+			log.Warn("email webhook event for an intent without an environment tag ignored", "intent_tag", ev.IntentTag)
+		} else {
+			log.Info("email webhook event ignored", "event_env", ev.Env)
+		}
 		return WebhookIgnored, nil
 	}
 	var detail *string

@@ -72,7 +72,8 @@ type Tag struct {
 // Request is the Resend send-email request body. It is a frozen wire
 // format: ParseDispatch requires stored bytes to equal its encoding, so
 // reordering fields or adding one without omitempty would refuse every stored
-// but unsent notice. Change it only with a payload version.
+// but unsent notice. Change it only with a payload version. (The env tag was
+// added in GK-024 A3a before anything could enqueue a notice at runtime.)
 type Request struct {
 	From    string   `json:"from"`
 	To      []string `json:"to"`

@@ -429,3 +429,85 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		}
 	}
 }
+
+// A complaint proves delivery to the server, never a bounce; a suppression is
+// a definitive failure. Adverse evidence is audited without personal data.
+func TestComplaintAndSuppressionEvidence(t *testing.T) {
+	h := newHarness(t)
+	w := h.webhook()
+	a, msgA := h.sent()
+	h.deliver(w, nextSvixID(), event("email.complained", msgA, a.IntentID, "test", ""))
+	if got := h.intent(a.IntentID).State; got != "delivered_to_server" {
+		t.Fatalf("after a complaint: %s, want delivered_to_server", got)
+	}
+	b, msgB := h.sent()
+	h.deliver(w, nextSvixID(), event("email.suppressed", msgB, b.IntentID, "test",
+		`,"suppressed":{"message":"`+recipient+` is on the account suppression list","type":"OnAccountSuppressionList"}`))
+	if got := h.intent(b.IntentID).State; got != "failed" {
+		t.Fatalf("after a suppression: %s, want failed", got)
+	}
+	ev := h.events()
+	if len(ev) != 2 || ev[1].Detail == nil || *ev[1].Detail != `{"suppressed_type":"OnAccountSuppressionList"}` {
+		t.Fatalf("events %+v, want the suppression category only", ev)
+	}
+	var audits []string
+	rows, err := h.admin.Query(h.ctx, `SELECT subject_id::text || ' ' || detail::text FROM business.audit_event
+		WHERE action = 'notification.adverse_evidence' ORDER BY occurred_at`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	audits, err = pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := b.IntentID + ` {"state" : "failed", "event_type" : "email.suppressed"}`
+	if len(audits) != 1 || audits[0] != want {
+		t.Fatalf("adverse evidence audits %q, want only %q", audits, want)
+	}
+}
+
+// Two different events for one email can be applied concurrently: a bounce
+// committed while a sent event waits for the intent row is never overwritten.
+func TestConcurrentEventsForOneEmailNeverRegressEvidence(t *testing.T) {
+	h := newHarness(t)
+	w := h.webhook()
+	n := newNotice(t, "test")
+	h.enqueue(n)
+	h.provider.queue("lose")
+	h.runOnce(1)
+	// Another delivery's transaction, on its own connection (the observer
+	// connection must stay outside it to see current activity).
+	tx, err := h.db.AdminConn(t).Begin(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(h.ctx)
+	if _, err := tx.Exec(h.ctx, "UPDATE business.notification_intent SET state = 'bounced', provider_message_id = 're-msg-1' WHERE id = $1::uuid", n.IntentID); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	body := event("email.sent", "re-msg-1", n.IntentID, "test", "")
+	go func() {
+		_, err := w.Receive(h.ctx, signed(t, nextSvixID(), body), []byte(body))
+		done <- err
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for h.count("SELECT count(*) FROM pg_stat_activity WHERE application_name = 'gk-api-test' AND wait_event_type = 'Lock'") == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the webhook transaction never waited for the intent row")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err := tx.Commit(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if got := h.intent(n.IntentID).State; got != "bounced" {
+		t.Fatalf("intent %s, want the bounce kept", got)
+	}
+	if ev := h.events(); len(ev) != 1 || ev[0].Applied != nil || ev[0].Correlation != "matched" {
+		t.Fatalf("events %+v, want the sent event kept without being applied", ev)
+	}
+}

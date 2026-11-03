@@ -766,7 +766,12 @@ func TestEnqueueRefusesDuplicatesAndForeignPayloads(t *testing.T) {
 	otherKey.IdempotencyKey = nextUUID()
 	otherTag := newNotice(t, "test")
 	otherTag.IntentID = nextUUID()
-	for name, bad := range map[string]notifications.Notice{"another key": otherKey, "another intent tag": otherTag} {
+	noEnv := newNotice(t, "test")
+	noEnv.Payload = bytes.Replace(noEnv.Payload, []byte(`,{"name":"env","value":"test"}`), nil, 1)
+	otherEnv := newNotice(t, "test")
+	otherEnv.Payload = bytes.Replace(otherEnv.Payload, []byte(`{"name":"env","value":"test"}`), []byte(`{"name":"env","value":"production"}`), 1)
+	for name, bad := range map[string]notifications.Notice{"another key": otherKey, "another intent tag": otherTag,
+		"no env tag": noEnv, "an env tag of another environment": otherEnv} {
 		if got := dbtest.SQLState(enqueue(bad)); got != "22023" {
 			t.Errorf("%s: SQLSTATE %q, want 22023", name, got)
 		}
