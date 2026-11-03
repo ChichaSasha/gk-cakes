@@ -113,10 +113,11 @@ with newer migrations. Never add destructive down migrations.
 
 ## Releases and deployment (GK-034)
 
-UI and API are built once per `main` commit as
-`ghcr.io/chichasasha/gk-cakes-{api,ui}:sha-<commit>` (labelled
-`org.opencontainers.image.revision=<commit>`) and deployed by digest; nothing is
-rebuilt at deploy time. Workflows: `.github/workflows/staging.yml` and
+UI and API are built once for each `main` commit that is still the head of
+`main` when its CI passes, as `ghcr.io/chichasasha/gk-cakes-{api,ui}:sha-<commit>`
+(labelled `org.opencontainers.image.revision=<commit>`), and deployed by digest;
+nothing is rebuilt at deploy time. Commits superseded before their CI finished
+get no image and cannot be released. Workflows: `.github/workflows/staging.yml` and
 `release.yml`.
 
 - **Staging, automatic.** A green Components run on a push to `main` publishes
@@ -124,30 +125,41 @@ rebuilt at deploy time. Workflows: `.github/workflows/staging.yml` and
   `main`: API first (migrate once, then Railway behind `/readyz`), then UI (behind
   `/healthz`). Each deploy ends with `.github/scripts/smoke.sh` against the
   public URLs and is recorded as a GitHub deployment
-  (`staging-api` / `staging-ui`, payload `version` and `artifact_digest`).
+  (`staging-api` / `staging-ui`, payload `version` and `artifact_digest`; task
+  `deploy` for main deploys, `deploy:release` for releases).
 - **Release.** Publish a GitHub release tagged `api-vX.Y.Z` or `ui-vX.Y.Z` on a
   `main` commit. The gate (`gk-release-gate`) deploys only that component and only
   if the tag points at a commit on `main` with a successful main CI run, the
   registry image for that commit exists and carries that commit in its revision
-  label, the same release is not already deployed (replay: skip) and no higher
-  version of that component is already deployed to the target (downgrade: deny).
-  A **prerelease** goes to staging, where the deploy job repeats these checks
-  inside its serialized section; a **full release** targets production, which
-  stays disabled until GK-036.
+  label, the same release is not already deployed successfully (replay: skip) and
+  no release record of a higher version of that component exists in the target,
+  whatever its status, since a failed attempt may still be live (downgrade: deny).
+  A **prerelease** goes to staging, where the verify-release job repeats the
+  artifact, replay and downgrade checks; it runs in the `deploy-staging`
+  concurrency group, so it is ordered with every staging deploy. A **full
+  release** targets production, which stays disabled until GK-036; its deploy job
+  must repeat these checks inside its own serialized section.
+- **Queued runs.** GitHub keeps one pending run per concurrency group: a queued
+  staging run can be superseded by a newer one before it starts (never while it
+  runs, so a migration is not cancelled). A superseded release run fails and can
+  be re-run.
 - **Rollback.** Publish a new, higher tag pointing at the older commit (for
   example `ui-v1.4.1` at the commit of `ui-v1.3.0`). Lower tags are refused. API
   rollback across a migration is not possible yet: an older `gk-migrate` refuses a
   newer schema (GK-034 part 2, AC2).
 
 `gk-release-gate` exit status: `0` deploy, skip or verified; `3` denied, not
-verified or a downgrade; `4` verified but already deployed; `1` error.
+verified or a downgrade; `4` verified but already deployed; `1` error. Records
+created before release records had their own task (the `api-v0.0.1` and
+`ui-v0.0.1` staging test prereleases) are not considered by these checks.
 
 Staging configuration (all nonsecret unless noted):
 
 | Name | Where | Purpose |
 | --- | --- | --- |
 | `STAGING_API_ENABLED` | repository variable | `true` enables API deploys (migrations run first) |
-| `RAILWAY_PROJECT_ID`, `RAILWAY_ENVIRONMENT_ID`, `RAILWAY_API_SERVICE_ID`, `RAILWAY_UI_SERVICE_ID` | `staging` environment variables | deploy targets |
+| `RAILWAY_ENVIRONMENT_ID`, `RAILWAY_API_SERVICE_ID`, `RAILWAY_UI_SERVICE_ID` | `staging` environment variables | deploy targets |
+| `RAILWAY_PROJECT_ID` | `staging` environment variable | reference only; not read by the workflows |
 | `STAGING_API_URL`, `STAGING_UI_URL` | `staging` environment variables | public smoke check, `https://<host>` without a trailing slash |
 | `RAILWAY_STAGING_TOKEN`, `STAGING_MIGRATION_DATABASE_URL` | `staging` environment secrets | see the secret inventory |
 

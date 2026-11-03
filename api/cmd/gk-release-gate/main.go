@@ -74,33 +74,18 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		HTTP:        &http.Client{Timeout: 20 * time.Second},
 	}
 	if *verify {
-		err := client.VerifyArtifact(ctx, getenv("GITHUB_REPOSITORY"), getenv("GITHUB_REPOSITORY_OWNER"), *component, *commit, *digest)
-		if err != nil {
-			fmt.Fprintf(stdout, "not verified: %v\n", err)
-			return exitDenied
-		}
-		fmt.Fprintf(stdout, "verified: %s %s for commit %s\n", *component, *digest, *commit)
-		if *environment != "" && *version != "" {
-			released, err := client.AlreadyReleased(ctx, getenv("GITHUB_REPOSITORY"), *environment, *version, *digest)
-			if err != nil {
-				fmt.Fprintf(stdout, "error: replay check: %v\n", err)
-				return exitError
-			}
-			if released {
-				fmt.Fprintf(stdout, "already deployed: %s (%s) in %s\n", *version, *digest, *environment)
-				return exitReleased
-			}
-			newer, err := client.NewerReleased(ctx, getenv("GITHUB_REPOSITORY"), *environment, *version)
-			if err != nil {
-				fmt.Fprintf(stdout, "error: downgrade check: %v\n", err)
-				return exitError
-			}
-			if newer != "" {
-				fmt.Fprintf(stdout, "not verified: %s is older than %s, already deployed to %s; a rollback needs a new, higher tag\n", *version, newer, *environment)
-				return exitDenied
-			}
-		}
-		return exitOK
+		res, err := client.Verify(ctx, releasegate.VerifyRequest{
+			Repository:  getenv("GITHUB_REPOSITORY"),
+			Owner:       getenv("GITHUB_REPOSITORY_OWNER"),
+			Component:   *component,
+			CommitSHA:   *commit,
+			Digest:      *digest,
+			Environment: *environment,
+			Tag:         *version,
+		})
+		code, line := verifyExit(res, err)
+		fmt.Fprintln(stdout, line)
+		return code
 	}
 	d, err := releasegate.Evaluate(ctx, releasegate.Input{
 		EventName:  getenv("GITHUB_EVENT_NAME"),
@@ -152,4 +137,21 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		return exitDenied
 	}
 	return exitOK
+}
+
+// verifyExit maps a -verify result to the exit status and output line.
+func verifyExit(res releasegate.VerifyResult, err error) (int, string) {
+	if err != nil {
+		return exitError, "error: " + err.Error()
+	}
+	switch res.Outcome {
+	case releasegate.VerifyDeploy:
+		return exitOK, "verified: " + res.Reason
+	case releasegate.VerifyReplay:
+		return exitReleased, "already deployed: " + res.Reason
+	case releasegate.VerifyRejected:
+		return exitDenied, "not verified: " + res.Reason
+	default:
+		return exitError, fmt.Sprintf("error: unknown verify outcome %q", res.Outcome)
+	}
 }

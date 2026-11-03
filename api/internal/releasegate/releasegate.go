@@ -23,7 +23,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -201,7 +200,7 @@ func Evaluate(ctx context.Context, in Input, gh *Client) (Decision, error) {
 		return Decision{}, err
 	}
 	if newer != "" {
-		return deny("release %s is older than %s, already deployed to %s; a rollback needs a new, higher tag", tag, newer, manifest.Environment), nil
+		return deny("release %s is older than %s, already recorded in %s; a rollback needs a new, higher tag", tag, newer, manifest.Environment), nil
 	}
 	return Decision{Action: ActionDeploy, Reason: "verified release", Manifest: manifest}, nil
 }
@@ -563,6 +562,13 @@ func (c *Client) latestMigration(ctx context.Context, repo, sha string) (string,
 	return latest, nil
 }
 
+// ReleaseTask is the GitHub deployment task of release-path records (tag
+// versions such as api-v1.2.3). Main-path records use the default "deploy",
+// so replay and downgrade lookups list only release records. Records made
+// before this task existed (the api-v0.0.1 and ui-v0.0.1 staging test
+// prereleases) are not considered.
+const ReleaseTask = "deploy:release"
+
 type deploymentPayload struct {
 	ArtifactDigest string `json:"artifact_digest"`
 	Version        string `json:"version"`
@@ -571,38 +577,61 @@ type deploymentPayload struct {
 type deployment struct {
 	ID      int64             `json:"id"`
 	SHA     string            `json:"sha"`
+	Task    string            `json:"task"`
 	Payload deploymentPayload `json:"payload"`
 }
 
-// AlreadyReleased reports whether environment has a successful deployment
-// record for this exact release (version tag and digest). A replayed release
-// is therefore skipped even after later deploys, while a rollback must use a
-// new release tag and is deployed.
-func (c *Client) AlreadyReleased(ctx context.Context, repo, environment, version, digest string) (bool, error) {
-	const perPage, maxPages = 100, 50
-	for page := 1; page <= maxPages; page++ {
-		var deployments []deployment // newest first
-		q := url.Values{"environment": {environment}, "per_page": {fmt.Sprint(perPage)}, "page": {fmt.Sprint(page)}}
+const (
+	deploymentsPerPage = 100
+	maxDeploymentPages = 50
+)
+
+// releaseRecords calls visit for each release-path deployment record of
+// environment, newest first, until visit returns true. It fails closed when
+// the history exceeds maxDeploymentPages pages.
+func (c *Client) releaseRecords(ctx context.Context, repo, environment string, visit func(deployment) (bool, error)) error {
+	for page := 1; page <= maxDeploymentPages; page++ {
+		var deployments []deployment
+		q := url.Values{
+			"environment": {environment},
+			"task":        {ReleaseTask},
+			"per_page":    {strconv.Itoa(deploymentsPerPage)},
+			"page":        {strconv.Itoa(page)},
+		}
 		if err := c.get(ctx, "/repos/"+repo+"/deployments", q, &deployments); err != nil {
-			return false, err
+			return err
 		}
 		for _, d := range deployments {
-			if d.Payload.Version != version || d.Payload.ArtifactDigest != digest {
-				continue
+			if d.Task != ReleaseTask {
+				continue // defensive: the filter is the API's
 			}
-			ok, err := c.succeeded(ctx, repo, d.ID)
-			if err != nil {
-				return false, err
-			}
-			if ok {
-				return true, nil
+			stop, err := visit(d)
+			if err != nil || stop {
+				return err
 			}
 		}
-		if len(deployments) < perPage {
-			return false, nil
+		if len(deployments) < deploymentsPerPage {
+			return nil
 		}
 	}
-	return false, fmt.Errorf("environment %s: more than %d pages of deployments", environment, maxPages)
+	return fmt.Errorf("environment %s: more than %d pages of release deployments", environment, maxDeploymentPages)
+}
+
+// AlreadyReleased reports whether environment has a successful release record
+// for this exact release (version tag and digest). A replayed release is
+// therefore skipped even after later deploys, while a failed attempt may be
+// retried.
+func (c *Client) AlreadyReleased(ctx context.Context, repo, environment, version, digest string) (bool, error) {
+	released := false
+	err := c.releaseRecords(ctx, repo, environment, func(d deployment) (bool, error) {
+		if d.Payload.Version != version || d.Payload.ArtifactDigest != digest {
+			return false, nil
+		}
+		ok, err := c.succeeded(ctx, repo, d.ID)
+		released = ok
+		return ok, err
+	})
+	return released, err
 }
 
 // semver is a parsed X.Y.Z release version.
@@ -634,55 +663,31 @@ func parseTag(tag string) (string, semver, bool) {
 	return m[1], v, true
 }
 
-// NewerReleased returns the highest release tag of tag's component with a
-// successful deployment record in environment whose version is greater than
-// tag's, or "" when there is none. Deploying tag would then be a downgrade.
-// Failed or unfinished attempts and non-release (main-...) deploys do not
-// count. Callers run it inside their serialized deploy section so concurrent
-// releases are ordered; a deliberate rollback uses a new, higher tag.
+// NewerReleased returns the highest release tag of tag's component that has a
+// release record in environment with a version greater than tag's, or "" when
+// there is none; deploying tag would then be a downgrade. Every recorded
+// attempt counts, whatever its status: a record marked failed after Railway
+// already switched traffic (for example a failed smoke check) may be what is
+// live. A deliberate rollback therefore uses a new, higher tag. The release
+// gate calls this early; the staging verify-release job repeats it inside the
+// deploy-staging concurrency group, where concurrent releases are ordered. A
+// production deploy job must likewise re-check inside its serialized section.
 func (c *Client) NewerReleased(ctx context.Context, repo, environment, tag string) (string, error) {
 	component, version, ok := parseTag(tag)
 	if !ok {
 		return "", fmt.Errorf("tag %q is not ui-vX.Y.Z or api-vX.Y.Z", tag)
 	}
-	type candidate struct {
-		tag string
-		v   semver
-		id  int64
+	highest, newest := "", version
+	err := c.releaseRecords(ctx, repo, environment, func(d deployment) (bool, error) {
+		if comp, v, ok := parseTag(d.Payload.Version); ok && comp == component && newest.less(v) {
+			highest, newest = d.Payload.Version, v
+		}
+		return false, nil
+	})
+	if err != nil {
+		return "", err
 	}
-	var newer []candidate
-	const perPage, maxPages = 100, 50
-	for page := 1; ; page++ {
-		if page > maxPages {
-			return "", fmt.Errorf("environment %s: more than %d pages of deployments", environment, maxPages)
-		}
-		var deployments []deployment // newest first
-		q := url.Values{"environment": {environment}, "per_page": {fmt.Sprint(perPage)}, "page": {fmt.Sprint(page)}}
-		if err := c.get(ctx, "/repos/"+repo+"/deployments", q, &deployments); err != nil {
-			return "", err
-		}
-		for _, d := range deployments {
-			if comp, v, ok := parseTag(d.Payload.Version); ok && comp == component && version.less(v) {
-				newer = append(newer, candidate{d.Payload.Version, v, d.ID})
-			}
-		}
-		if len(deployments) < perPage {
-			break
-		}
-	}
-	// Highest version first; only its latest status decides, so stop at the
-	// first successful one.
-	sort.SliceStable(newer, func(i, j int) bool { return newer[j].v.less(newer[i].v) })
-	for _, n := range newer {
-		ok, err := c.succeeded(ctx, repo, n.id)
-		if err != nil {
-			return "", err
-		}
-		if ok {
-			return n.tag, nil
-		}
-	}
-	return "", nil
+	return highest, nil
 }
 
 // succeeded reports whether a deployment's latest status is success.
@@ -694,4 +699,78 @@ func (c *Client) succeeded(ctx context.Context, repo string, id int64) (bool, er
 		return false, err
 	}
 	return len(statuses) > 0 && statuses[0].State == "success", nil
+}
+
+// VerifyOutcome is the deploy job's verdict on a release artifact.
+type VerifyOutcome string
+
+// Verify outcomes.
+const (
+	VerifyDeploy   VerifyOutcome = "deploy"   // verified: deploy it
+	VerifyReplay   VerifyOutcome = "replay"   // this release is already deployed: skip
+	VerifyRejected VerifyOutcome = "rejected" // not verified, inconsistent request or a downgrade
+)
+
+// VerifyRequest identifies the artifact handed to a deploy job. Environment
+// and Tag enable the replay and downgrade checks and must be given together.
+type VerifyRequest struct {
+	Repository  string // owner/name
+	Owner       string // registry namespace owner
+	Component   string // api or ui
+	CommitSHA   string
+	Digest      string
+	Environment string // staging-<component> or production-<component>
+	Tag         string // <component>-vX.Y.Z
+}
+
+// VerifyResult is the outcome and a human-readable reason.
+type VerifyResult struct {
+	Outcome VerifyOutcome
+	Reason  string
+}
+
+func rejected(format string, args ...any) VerifyResult {
+	return VerifyResult{Outcome: VerifyRejected, Reason: fmt.Sprintf(format, args...)}
+}
+
+// Verify re-checks a release artifact inside the deploy job's serialized
+// section: the artifact (VerifyArtifact), then replay (skip), then downgrade
+// (reject). Errors from the replay and downgrade lookups are returned so the
+// caller fails closed; artifact verification failures are rejections.
+func (c *Client) Verify(ctx context.Context, r VerifyRequest) (VerifyResult, error) {
+	if (r.Environment == "") != (r.Tag == "") {
+		return rejected("environment and tag must be given together"), nil
+	}
+	if r.Tag != "" {
+		component, _, ok := parseTag(r.Tag)
+		switch {
+		case !ok:
+			return rejected("tag %q is not ui-vX.Y.Z or api-vX.Y.Z", r.Tag), nil
+		case component != r.Component:
+			return rejected("tag %q is not a %s release", r.Tag, r.Component), nil
+		case r.Environment != "staging-"+r.Component && r.Environment != "production-"+r.Component:
+			return rejected("environment %q is not staging-%s or production-%s", r.Environment, r.Component, r.Component), nil
+		}
+	}
+	if err := c.VerifyArtifact(ctx, r.Repository, r.Owner, r.Component, r.CommitSHA, r.Digest); err != nil {
+		return rejected("%v", err), nil
+	}
+	if r.Tag == "" {
+		return VerifyResult{Outcome: VerifyDeploy, Reason: "artifact verified"}, nil
+	}
+	released, err := c.AlreadyReleased(ctx, r.Repository, r.Environment, r.Tag, r.Digest)
+	if err != nil {
+		return VerifyResult{}, fmt.Errorf("replay check: %w", err)
+	}
+	if released {
+		return VerifyResult{Outcome: VerifyReplay, Reason: fmt.Sprintf("%s (%s) is already deployed to %s", r.Tag, r.Digest, r.Environment)}, nil
+	}
+	newer, err := c.NewerReleased(ctx, r.Repository, r.Environment, r.Tag)
+	if err != nil {
+		return VerifyResult{}, fmt.Errorf("downgrade check: %w", err)
+	}
+	if newer != "" {
+		return rejected("%s is older than %s, already recorded in %s; a rollback needs a new, higher tag", r.Tag, newer, r.Environment), nil
+	}
+	return VerifyResult{Outcome: VerifyDeploy, Reason: "artifact verified, not yet deployed"}, nil
 }
