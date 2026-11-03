@@ -1,15 +1,19 @@
 # GK-034: the only path that deploys staging.
 #   workflow_run      a green Components run on a push to main: reuse or build
-#                     the API and UI images for that exact commit, push them to
-#                     ghcr.io and deploy their digests, but only while the commit
-#                     is still the head of main (no accidental downgrade).
+#                     the API and UI images for that exact commit (a reused tag
+#                     must carry that commit in its revision label), push them
+#                     to ghcr.io and deploy their digests, but only while the
+#                     commit is still the head of main (no accidental downgrade).
 #   workflow_dispatch sent by the release workflow for a prerelease that passed
 #                     the release gate: re-verify the artifact (commit on main,
-#                     green main CI, registry digest), skip if that release is
-#                     already deployed, then deploy that component.
+#                     green main CI, registry digest and revision label), skip
+#                     if that release is already deployed, refuse it if a higher
+#                     release of that component is recorded, then deploy it.
 # All staging deploys share one concurrency group and are never cancelled
 # while running. API deploys run migrations first and stay off until the
-# repository variable STAGING_API_ENABLED is true.
+# repository variable STAGING_API_ENABLED is true. Each deploy ends with a
+# public smoke check through STAGING_API_URL / STAGING_UI_URL (environment
+# variables of the staging environment).
 name: Staging
 run-name: ${{ inputs.version && format('Staging release {0}', inputs.version) || format('Staging {0}', github.event.workflow_run.head_sha) }}
 
@@ -77,6 +81,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -o pipefail
           head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
           if [[ "$head" != "$SHA" ]]; then
             echo "- skipped: commit \`$SHA\` is no longer the head of main (\`$head\`)" | tee -a "$GITHUB_STEP_SUMMARY"
@@ -102,6 +107,13 @@ jobs:
             fi
             if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
               echo "unexpected registry digest for $tag: $digest" >&2
+              exit 1
+            fi
+            # A reused tag must still be the image built from this commit.
+            revision=$(docker buildx imagetools inspect "$registry/gk-cakes-$component@$digest" --format '{{json .Image}}' |
+              jq -r '.config.Labels["org.opencontainers.image.revision"] // ""')
+            if [[ "$revision" != "$SHA" ]]; then
+              echo "$tag ($digest) was built from commit '$revision', not $SHA; refusing to deploy" >&2
               exit 1
             fi
             {
@@ -232,6 +244,11 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
         run: go run ./cmd/gk-railway-deploy -service "$SERVICE_ID" -environment "$ENVIRONMENT_ID" -image "$IMAGE" -healthcheck /readyz
+      - name: Public smoke check
+        env:
+          API_URL: ${{ vars.STAGING_API_URL }}
+          UI_URL: ${{ vars.STAGING_UI_URL }}
+        run: .github/scripts/smoke.sh api "$API_URL" "$UI_URL"
       - name: Record result
         if: always() && steps.record.outputs.id != ''
         env:
@@ -281,6 +298,10 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
         run: go run ./cmd/gk-railway-deploy -service "$SERVICE_ID" -environment "$ENVIRONMENT_ID" -image "$IMAGE" -healthcheck /healthz
+      - name: Public smoke check
+        env:
+          UI_URL: ${{ vars.STAGING_UI_URL }}
+        run: .github/scripts/smoke.sh ui "$UI_URL"
       - name: Record result
         if: always() && steps.record.outputs.id != ''
         env:

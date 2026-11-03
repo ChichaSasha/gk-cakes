@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Records deployments in GitHub with the exact artifact digest, so the release
 # gate can recognise a replayed release. Environments are per component:
-# staging-api, staging-ui, production-api, production-ui. Requires GH_TOKEN with
-# deployments:write and GITHUB_REPOSITORY.
+# staging-api, staging-ui, production-api, production-ui. Release-path records
+# (version <component>-vX.Y.Z) use task "deploy:release", which the gate's
+# replay and downgrade lookups filter on; main-path records keep "deploy".
+# Requires GH_TOKEN with deployments:write and GITHUB_REPOSITORY.
 #   record-deployment.sh create <environment> <commit-sha> <digest> <version>   -> prints deployment id
 #   record-deployment.sh status <deployment-id> <success|failure|in_progress> <description>
 set -euo pipefail
@@ -10,8 +12,12 @@ set -euo pipefail
 case "${1:-}" in
 create)
   environment=$2 sha=$3 digest=$4 version=$5
-  jq -n --arg ref "$sha" --arg env "$environment" --arg digest "$digest" --arg version "$version" '{
-      ref: $ref, environment: $env, auto_merge: false, required_contexts: [],
+  task=deploy
+  if [[ "$version" =~ ^(api|ui)-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+    task=deploy:release
+  fi
+  jq -n --arg ref "$sha" --arg env "$environment" --arg digest "$digest" --arg version "$version" --arg task "$task" '{
+      ref: $ref, environment: $env, task: $task, auto_merge: false, required_contexts: [],
       transient_environment: false, production_environment: ($env | startswith("production-")),
       description: ("gk " + $version),
       payload: {artifact_digest: $digest, version: $version}
@@ -21,8 +27,9 @@ create)
   ;;
 status)
   id=$2 state=$3 description=$4
-  # auto_inactive=false keeps each component's history intact; the release gate
-  # compares against the latest successful record per environment.
+  # auto_inactive=false keeps each component's history intact for the gate's
+  # replay (successful record of the same release) and downgrade (any record of
+  # a higher release) checks.
   gh api -X POST "repos/$GITHUB_REPOSITORY/deployments/$id/statuses" \
     -f state="$state" -f description="$description" -F auto_inactive=false --jq .state >/dev/null
   ;;
