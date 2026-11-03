@@ -1,0 +1,2 @@
+These are just cakes examples we need to use, but not the final list of the cakes. Owner will suply all of them trough UI once the project has some codded part ready.
+Use this assets, but not treat them as the only and fnl list of cakes.

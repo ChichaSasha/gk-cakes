@@ -1,0 +1,24 @@
+# Customer journeys — GK-019 r6
+
+Status: reconciled technical packet; independent review pending. No application tests
+or visual approval claimed. Prior assessment retained as [historical text](../gk019/prior/customer.md.txt).
+
+Requirements: C01–C04 C07–C13 C18 UX01. Owning tickets: GK-016/021/022/027/028/029.
+Normative shared contract: [r6 K00/K01/K02/K06/K09](../contracts.md); [typed schema](../gk019/schema.json);
+[source decisions](../creator-decisions.md); [open decisions](../gk019/questions.md).
+
+## Scope and ownership
+
+Catalog separates inspiration/product, shows approved composition and actual remaining cake places; requests retain exact image and differences. Combined copy/open Instagram retains fallback without sent claims. Checkout/history explain paid/free/unknown and separately paid delivery. Safe guest access, chef-confirmed historical claim, revalidation on reorder and explicit favourites merge. Private content/short photo expiry and specific publication permissions apply.
+
+Existing [screen IDs](../screens.md) remain the design-session inputs. GK-015 visual
+artifacts are owned by another context; this packet grants no visual approval. Current
+behavior changes and exact revisions go through the [GK-015 handoff](../gk019/GK-015-handoff.md).
+
+## Verification and dependency boundary
+
+ImageA→replacementB→freeze keepsA or asks reselection; foreign/expired claim does not disclose; clipboard/open failures keep request; archived favourites allow request-similar; customer sees current method availability without silent accepted-method removal.
+
+Use [amended ticket specifications](../gk019/amendments/README.md) for exact acceptance
+extensions and prerequisite sources. Existing release/authorization/capability gates
+remain. Tests above are required future implementation evidence, not document checks.

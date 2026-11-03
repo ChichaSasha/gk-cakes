@@ -1,0 +1,23 @@
+## GK-019 proposed contract amendment — r6.3 / UNPUBLISHED
+
+Owner, title, unrelated scope/labels and list remain unchanged. This dated amendment
+replaces contradictory historical policy/provider examples and adds the acceptance
+evidence below; it does not assert implementation readiness or completed tests.
+
+Contract inputs: K05–K11; docs/design/contracts.md r6.3, owner-data-contract.md
+gk019-owner-r5, gk019/schema.json r1.3 and output-manifest.json exact hashes.
+Required current evidence: GK-015; GK-019; GK-005/006/007/011. Refresh live prerequisites and comments before
+execution; a Done setup card proves only its accepted scope.
+
+Behavior: Chef screens distinguish business authority from technical support, auto preparation from actual stock use, full target from successful/unknown refunds, separate delivery action, negative-stock warning, immutable message preview and recoverable provider problems.
+
+Acceptance extension: Sketch/review chef start, refund whole remaining allocation, selected batches/corrections/expiry, quote delivery, recovery queue and recipient changed after preview. No visual approval inferred from contracts.
+
+Execution: apply model/context check; then smallest failing meaningful behavior
+case, coherent implementation, focused green checks, required wider checks and
+fresh independent review. Design tickets instead produce/review exact artifacts.
+No application test, UI approval, release or deployment is supplied by this amendment.
+Questions Q4/Q5 apply only where named; unresolved branches stay blocked.
+
+Full brief requirements and nonconflicting safety/verification criteria remain.
+Repository packet is local/unpushed; obtain exact files, not merely a path string.

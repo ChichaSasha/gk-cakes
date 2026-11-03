@@ -1,0 +1,52 @@
+# GK-019 → GK-015 contract handoff — r4, focused re-review pending
+
+Local handoff for the separate visual-design context. No GK-015 visual artifact was
+edited or approved here. The exact contract hashes below identify this revision;
+[output manifest](output-manifest.json) ties them to the final check/review packet.
+Do not infer settled behavior for Q4/Q5 in [questions](questions.md).
+
+Consume contracts r6.3, canonical owner-data gk019-owner-r5 and schema r1.3. Important
+visible changes from historical r5:
+
+- Accepted payment methods are all17 GK-011 labels; Google Pay disabled. Display
+  actual qualified options, not an assumed cards-only product. Pending/unknown is
+  not paid; return from payment is not confirmation. Separate24h link/15m tentative
+  hold; Q2 accepted: late paid shows payment received/date awaiting agreement; chef confirms feasibility and customer explicitly agrees, otherwise full return. No replacement payment while unknown and no fulfillment until agreement.
+- Explicit free-order confirmation; no payment receipt or fake capture. GK delivery
+  quoted/paid separately and refunded separately by chef; collection remains free.
+- Daily availability counts cakes, not orders; actual remaining standard places,
+  chef extras separate, soft overcapacity accepted for admitted successful payments.
+  Never sell one finite physical cake twice. No per-pickup-slot count cap.
+- Both cake types use original handover−120h:100% before,50% equality/later including
+  no-show/post-handover; chef cancellation100%. Moves never reset; production does
+  not remove entitlement. Show exact refund amount and confirm cancellation.
+- Automatic preparation48h after cake payment/free confirmation; actual chef work
+  and inventory deductions are separate. Six-hour same-day self-move, date changes
+  through chef. Q1 is accepted: chef may approve a shorter lead for a specific ready/resale cake; preserve original resale handover, physical stock/safety and ordinary192h minimum. Show the specific agreed handover; no blanket short-lead promise.
+- One code/order, all cake prices including decor/reduced/resale; percentage excludes
+  delivery. Free-delivery eligibility chef-reviewed; no automatic zones/tariffs.
+- Primary custom button “Copy request & open Instagram” for @gk.cake.london; user
+  pastes/sends, retained selectable fallback; no sent claim. Current sender is
+  GK Cakes <orders@gkcake.com>, Gmail Reply-To. Historical sender test differs.
+- Specific permission for personal customer photo use; current retention periods
+  and expiry must guide copy. Allergen/recipe changes need explicit agreement;
+  no-response/decline means original if feasible, otherwise full refund.
+- Chef screens must show outstanding vs successful/unknown returns, separate
+  delivery action, selected ingredient/component batches, negative-stock warnings,
+  missing-cost evidence and recovery states. Q3 accepted: opt-in basic checkout/repeat-visit statistics; no account/admin browsing or personal/order details/replay. Decline keeps shopping usable; withdrawal stops collection. No new visual edits requested.
+
+GK-015 may continue visual foundation work against settled behaviors. Affected
+Q branches stay visibly provisional; contract review is not Creator visual approval.
+Implementation receives its own exact-version design approval and tests.
+
+## Exact shared revision hashes
+
+| File | SHA-256 |
+| --- | --- |
+| `docs/design/contracts.md` | `66d3c5b74fd9cd584e7a97449b832fb4df7be63361c54f41ffedce122b6b51d7` |
+| `docs/design/owner-data-contract.md` | `0cdf430f2cd24f7a094433c267af605a50bb56cd7e34b159790a2fb1554ebc57` |
+| `docs/design/creator-decisions.md` | `e569e462ae6c2d3ce05da82c6afa8dcb362d1fababb83c37aa08e9d647069de9` |
+| `docs/design/gk019/schema.json` | `9e394a16f8fa04fe5ecb1e71b018b5768d17d14992e7e4cbc6e3a2bb28e1d8d7` |
+| `docs/creator/GK-001/decisions.json` | `76e937ae88c42bda7c70ddf9998a8a5ef8d9c1ed8fe674f0a67fb10c6a47e40c` |
+| `docs/creator/GK-003/decisions.json` | `81d66ebb912dc1d291abd25fbca7898e157c8323b2e1d08e1b06fb78748dbf6d` |
+| `docs/creator/GK-005/decisions.json` | `d6593cfc91948c3294e22fcf112226b4df2838d241abb016a5597c4c88ff6542` |

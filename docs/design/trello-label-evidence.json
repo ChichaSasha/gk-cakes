@@ -1,0 +1,435 @@
+{
+  "method": "CLI search by board, wave, one exact label; groups below search result limit",
+  "source": "https://support.atlassian.com/trello/docs/searching-for-cards-all-boards/",
+  "checks": [
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W00 label:\"Owner: Creator\"",
+      "verified_card_ids": [
+        "6ab13b4fa34d3a2205f61353",
+        "6ab13b539c0ea3a1a49176e9",
+        "6ab13b55ae5ee4104632307d",
+        "6ab13b5a78ce79e5d2b0e208",
+        "6ab13b5db14b1d1f68be1aee",
+        "6ab13b60b3c3763832398591",
+        "6ab13b631596908322f9a7d3"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W00 label:\"P0\"",
+      "verified_card_ids": [
+        "6ab13b4fa34d3a2205f61353",
+        "6ab13b539c0ea3a1a49176e9",
+        "6ab13b55ae5ee4104632307d",
+        "6ab13b5a78ce79e5d2b0e208",
+        "6ab13b5db14b1d1f68be1aee",
+        "6ab13b60b3c3763832398591"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W00 label:\"Kind: Decision\"",
+      "verified_card_ids": [
+        "6ab13b4fa34d3a2205f61353",
+        "6ab13b539c0ea3a1a49176e9",
+        "6ab13b55ae5ee4104632307d",
+        "6ab13b5a78ce79e5d2b0e208",
+        "6ab13b5db14b1d1f68be1aee",
+        "6ab13b60b3c3763832398591"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W00 label:\"P1\"",
+      "verified_card_ids": [
+        "6ab13b631596908322f9a7d3"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W00 label:\"Kind: Setup\"",
+      "verified_card_ids": [
+        "6ab13b631596908322f9a7d3"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W01 label:\"Owner: Creator\"",
+      "verified_card_ids": [
+        "6ab13b67cd0d697ce5898954",
+        "6ab13b6a33c1143844e6e0d1",
+        "6ab13b7169adf9df4b5d6177"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W01 label:\"P0\"",
+      "verified_card_ids": [
+        "6ab13b67cd0d697ce5898954",
+        "6ab13b6a33c1143844e6e0d1",
+        "6ab13b6dfb6d82ab64f2ca14"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W01 label:\"Kind: Setup\"",
+      "verified_card_ids": [
+        "6ab13b67cd0d697ce5898954",
+        "6ab13b6a33c1143844e6e0d1",
+        "6ab13b7169adf9df4b5d6177"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W01 label:\"Blocked\"",
+      "verified_card_ids": [
+        "6ab13b67cd0d697ce5898954",
+        "6ab13b6a33c1143844e6e0d1",
+        "6ab13b6dfb6d82ab64f2ca14",
+        "6ab13b7169adf9df4b5d6177",
+        "6ab13b744675c2d1ae30ce9f"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W01 label:\"Owner: Agent\"",
+      "verified_card_ids": [
+        "6ab13b6dfb6d82ab64f2ca14",
+        "6ab13b744675c2d1ae30ce9f"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W01 label:\"Kind: Design\"",
+      "verified_card_ids": [
+        "6ab13b6dfb6d82ab64f2ca14",
+        "6ab13b744675c2d1ae30ce9f"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W01 label:\"P1\"",
+      "verified_card_ids": [
+        "6ab13b7169adf9df4b5d6177",
+        "6ab13b744675c2d1ae30ce9f"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W02 label:\"Owner: Agent\"",
+      "verified_card_ids": [
+        "6ab13b7850fd072d46a640f5",
+        "6ab13e2622a2dc1eaa9c2c83",
+        "6ab13e29c16be9c793c3ef47",
+        "6ab13e2ceef8ba864aa92ef9"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W02 label:\"P0\"",
+      "verified_card_ids": [
+        "6ab13b7850fd072d46a640f5",
+        "6ab13e2622a2dc1eaa9c2c83"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W02 label:\"Kind: Design\"",
+      "verified_card_ids": [
+        "6ab13b7850fd072d46a640f5",
+        "6ab13e29c16be9c793c3ef47",
+        "6ab13e2ceef8ba864aa92ef9"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W02 label:\"Blocked\"",
+      "verified_card_ids": [
+        "6ab13b7850fd072d46a640f5",
+        "6ab13e2622a2dc1eaa9c2c83",
+        "6ab13e29c16be9c793c3ef47",
+        "6ab13e2ceef8ba864aa92ef9"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W02 label:\"Kind: Implementation\"",
+      "verified_card_ids": [
+        "6ab13e2622a2dc1eaa9c2c83"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W02 label:\"P1\"",
+      "verified_card_ids": [
+        "6ab13e29c16be9c793c3ef47",
+        "6ab13e2ceef8ba864aa92ef9"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W03 label:\"Owner: Creator\"",
+      "verified_card_ids": [
+        "6ab13e2fa902ed62bd58010c"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W03 label:\"P0\"",
+      "verified_card_ids": [
+        "6ab13e2fa902ed62bd58010c"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W03 label:\"Kind: Setup\"",
+      "verified_card_ids": [
+        "6ab13e2fa902ed62bd58010c"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W03 label:\"Blocked\"",
+      "verified_card_ids": [
+        "6ab13e2fa902ed62bd58010c"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W05 label:\"Owner: Creator\"",
+      "verified_card_ids": [
+        "6ab13e3211f96dcac900c1c8"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W05 label:\"P0\"",
+      "verified_card_ids": [
+        "6ab13e3211f96dcac900c1c8",
+        "6ab13e362b6b95aa6d7c516b",
+        "6ab13e39f3ed1fe1a887f758"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W05 label:\"Kind: Setup\"",
+      "verified_card_ids": [
+        "6ab13e3211f96dcac900c1c8"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W05 label:\"Blocked\"",
+      "verified_card_ids": [
+        "6ab13e3211f96dcac900c1c8",
+        "6ab13e362b6b95aa6d7c516b",
+        "6ab13e39f3ed1fe1a887f758"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W05 label:\"Owner: Agent\"",
+      "verified_card_ids": [
+        "6ab13e362b6b95aa6d7c516b",
+        "6ab13e39f3ed1fe1a887f758"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W05 label:\"Kind: Implementation\"",
+      "verified_card_ids": [
+        "6ab13e362b6b95aa6d7c516b",
+        "6ab13e39f3ed1fe1a887f758"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W06 label:\"Owner: Agent\"",
+      "verified_card_ids": [
+        "6ab13e3ce8616d4513f8e0aa",
+        "6ab13e3f2be23f68f044e2f0",
+        "6ab13e426d8154ac8538905f"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W06 label:\"P0\"",
+      "verified_card_ids": [
+        "6ab13e3ce8616d4513f8e0aa",
+        "6ab13e3f2be23f68f044e2f0",
+        "6ab13e426d8154ac8538905f"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W06 label:\"Kind: Implementation\"",
+      "verified_card_ids": [
+        "6ab13e3ce8616d4513f8e0aa",
+        "6ab13e3f2be23f68f044e2f0",
+        "6ab13e426d8154ac8538905f"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W06 label:\"Blocked\"",
+      "verified_card_ids": [
+        "6ab13e3ce8616d4513f8e0aa",
+        "6ab13e3f2be23f68f044e2f0",
+        "6ab13e426d8154ac8538905f"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W07 label:\"Owner: Agent\"",
+      "verified_card_ids": [
+        "6ab13e450590793ed8940191",
+        "6ab13e484e5c4419d3324a8c"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W07 label:\"P0\"",
+      "verified_card_ids": [
+        "6ab13e450590793ed8940191"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W07 label:\"Kind: Implementation\"",
+      "verified_card_ids": [
+        "6ab13e450590793ed8940191",
+        "6ab13e484e5c4419d3324a8c"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W07 label:\"Blocked\"",
+      "verified_card_ids": [
+        "6ab13e450590793ed8940191",
+        "6ab13e484e5c4419d3324a8c"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W07 label:\"P1\"",
+      "verified_card_ids": [
+        "6ab13e484e5c4419d3324a8c"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W08 label:\"Owner: Agent\"",
+      "verified_card_ids": [
+        "6ab13e4b6672f4ac56b93269",
+        "6ab13e4fa9d6fa905f1796c7"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W08 label:\"P0\"",
+      "verified_card_ids": [
+        "6ab13e4b6672f4ac56b93269"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W08 label:\"Kind: Implementation\"",
+      "verified_card_ids": [
+        "6ab13e4b6672f4ac56b93269",
+        "6ab13e4fa9d6fa905f1796c7"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W08 label:\"Blocked\"",
+      "verified_card_ids": [
+        "6ab13e4b6672f4ac56b93269",
+        "6ab13e4fa9d6fa905f1796c7"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W08 label:\"P1\"",
+      "verified_card_ids": [
+        "6ab13e4fa9d6fa905f1796c7"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W09 label:\"Owner: Agent\"",
+      "verified_card_ids": [
+        "6ab13e52b93f09a423469e92",
+        "6ab13e55216643f412e17216",
+        "6ab13e592de8d928dfad7175"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W09 label:\"P0\"",
+      "verified_card_ids": [
+        "6ab13e52b93f09a423469e92"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W09 label:\"Kind: Implementation\"",
+      "verified_card_ids": [
+        "6ab13e52b93f09a423469e92",
+        "6ab13e55216643f412e17216",
+        "6ab13e592de8d928dfad7175"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W09 label:\"Blocked\"",
+      "verified_card_ids": [
+        "6ab13e52b93f09a423469e92",
+        "6ab13e55216643f412e17216",
+        "6ab13e592de8d928dfad7175"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W09 label:\"P1\"",
+      "verified_card_ids": [
+        "6ab13e55216643f412e17216",
+        "6ab13e592de8d928dfad7175"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W10 label:\"Owner: Agent\"",
+      "verified_card_ids": [
+        "6ab13e5c8ac3332a1e54f435",
+        "6ab13e603f02e6506c90bfbb"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W10 label:\"P0\"",
+      "verified_card_ids": [
+        "6ab13e5c8ac3332a1e54f435"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W10 label:\"Kind: Implementation\"",
+      "verified_card_ids": [
+        "6ab13e5c8ac3332a1e54f435",
+        "6ab13e603f02e6506c90bfbb"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W10 label:\"Blocked\"",
+      "verified_card_ids": [
+        "6ab13e5c8ac3332a1e54f435",
+        "6ab13e603f02e6506c90bfbb"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W10 label:\"P1\"",
+      "verified_card_ids": [
+        "6ab13e603f02e6506c90bfbb"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W11 label:\"Owner: Agent\"",
+      "verified_card_ids": [
+        "6ab13e64505e88e9ce813909"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W11 label:\"P0\"",
+      "verified_card_ids": [
+        "6ab13e64505e88e9ce813909"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W11 label:\"Kind: Implementation\"",
+      "verified_card_ids": [
+        "6ab13e64505e88e9ce813909"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W11 label:\"Blocked\"",
+      "verified_card_ids": [
+        "6ab13e64505e88e9ce813909"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W12 label:\"Owner: Creator\"",
+      "verified_card_ids": [
+        "6ab13e6779f809315e481d84"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W12 label:\"P0\"",
+      "verified_card_ids": [
+        "6ab13e6779f809315e481d84"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W12 label:\"Kind: Decision\"",
+      "verified_card_ids": [
+        "6ab13e6779f809315e481d84"
+      ]
+    },
+    {
+      "query": "board:6ab074a2b3c3763832ddf623 name:W12 label:\"Blocked\"",
+      "verified_card_ids": [
+        "6ab13e6779f809315e481d84"
+      ]
+    }
+  ]
+}

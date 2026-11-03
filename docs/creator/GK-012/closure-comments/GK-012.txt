@@ -1,0 +1,16 @@
+GK-012 accepted completion split r5 — 2026-10-05
+
+Sasha explicitly replied "yes" to the proposed completion split, updates to affected tickets and marking GK-012 Done. This supersedes the r4 instruction to keep this setup card open for implementation checks.
+
+Accepted GK-012 scope: purchased Cloudflare domain gkcake.com; reported DNS access, auto-renewal/valid payment, MFA and Elina recovery; approved site/admin/API/staging addresses and GK Cakes <orders@gkcake.com> with Gmail Reply-To; confirmed @gk.cake.london control; approved "Copy request & open Instagram" interaction/fallback; reported chat-opening checks on Mac/web, iPhone/app and Android (app/browser detail not supplied); agent public DNS checks; accepted and published handoff. Full decisions remain in the preceding r4 comments.
+
+Required downstream acceptance, retained rather than waived:
+- GK-020 https://trello.com/c/W8q5svCh : concrete runtime/environment inventory and bootstrap config; supply actual origin/local-development values to GK-021.
+- GK-021 https://trello.com/c/zEfCJtWD : derive/configure exact login callbacks and allowlists; prove accepted callbacks succeed and invalid/foreign redirects are rejected. No production wildcard or invented callback path.
+- GK-027 https://trello.com/c/G8hLmSBU : reconcile K02/specifications with the approved handle and combined action before implementation; test copy/open/paste and clipboard/Instagram failure fallback on supported devices, retaining summary/reference and no DM-sent claim.
+
+AC1 setup evidence accepted. AC2 account/opening evidence and interaction policy accepted; full implementation proof belongs to GK-027. AC3 approved address inventory accepted; exact callbacks and denial tests belong to GK-020/021. AC4 is this explicit scoped acceptance and revision-linked publication, with downstream assignments verified before Done.
+
+No application tests, independent review, deployment or direct new Elina approval are claimed. Other tickets retain their existing dependencies/status/gates. Only GK-012 is authorized to move to Done.
+
+Source: docs/creator/GK-012/closure-scope-2026-10-05.md (r5), SHA-256 eb5cc4e9d77d50cf58a9de7a5c6ecc123fd99eacb3f16ae526dc2e1fb855808a

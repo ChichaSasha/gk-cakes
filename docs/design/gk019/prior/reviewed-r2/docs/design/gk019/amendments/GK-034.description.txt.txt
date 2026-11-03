@@ -1,0 +1,84 @@
+## Context
+
+Owner: Agent; Kind: Implementation
+Priority: P0 — foundational/safety prerequisite.
+Order: 230; Wave: 6; Parallel group: W06-delivery.
+Requirements: D01, D02, S06, S07; Design/contract revision: GK-019 r6.1, K09.
+Agent execution policy: gpt-6-astra / high; fresh scoped worker; fresh independent reviewer.
+Required input: brief, input-revision.json, gk019-owner-r3, ADRs/contracts r6.1 and exact GK-019 manifest, feature/screens, prerequisite evidence, SETUP and DELIVERY.
+Execution check: skills/gk-plan/references/execution-check.md at start/resume; record requested/effective model, history, input hashes and checked readback. Pending.
+Depends on: GK-020, GK-013, GK-014, GK-006; deliverable: accepted policy/setup or tested implementation outputs; GK-020 means completed B2.
+Unblocks: GK-035.
+Safe in parallel with: GK-028 after all prerequisites and shared schemas/interfaces are accepted. Own proposed workflow/release files only; no UI component edits. Master allocates nonconflicting migration IDs and integrates changes; neither worker edits shared contract/auth/router files concurrently.
+Conflicts: shared contracts/schema/router/migrations; master coordinates edits.
+Readiness at publication: blocked / specified but dependent: Approved release policy/settings/recovery targets and bootstrap pending.
+
+Implement CI/review->native auto-merge->main CI->authorized release:published CD. Resolve ui-v/api-v tag to trusted main SHA, verify successful main CI for exact SHA and immutable artifact digest, serialize per target, deploy intended component only. Expand/contract migration runs once with separate role/lock; no destructive rollback.
+
+Rules: server-owned price/capacity/state; GBP pence, UTC/Europe/London; role+ownership; expected_version+Idempotency-Key; unknown stays pending; no network under DB locks.
+
+Wire/state (approved GK-019 successor required):
+
+Release manifest contains component, trusted main commit_sha, artifact_digest, version and compatible counterpart/schema bounds. release:published with ui-vX.Y.Z/api-vX.Y.Z selects one component; missing/red exact-main-CI ->deny deploy. UI/API additive v1 compatibility, migration lock, separate app/migration/deploy secrets. Proposed config names DATABASE_URL, AUTH_URL/issuer/audience, PAYMENT_SECRET, PAYMENT_WEBHOOK_SECRET, EMAIL_API_KEY, EMAIL_WEBHOOK_SECRET, STORAGE_WRITE_KEY; secrets backend/CI protected stores only.
+
+Proposed: API10s/DB2s/provider5s; retries1m/5m/15m/1h then manager, alert15m. Validate; retain unknown funds.
+
+Mandatory AC1–AC3 rules:
+
+GK-034 owns infrastructure restore verification: isolated DB AND object restoration, no outbound credentials, dispatch epoch/old-worker revocation harness, counterpart schema/artifact compatibility and measured recovery time/data loss. Synthetic dispatch attempts prove restored jobs remain frozen. It does not claim real payment/refund/email reconciliation before those modules exist. GK-035 owns the complete domain restore exercise after GK-024/025/026 and dependent launch slices: replay deletion/revocation evidence, reconcile the entire lost-time-window provider capture/refund/send history and prove pre-success jobs cannot duplicate external effects before controlled unfreeze. Production readiness requires that later integrated proof.
+
+## To dos
+
+T1. Red: smallest AC1–AC3 fixture assertion; infrastructure failure is not red.
+T2. Implement data/API/UI/recovery with snapshots/auth/idempotency (AC1–AC3).
+T3. Integrate migrations/consumers/audit/notices; verify real DB/provider failures (AC1–AC3).
+T4. Green -> refactor -> rerun affected checks; record revision/results (AC4).
+T5. Complete AC4 review/delivery/acceptance evidence; no implied deployment.
+
+## Not to dos
+
+No unrelated cleanup, registrations, leaked secrets or releases/deployments without authority. No app execution now; Done needs Creator acceptance.
+
+## Acceptance Criteria
+
+AC1. Nonproduction red event fixtures: branch push/draft/wrong-prefix/untrusted/red-main release cannot deploy; valid component event deploys exact artifact and replay does not duplicate migration/deploy.
+AC2. UI/API previous-current compatibility matrix passes; API rollback does not delete data and concurrent releases cannot cancel migration or downgrade unexpectedly.
+AC3. Job/PR secrets isolated, Actions pinned, least permissions, target/version/digest/smoke evidence recorded in sandbox; production credentials wait for authorized release.
+AC4. Record exact input/tested revision, results, independent review and Creator acceptance on Trello; account for all related PRs, required review/checks, native auto-merges and main CI. Release/deploy/smoke only when separately authorized and in scope.
+
+Test prerequisite: GK-020 B2 verifies pinned runners before this card is Ready. Planned Go: go test ./..., go test -race ./..., go test -tags=integration ./... with disposable PostgreSQL; UI: npm run check, npm test, npm run build + approved browser runner. Provider cases use controlled sandbox accounts/recipients and actual IDs; mocks are not provider proof. No application tests ran during planning.
+
+Proposed current specification; prior publication text preserved in GK-019 evidence/cards.json. Independent review and approval apply only to the exact current revision. Trello is the live execution record; application work has not started.
+
+Verified prerequisite cards:
+- GK-020: https://trello.com/c/W8q5svCh
+- GK-013: https://trello.com/c/KpxlodVh
+- GK-014: https://trello.com/c/47tZfEoI
+- GK-006: https://trello.com/c/npWFafNi
+
+Verified dependent cards:
+- GK-035: https://trello.com/c/qtUe3uom
+
+## GK-019 proposed contract amendment — r6.1 / UNPUBLISHED
+
+Owner, title, unrelated scope/labels and list remain unchanged. This dated amendment
+replaces contradictory historical policy/provider examples and adds the acceptance
+evidence below; it does not assert implementation readiness or completed tests.
+
+Contract inputs: K09/K11; ADR0006; docs/design/contracts.md r6.1, owner-data-contract.md
+gk019-owner-r3, gk019/schema.json r1.1 and output-manifest.json exact hashes.
+Required current evidence: GK-020/019; GK-024 before recovery integration (disjoint release workflow work can begin earlier); GK-010 approved B2 resource plan. Refresh live prerequisites and comments before
+execution; a Done setup card proves only its accepted scope.
+
+Behavior: Consume GK-024 implemented K11 protocol; implement scheduled independent backups and restore operations, coordinating shared recovery files after024 rather than claiming workflow-only ownership;30d independent DB/object snapshots separate from retained current order records. No DB-outbox-only zero-loss claim. Pause checkout when safeguards unavailable; dispatch journal and restore reconciliation.
+
+Acceptance extension: Crash each phase, primary loss after paid/free/change, B2 unavailable, concurrent revision, deletion/tombstone replay, essential attachment hash, unknown money/email identities. Freeze external sends until complete loss-window reconciliation. Measure cost and recovery3 support hours daily10–23.
+
+Execution: apply model/context check; then smallest failing meaningful behavior
+case, coherent implementation, focused green checks, required wider checks and
+fresh independent review. Design tickets instead produce/review exact artifacts.
+No application test, UI approval, release or deployment is supplied by this amendment.
+Questions Q2–Q5 apply only where named; unresolved branches stay blocked.
+
+Full brief requirements and nonconflicting safety/verification criteria remain.
+Repository packet is local/unpushed; obtain exact files, not merely a path string.

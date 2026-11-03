@@ -1,0 +1,11 @@
+--- /Users/sasha.chycha/go/pkg/mod/github.com/!scale-!flow/trello-cli@v1.1.0/internal/trello/cards.go	2026-09-21 02:40:10
++++ /var/folders/96/y9ppp43d7xqfxyqkgqz42ggh0000gn/T/opencode/trello-cli-bodypatch/internal/trello/cards.go	2026-11-02 19:11:02
+@@ -66,7 +66,7 @@
+ 	}
+ 
+ 	var card Card
+-	err := c.Put(ctx, fmt.Sprintf("/1/cards/%s", cardID), queryParams, &card)
++	err := c.PutJSON(ctx, fmt.Sprintf("/1/cards/%s", cardID), queryParams, &card)
+ 	return card, err
+ }
+ 

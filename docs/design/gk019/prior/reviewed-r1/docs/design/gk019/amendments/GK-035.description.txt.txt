@@ -1,0 +1,86 @@
+## Context
+
+Owner: Agent; Kind: Implementation
+Priority: P0 — foundational/safety prerequisite.
+Order: 330; Wave: 11; Parallel group: none.
+Requirements: C01, C02, C03, C04, C05, C06, C07, C08, C09, C10, C11, C12, C13, C14, C15, C16, C17, C18, A01, A02, A03, A04, A05, A06, A07, A08, A09, A10, A11, A12, S01, S02, S03, S04, S05, S06, S07, D01, D02, UX01; Design/contract revision: GK-019 r6, K00 K09.
+Agent execution policy: gpt-6-astra / high; fresh scoped worker; fresh independent reviewer.
+Required input: brief, input-revision.json, gk019-owner-r2, ADRs/contracts r6 and exact GK-019 manifest, feature/screens, prerequisite evidence, SETUP and DELIVERY.
+Execution check: skills/gk-plan/references/execution-check.md at start/resume; record requested/effective model, history, input hashes and checked readback. Pending.
+Depends on: GK-028, GK-029, GK-030, GK-032, GK-033, GK-034; deliverable: accepted policy/setup or tested implementation outputs; GK-020 means completed B2.
+Unblocks: GK-036.
+Safe in parallel with: none.
+Conflicts: shared contracts/schema/router/migrations; master coordinates edits.
+Readiness at publication: blocked / specified but dependent: All launch slices and approved visual revisions pending.
+
+Run integrated sandbox acceptance on exact UI/API/schema versions and Creator-approved visual revisions: browse/pay/fulfill, bespoke/Instagram/manual quote/pay, refund races, ready-stock, grocery plan, email outage/worker restart, backups and component rollback. No live customer sends/real payments/deploy in this ticket.
+
+Rules: server-owned price/capacity/state; GBP pence, UTC/Europe/London; role+ownership; expected_version+Idempotency-Key; unknown stays pending; no network under DB locks.
+
+Wire/state (approved GK-019 successor required):
+
+Auth: Authorization: Bearer verified access token. Actor-specific K00 checks: active scoped guest proof; customer current session/account plus ownership without staff role; staff additionally active local capability/scope; GET foreign order ->404, wrong role ->403. Error {error:{code:"STALE_VERSION",message:"Refresh this order",request_id:"opaque",retryable:false}}. Existing-object mutation carries expected_version and Idempotency-Key; same key/different body ->409 KEY_REUSED.
+
+Release manifest contains component, trusted main commit_sha, artifact_digest, version and compatible counterpart/schema bounds. release:published with ui-vX.Y.Z/api-vX.Y.Z selects one component; missing/red exact-main-CI ->deny deploy. UI/API additive v1 compatibility, migration lock, separate app/migration/deploy secrets. Proposed config names DATABASE_URL, AUTH_URL/issuer/audience, PAYMENT_SECRET, PAYMENT_WEBHOOK_SECRET, EMAIL_API_KEY, EMAIL_WEBHOOK_SECRET, STORAGE_WRITE_KEY; secrets backend/CI protected stores only.
+
+Proposed: API10s/DB2s/provider5s; retries1m/5m/15m/1h then manager, alert15m. Validate; retain unknown funds.
+
+Integrated restore acceptance: isolate restored DB AND objects without outbound credentials; increment dispatch epoch and revoke old workers; replay deletion/revocation evidence; reconcile all provider capture/refund/send effects over the entire lost window against restored ledgers; prove a restored pre-success queue cannot duplicate charge/refund/email; only then allow controlled sandbox dispatch. Include real GK-024/025/026 domain modules, counterpart compatibility and exact artifact digests. Record measured recovery time/data loss against approved RPO/RTO. GK-034 infrastructure/harness proof alone cannot satisfy this AC3.
+
+## To dos
+
+T1. Red: smallest AC1–AC3 fixture assertion; infrastructure failure is not red.
+T2. Implement data/API/UI/recovery with snapshots/auth/idempotency (AC1–AC3).
+T3. Integrate migrations/consumers/audit/notices; verify real DB/provider failures (AC1–AC3).
+T4. Green -> refactor -> rerun affected checks; record revision/results (AC4).
+T5. Complete AC4 review/delivery/acceptance evidence; no implied deployment.
+
+## Not to dos
+
+No unrelated cleanup, registrations, leaked secrets or releases/deployments without authority. No app execution now; Done needs Creator acceptance.
+
+## Acceptance Criteria
+
+AC1. Every requirement maps to executed evidence or explicit unresolved blocker; all related PR/merge/main-CI revisions and independent review recorded.
+AC2. Real PostgreSQL deterministic concurrency, payment/email sandbox fault evidence, actual device handoff and mobile/desktop keyboard walkthrough pass for released candidate artifacts.
+AC3. Isolated DB+object restore reconciles provider effects before dispatch; counterpart rollback and alert exercise pass. Creator accepts product evidence before Done, production release separate.
+AC4. Record exact input/tested revision, results, independent review and Creator acceptance on Trello; account for all related PRs, required review/checks, native auto-merges and main CI. Release/deploy/smoke only when separately authorized and in scope.
+
+Test prerequisite: GK-020 B2 verifies pinned runners before this card is Ready. Planned Go: go test ./..., go test -race ./..., go test -tags=integration ./... with disposable PostgreSQL; UI: npm run check, npm test, npm run build + approved browser runner. Provider cases use controlled sandbox accounts/recipients and actual IDs; mocks are not provider proof. No application tests ran during planning.
+
+Proposed current specification; prior publication text preserved in GK-019 evidence/cards.json. Independent review and approval apply only to the exact current revision. Trello is the live execution record; application work has not started.
+
+Verified prerequisite cards:
+- GK-028: https://trello.com/c/t4HD6N0Z
+- GK-029: https://trello.com/c/VLFYxaee
+- GK-030: https://trello.com/c/BkYDridR
+- GK-032: https://trello.com/c/lRzYGTEM
+- GK-033: https://trello.com/c/3YbFGdmp
+- GK-034: https://trello.com/c/L9d2rl39
+
+Verified dependent cards:
+- GK-036: https://trello.com/c/Dtl6mdxP
+
+## GK-019 proposed contract amendment — r6 / UNPUBLISHED
+
+Owner, title, unrelated scope/labels and list remain unchanged. This dated amendment
+replaces contradictory historical policy/provider examples and adds the acceptance
+evidence below; it does not assert implementation readiness or completed tests.
+
+Contract inputs: K00–K11; docs/design/contracts.md r6, owner-data-contract.md
+gk019-owner-r2, gk019/schema.json r1 and output-manifest.json exact hashes.
+Required current evidence: Existing prerequisite implementation set; GK-019; GK-011/012; GK-037 downstream. Refresh live prerequisites and comments before
+execution; a Done setup card proves only its accepted scope.
+
+Behavior: Integrated sandbox acceptance consumes exact r6 outputs; scoped setup Done does not mean adapter/access/recovery tests passed. Cover complete customer/chef/custom/free/separate-delivery and provider failure flows. GK-037 remains after this before launch.
+
+Acceptance extension: Real Postgres interleavings,17-method outcome inventory and pinned versions, current sender, callback/guest/role denial, no duplicate payment/refund/email on restore, stock/retention/image cases. No live money or production release inferred. Block any unresolved applicable Q branch.
+
+Execution: apply model/context check; then smallest failing meaningful behavior
+case, coherent implementation, focused green checks, required wider checks and
+fresh independent review. Design tickets instead produce/review exact artifacts.
+No application test, UI approval, release or deployment is supplied by this amendment.
+Questions Q1–Q5 apply only where named; unresolved branches stay blocked.
+
+Full brief requirements and nonconflicting safety/verification criteria remain.
+Repository packet is local/unpushed; obtain exact files, not merely a path string.

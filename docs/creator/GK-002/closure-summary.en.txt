@@ -1,0 +1,33 @@
+GK-002 content handover — interview r4, 5 October 2026
+
+The scoped business-input questions are answered and Sasha approved the following content in the Codex interview. Original Elina allergen declarations remain separately attributed through GK-005.
+
+Assets: business-owned logo/photos/videos with no usage exceptions. Use approved photo_assets/logo/3000px-03.png and all 35 owner-approved images in photo_assets/cakes_after_higgsfield/. Retain originals. composite.png is not the chosen branding. An editable logo source is not supplied; the owner task accepts the best available raster source. Generated images are identified as processed photographs; image quality notes remain technical history, not claims of completed repairs.
+
+Approved base prices, all eight flavours, made-to-order and ready-stock, with admin overrides:
+Mini 5 inches, 3–4 servings, 1–1.3 kg: £70.
+S 6 inches, 7–10 servings, 1.5–1.7 kg: £90.
+M 7 inches, 12–14 servings, 2.2–2.7 kg: £105.
+L 8 inches, 17–20 servings, 3–3.8 kg: £130.
+XL 10 inches, 30–32 servings, 5–6 kg: £180.
+XXL 12 inches, 40–45 servings, 8–9 kg: £245.
+Tiered starting prices: 4+7 inches £180 / 14–17 servings; 6+8 £250 / 28–32; 8+10 £320 / 47–53; 4+6+8 £330 / 35–40; 6+9+11 £600 / 70–80. Larger sizes by chef agreement.
+
+Each listing's final price includes decoration shown in its photo. Changes/extras require a chef-agreed price before payment. Admin catalogue edits do not change accepted order totals.
+
+Approved development examples, not actual stock claims or inferred historical-photo flavours/sizes:
+- Pink piping (photo prefix SaveClip.App_547599309_): Vanilla Raspberry, S, 7–10 servings, £90, made-to-order.
+- Chocolate swirl (SaveClip.App_800796406_): Snickers, S, 7–10 servings, £90, ready-stock demonstration.
+- Raspberry ribbons (SaveClip.App_554651941_): Chocolate Raspberry, M, 12–14 servings, £105, unavailable demonstration.
+
+Use the existing GK-005 compositions, Swiss meringue buttercream coating, exact cross-contact notice and contains declarations. All three contain EGGS, MILK, WHEAT (cereals containing gluten), SOYBEANS; Snickers additionally PEANUTS, prominently displayed. The full real catalogue will be entered by the owner through the future admin UI.
+
+Local evidence: docs/creator/GK-002/README.md, interview-2026-10-05.json, assets/price-list-2026-10-05.jpg and verification-2026-10-05.json. The interview records exact user replies, asset/source hashes and approved example mappings. Same-session acceptance/document verification, not independent review.
+
+AC1–AC3 are supported by the approved assets, three examples and source inventory. Sasha explicitly authorised publication of these summaries and moving both GK-002 and BO-GK-002 to Done on 5 October 2026. This comment records the accepted input-stage evidence for AC4. The subsequent list transition is verified separately.
+
+Downstream work: reconcile existing 4-inch Mini recipe quantities with the approved 5-inch product before production use; GK-037 retains final supplier/product/decoration/label verification; GK-015 retains website-design approval. No application implementation, release or deployment is included.
+
+Related owner card: https://trello.com/c/lNT8aDIh
+Input interview SHA-256: 4d153e8b597ade2c196f19609bc1674b09a2ff515a3bbaf8d33764e9113c5f29
+Validation passed: planning-kit checks, existing owner-intake checks, 86 asset fingerprints, 37 image integrity checks and focused example/price assertions.

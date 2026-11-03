@@ -1,0 +1,668 @@
+# Owner requirements → data and administration — owner-intake-r1
+
+## GK-001 handover update — 2026-10-05
+
+Read the [current manual handover](../creator/GK-001/handover.md) and its manifest.
+Sasha's main-card answer `6ac2d95174a456d0b2b9ba6a` and explicit 2026-10-05 chat
+clarifications are preserved in GK-001 source-comments.json. Chat identifiers are
+local references, not Trello action IDs or fabricated direct chef approval.
+Current GK-001 policy: 192 elapsed hours minimum; uncertain dates personally resolved
+with chef/admin; reducing 7 accepted cakes to a limit of 5 preserves all 7.
+Both cake types use 100% refund strictly more than 120 hours before original handover,
+exactly 50% at equality/later (including no-show/after handover); chef cancellation
+100%. Date/time moves preserve the original deadline saved at placement.
+The user explicitly replaces old 3/4-day and separate delivery rules; retain them
+only as historical evidence. Technical mappings remain GK-019 proposals, not schema.
+
+[Current GK-003 handover](../creator/GK-003/handover.md) further records website-only
+customer/chef-template payment within 24 hours, separate GK delivery collections and
+chef-only admin delivery refunds. Its exact sources and status live in its own packet.
+Do not revive the earlier off-site balance/invoice or 48-hour quote defaults.
+
+
+Evidence retrieved 2026-10-04; owner statements dated 2026-09-28. Read the
+[GK-001](../creator/GK-001/README.md), [GK-003](../creator/GK-003/README.md) and
+[GK-005](../creator/GK-005/README.md) intake packets, their `decisions.json` and
+`source-comments.json` before affected design or implementation. Original Ukrainian
+wording controls. Record comment ID/content SHA-256, decision revision SHA-256,
+this file's SHA-256 and relevant current contracts in the downstream input record.
+
+All SQL/entity/permission mappings here are **proposals**, except previously accepted
+technical invariants explicitly attributed to the project brief/K00–K08. No schema,
+seed, application behavior, public policy or service is created by this mapping. Live
+comment/handover actions are recorded separately in the intake receipts. A confirmed
+business statement is not complete ticket acceptance or legal compliance. Null
+means unknown where marked; zero/false/none have distinct meanings. Examples are
+fixtures, not catalog prices, delivery tariffs, or discount defaults.
+
+## Source authority and unresolved integration
+
+Elina Hryhorian (`elinahryhorian`, Trello member `6aba9a6ee5e52c67f1fbb09b`) authored
+all three retrieved comments and explicitly attributes verified business facts to
+herself as owner in BO-GK-005. This is source attribution, not an external identity
+verification. Sasha is developer. No developer comment or example was promoted to
+owner approval. BO-GK-005 explicitly confirms the >4-day/50% **business** policy;
+the same source requests legal review before Terms publication.
+
+- **R1 — refunds:** both cake types; whole-order basis including delivery. Save
+  `original_handover_at - 120 hours` at placement. Before that instant: 100%; at or
+  after it: exactly 50%, including no-show and post-handover. Chef cancellation: 100%.
+  The deadline is unchanged by date/time moves. Explicit user replies resolve the
+  replacement of old 3/4-day/component/state rules; retain original evidence only.
+- **R2 — capacity:** seven cakes per handover date; two cakes use two places. Chef
+  extras are outside the standard counter; both simultaneous last-place customers
+  may order, subject to chef cancellation. Old strict one-winner/no-overbooking
+  admission is stale. Lowering the limit from 7 to 5 preserves all 7 accepted cakes;
+  only the chef personally may cancel an accepted order, with 100% refund.
+- **R3 — clocks:** full successful payment anchors production/preparation +48 elapsed
+  hours. Manual confirmation is start; late jobs use the scheduled effective time.
+  Quote validity from sending remains a separate clock. No pickup-minus-48 rule.
+  Date/time moves preserve the refund deadline fixed from original handover at placement.
+- **R4 — slots:** 60-minute Saturday slots may overlap and must finish within
+  12:30–15:00. Shown starts 12:30, 13:00, 13:30 imply a 30-minute pattern; its
+  14:00–15:00 continuation is derived. No separate per-slot count cap. Other weekdays'
+  step remains a design question, not an assumed approved default.
+- **R5 — commitments:** current GK-003 website-only clarification replaces the
+  former GK-001 off-site residual-balance exception. Instagram arrangements become
+  chef-created website templates; only paid orders are accepted. Online hold/capture and
+  permitted simultaneous acceptance need GK-019 reconciliation; don't erase real
+  payment or order obligations when capacity is exceeded.
+- **R6 — delivery:** no automatic zones/tariffs. Chef manually agrees from £100,
+  via email/Instagram/WhatsApp; delivery windows match pickup hours. Outside/distant
+  addresses need separate approval. No quote-expiry duration supplied by the distance
+  phrase. Courier placeholders are not real recommendations or launch-ready content.
+- **R7 — remaining other-card inputs:** privacy ends «Збираються лише дан»; retention,
+  deletion, browser storage, analytics and message classification remain unknown.
+  Full ingredient data, final legal/rounding and official hygiene evidence stay open.
+
+## Mapping conventions
+
+The registry below maps **every extracted decision** (including conflicts/examples)
+to a typed field or design consequence. It inherits the constraints, permissions,
+versioning and planned acceptance cases of its named profile below. Status remains
+in JSON; an unresolved field cannot become executable by appearing in this table.
+For each registry row, the exact value is at the linked file's JSON Pointer
+`/decisions/<key>/business/value`; conditions/exceptions/unresolved semantics are
+siblings, provenance is `/decisions/<key>/provenance`. ID is `BO-GK-NNN.<key>`.
+
+Use ordinary typed entities and relationships. The context JSON is **not** a
+production key/value store. No generic `settings(key,jsonb)` proposal. A single
+immutable accepted-quote/order document may use JSONB as a justified presentation
+snapshot, with schema/version/hash and safe fields; queryable money, policy IDs,
+allergens, schedule resources and customer relationships remain typed/relational.
+Private bank documents live in protected object storage; database stores authorized
+object references, not public URLs or document contents in audit logs.
+
+Every policy/content version needs UUID PK, source decision ID(s), input hash,
+recorded-at `timestamptz`, recording actor, business approver/evidence when required,
+and change reason. Operational effective-from is **unknown**, not the comment date.
+Resolve activation/effective date before launch. A successor preserves its predecessor;
+no silent overwrite of earlier evidence or accepted order snapshots.
+
+Runtime staff permissions come from K00/local staff roles, not Trello membership.
+For every proposed admin write below, exact staff capability/authority and policy
+editability need GK-018/021 review unless already explicitly specified in K00.
+Owner permission to state a business rule does not authorize arbitrary staff to edit
+it. No owner-supplied numeric value is automatically an editable admin setting.
+
+## Data/administration profiles
+
+### schedule — GK-001, GK-019/023/028/031; K01/K04/K06, ADR-0004
+
+Propose `schedule_version` and child `weekly_collection_window(weekday smallint,
+opens_at time without time zone, closes_at time without time zone)`, FK to version,
+unique weekday/start within version, end after start. Initial rows: Thu 11:00–17:00,
+Fri 10:00–17:00, Sat 12:30–15:00, Sun 11:00–12:00. Separate `working_weekday`
+relationship; do not equate pickup clock hours with production hours. Materialized
+appointments use local `date`, `timestamptz` bounds and IANA timezone `Europe/London`
+from prior project context. Local recurrence is not a fixed UTC offset; do not use
+`timetz` for a recurring weekly schedule.
+
+Use `booking_policy.minimum_lead_hours integer NOT NULL`, initial 192, with a
+positive-value constraint; compare elapsed time, accepting equality. Earlier 8–10
+days is source history, not an active range or permission to configure a 240-hour
+minimum. Two months and 7–8 months remain months. Recommended approximately 2 months
+or earlier is advisory content. Uncertain dates/endpoints require personal chef
+clarification: propose a related `date_agreement(order_or_request_id, chef_id,
+agreed_handover_at timestamptz, agreed_at timestamptz, evidence_ref)` with typed FKs.
+Do not auto-confirm an ambiguous date or invent a month conversion/ready-stock
+exception. Concrete accepted handover instants are NOT NULL. Never convert months
+to 30 days. Current separate
+production hours/holiday exceptions are absent; an administrator may configure them
+(`schedule_admin`), with activation/version effects on accepted orders to be designed.
+
+Admin: operational staff view schedule; existing A08/A12 requires schedule editing,
+but who can activate policies and which bounds may vary need explicit design. New
+versions affect new offers; already accepted appointments retain instants and promise.
+Test 191:59:59 rejected by the 192-hour minimum and exactly 192 hours allowed by
+that rule; other availability/chef agreement still applies. Preserve 2 and 7–8
+months without automatic conversion, and route uncertain dates to chef. Reject an
+unresolved slot-grid activation; test both London DST transitions after clock semantics
+are agreed. These are planned checks, not executed application tests.
+
+### capacity — GK-001/003, GK-018/023/025/027/028/031; K01/K04
+
+Propose `daily_capacity(shop_id uuid FK, handover_date date, standard_cake_limit integer,
+policy_version_id uuid FK)` unique per shop/date. Initial standard is 7 **cakes**;
+`order_item.quantity integer > 0` determines consumed units, with no complexity weight.
+`capacity_allocation(order_id uuid FK, daily_capacity_id uuid FK, cake_units integer,
+admission_kind text)` distinguishes ordinary admission and chef-agreed extras.
+Use a typed CHECK/enum for the reviewed admission kinds; no generic settings JSON.
+
+`chef_extra_order(order_id uuid UNIQUE FK, agreed_by uuid FK, agreed_at timestamptz,
+reason text, agreement_ref uuid FK)` authorizes the separate pricing/admin entry;
+exclude its cakes only from the standard counter, never from workload/fulfillment.
+Ten cakes for one day is the source example, not a maximum. The chef has explicit
+extra-order and individual cancellation authority; finer staff delegation is unknown.
+
+The source permits two simultaneous last-place customers to order. Thus total ordinary
+commitments can reach 8 against the standard 7; do not retain a universal database
+`committed <= standard_limit` invariant or silently reject the second real payment.
+Admission/race boundaries and accounting must be reviewed in GK-019; every accepted
+order and payment remains durable. A cancellation creates its own audited workflow,
+not deletion of allocation history. No automatic customer permission to order unlimited
+extras is established. Lowering 7 to 5 with 7 already accepted is permitted and
+preserves all 7; only the chef personally may cancel an accepted order.
+
+Preserve policy version/admission basis on each accepted order. Admin edits must not
+erase accepted commitments or reject a limit edit merely because accepted cake count
+exceeds the new limit. Record old/new limits, actor/time/reason in append-only capacity
+audit; 5 is a change example, not a new default. Chef cancellation is a separate
+authorized transition with a 100% refund obligation, never an edit side effect. Planned
+cases: two cakes consume two places; chef's ten extras remain visible; two final-place
+orders are retained pending any chef cancellation; 7→5 leaves 7 accepted; no separate
+pickup-slot count cap. UI may show the over-capacity condition; finer new-admission
+and permission design belongs to GK-019, with no automatic order deletion.
+See C01–C06 in acceptance-cases.md. These are document scenarios, not passing app tests.
+
+### start — GK-001, GK-019/025/026/031; K05, ADR-0003/0004
+
+Propose `order.fully_paid_at`, `manual_confirmed_at`, `automatic_start_due_at`,
+`production_effective_at`, `production_recorded_at`, `preparation_actual_at`
+(`timestamptz`) with accepted start-policy UUID FK. Before payment/event, the relevant
+instant is NULL, never epoch/zero. Successful full payment anchors +48 elapsed hours
+(172800 seconds); valid earlier manual confirmation starts work/preparation at once.
+Confirmation and ready preparation are one event, not mandatory separate actions.
+Keep physical/observed preparation evidence distinct from a scheduled effective start.
+
+An overdue worker records its processing time but retains the scheduled effective
+instant. Calculate in UTC, display Europe/London; test both DST cases T08/T09. Quote
+expiry and recurring collection hours are separate concepts. No pickup-minus-48 rule,
+no resetting start by moving pickup. Store the policy version/derived due instant at
+acceptance; later admin edits don't silently change accepted deadlines.
+
+Chef confirmation/refusal/start review is supported; whether the 48-hour value is
+editable is not supplied. Ordinary under-48-hour ordering is disallowed by the new
+answer; the standard minimum is now 192 hours. Uncertain dates use personal chef
+clarification, not an invented automated urgency override. Cancellation/start
+synchronization must preserve coherent state, but start does not deny the refund:
+use the separate immutable original-handover refund deadline. At start equality,
+the refund is still 100% before that refund deadline, otherwise exactly 50%; chef
+cancellation is 100%. Inspect T01–T07; start and refund clocks remain distinct.
+
+### location — GK-001, GK-024/028/030/031; K06/K08
+
+Propose `pickup_location_version(public_label text NOT NULL, private_address_ref uuid,
+instructions_ref uuid)` with protected address/instructions storage. Public value
+St Katharine Docks; private address supplied in source, omitted from repo. Preserve
+postcode/phone as text, never numeric coercion. Draft refs may be NULL until securely
+loaded, but no handover can promise missing required directions. Address-release
+policy stores approximate offset 2 days plus earlier-if-needed, not an exact scheduler
+deadline. Day-based guidance now uses exact-hour semantics (approximately 48 hours);
+approximation and earlier-if-needed remain. Dispatch actor/channel is still unknown.
+
+Public may view label; customer receives own order's address near fulfillment;
+authorized operational staff view protected directions, proposed manual early-send
+requires explicit capability/audit. Policy editability open. Record what address/version
+was sent, when and to whom; changing location for an existing order needs deliberate
+notification/consent review. Test public payload excludes private address; ~2-day
+release and authorized earlier delivery retain evidence rather than exposing it in logs.
+
+### delivery — GK-001, GK-017/018/025/027/030/031; K03/K04/K06
+
+Use `fulfillment(mode text CHECK allowed modes, order_id uuid UNIQUE FK)` with
+separate mode-specific fields/constraints. Collection fee is exactly zero; customer
+courier has no GK courier charge invented here. `delivery_quote(request_id uuid FK,
+address_ref uuid FK, fee_minor bigint, currency text, decision_state text,
+quoted_at timestamptz, accepted_at timestamptz)` records individual GK offer and
+confirmation. Draft fee/address/acceptance may be NULL, accepted quote requires them.
+Money nonnegative; from £100 means initial minimum 10000 pence for GK Delivery,
+not a fixed flat fee or rounding to nearest hundred. No automatic zone/tier/postcode
+relationships warranted. Add such entities only if a future approved rule needs them.
+
+Website submits address/quote request. Staff assesses distance/time and London versus
+outside/distant request; no invented mileage threshold. Driver/handover event records
+who physically received cake and when. Customer courier: customer arranges/pays;
+separate recommendations/instructions; all outstanding balance paid before handover;
+transport responsibility then passes to customer/courier. GK responsibility lasts to
+customer handover. These are owner policy preferences, not independently assessed
+legal waivers. GK Delivery uses the same recurring pickup windows; each accepted
+quote stores the actual agreed window as timestamptz bounds plus London/date context.
+
+Admin: proposed staff review/price/confirm per-address delivery and record handover;
+no zone editor. The chef explicitly sets prices via email/Instagram/WhatsApp; finer
+staff delegation is unresolved. `courier_content` requests placeholders and later
+editing but does not identify the authorized editor role. Versioned content needs
+`is_placeholder boolean` and approval evidence; keep public operational content gated
+on genuine instructions, without inventing a courier. Current GK-003 instructions
+require website payment for customer and chef-template orders, superseding the old
+off-site residual-balance exception for new intake. Retain historic payment provenance.
+GK-chef delivery is separately priced/paid and separately refunded only by chef/admin;
+accepted cake and delivery collections share one total entitlement without duplicate
+payout. Customer-arranged courier charges are not GK collections. Accepted address/fee/responsibility wording
+and promised window/version stay with quote/order; changes need revised agreement,
+not recomputation. Test Collection free, GK floor £100 with individual quote, outside
+London requires separate confirmation, customer courier blocks unpaid remainder,
+and distinct responsibility events. £20 refund-example delivery does not seed pricing.
+
+### move — GK-001/003, GK-026/031; K05/K06
+
+Propose append-only `pickup_change(order_id uuid FK, old_slot_id uuid FK,
+new_slot_id uuid FK, requested_at timestamptz, actor_id uuid FK,
+policy_version_id uuid FK, reason text, agreement_ref uuid NULL)`.
+Same-day customer time changes still require target availability and >=6 elapsed
+hours before the current slot starts; equality allowed. The new date-change answer
+does not explicitly withdraw that separate permission. Invalid changes keep the
+existing appointment; atomically save old/new commitments and notification intent.
+
+Date changes, repeats, full-next-day and Sunday cases require personal chef agreement;
+only the chef edits the agreed date if feasible. Agreement/actor evidence is required
+for that admin path. Existing one-day shelf-life wording is not replaced with a
+longer value by «це все враховано»; no automatic next-Thursday shortcut. Preserve
+production/preparation state and accepted policy version across the move.
+
+Date and time changes must not recalculate refund entitlement. Propose typed
+`refund_entitlement_event(order_id uuid FK, policy_version_id uuid FK,
+evaluated_at timestamptz, reference_handover_at timestamptz, change_id uuid NULL FK)`
+to retain the evidence used for eligibility, with `order.original_handover_at` and
+`order.full_refund_deadline_at` timestamptz NOT NULL for accepted orders. Save the
+deadline at placement as original handover minus 120 elapsed hours. Both earlier
+and later moves preserve it; changing current pickup must not update these columns.
+The percentage is evaluated against this saved deadline at cancellation, not frozen
+at checkout. Later policy edits cannot rewrite these events or accepted promises.
+Cases M01–M06/R04/R06 cover chef authorization, invalid targets, equality and restoration.
+
+### request — GK-003, GK-016/027/029; K02
+
+Propose typed `custom_request(desired_date date, servings integer, desired_size text,
+flavour_request text, idea text, design_details text, colour_palette text)` with
+conditional required fields: date, flavour and adequate idea/design, at least one
+of servings/size; palette nullable if irrelevant. Do not invent servings/size ranges.
+`request_reference(request_id uuid FK, ordinal integer, protected_object_id uuid NULL,
+source_url text NULL, provenance text)` supports multiple references from GK, other
+bakers/designers, Pinterest, Instagram/others, combined elements, or no reference
+when sufficiently described. Source citation is not copyright/reuse permission.
+
+Latest GK-003 clarification always requires customer full name and details of a
+different payer when applicable. Do not require an invented Instagram account.
+Exact additional payer fields and channel validations remain for minimal-data design;
+the latest answer does not supply new universal phone/email requirements.
+Store contacts as text in protected order/contact entities. Channel is Instagram
+primarily; email possible for companies/large orders/shoots/corporate/customer
+formal-email preference. Collecting contacts does not authorize marketing or force
+channel use. No automated Instagram sending permission implied.
+
+Admin: business staff manually reviews requests and communications; only authorized
+order/customer access, exact capability open. Version request/summary/references as
+existing K02; accepted quote pins exact design reference so catalog edits cannot
+replace it. Retention is unknown. Test no-reference original idea, multiple mixed
+references, conditional palette, required order contacts and appropriate email option.
+
+### quote — GK-003, GK-019/025/027/030; K02/K03/K04
+
+`agreed_quote` needs request FK, version, required accepted price/currency/date,
+size-or-servings, flavour, agreed design/details and fulfillment method. Repeated
+extras may use `quote_adjustment(quote_id uuid FK, description text, amount_minor
+bigint)` only where actual itemized agreement exists; no invented catalog surcharges
+or tiers. Owner factors include metallised coating, piping, bows, cherries, berries/
+fruit, flowers, dome shapes only if servings/work increases, and other complex work.
+Final price must be shown/agreed before payment, with consent evidence.
+
+Current GK-003 `quote_validity` supplies a **24-hour** payment window, replacing
+the old 48-hour quote rule. Keep `sent_at` and saved `expires_at` timestamptz,
+accepted version and source-policy FK; exact server equality is a technical proposal
+in that handover, not extra owner wording. Draft sent/accepted values nullable until events
+occur; immutable sent/accepted revision and unique quote-version conversion. Valid
+quote reserves no date. Website booking requires 100% successful payment; compare
+actual paid amount to the payable accepted component/collection. Current GK-003
+website-only payment replaces the earlier off-site residual-balance exception;
+Instagram agreements use chef-created site templates. Separately paid GK delivery
+must have its own recorded obligation/payment, not silently increase an already paid
+cake capture. Technical temporary hold design must be reconciled;
+no unsafe capture path or promise of a reserved slot before payment.
+
+Admin: manual agreement/pricing and availability review required, exact staff role
+open. Accepted quote freezes prices/details/policy while unreserved availability
+can change; expiry allows re-quote, not silent price edits. Later admin edits do not
+change accepted order, reorders require current revalidation. Test the 24-hour payment window
+from sending, another customer filling the date while a quote is valid, website
+full payment and quoted extras. The older deny-if-full outcome is not a universal
+oracle: new GK-001 accepts both simultaneous last-place orders. Exact quote/capacity
+integration remains GK-019 work, with actual paid obligations preserved.
+
+### identity — GK-003, GK-021/027/029; K00/K02
+
+`order.customer_id uuid NULL FK` supports guest purchase; guest capability/claim
+verification uses existing K00/K02 technical controls, not owner contact strings.
+`order_claim(order_id uuid FK, verified_subject_id uuid FK, evidence_ref uuid,
+verified_at timestamptz)` before association; unique claim/order association and
+ownership checks. Reorder links source order but creates current quote (current
+price/date/availability/flavour/composition/design/details), not mutable old data.
+
+Admin: guest order data scoped to authorized operations; current GK-003 explicitly
+assigns historical-claim approval to the chef through admin. Verification mechanism
+is technical design, never arbitrary matching email/Instagram. Audit successful and
+rejected claim without storing secrets. Account/profile changes do not rewrite order
+contact/history. Test guest succeeds, unverified historical claim denied, changed
+price/allergens/availability on reorder require reconfirmation.
+
+### payment — GK-003, GK-011/025/026/027/033; K04/K05
+
+Propose typed `payment_record(order_id uuid FK, source text, amount_minor bigint,
+currency text, paid_at timestamptz, evidence_ref uuid)` with verified distinct
+checkout/provider versus historical Revolut invoice provenance. Current intake is
+website-only, including chef-created template links; historic money evidence is
+still preserved. Pending record is not payment.
+`offline_payment_evidence` relates invoice, successful-payment/bank confirmation,
+transaction date/amount and order; refund evidence relates actual refund/transfer and
+amount. Protected storage, not bank documents in Git/JSON/logs. Uniqueness on actual
+provider/source reference and order agreement prevents duplicate recording; source
+reference nullable only where not yet evidenced, never accepted as paid then.
+
+Admin: record/review actual external evidence (proposed manager capability), not
+arbitrary paid switch. The older selected-invoice/off-site paths are historical;
+current website-only clarification is `chat:GK-003:2026-10-05:website-payment-24h`
+in GK-003 sources. No new provider signup or invoice engine is authorized. Append
+corrections; never erase successful facts when rules change. Test actual successful
+proof before recording historical external payment facts as paid. Current website/
+chef-template intake requires payment and does not allow the old cake residual-balance
+exception; this does not erase real historical partly paid records. Test actual
+refund evidence, duplicate submission and concurrent
+unknown online payment preventing duplicate financial recording.
+
+### refund — GK-001/003/005, GK-019/025/026/030/033; K05, ADR-0003
+
+Current GK-001 rule explicitly replaces previous 3/4-day/component/state rules for
+both cake types: whole-order cost including delivery; 100% strictly more than 120
+elapsed hours before ORIGINAL handover, exactly 50% at equality/later including
+no-show/after handover, chef cancellation 100%. At placement save the original
+deadline, not a permanent percentage. Date/time moves leave it unchanged.
+Cancellation needs disclosure/reconfirmation with the actual applicable amount. Model
+`refund_policy_version` typed `threshold_seconds bigint`, `comparison text`,
+`basis text`, `rate_percent smallint CHECK (rate_percent BETWEEN 0 AND 100)` and
+related cake-type/condition rows; no discretionary maximum-rate column is needed
+for this exact-rate rule. Use 432000 seconds, strict comparator, integer rates
+100/50, and a separate chef-cancellation condition. Store source/approver and
+accepted quote/order policy FK. The explicit user answer resolves supersession;
+it is not independent legal verification or approval of all GK-003/005 criteria.
+The older source examples below are retained evidence, not this new policy's formula.
+
+Propose versioned `cancellation_policy` plus typed state/condition rows, integer
+percent, elapsed-hour threshold/comparator and whole-order basis. Technical integration,
+effective-date and legal gates remain; the earlier day/cake-type conflict is resolved.
+Store cancellation action permission
+separately from refund eligibility. Actual paid cake amount after discount and actual
+delivery paid are `bigint` pence, separated from original price, taxes and fees.
+`refund_goal` and `refund_allocation(component/order_item FK, target_minor bigint)`
+retain obligations; operations have status and provider/offline evidence. FK/unique
+command constraints, nonnegative controlled amounts and cumulative safety under
+order/capture locks remain K05 invariants. Pending is not successful but reserves
+balance; no second payout while it may succeed. Goal and available-to-dispatch differ.
+
+Historical source scope, superseded for the current GK-001 policy: paid/not-started >4 days → 50% cake; <=4 days permits cancellation
+with 0% cake; started/ready 0% cake; unperformed delivery 100%, performed delivery 0%.
+Ordinary cancellation/refund after customer handover unavailable; mandatory-rights
+wording retained. Business cancellation, not customer breach, → 100% actually paid;
+precedence with performed delivery needs clarification. Ready cake 3-day rule remains
+conflicting. No broad approval of cancellation charge fairness or admin exceptions.
+
+Admin: money reviewer may inspect component target/success/pending/shortfall;
+refund/cancel capability follows K05, exact business exception permissions open.
+Existing orders retain accepted cancellation/allocation version, prices, discounts,
+delivery status/evidence; later policy edits do not recalculate commitments silently.
+Date/time changes preserve the original deadline. Test a £200 fully paid order:
+at 120 hours plus one second before original handover the refund is £200; at exactly
+120 hours it is £100; no-show/post-handover in that branch is £100; chef cancellation
+is £200. These are derived fixtures, not catalog tariffs. Prior succeeded/pending
+refunds still reduce safe additional dispatch; a percentage is not an extra payout.
+Legal corrections may need an explicit reviewed migration/
+customer process, never automatic retroactive rewrite.
+
+GK-003's explicit delivery-service failure exception returns 100% of GK delivery
+charges when delivery was not performed due to GK fault. This is a distinct reason
+from ordinary customer cancellation; retain the reason and collection FK. The
+separate delivery operation is chef/admin-only. One total obligation may span cake
+and delivery captures: £100+£100 paid at50% creates £50+£50 obligations, not two £100
+refunds. If one succeeds and the other is pending/failed, keep the remaining
+obligation visible; never mark the whole refund complete from one collection.
+
+Exact owner fixtures (GBP): 10000 cake + 2000 delivery = 12000 paid; eligible 50%
+cake = 5000 plus 2000 unperformed delivery = 7000. 12000 cake − 2000 discount =
+10000 paid; 50% = 5000. Target 7000 − 2000 succeeded = 5000 outstanding; pending
+shown separately and not dispatched twice. Decimal arithmetic agrees with every
+supplied example; no conflict in these sums. Fractional-penny rounding, multi-item
+allocation and a concrete pending-then-failed owner example remain questions.
+
+### business — GK-005, GK-012/022/028/036; K01
+
+`business_profile_version(trading_name text, instagram_handle text, public_email text)`
+with required supplied content: GK Cake London, @gk.cake.london,
+gk.cake.london@gmail.com. Separate `business_claim(kind text, reported_value text,
+owner_attested_on date, verification_state text, evidence_ref uuid NULL)` records
+registration, inspection and 5/5 report; public official evidence missing, support
+contacted. Do not store a fabricated rating agency ID or assert verified/publication
+readiness. Contact output is owner-approved; account control/domain ownership separate.
+
+Admin: content review and evidence viewing by designated staff, authority/editability
+open. Public content changes prospectively; accepted order keeps business/terms
+identity while useful contact updates may be presented deliberately without rewriting
+history. Test exact handle replaces older @gk.cake, public contacts display correctly,
+and reported hygiene claim remains visibly unverified until evidence accepted.
+
+### allergen — GK-005, GK-022/027/028/030/031/032; K01/K02/K07
+
+Use `flavour`, immutable `recipe_version`, `allergen`, and
+`recipe_allergen(recipe_version_id uuid FK, allergen_id uuid FK, declaration_kind text)`
+with unique pair/kind; no comma-separated allergen field as primary model. Separate
+kitchen cross-contact notice/version and order allergen snapshot/junction. All eight
+flavours have EGGS, MILK, CEREALS CONTAINING GLUTEN (WHEAT), SOYBEANS; Chocolate Oreo
+adds SULPHITES; Snickers adds PEANUTS, visibly prominent. Exact names are in JSON.
+Cross-contact list has five entries, excluding sulphites as written; do not infer
+absence from kitchen either. Notice says traces cannot be ruled out and severe
+allergies require contact. Preserve publication text exactly.
+
+Full ingredients, quantities, units and servings are unknown: do not synthesize
+recipes from allergen labels. Ingredient/recipe-quantity junctions remain GK-007/022
+requirements; exact decimal `numeric` and approved units later, no binary floats or
+made-up quantities. Safe purchase presentation needs actual applicable version;
+NOT NULL referenced approved allergen declaration before checkout. Label/handover
+requires order's **actual** flavour/composition, not an obsolete catalog declaration.
+
+Admin: chef/content validation of recipe/allergens and box-label preview/reprint
+needed; who may approve changes and substitutions open. New recipes never mutate old
+snapshots. If composition changes after agreement, retain both original and revised
+allergen evidence and trigger explicit customer/fulfillment review; do not blindly
+print either the current catalog or historical label. Tests: all eight × four common
+allergens, Oreo extra sulphites, prominent Snickers peanuts, exact kitchen warning,
+pre-purchase visibility and matching order-specific box label at handover.
+
+### tax — GK-005, GK-019/022/025/026/033; K03/K05
+
+`tax_status_version(uk_vat_registered boolean, separately_added boolean,
+owner_attested_on date, verification_state text)` represents reported false/false,
+not missing or a statutory zero-rate classification. `currency text='GBP'` and
+integer pence (`bigint`) use exact pounds ×100 conversion; display «до двох десяткових знаків» (up to two decimal places). Fixed trailing-zero
+formatting is unresolved, not a required two-place format.
+A future exact decimal rate uses `numeric`, never float; no rate is supplied now.
+Rounding mode is NULL in a draft until approved, not an implicit platform default.
+
+Admin: designated business/tax reviewer records verified status changes; permissions
+and activation authority open. Save order tax treatment/version and component amounts;
+future VAT change updates new pricing/info after explicit effective-date review,
+not historical totals/refunds. Reconcile pending quotes explicitly. Test no VAT added
+separately under reported policy, consistent GBP display within the stated two-place precision, owner refund
+fixtures; half-penny/line allocation require new approved examples. No tax/legal
+verification was performed by this ingestion.
+
+### legal — GK-003/005, GK-005/019/026/036
+
+`policy_content_version(body text, audience text, approval_state text,
+expert_evidence_ref uuid NULL)` and release checklist retain exact statutory-rights
+notice separately from internal legal note. Owner agreed business preference is
+not legal approval; 50%/0%, >4/<=4 days, custom/perishable/large/wedding wording and
+100% prepayment await qualified review. Internal note must never render to customers.
+No automated legal decision or new legal obligation inferred here.
+
+Admin: internal policy reviewer can inspect legal questions; publication/activation
+capability requires explicit authority. Version and archive accepted customer terms
+with order consent evidence; later copy edit does not erase accepted terms. Test
+exact owner notice and exclusion of internal note from public serialization; missing
+expert evidence remains a readiness blocker, never a fabricated approval date.
+
+### privacy — GK-005, GK-021/024/027/029/033/036; K00/K02/K08
+
+Owner permits only listed order/fulfillment categories; identifiers/contact values
+are text; relationships connect order, customer, request/reference, communication,
+payment/refund evidence. `data_retention_policy` may later have typed category,
+purpose, trigger, duration/unit and deletion/hold rules **after approval**; all unknown
+now. No zero/forever default, no consent inferred for marketing, analytics or browser
+storage. Incomplete source text is evidence of missing policy, not a usable clause.
+
+Admin: existing least-privilege roles govern current design; owner has not specified
+retention editing, deletion, export or marketing permissions. Design these with
+business/legal input. Identity/bank originals never enter Trello/public materials;
+protected payment-evidence storage remains a functional requirement. Unknown policy
+blocks relevant cleanup/analytics activation, not preservation of permitted category
+list. Historical deletion obligations and financial retention conflicts require
+explicit reviewed rules, not unconditional immutable-forever storage. Planned test:
+no unsupported retention seed; no private/internal text in public payload; read access
+scoped to purpose; later approved deletion covers objects, references and backups.
+
+## Complete decision registry
+
+Each row uses the profile above for permission, constraints, versioning, change impact
+and planned exact-value examples. `?` means unresolved/null allowed in drafts only;
+values marked conflict/incomplete in JSON cannot be activated.
+
+### BO-GK-001 registry
+
+Source file: [GK-001/decisions.json](../creator/GK-001/decisions.json). ID prefix `BO-GK-001.`.
+
+| Decision key / JSON Pointer suffix | Profile | Proposed entity/field or consequence | PostgreSQL type / nullability | Classification |
+| --- | --- | --- | --- | --- |
+| `work_week` → `/decisions/work_week/business/value` | schedule | `working_weekday.weekday` | smallint rows, NOT NULL | initial value |
+| `daily_limit` → `/decisions/daily_limit/business/value` | capacity | `daily_capacity.standard_limit; counting_unit` | integer=7; cakes; handover date NOT NULL | initial standard; counting invariant |
+| `capacity_exceptions` → `/decisions/capacity_exceptions/business/value` | capacity | `capacity_exception.order_id/approval` | uuid FKs; actor/reason/time | workflow invariant |
+| `lead_time` → `/decisions/lead_time/business/value` | schedule | `booking_policy.minimum_lead_hours; date_agreement` | integer192; equality allowed; chef-confirmed instant FK for uncertainty | initial minimum; manual resolution |
+| `wedding_recommendation` → `/decisions/wedding_recommendation/business/value` | schedule | `booking_guidance.advisory` | text; integer months=2 | advisory content |
+| `urgent_requests` → `/decisions/urgent_requests/business/value` | capacity | `custom_request.desired_date; manual decision` | date; FK to reviewed decision | workflow invariant |
+| `booking_horizon` → `/decisions/booking_horizon/business/value` | schedule | `booking_horizon.kind/lower/upper/unit` | ordinary 2; wedding 7/8 integers; months | initial ranges; ambiguous dates personally chef-confirmed |
+| `production_start` → `/decisions/production_start/business/value` | start | `order.placed_at/manual_confirmed_at/production_effective_at` | timestamptz event ?; integer hours=48 | initial policy + derived event |
+| `ready_preparation` → `/decisions/ready_preparation/business/value` | start | `order.preparation_actual_at; preparation policy` | timestamptz nullable until event; hours=48 | separate workflow + derived event |
+| `ready_cancellation` → `/decisions/ready_cancellation/business/value` | refund | `cancellation_policy.ready scope` | 120elapsed hours; before100/equality-or-after50; chef100; both types | versioned confirmed rule; earlier rules superseded |
+| `pickup_location` → `/decisions/pickup_location/business/value` | location | `pickup_location_version.public_label/private_address_ref` | text; protected uuid FK ? | content |
+| `address_release` → `/decisions/address_release/business/value` | location | `address_release_policy; notification event` | integer 2 days approximate; timestamptz event | initial guidance + audit |
+| `pickup_hours` → `/decisions/pickup_hours/business/value` | schedule | `weekly_collection_window weekday/opens/closes` | smallint; time without time zone NOT NULL | initial configurable schedule via A12 |
+| `pickup_slot` → `/decisions/pickup_slot/business/value` | capacity | `pickup_policy.duration_minutes/limit_mode` | integer 60; explicit no-separate-limit mode | initial policy |
+| `move_date` → `/decisions/move_date/business/value` | move | `pickup_policy.allowed_day_transition; pickup_change` | chef/agree UUID FKs; old one-day shelf-life unresolved | chef-mediated workflow |
+| `move_time` → `/decisions/move_time/business/value` | move | `pickup_policy.minimum_notice_hours; pickup_change` | integer 6; timestamptz comparisons | initial policy; customer permission |
+| `refund_follows_move` → `/decisions/refund_follows_move/business/value` | move | `order.refund_reference_at; pickup_change` | timestamptz/FKs; original deadline saved at placement | invariant; date/time moves never recalculate |
+| `fulfillment_modes` → `/decisions/fulfillment_modes/business/value` | delivery | `fulfillment.mode; quoted fee` | text check; bigint zero for Collection | invariant + public options |
+| `customer_courier` → `/decisions/customer_courier/business/value` | delivery | `fulfillment.handover_at/recipient; instructions` | timestamptz/text; protected content FK | workflow/content |
+| `gk_delivery` → `/decisions/gk_delivery/business/value` | delivery | `delivery_quote.fee_minor/address_ref; handover` | bigint >=10000 initially; GBP; uuid FK | initial floor + individually quoted price |
+| `delivery_geography` → `/decisions/delivery_geography/business/value` | delivery | `delivery_quote.reviewed_address/decision` | protected address FK; text state | workflow; no zone relationship |
+| `schedule_admin` → `/decisions/schedule_admin/business/value` | schedule | `production_schedule_version; calendar_exception` child rows | time without time zone; date; UUID version/actor FKs; absent current exceptions | admin-configurable schedule; effective-date policy pending |
+| `capacity_concurrency` → `/decisions/capacity_concurrency/business/value` | capacity | `capacity_allocation; chef cancellation audit` | positive integer cakes; UUID order/actor FKs | explicit both-order outcome; race mechanics proposed |
+| `courier_content` → `/decisions/courier_content/business/value` | delivery | `fulfillment_content_version.placeholder/approval/editor` | text; boolean placeholder; nullable approval/editor FK | editable content requested; real content/permission pending |
+
+### BO-GK-003 registry
+
+Source file: [GK-003/decisions.json](../creator/GK-003/decisions.json). ID prefix `BO-GK-003.`. Current manual-handover-r2; proposed typed mappings below
+use the current explicit user replacements. Original values remain in source/history,
+not current defaults. Exact decision hashes are in the handover manifest.
+
+| Decision key / JSON Pointer suffix | Profile | Proposed entity/field or consequence | PostgreSQL type / nullability | Classification |
+| --- | --- | --- | --- | --- |
+| `request_fields` → `/decisions/request_fields/business/value` | request | `custom_request fields; request_reference children` | date/text; integer servings OR text size; nullable palette | required inputs with conditions |
+| `order_contacts` → `/decisions/order_contacts/business/value` | request | `order_contact.full_name; conditional payer identity` | text full_name NOT NULL; payer FK/details conditional; extra fields unspecified | customer name required; no universal Instagram requirement; manual-handover-r2 |
+| `communication` → `/decisions/communication/business/value` | request | `order_communication.channel/context` | text enum/content; order FK | workflow/content |
+| `agreement` → `/decisions/agreement/business/value` | quote | `agreed_quote.configuration/acceptance evidence` | typed date/money/size/flavour/design/mode, FKs | invariant + accepted content |
+| `paid_commitment` → `/decisions/paid_commitment/business/value` | quote | `order.booking_confirmed_at; payment outcome` | timestamptz NULL until actual success; bigint paid/total;100percent | templates not accepted orders; actual full payment accepted even if capacity filled; manual-handover-r2 |
+| `quote_validity` → `/decisions/quote_validity/business/value` | quote | `order_template.sent_at/expires_at` | timestamptz; integer hours=24 | new within24h policy; equality/server event interpretation in handover; manual-handover-r2 |
+| `daily_limit` → `/decisions/daily_limit/business/value` | capacity | `daily_capacity.counting_unit; availability projection` | integer7 cakes; handover_date date; actual remaining integer | chef details in admin; replaces orders/standard-only display; manual-handover-r2 |
+| `capacity_exception` → `/decisions/capacity_exception/business/value` | capacity | `capacity_exception; feasibility review` | order/resource/actor FKs; text reason | workflow invariant |
+| `pricing_factors` → `/decisions/pricing_factors/business/value` | quote | `agreed_quote; optional actual quote_adjustment rows` | text factor; bigint actual amounts only | content + individual derived quote |
+| `guest_purchase` → `/decisions/guest_purchase/business/value` | identity | `order.customer_id; guest capability digest` | uuid FK NULL allowed; secret digest | invariant permission |
+| `reorder` → `/decisions/reorder/business/value` | identity | `new_quote.source_order_id` | uuid FK; current quote validation | workflow invariant |
+| `historical_claim` → `/decisions/historical_claim/business/value` | identity | `order_claim.verified_subject/evidence/approved_by` | uuid FKs; timestamptz; safe evidence ref; chef actor required | verified identity + order proof; insufficient proof stays unlinked; manual-handover-r2 |
+| `payment_methods` → `/decisions/payment_methods/business/value` | payment | `payment_record.source; template/payment link` | text current=website; historical source/protected evidence FK retained | all current payments through website; Revolut historical only; manual-handover-r2 |
+| `cancellation_early` → `/decisions/cancellation_early/business/value` | refund | `policy.original_handover_at/refund_deadline/percent` | timestamptz fixed deadline=original minus120elapsed hours; integer100 before | both cake types; total actually paid after discount including GK delivery; manual-handover-r2 |
+| `cancellation_late` → `/decisions/cancellation_late/business/value` | refund | `policy.refund_deadline/percent` | timestamptz; at/after deadline integer50 | exact50 including no-show/after handover; moves never recalculate; manual-handover-r2 |
+| `started_or_ready` → `/decisions/started_or_ready/business/value` | refund | `policy.state/actions; original deadline` | text state; customer_cancel=true; deadline-based100/50 | unified rule replaces old state-based zero/unconditional50; manual-handover-r2 |
+| `after_handover` → `/decisions/after_handover/business/value` | refund | `refund_request; fulfilled history; rights notice` | integer50 ordinary policy; personal chef route; content FK | no blanket exclusion; statutory rights retained; manual-handover-r2 |
+| `no_show` → `/decisions/no_show/business/value` | move | `fulfillment.missed_at; refund request` | timestamptz; integer50 total; chef-mediated move | current unified policy replaces no-show exclusions; manual-handover-r2 |
+| `business_cancellation` → `/decisions/business_cancellation/business/value` | refund | `cancellation.chef_actor/reason; refund_goal` | uuid actor FK; text reason; bigint100percent actual paid target | chef cancellation100; no old breach exclusion silently restored; manual-handover-r2 |
+| `refund_allocation` → `/decisions/refund_allocation/business/value` | refund | `refund_goal; per-collection component allocations` | bigint GBP; payment/item FK; separately paid delivery; chef-only delivery refund | unified entitlement with separate operations; no duplicate target per collection; manual-handover-r2 |
+| `refund_example_delivery` → `/decisions/refund_example_delivery/business/value` | refund | `historical example fixture` | integer pence/percent; historical7000 target | old eligibility superseded; current50percent of12000 is6000; manual-handover-r2 |
+| `refund_example_discount` → `/decisions/refund_example_discount/business/value` | refund | `future refund test fixture only` | integer pence/percent; no production default | example |
+| `refund_example_remaining` → `/decisions/refund_example_remaining/business/value` | refund | `future obligation/status test fixture` | integer pence; statuses separate | example |
+| `offline_evidence` → `/decisions/offline_evidence/business/value` | payment | `historical_external_payment/evidence; unexpected-transfer reconciliation` | uuid protected refs; bigint amount; date/order/source FKs | historical facts retained; no current manual-paid switch; manual-handover-r2 |
+| `legal_questions` → `/decisions/legal_questions/business/value` | legal | `expert_review evidence; final Terms/launch gate` | text scope; nullable expert/evidence FK until actual review | lawyer to be hired; future work, not asserted approval; manual-handover-r2 |
+| `cancelled_order` → `/decisions/cancelled_order/business/value` | refund | `order.cancelled_at; new_order.source_order_id` | timestamptz; uuid FK; may_reopen=false | new order required; prior refund obligation remains; manual-handover-r2 |
+| `resale` → `/decisions/resale/business/value` | refund | `resale_listing.original_order/item/handover dates` | uuid FKs; integer50 stated cost; unchanged date/instants | optional chef listing; stock/image/price-basis design remains downstream; manual-handover-r2 |
+| `admin_exception` → `/decisions/admin_exception/business/value` | refund | `chef_contact_resolution actor/reason/evidence` | uuid actor/order FKs; text channel/reason; protected evidence ref | personal Instagram/WhatsApp/email handling; no arbitrary ledger override; manual-handover-r2 |
+| `delivery_failure` → `/decisions/delivery_failure/business/value` | refund | `delivery_failure/refund_goal/payment allocation` | bigint100percent paid delivery target; net actual prior successes | GK fault unperformed service exception; separate chef admin refund; manual-handover-r2 |
+| `checkout_hold` → `/decisions/checkout_hold/business/value` | quote | `checkout_hold.starts_at/expires_at` | timestamptz; integer15 minutes; no quote reservation | pending-provider reconciliation required; integration not yet executed; manual-handover-r2 |
+| `manual_order_link` → `/decisions/manual_order_link/business/value` | payment | `order_template.reviewed_terms/customer_link` | uuid template/order FKs; acceptance/sent/expiry timestamptz | user-selected chef website template;24h; formerly only proposal; manual-handover-r2 |
+| `publication_preference` → `/decisions/publication_preference/business/value` | privacy | `order_photo_preference.opt_out; policy version` | boolean opt_out; version/evidence FK; rights check separate | default allowed preference; GK005 review before public use, no third-party rights inferred; manual-handover-r2 |
+| `refund_rounding` → `/decisions/refund_rounding/business/value` | refund | `refund_allocation.rounding/targets` | bigint pence; exact rational percent; stable item/payment ordering | customer-favour rule; aggregate ceil/largest remainder is technical derivation; manual-handover-r2 |
+| `refund_execution` → `/decisions/refund_execution/business/value` | refund | `refund_operation per actual collection; goal status` | uuid operation/payment FKs; bigint target/succeeded/pending/remaining | whole owed amount per collection; separate chef delivery; preserve external partial/unknown facts; manual-handover-r2 |
+
+
+### BO-GK-005 registry
+
+Source file: [GK-005/decisions.json](../creator/GK-005/decisions.json). ID prefix `BO-GK-005.`.
+
+| Decision key / JSON Pointer suffix | Profile | Proposed entity/field or consequence | PostgreSQL type / nullability | Classification |
+| --- | --- | --- | --- | --- |
+| `public_identity` → `/decisions/public_identity/business/value` | business | `business_profile_version name/handle/email` | text NOT NULL supplied values | public content |
+| `food_status` → `/decisions/food_status/business/value` | business | `business_claim value/status/evidence` | text 5/5; boolean reports; uuid evidence ? | reported fact, unverified |
+| `identity_documents` → `/decisions/identity_documents/business/value` | privacy | `protected evidence storage/access design` | no public/Trello document field | information-boundary invariant |
+| `flavours` → `/decisions/flavours/business/value` | allergen | `flavour.name` | text, eight distinct rows | initial catalog content |
+| `allergens` → `/decisions/allergens/business/value` | allergen | `recipe_allergen; order allergen snapshot` | uuid FKs; unique pair; prominence content | owner-verified content |
+| `cross_contact` → `/decisions/cross_contact/business/value` | allergen | `kitchen_allergen/notice version` | FK rows; exact text NOT NULL | public content |
+| `handover_label` → `/decisions/handover_label/business/value` | allergen | `order_label revision/actual recipe reference` | uuid FKs; text/version; generated event | derived output requirement |
+| `vat` → `/decisions/vat/business/value` | tax | `tax_status_version registration/separate_tax` | boolean false/false; date; evidence status | reported initial status |
+| `refund_basis` → `/decisions/refund_basis/business/value` | refund | `allocation policy FK; refund_goal/operation` | uuid; bigint money; text statuses | calculation invariant |
+| `refund_example` → `/decisions/refund_example/business/value` | refund | `future refund fixture only` | integer GBP pence/percent | example |
+| `money_precision` → `/decisions/money_precision/business/value` | tax | `currency + rendering/calculation contract` | text GBP; bigint pence; integer maximum display places=2; fixed trailing zeros ? | money invariant; rounding ? |
+| `policy_confirmation` → `/decisions/policy_confirmation/business/value` | refund | `cancellation_policy source/approval evidence` | FK to BO-GK-003; integer 4/50 | narrow business confirmation |
+| `statutory_notice` → `/decisions/statutory_notice/business/value` | legal | `policy_content_version.body` | text exact source | customer content; legal check pending |
+| `internal_legal_note` → `/decisions/internal_legal_note/business/value` | legal | `policy_content_version.audience/review gate` | text internal; evidence FK ? | internal content + publication blocker |
+| `customer_data` → `/decisions/customer_data/business/value` | privacy | `customer/order/request/payment/communication relations` | typed fields/FKs; no generic customer JSON blob | permitted purpose/category list |
+| `privacy_incomplete` → `/decisions/privacy_incomplete/business/value` | privacy | `unresolved privacy design / activation gate` | unknown NULL; no retention default | incomplete source |
+
+## Proposed ticket/contract changes — local only, not published
+
+| Affected records | Concrete proposed change / remaining gate |
+| --- | --- |
+| GK-001 / BO-GK-001, ADR-0004, GK-019 | Replace X-before-pickup question with placement-anchor/48-hour workflow; resolve counting unit, 8–10 days, month horizons, Saturday grid, ready-cake conflict, pickup-change and DST/equality examples. Retain concurrency/commitment safety. |
+| GK-003 / BO-GK-003, ADR-0003, GK-019 | Add owner state/component refund matrix and exact examples; resolve ready-cake scope, actions after start, unpaid/expired/cancelled/breach/no-show states, completed-delivery precedence, pending failure, rounding and legal review. |
+| GK-005 / BO-GK-005 | Capture public contacts, owner-attested food/VAT facts, exact flavours/allergens/labels, GBP display up to two decimal places and internal/public wording separately; request missing privacy continuation, full ingredients and official evidence. |
+| GK-012/016/021/027/029, K00/K02, ADR-0005 | Current handle @gk.cake.london, guest allowed, custom fields/references, conditional email, proof-based claim and revalidation; account control and exact proof method still open. |
+| GK-017/018/023/025/026/030/031, K01/K03–K06 | Show customer/admin workflows for manual capacity/delivery quotes and paid booking; eliminate automatic zones and invented per-slot cap; distinguish cancellations from refunds, individual quote expiry from production deadline, operational events from policy edits. Review holds and public availability. |
+| GK-022/024/027/028/031/032, K01/K07/K08 | Exact allergen relations and box label; protected address release; preserve references and actual recipe changes; ingredients/quantities, retention and communication policies remain missing. |
+| GK-011/033/035/036 | Preserve actual offline money evidence; unverified food/VAT/legal claims are not launch evidence; include owner exact fixtures and privacy/internal-note boundaries in later acceptance. No parent Done inference. |
+
+Published `docs/design/tickets/*.md`, role-card bodies, ticket maps and publication
+receipts retain historical text/hashes. This table is the proposed amendment list;
+it does not claim live Trello descriptions were changed. Before affected execution,
+GK-019 must reconcile unresolved state/transaction/permission details and arrange
+scoped ticket changes only when authorized. Existing independent design verdicts
+do not automatically approve this new policy integration.
+
+Next action for Sasha: use the grouped Ukrainian questions in each intake README,
+first resolve R1/R2/R3/R4 and recover the BO-GK-005 continuation; prepare the promised
+worked cases and qualified legal/tax checks. No message has been sent to the owner.
+Then update the bounded contracts and affected ticket drafts with the new evidence,
+record explicit supersession and obtain required reviews before implementation.

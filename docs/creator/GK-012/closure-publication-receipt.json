@@ -1,0 +1,45 @@
+{
+  "scope": "User-approved GK-012 completion split r5; publish to four cards, verify assignments, then move GK-012 only to Done",
+  "source_sha256": "eb5cc4e9d77d50cf58a9de7a5c6ecc123fd99eacb3f16ae526dc2e1fb855808a",
+  "comments": [
+    {
+      "ticket": "GK-020",
+      "card_id": "6ab13e2622a2dc1eaa9c2c83",
+      "comment_id": "6ac40c02ef95b6c9b322653f",
+      "file": "docs/creator/GK-012/closure-comments/GK-020.txt",
+      "sha256": "acbc80a6db5c725db26afbbe134d934179bcc56cefa12442e17ca16e0c09599f",
+      "published_at_utc": "2026-10-05T20:43:46.850916+00:00"
+    },
+    {
+      "ticket": "GK-021",
+      "card_id": "6ab13e362b6b95aa6d7c516b",
+      "comment_id": "6ac40c03a2f0040ccb551531",
+      "file": "docs/creator/GK-012/closure-comments/GK-021.txt",
+      "sha256": "a22b680e7cce6debf0c0d0d72cef1c59faaab6c252e7f76dd80f12f86398884a",
+      "published_at_utc": "2026-10-05T20:43:47.358852+00:00"
+    },
+    {
+      "ticket": "GK-027",
+      "card_id": "6ab13e4fa9d6fa905f1796c7",
+      "comment_id": "6ac40c031ff780251926d482",
+      "file": "docs/creator/GK-012/closure-comments/GK-027.txt",
+      "sha256": "ca6fd4da5b09ee7538139fdeb9a0955e555d05f870ac59afcf8fd9fd6959e9f8",
+      "published_at_utc": "2026-10-05T20:43:47.844100+00:00"
+    },
+    {
+      "ticket": "GK-012",
+      "card_id": "6ab13b7169adf9df4b5d6177",
+      "comment_id": "6ac40c04097d44acee8b9e7b",
+      "file": "docs/creator/GK-012/closure-comments/GK-012.txt",
+      "sha256": "aaf9a3b338087c4850cae74067c3868afc265fdbe3ffdd5f88649bd402336663",
+      "published_at_utc": "2026-10-05T20:43:48.419498+00:00"
+    }
+  ],
+  "assignments_verified": true,
+  "done_verified": true,
+  "assignments_verified_at_utc": "2026-10-05T20:44:11.431924+00:00",
+  "done_list_id": "6ab074aeb3c3763832de00c3",
+  "done_list_name": "🏁 Done",
+  "card_url": "https://trello.com/c/nveiC5IF/26-gk-012p1o110w01-verify-domain-instagram-ownership-and-approved-origins",
+  "verified_at_utc": "2026-10-05T20:44:12.362524+00:00"
+}

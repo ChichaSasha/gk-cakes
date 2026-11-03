@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "ticket": "GK-005",
+  "revision": "interview-r1",
+  "recorded_at": "2026-10-05T00:51:06.479196+00:00",
+  "status": "Business answers recorded; deferred verification and downstream reconciliation remain. Not final legal approval or Trello Done.",
+  "input_hashes": {
+    "docs/creator/GK-005/source-comments.json": "d8b6854908a345d6d59028e8fb6e29e013fe6b5df7e84080e4a1667f984c8022",
+    "docs/creator/GK-005/decisions.json": "3d4bdf96e9824addf5d528ad95135582831d4651779fcb12483581b46db94942",
+    "docs/creator/GK-005/follow-up.json": "9c297d7c403b65a55b96684291ca58cd58a6b262c50dcaa16c3f1aff678ca2e0",
+    "docs/creator/GK-001/handover.json": "f8c09de923cd6a90e1c6b3404659e1161152910f7fee85b6c6278ae4d152557a",
+    "docs/creator/GK-003/handover.json": "716525f65bc5cbaae13da19f51b885a9a29349604bbe73cb2fa7c9155b3a34d1",
+    "docs/design/owner-data-contract.md": "30bd0355f991bf0d0e564a115e3179a7f4f42e7006d0fb53191223468a1556db"
+  },
+  "output_hashes": {
+    "docs/creator/GK-005/interview-2026-10-05.md": "5c687921384a7fac328ae862118a024e5e901d68a50aae2ca059129e6b4d1d6d",
+    "docs/creator/GK-005/interview-sources-2026-10-05.json": "eee247cc0d3d8cfcd9b40efea6b027e8caedec81dbefaf68e14ad049695d97b2",
+    "docs/creator/GK-005/README.md": "0469229442dfbef842346eacb7617dbc189a54bd20b6f5cb6ffef173e595fa2f",
+    "docs/creator/README.md": "06230f98ce97c20405026d9c0cdaf8211a6ffa05d0b0e4b28ef38602ae08eaa8",
+    "docs/creator/GK-005/evidence-2026-10-05/trello-comments.json": "28f3bf575317f9d386c96de79f04a7f46b4e132fd57ce11bcec3110f74ee5a43",
+    "docs/creator/GK-005/evidence-2026-10-05/1963655.json": "dd8649449ec8ab9f2fc94fd58d80b2259b2069996fe8a00231cb28944bbf9ca2"
+  },
+  "attachments": [
+    {
+      "path": "/Users/sasha.chycha/Downloads/1963655.json",
+      "sha256": "dd8649449ec8ab9f2fc94fd58d80b2259b2069996fe8a00231cb28944bbf9ca2",
+      "checked": true,
+      "copied_to": "evidence-2026-10-05/1963655.json"
+    },
+    {
+      "path": "/Users/sasha.chycha/Downloads/GK_Cake_Costs.xlsx",
+      "sha256": "1898cdff50c151081c21e9690350dce2af1b4015c2c4c1bb4ce2a7e97fae30f2",
+      "checked": true,
+      "copied_to": null,
+      "note": "Read-only extraction. No supplier labels or finished box label. Private cost/recipe workbook stays in user Downloads; future contexts must verify access."
+    }
+  ],
+  "fsa_verification": {
+    "url": "https://ratings.food.gov.uk/business/1963655/gk-cake",
+    "method": "Codex in-app browser accessibility state and screenshot of rating",
+    "business": "GK Cake",
+    "fhrs_id": 1963655,
+    "authority": "Tower Hamlets",
+    "rating": 5,
+    "inspection_date": "2026-06-29",
+    "checked_on": "2026-10-05",
+    "address_private_in_public_listing": true,
+    "attachment_extract_date": "2026-10-05"
+  },
+  "source_attribution": "Sasha user replies and Sasha-posted privacy continuation are separate from original Elina comment; no direct new Elina approval invented. Chat excerpts are explicitly excerpts, not full-message hash claims.",
+  "trello_reads": [
+    {
+      "role": "parent",
+      "card_id": "6ab13b5a78ce79e5d2b0e208",
+      "retrieved_at": "2026-10-05T00:51:06.479196+00:00",
+      "coverage": "Current comments exposed by CLI; no deleted/edit-history completeness claim.",
+      "comment_ids": [
+        "6ac2cbd3a671de32e39fc6a6"
+      ]
+    },
+    {
+      "role": "owner",
+      "card_id": "6ab85908163fa9bc11351373",
+      "retrieved_at": "2026-10-05T00:51:06.479196+00:00",
+      "coverage": "Current comments exposed by CLI; no deleted/edit-history completeness claim.",
+      "comment_ids": [
+        "6ac2e59ae65291bd0dab65dd",
+        "6abacbecde4959cdb8da9e21"
+      ]
+    }
+  ],
+  "external_writes": [],
+  "independent_review": "not performed",
+  "checks": [
+    {
+      "command": "python3 scripts/check_owner_intake.py",
+      "result": "PASS: existing 3 owner packets, 74 decisions, 221 numeric occurrences; this checker does not validate the new interview schema."
+    },
+    {
+      "command": "python3 scripts/check_planning_kit.py",
+      "result": "PASS: planning links and kit checks."
+    },
+    {
+      "command": "python3 scripts/check_planning_kit.py --self-test",
+      "result": "PASS: checker self-test."
+    },
+    {
+      "command": "Focused read-only Python evidence/arithmetic assertions",
+      "result": "PASS: local source IDs, original UTF-8 comment hashes, manifest file hashes, half-penny rounding and approved £105.85 / £52.93 allocation."
+    }
+  ],
+  "remaining": [
+    "Reconcile canonical decision JSON/contracts before downstream execution",
+    "Actual provider/browser/storage/privacy inventory and deletion verification",
+    "Final product/supplier and label verification",
+    "Deferred final legal review before final Terms publication",
+    "Authorised tracker publication and completion review"
+  ]
+}

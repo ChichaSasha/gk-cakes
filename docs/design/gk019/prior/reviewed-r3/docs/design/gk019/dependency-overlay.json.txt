@@ -1,0 +1,88 @@
+{
+  "status": "proposed current additions over frozen ticket-plan.json; no Trello write",
+  "new_nodes": [
+    "GK-037",
+    "GK-038"
+  ],
+  "additional_edges": [
+    [
+      "GK-010",
+      "GK-019"
+    ],
+    [
+      "GK-011",
+      "GK-019"
+    ],
+    [
+      "GK-012",
+      "GK-019"
+    ],
+    [
+      "GK-002",
+      "GK-019"
+    ],
+    [
+      "GK-019",
+      "GK-016"
+    ],
+    [
+      "GK-019",
+      "GK-017"
+    ],
+    [
+      "GK-019",
+      "GK-018"
+    ],
+    [
+      "GK-010",
+      "GK-020"
+    ],
+    [
+      "GK-012",
+      "GK-020"
+    ],
+    [
+      "GK-012",
+      "GK-021"
+    ],
+    [
+      "GK-010",
+      "GK-024"
+    ],
+    [
+      "GK-012",
+      "GK-024"
+    ],
+    [
+      "GK-024",
+      "GK-034"
+    ],
+    [
+      "GK-035",
+      "GK-037"
+    ],
+    [
+      "GK-037",
+      "GK-036"
+    ],
+    [
+      "GK-007",
+      "GK-038"
+    ]
+  ],
+  "milestone_edges": [
+    [
+      "GK-013",
+      "GK-020-B2"
+    ]
+  ],
+  "non_ticket_completion_gates": {
+    "GK-022": "GK-038 validated relevant recipe data gates affected data acceptance, not all code; GK-037 gates final publication/legal content",
+    "GK-032": "GK-038 validated relevant measures/cost data gates affected acceptance",
+    "GK-034": "Disjoint release files may begin after old prerequisites; recovery integration waits GK-024; Done requires both"
+  },
+  "ownership_changes": {
+    "GK-024": "Shared K11 schema/coordinator/B2/essential copy/dispatch journal before first external send. Master coordinates migrations with021.025/026/027 consume completed024.",
+    "GK-034": "Backup schedule/restore tooling integrates completed024; expanded recovery-file scope coordinated, historical workflow-only parallel boundary does not authorize concurrent shared edits."
+  }
+}

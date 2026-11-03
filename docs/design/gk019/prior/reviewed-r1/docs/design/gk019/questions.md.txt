@@ -1,0 +1,19 @@
+# GK-019 decision queue — r1
+
+Only unresolved choices are listed. Accepted owner/provider choices are not reopened.
+No item grants production activation or Trello publication. Questions are asked one
+at a time; unanswered proposals must not become implementation defaults.
+
+| ID | State | Decision and recommended outcome | Affected work |
+| --- | --- | --- | --- |
+| Q1 | Asked; awaiting Sasha | Allow chef-approved, cake-specific shorter lead time for ready/resale cakes while retaining original resale handover and ordinary 192h minimum. Keeping 192h universally instead makes many resales unavailable. | K01/K04, GK-022/023/025/030 |
+| Q2 | Not yet asked | Reconcile 24h payment initiation window with success-based 192h lead time, slow payment methods and 15m hold. Recommend 24h for starting payment; keep genuinely in-flight payment pending, and ask chef to resolve any success that no longer meets lead time (honour only with explicit agreement, otherwise full return). No automatic cancellation just because daily capacity fills. | K04, GK-025 |
+| Q3 | Not yet asked | GK-004 accepts opt-in checkout journeys/returning-visitor estimates; GK-005 excludes checkout/private pages and approves aggregate public statistics. Recommend consented minimal journey events with no page content, names, email or order IDs, while keeping private-page tracking off; requires explicit scope decision. | K10, GK-014/033/037 |
+| Q4 | Evidence gate; ask only after exact qualification | Keep all 17 accepted method labels; establish the real provider mapping for “Onelink”, supported customer/currency contexts, timing and refund windows. No silent removal, currency conversion, automatic future method additions or reduced refund rights. Any actual incompatibility gets its own concrete decision. | K04/K05, GK-025/026/035 |
+| Q5 | Not yet asked | Refund entitlement continues after provider refund windows. Recommend chef-authorized separately evidenced restitution when provider return is definitively unavailable; never dispatch while an earlier outcome is unknown. Existing historical transfer evidence is not blanket authorization for a new payout method. | K05, GK-026/037 |
+
+Technical choices do not require another business interview: exact recurring slot
+starts can be explicitly configured by chef (Saturday supplied starts retained),
+minimal distinct-payer name plus provider-required data, chef-reviewed date horizons,
+manager-edited courier content, and immutable source snapshots. No automatic resale
+price basis is invented: chef enters and approves the base amount for its 50% listing.

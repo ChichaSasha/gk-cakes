@@ -1,0 +1,21 @@
+# GK-019 decision queue — r1
+
+Accepted choices and remaining conditional qualification are recorded. Accepted owner/provider choices are not reopened.
+No item grants production activation or Trello publication. Questions are asked one
+at a time; unanswered proposals must not become implementation defaults.
+
+| ID | State | Decision and recommended outcome | Affected work |
+| --- | --- | --- | --- |
+| Q1 | Accepted — Sasha: Yes; [source/hash](q1-acceptance.json) | Allow chef-approved, cake-specific shorter lead time for ready/resale cakes while retaining original resale handover and ordinary 192h minimum. This is now approved; no blanket ordinary made-to-order reduction. | K01/K04, GK-022/023/025/030 |
+| Q2 | Accepted — Sasha: Aprove; [source/hash](q2-acceptance.json) | Reconcile 24h payment initiation window with success-based 192h lead time, slow payment methods and 15m hold. Approved24h for starting payment; keep genuinely in-flight payment pending, and ask chef to resolve any success that no longer meets lead time (honour only with explicit agreement, otherwise full return). No automatic cancellation just because daily capacity fills. | K04, GK-025 |
+| Q3 | Accepted — Sasha: agree; [source/hash](q3-acceptance.json) | GK-004 accepts opt-in checkout journeys/returning-visitor estimates; GK-005 excludes checkout/private pages and approves aggregate public statistics. Recommend consented minimal journey events with no page content, names, email or order IDs, while keeping private-page tracking off; Scope now approved; implementation/privacy evidence still required. | K10, GK-014/033/037 |
+| Q4 | Currency and current Onelink bundle accepted; method qualification evidence remains | Keep all 17 accepted method labels; establish the real provider mapping for “Onelink”, supported customer/currency contexts, timing and refund windows. Optional local currency now approved with GBP accounting and disclosed fees ([source/hash](q4-currency-acceptance.json)). No silent removal, future method additions or reduced refund rights. Current Onelink bundle accepted subject to GBP compatibility ([exact source](q4-bundle-slots-acceptance.json)); future additions and non-GBP settlement remain unapproved. Actual incompatible settlement returns for a specific decision before activation. Any actual incompatibility gets its own concrete decision. | K04/K05, GK-025/026/035 |
+| Q5 | Accepted — Sasha: yes; [source/hash](q5-acceptance.json) | Refund entitlement continues after provider refund windows. Approved chef-authorized separately evidenced restitution when provider return is definitively unavailable; never dispatch while an earlier outcome is unknown. This approval is for owed refunds only; no new offline collection. | K05, GK-026/037 |
+
+Technical choices do not require another business interview: exact recurring slot
+starts can be explicitly configured by chef (Saturday supplied starts retained),
+minimal distinct-payer name plus provider-required data, chef-reviewed date horizons,
+manager-edited courier content, and immutable source snapshots. No automatic resale
+price basis is invented: chef enters and approves the base amount for its 50% listing.
+
+Sasha additionally requires visible available delivery/pickup slots instead of repeated guess-and-Check. Accepted and specified in K06; no unanswered usability decision. No further business question is pending on current evidence. Provider qualification may surface a concrete future incompatibility.

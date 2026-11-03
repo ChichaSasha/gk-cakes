@@ -1,0 +1,11 @@
+GK-007 accepted policy / scope-split-r1 — 5 October 2026 — part 1/3
+
+Sasha approved interview-r1 and explicitly chose to split deferred data into GK-038: https://trello.com/c/tVlu0Wkg. GK-007 and BO-GK-007 now complete the policy/current-input stage. Original broader criteria remain historical; this dated amendment transfers missing measurements and data, rather than declaring them validated. No implementation or launch completion is claimed. Approval is Sasha's, not a fabricated direct Elina statement.
+
+Discounts: percentage or free-delivery codes; one code per order. Percentage applies to all cakes, including custom/reduced/resale cakes and decoration in the agreed cake price, but not delivery. Each code can have optional expiry, total and per-customer usage limits. Per-customer limits require sign-in; other guest checkout remains available. Accepted paid/free orders consume usage; cancellation never restores it, regardless of refund. Confirmed-unpaid abandoned checkout releases a reservation; pending payment is not proof of failure.
+
+Free-delivery codes waive the entire GK delivery charge inside a per-code maximum driving distance from the kitchen, within ordinary delivery eligibility. No third-party courier waiver or actual radius is approved. Preserve separate GK delivery payment and chef-admin refund handling.
+
+Percentage discount: eligible subtotal, nearest penny with halves upward, proportional line allocation summing exactly (K03 largest remainder, stable ID tie-break). £10.01 + £10.00 at 10% -> £2 discount split £1/£1, net £18.01. £10.05 at 10% -> £1.01 discount, net £9.04. £50 already-reduced cake at 10% -> £45. Refunds use actual post-discount payments and existing GK-003 rules; a 50% target on £18.01 is £9.01, not separately rounded line payouts.
+
+Allow £0 orders without payment or fake capture. Confirmation reserves capacity and consumes usage. Confirmation anchors their 48-hour preparation clock. Keep automatic preparation status, but stock deductions require the chef to confirm actual production and select batches. Any separately payable delivery is still payable; an unpaid cake creates no cash refund.

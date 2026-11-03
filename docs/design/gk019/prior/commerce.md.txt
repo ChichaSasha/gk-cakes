@@ -1,0 +1,518 @@
+# Commerce, capacity and fulfillment — r3 reconciliation
+
+GK-001 update: load [manual-handover-r2](../../creator/GK-001/handover.md) before
+using this packet. Strict one-winner capacity, earlier start/refund assumptions and
+automatic date moves require GK-019 reconciliation against the new supplied answers.
+R2 resolves 192-hour minimum, chef handling of uncertain dates, accepted-order
+preservation on capacity reduction and both-cake 100%/50% original-deadline refunds.
+Earlier contrary examples below are historical technical proposals; revise them in
+GK-019 before execution. No automatic dependent implementation readiness is implied.
+
+
+Owner intake refresh: read [owner-data-contract.md](../owner-data-contract.md) and
+[GK-001/003/005 inputs](../../creator/README.md), including both JSON files per card.
+Exact business inputs now replace earlier unapproved values; all new SQL/permission
+mappings are proposals pending GK-019. Published r5 slices remain historical scope;
+start anchors, counting units, hold compatibility and conflicting refund scope block
+execution. No parent acceptance or new technical approval implied.
+
+
+Status: shared technical reconciliation accepted, 2026-09-21; fresh final
+integration review pending. No application code, implementation tests,
+provider account capability proof or approved commerce screens exist.
+
+## Execution, inputs and scope
+
+Requested `gpt-6-astra` / high through the master's accepted explicit fresh
+`fork_turns=none` invocation; effective identity/effort unavailable, status
+**requested-only**. Author context fresh; independent review not applicable to this
+authorship. Readback verified and master go received before substantive assessment.
+Master reports the Astra/high financial-author and fresh Astra/xhigh reviewer pilot
+passed after one external-refund quarantine correction; this qualifies bounded
+high-risk design routing, not implementation or this packet's independent approval.
+
+Read AGENTS.md; gk-feature; execution-check/artifacts/Trello references; PROJECT-BRIEF;
+DELIVERY; SETUP; input-r1; creator-decisions r2; contracts r2; architecture r1;
+provider-research r1 with UK update; shared-r1; financial-pilot r3; screens r2;
+ticket-plan and GK-001/003/007/019/020/023/025/026/031. No application sources or
+package manifests were found. Base HEAD is
+`bb96a89681bcf2fa1c663a02eacbe039e20e6363`; preserve its staged original POC and
+untracked planning work. Initial authoring dirty-source SHA-256 (historical; refreshed inputs below):
+
+| Source | SHA-256 |
+| --- | --- |
+| financial-pilot.md r3 | `871b5e551ddf0c059787458c4ce48921dad61f82cbe468a293db0d42b8f574d3` |
+| contracts.md r2 | `8992a892c444ad07ee36a2b15075e3ca0ac54a70993088a7ed1797a19a20c1b9` |
+| architecture.md r1 | `2a4afb5a11f425627701ea1bf24ee80402f535b007f76b108f3fa15219e5f2a9` |
+| provider-research.md | `83d855152b2812e9b910bb5a98b5e9dc9c3c90b47652ca68713f382ad33be077` |
+| ticket-plan.json | `60d95b3e76cf5c80d5c007343c9bd056f2fa94f571fcef598a1f5fe353efa7e7` |
+
+Historical r2 input readback (current owner reconciliation at top supersedes policy assumptions):
+UK, London only, GBP integer pence, Europe/London, services <=GBP100/month with lower
+initial spending preferred, made-to-order plus occasional ready stock. Manual
+production start OR admin-configured X hours before pickup is confirmed intent;
+X, arbitration after pickup changes and ready-stock cancellation boundary remain
+open. Creator r2 supersedes shared-r1 unknowns. Only this file is worker-owned;
+master owns all shared changes and Trello. No external writes or delegation.
+
+Requirements owned here: C05 C06 C10 C15 C16 C17 A01 A03 A07 A08 A10 A12 S01 S02
+S06 S07. Adjacent C02/C04/C07/C08/C09/C11/C14, A02/A04/A06 and S03–S05 require the
+customer/catalog/identity and chef/inventory/operations packets: this packet specifies
+integration effects, not complete implementation coverage of those requirements.
+
+Outcome: a customer accepts a known total and fulfillment promise, pays once, and
+sees honest confirmation or recovery. Chef-entered orders compete for exactly the
+same stock/production/handover capacity. A cancellation cannot race physical-start
+eligibility, lose a refund obligation or silently restock a perishable cake.
+
+## Shared-r3 reconciliation record
+
+Continued author context; requested-only model status unchanged. Refreshed contracts
+r3, architecture r3, ADR-0001/0003/0004 and GK-020/023/025/026/027/031; changed-contract
+readback sent before these edits. Inputs sufficient for reconciliation, not blocked
+policy implementation. Current contracts SHA-256
+`ce9791654e74f2546a138494e0286023baf838fcb7a195f0e042496e08a358de`;
+architecture `b448852467378408d1f09e7ca92ccca5ac4a21776838f2cd7132eb1ca9bad92d`.
+The named ADR/ticket bundle fingerprint is `3af439148718c2379014bd1843f2c38fd052fb4089070fe9b0466f86ba7d107c`
+(SHA-256 of ordered `path SHA-256` lines, listed ADRs then listed tickets, no final newline).
+
+Resolved technical recommendations: Go/SvelteKit module/release baseline; typed
+PostgreSQL mutation gateway; explicit configuration/resource/inventory lock ranks;
+resource-only capacity edits; actual provider-session expiry and never-dispatched
+admission race; full-return goals/quarantine; terminal-preserving late-payment
+recovery in GK-025 with GK-026 reuse; timed-start commit on rejected cancel/move;
+offline provenance constraints and canonical screen names. Shared contracts r3 are
+authoritative for these interfaces. Provider spending/selection, exact X and pickup/
+ready-stock policy, discount zero-total/tax/refund policy, identity session selection,
+visual approval and implementation evidence remain blocked. Financial-pilot r3 is
+unchanged historical evidence; no API, PostgreSQL or provider tests ran in this refresh.
+
+## Qualified architecture assessment
+
+**Go modular API + SvelteKit Node UI is the accepted technical baseline** in
+ADR-0001 r3, based on this qualified assessment; identity/provider execution gates
+and bootstrap evidence remain pending. Customer/admin
+share one UI artifact; API and maintenance share one backend artifact, independently
+released from UI. This is a suitability judgment, not measured performance superiority
+or acceptance of a paid provider. No existing application stack constrains reuse.
+
+| Option | Concrete fit and cost of complexity | Assessment |
+| --- | --- | --- |
+| Go stdlib HTTP + pgx + SQL migrations; SvelteKit UI | Standard router supports methods/path parameters. Explicit database transaction calls fit shared SQL admission functions. Custom chef workflow and identity verification must still be implemented; two languages/toolchains remain. | Suitable and recommended; skip routing framework, generated query layer and repository abstraction until concrete query maintenance warrants them. |
+| Django + PostgreSQL + separate UI | ORM/auth/admin can reduce catalog maintenance work. Django describes its admin as model-centric and recommends custom views for process-centric flows. Refund/pickup controls still need custom commands and restricted SQL; avoid a second independent role/identity authority. | Viable alternative if maintainers prefer Python; no evidence it removes the hard transaction or chef-experience work here. No reason to add it alongside Go. |
+| TypeScript backend + SvelteKit UI | One language and shared wire types may simplify maintenance. Still requires distinct backend/job deployables, runtime input validation, protected SQL admission, precise money and provider recovery. Shared types do not prove wire validation. | Viable, no established TS backend to reuse. Choose it instead of Go if team ownership changes; do not build both or split business rules into UI SSR. |
+| Static UI only | Avoids a persistent UI runtime but needs deliberate fresh catalog/metadata behavior. Chef price/availability updates must not require a UI release. | Keep server-rendered public catalog via API; measure host cost before provisioning. No speculative edge rendering or cache tier. |
+
+Primary pages checked 2026-09-21: [Go router](https://go.dev/doc/go1.22#enhanced_routing_patterns),
+[Django admin](https://docs.djangoproject.com/en/5.2/ref/contrib/admin/),
+[SvelteKit Node adapter](https://svelte.dev/docs/kit/adapter-node).
+The Go release page establishes routing capability, not the version to pin today;
+bootstrap selects current supported versions. No framework benchmark was run.
+
+The one-database module boundaries in architecture.md are technically suitable.
+Separate services, Redis, message brokers, generic provider factories and courier
+orchestration add no present capability. PostgreSQL durable intents/inbox are enough
+for the specified small-shop flow. Provider bundle and cost conclusions remain
+provisional research: the master must preserve the <=GBP100 limit, exact quotes,
+backup/object restore gaps and Creator purchasing approval in SETUP/ADR-0002.
+
+## Responsibilities, entities and constraints
+
+All business tables are private, keyed by UUID; versioned relationships preserve
+history. Never expose a database service credential in UI or use one as the app
+connection. Owned entities are logical modules in the same database, not services.
+
+| Owner | Entity / minimum data and constraint | Consumer/history/query |
+| --- | --- | --- |
+| Orders | `checkout_quote`: owner/capability, revision, expires_at, priced snapshot and source versions; `order`: source, owner proof reference, lifecycle/version, accepted snapshot, cutoff and policy; `order_item`: stable line ID, variant/recipe/allergen/version, quantity, stock mode, price/discount/tax allocations | Immutable acceptance; reorders use current choices. One checkout quote converts once through unique quote/order relationship. Custom agreement versions use the same rule, new reviewed quote for replacement. Index customer+created_at+id, production_date and pickup instant. |
+| Scheduling | `production_day`, `pickup_slot`, `delivery_window`: stable resource ID, valid local date/UTC interval, capacity integer units, held/committed counters, accept_new, policy version | Counts are nonnegative, held+committed <= capacity. Owner rejects automatic complexity weights and separate pickup count caps; 7 cakes versus orders and daily resource semantics need reconciliation. Public standard-slot display needs owner clarification; no private bookings. Unique shop/date for production; explicit slot IDs for appointments. |
+| Catalog/finished-stock owner coordinated with Scheduling | `finished_cake_lot`: variant/recipe snapshot, usable-until, total units, held/committed/removed units, saleable flag | Reservation consumes existing finished stock, never new production demand. Existing promised lots cannot be reduced below reservations; unusable committed stock creates an explicit order exception. No refund-triggered physical stock restoration. |
+| Scheduling | `resource_reservation`: order/resource/line, units >0, state held/committed/released, version, lease/recheck deadline | Unique order+resource+line logical allocation; counters and allocation transition change in same protected transaction. Index active reservations by resource and due held orders. Deadline is a reconciliation trigger, not proof unpaid. |
+| Pricing | `discount`: code/version/type/bps, eligible variants, currency, validity interval, usage capacity; `discount_application`: order/code unique, snapshotted rule and component allocations, held/consumed/released | Lock discount row for last-use races. Retried order consumes once. Cancellation reinstatement requires Creator policy and explicit movement. No browser-selectable fee, price or discount amount. |
+| Payments | `collection_operation`: order, amount/currency, stable provider key/body hash, state, provider IDs, dispatch_started_at, expiry, generation/lease/retry; `payment_capture`: account/environment/provider charge unique, observed amount/currency | One active collection operation per order; no new collection while old outcome unknown. Preserve additional unexpected captures as quarantined evidence. API/job/webhook all use same admission functions. |
+| Payments | `refund_goal`, `refund_operation`, `provider_observation`, `provider_inbox` as financial-pilot r3 | Capped controlled refund allocations and external observations remain distinct; unmatched/conflicting fact quarantines capture, available=0. Full-return goal survives failed partial attempt. Index unresolved next_attempt_at and provider unique identities. |
+| Fulfillment | `fulfillment`: order unique, mode pickup/chef_delivery/customer_arranged, slot/window, saved address/individually quoted fee, state, optional delivery_reference; transition history | Pickup change does not change production date, recipe or delivery mode. Address/contact private; manager/fulfillment read only as needed. Later courier can submit the same explicit dispatch/status commands. |
+| Operations / Notifications | command identity, audit, durable intent, inbox and job lease | Command and notice inserted with business transition. Existing K08 handles transport/evidence. No duplicate queue for refund/collection records already serving as durable intents. |
+
+Snapshots retain purchased totals, recipe/allergens, local production date, stock
+mode/capacity weight, delivery promise and policy. Catalog changes affect a new quote;
+paid snapshots cannot be silently edited. Unpaid quote change produces a replacement
+requiring explicit approval. Retention/anonymisation remains Creator policy; unresolved
+financial/dispatch identities survive cleanup. Backup/restore covers both database
+and objects, with provider reconciliation before resumed dispatch.
+
+### Concrete financial and capacity mutation gateway
+
+Shared K04 r3 accepts **typed PostgreSQL command functions**, called from the modular
+backend, as the enforced boundary for cross-row financial/resource invariants. This closes
+the financial pilot's “choose an enforced gateway” blocker at design level:
+
+- A non-login, non-superuser owner owns protected tables and `SECURITY DEFINER`
+  functions. Runtime API/worker roles are neither owner nor members able to SET ROLE
+  to owner/migrator, have no BYPASSRLS/DDL, and cannot directly INSERT/UPDATE/DELETE/
+  TRUNCATE protected order lifecycle/snapshot, capture/refund/goal/observation,
+  reservations/resource counters or discount usage. No generic SQL/patch function.
+- Grant runtime only named function EXECUTE and required reads; internal helpers
+  are not callable by runtime. Revoke default PUBLIC EXECUTE, set default privileges,
+  and create grants/functions in one migration transaction. Qualify objects; fixed
+  trusted search_path with pg_temp last, no runtime schema CREATE. Database provider
+  admin/service roles are excluded from runtime. Separate worker grants for verified
+  observation application and dispatch admission; customer requests cannot call them.
+- Functions take explicit command data, acquire prescribed locks, validate state,
+  amount/currency/allocation/version and resource limits, and append audit/outbox.
+  Backend authenticates principal and capabilities; functions additionally validate
+  the passed local actor/ownership where applicable. This gateway prevents accidental
+  DML bypass by runtime; it does not make a compromised trusted backend truthful.
+- `create_checkout`, `apply_collection_evidence`, `expire_unpaid_order`,
+  `cancel_order`, `reserve_refund`, `apply_refund_evidence`, `admit_refund_dispatch`,
+  `move_pickup`, `transition_order` and `set_resource_capacity` are concrete command
+  boundaries, not a promised function count. Keep each atomic outcome in one call;
+  split reusable SQL internals only when actually shared.
+- Migrator can change the schema by necessity; its credential exists only in the
+  controlled release/maintenance path. Data corrections call the same routines;
+  exceptional migration/backfill pauses dispatch, follows locks/invariants and runs
+  real-DB invariant checks before resuming. No claim that SQL can prevent its owner
+  or a superuser deliberately bypassing controls.
+
+[PostgreSQL function security](https://www.postgresql.org/docs/current/sql-createfunction.html)
+and [privileges](https://www.postgresql.org/docs/current/ddl-priv.html), checked
+2026-09-21, underpin this design. Real-role DML/EXECUTE/SET ROLE denial tests and
+empty/upgrade/restore permission verification remain mandatory; no such test ran.
+
+### Global transaction discipline
+
+Normal writer order: existing `order` rows by UUID -> collection/capture rows by
+UUID -> refund rows by UUID -> mutable commercial configuration rows (catalog/
+policy) by type+ID -> resource rows in this fixed rank and ID order:
+production_day, finished_cake_lot, pickup_slot, delivery_window, discount -> their
+reservation/application rows -> inventory ingredient/lot rows by stable ID -> append
+command/history/audit/notification results.
+Skip untouched ranks. Queries must explicitly order lock acquisition; never rely on
+an unordered IN query. No provider/network call inside any transaction holding locks.
+
+Creation first claims the unique actor+create-command+key identity, then inserts its
+private new order and unique quote-conversion relationship, before shared resource
+locks. Same-key/quote losers wait/retrieve original committed identity or roll back;
+they must not hold resources while waiting for that unique creation claim. Existing
+order commands resolve idempotent replay under the order lock; replay reauthorises
+and reads stored result without acquiring another order. Worker job claim releases
+its short queue-row lock before any order-first transaction. Bulk commands collect
+and lock all affected orders by UUID before resources; no resource-first backfill.
+
+At READ COMMITTED, a command locks current configuration rows while comparing quote
+versions, then capacity/discount rows before admission. Admin catalog/config writers
+use the same configuration locks and never then acquire order locks. Immutable
+versions make committed snapshot reads stable. Resource-only capacity/blackout edits
+lock resource rows, check held+committed and finish without touching orders. Reject
+capacity reduction below that sum; closing new sales (`accept_new=false`) can preserve
+old commitments. A mere pre-query of affected orders does not prevent concurrent new
+bookings: if a future edit actually changes orders it needs a reviewed coordinated
+closure/order-lock protocol, not enumeration presented as a phantom-proof lock.
+
+Local arithmetic CHECK constraints defend counters; functions make counters and
+reservation rows change atomically and reconcile their sums. Refund cross-row sum
+is computed under order/capture lock, not a false row CHECK. Deadlock/serialization
+errors get at most three whole-transaction retries within the shared deadline;
+client still uses the original key. [PostgreSQL row locks](https://www.postgresql.org/docs/current/explicit-locking.html),
+checked 2026-09-21. No process mutex or scheduler punctuality establishes correctness.
+
+## Customer/chef behavior and canonical contracts
+
+Reuse K00–K06 and existing screen IDs; every endpoint below is prefixed `/api/v1`.
+Customer order GET is owner/capability-scoped; staff grants are checked for every
+command. Foreign and absent order IDs both yield 404, role failures 403. Required
+fields cannot be null; unknown mutation fields are rejected. All mutations carry
+Idempotency-Key; existing-order commands also carry expected_version. Reused key
+with different canonical request returns 409 KEY_REUSED. Monetary operation keys
+remain with financial history; leases/provider key retention do not remove identity.
+
+| Screen / requirement | Action, data, validation and permission | Honest states/recovery and planned verification |
+| --- | --- | --- |
+| C-DETAIL/C-SCHEDULE / C10 | Public advisory standard-slot display (count form pending); select variant/mode/date, get current quote and fulfillment choices; no customer/order data | Loading, unavailable/blackout, retry; “Your date is booked only after successful full payment.” Keyboard date+slot alternatives, explicit London timezone, public-payload privacy checks. |
+| C-CHECKOUT / C05 C15 C16 S01 | `POST /checkout/quotes`: lines variant_id/quantity, production_date, exactly one fulfillment mode with slot or address/window, optional discount_code. `POST /checkouts`: quote_id/quote_version, selected resources, consented_policy_version, contact; server total includes goods, discounts, delivery, tax | Pending quote/submit, changed-price reapproval, invalid code, no delivery area, slot lost, session expired. 202 operation+order; poll `GET /operations/{id}`, redirect only after hosted URL known. Timeout “Checking your payment”; never “failed” from network loss or “paid” from return URL. |
+| C-ORDER / C06 C17 | `POST /orders/{id}/cancel` expected_version; `POST /orders/{id}/pickup` target_slot_id/expected_version; own snapshot/timeline/money summaries | Cancel confirmation with eligible policy and estimated refund; pending refund independent of cancelled lifecycle. Full target preserves old pickup; stale/cutoff error refreshes allowed actions. Status updates live-announced without moving focus repeatedly. |
+| A-ORDERS / A07 | `POST /admin/orders`: reviewed quote or recorded agreement/version, customer proof reference, fulfillment, server-validated total; manager only | Draft is no booking/payment. Saved awaiting_payment yields payment-link operation; offline evidence clearly labelled. Guessed email cannot attach owner. Lost slot reselects, duplicate conversion retrieves original order. |
+| A-CAPACITY / A08 A12 | Versioned settings plus separate resource capacity/accept_new; manager only | Empty setup, load/save, show existing held+committed impact, reject unsafe reduction with counts and revise. Never advise deleting a customer's booking to fit the form. |
+| A-FULFILLMENT / A03 A10 | `POST /admin/orders/{id}/start-production` or `/transitions` action=ready/dispatch/complete/exception, expected_version, required reason for exception; approved staff capabilities | Paid valid transition only; cancelled/stale/cutoff materialisation refreshes current view. “Ready for pickup”, “Out for delivery”, “Delivery needs attention”; optional courier reference, no tracking claim without evidence. |
+| A-REFUND / A01 S02 | Admin `/cancel` reason/version or `/refunds` amount_minor/currency/allocations/reason/version; refund-capable manager | No capture, prior partials, pending/unknown, failed shortfall, quarantine with available zero. Review amounts before confirm; “Provider confirmed refund” is not bank receipt. Follow pilot r3 recovery, never offer an automatic new payment attempt for unknown. |
+
+All screens are proposed, linking screens.md and GK-017/GK-018 future sessions.
+No new F-* screen namespace: pilot F-CANCEL maps to C-ORDER, F-REFUND to A-REFUND,
+F-PRODUCTION to A-FULFILLMENT. Use labelled inputs, visible keyboard focus, errors
+linked to fields, text status alongside colour, mobile 320px reflow and reduced
+motion. Actual coloured mobile/desktop previews, feedback and exact Creator approval
+precede UI implementation; later browser/API/accessibility checks verify all above.
+
+Safe errors: 409 PRICE_CHANGED (replacement quote for review), CAPACITY_UNAVAILABLE,
+STALE_VERSION, CANCELLATION_NOT_ELIGIBLE, CUTOFF_PASSED, POLICY_UNAVAILABLE,
+RECONCILIATION_REQUIRED; 422 INVALID_AMOUNT/INVALID_ALLOCATION/DELIVERY_UNAVAILABLE/
+DISCOUNT_INVALID; 503 retryable transient admission failure with same key. No raw
+provider, SQL, address or customer details in error/log text.
+
+Separate canonical states: order `awaiting_payment -> confirmed -> in_production ->
+ready -> completed`, with `cancelled`/`expired` terminal paths. Collection
+`created,pending,unknown,succeeded,failed,cancelled`; `pending` includes known
+provider processing. Refund uses pilot
+`reserved,submitting,pending,unknown,requires_action,succeeded,failed,cancelled`.
+Fulfillment `awaiting_handover,out_for_delivery,completed,exception`. The API returns
+these separately. An operational recovery flag/queue reference represents a paid
+but unfulfillable or discrepant order; do not invent a misleading lifecycle state.
+Late success never silently reopens a terminal order.
+
+## Money, scheduling and race rules
+
+### Quote, discount and commitment
+
+Use checked integer pence arithmetic, bounded quantities and immutable line IDs.
+Website collection is 100% of accepted total, one active collection per order.
+Recommend one code, no stacking, percent eligible goods only, free delivery only
+on eligible chef delivery; all four are Creator policies awaiting approval.
+Proposed bps percent rounds aggregate eligible discount half-up, then allocates by
+largest remainder with stable line-ID ties. Example 1001p+1000p at 10% gives 200p
+allocated 100p/100p, net 1801p. Eligibility, validity [start,end), usage cap and current
+rule version are rechecked under locks at commitment. Success consumes held usage;
+terminal unpaid expiry releases it; unknown retains it. Admin changing code cap
+cannot go below held+consumed; new expiry/rule does not rewrite an accepted order.
+A rejected checkout leaves no usage or partial capacity allocation.
+
+Owner reports no separately added VAT; cake-after-discount/delivery allocation is
+supplied. Legal verification, rounding and ready-cake scope remain unresolved. A 100% discount can produce zero total: a website order must not be sent
+to a provider pretending positive funds were captured. Before S01 is Ready Creator
+must choose whether zero-pay orders are supported or reject combinations reaching
+zero. If supported, a separate `no_payment_required` payment summary and approved
+confirmation path must be reconciled into K05; this packet does not privately add
+it. No client price override. Owner requires individually quoted GK Delivery from £100
+and no delivery-zone/postcode tariff engine; preserve accepted address and fee.
+
+### Checkout, expiry and late payment
+
+1. Quote is advisory, no scarce resource hold. Commitment claims command/quote once,
+   locks/revalidates sources, then reserves all line production units OR ready stock,
+   handover/pickup OR chef-delivery window and discount in one DB transaction. Mixed
+   basket is permitted only if every line is feasible for the same promised
+   fulfillment; otherwise return 422 with unchanged resources. Create immutable
+   awaiting_payment order, collection intent, audit and applicable notice together.
+2. Before session-create dispatch, take order-first locks, check not closed, policy/
+   promise still feasible and no quarantine, persist immutable provider key/body and
+   dispatch_started_at. Release locks, call provider, persist reference/evidence under
+   locks. API returns pending operation within proposed 3s, not synchronous uncertainty
+   as failure. No new operation merely because response/worker lease was lost.
+3. Proposed card-only 30-minute Stripe session must be qualified in sandbox. Stripe
+   documents expiry 30 minutes–24 hours **after provider session creation**, so do not
+   set a guessed `order.created_at+30m` provider deadline after an async delay. Persist
+   selected allowed duration and actual returned expiry. Before dispatch verify the
+   minimum window fits lead-time/production cutoff; otherwise close safely or request
+   another date. Hold deadline tracks reconciliation; UI shows provider expiry only
+   after known. Quote expiry and payment-session expiry are distinct.
+4. Never-dispatched collection can be closed/released under the same lock only if
+   dispatch_started_at is null and no provider request was admitted; set cancelled
+   so a queued worker cannot subsequently send. Once dispatch admitted, “no provider
+   ID yet” is unknown, not evidence no request ran. At due time retrieve/expire the
+   same provider session as applicable, verify terminal unpaid **and no successful
+   or unresolved underlying payment**, then release all holds/discount once and set
+   expired. HTTP failure/processing retains holds and queues reconciliation/manager
+   alert. Approved exceptional forced release records reason and future money liability.
+5. Signed inbox is durable before 2xx; validate account/environment/object/amount/
+   currency against immutable operation, retrieve current payment evidence outside
+   locks, then apply once under order-first locks. Valid capture commits holds and
+   discount and confirms only if the still-pending order's promise remains feasible.
+   Stale reconciliation generation cannot overwrite a newer authoritative result;
+   reschedule a fetch. Session completion/return URL alone is not capture proof.
+6. Success after hold release or after lead-time/cutoff failure records all money
+   but does not reopen expired/cancelled lifecycle or trigger fulfillment. Shared K04
+   r3 selects durable full-return goal, refund execution/reconciliation and manager
+   recovery without fulfillment as the default. GK-025 owns this minimum refund
+   core before collection exposure; GK-026 extends it. Reacquisition or a replacement
+   order remains blocked until explicit feasibility/consent policy is accepted;
+   never infer revival from payment success or bypass quote/order uniqueness.
+7. Extra capture, mismatched amount/currency, external refund or dispute freezes new
+   dispatch/fulfillment pending reconciliation. Store every verified external fact,
+   not only those fitting a local cap. Pilot quarantine preserves local unknown
+   allocations and external observations separately, with possible exposure visible.
+   Dashboard action before freeze may already be in flight; local freeze does not
+   pretend to revoke a provider request. No second collection or return without proof.
+
+[Stripe session expiry](https://docs.stripe.com/api/checkout/sessions/create), checked
+2026-09-21, supports the duration boundary. All provider timing, terminal-unpaid
+mapping, card methods, idempotency and charge/refund account behavior still need
+actual selected-account sandbox evidence; retrieved docs are not integration proof.
+
+```mermaid
+sequenceDiagram
+  participant C as Customer
+  participant API as API
+  participant DB as PostgreSQL commands
+  participant W as Payment worker
+  participant P as Payment provider
+  C->>API: Commit accepted quote + key
+  API->>DB: Order + all holds + discount + collection intent
+  DB-->>API: Commit operation
+  API-->>C: Pending operation
+  W->>DB: Admit dispatch once; persist key/body
+  W->>P: Create hosted session outside locks
+  alt Response lost
+    W->>DB: Unknown; keep all holds
+    W->>P: Reconcile original identity
+  else Session known
+    W->>DB: Save provider ID and actual expiry
+    C->>P: Pay full accepted total
+  end
+  P->>API: Signed event
+  API->>DB: Durable inbox; acknowledge after commit
+  W->>P: Retrieve current payment evidence
+  W->>DB: Lock order then financial/resources
+  alt Valid capture and feasible promise
+    W->>DB: Confirm + consume holds/discount + notice
+  else Paid but closed/unfulfillable
+    W->>DB: Record funds + durable full-return goal; no fulfillment
+  else Definitively terminal unpaid
+    W->>DB: Expire + release holds/discount once
+  end
+```
+
+### Production, cancellation, pickup and manual entry
+
+Owner BO-GK-001.production_start requires 48 hours after placement with earlier
+manual confirmation starting work; ready preparation is separate and records actual
+start. Placement-event and state-action semantics need GK-019 review. The old
+pickup-minus-X proposal is superseded as a design assumption. Under the existing
+technical discipline sample clock_timestamp() after order lock, retain effective
+versus recorded time and materialize due events idempotently despite late workers.
+
+BO-GK-003 permits <=4-day customer cancellation with no cake refund; cancellation
+and money entitlement are distinct. >4-day/not-started 50% cake and unperformed
+delivery, started/ready money treatment, and conflicting ready-cake 3-day rule are
+in the owner data contract. Do not implement the former blanket pre-production-only
+cancel gate. Pickup moves change the refund date/time, not automatically the start
+clock; reopening and complete state matrix remain unresolved.
+Pickup move locks order, any affected financial/config rows then both resource IDs
+in canonical order. At equality/due time materialise start; apply separately approved
+pickup deadline/state rules. Target capacity/eligibility, promised production date,
+old/new policy and slot timezone are checked. Increment target and release old in
+one transaction, update appointment/history/notice/version once. Same target is an
+idempotent no-op. Invalid/full target leaves old appointment; if timed start must be
+materialised, commit that valid transition while returning the move rejection with
+the unchanged appointment. A move is never a delivery-mode/production-date edit.
+
+No implicit swap across two customer orders: if both destinations are full, each
+move fails retaining its slot; a future explicit manager swap is outside scope.
+Admin changing policy/slots affects new commitments only under recommended snapshot
+rule. Existing-slot deletion/interval mutation is blocked; close future sales and
+create replacement slots. Customer consent/recovery required for changing booked
+promises. Timezone labels include offset for repeated London times; nonexistent
+spring-forward wall times reject, ambiguous autumn times require offset selection.
+
+Manual order creation uses the same quote/order and all resource admission. Default
+payment is a 100% hosted link; no provider collection is invented from conversation.
+For owner-permitted Revolut invoice payment, capture provenance is
+`offline` with unique evidence reference, amount/currency, verified manager and
+observed time; simultaneous online/unknown payment blocks recording until resolved.
+It follows the same capacity transaction and immutable agreed total. Offline return
+uses durable obligation + manager evidence of actual return, never provider POST.
+Revolut invoice is owner-accepted for selected orders; verification authority,
+cancellation conflicts and race semantics remain GK-003/019 blockers. Capacity
+can never be bypassed by an admin “paid” switch. Quote amendments race checkout under
+source/version locks and force explicit reconfirmation when checkout has not committed.
+
+Production reservation remains a commitment after work starts; cancellation releases
+only usable future commitments by approved policy. Consumed ingredients, occupied
+production effort and removed finished stock are not automatically replenished.
+Cancellation before production can release planned ingredient demand once; physical
+adjustment belongs to inventory. Finished-stock reservation release restores saleable
+availability only if that stock still physically exists, is usable and has not been
+consumed/handed over; otherwise retain removal and raise exception. Same transaction
+or durable inventory transition identity prevents duplicate consumption effects.
+
+Fulfillment transitions require paid/approved financial clearance and valid state:
+ready follows production/preparation, dispatch requires chef-delivery mode and ready,
+complete records actual handover/delivery evidence. Customer-arranged courier uses
+booked pickup/handover. Delivery exception retains capacity/history and actionable
+contact task until reviewed; it does not automatically complete, refund or restore
+stock. Optional delivery_reference is enough for a later adapter; no interface or
+provider orchestration is justified now.
+
+## Planned evidence and self-contained slice refinements
+
+**All tests below are plans.** GK-020 supplies pinned actual commands before dependent
+implementation is Ready. Proposed Go unit/race/integration and UI check/build/test
+commands in existing tickets are not demonstrated yet. Each behavior starts with a
+real failing assertion, then implementation/green, exact-revision independent review,
+PR required checks/review, native auto-merge and main CI. Release/CD and Trello Done
+approval are separate per DELIVERY. Bootstrap planning need not falsely demand a
+preexisting application test runner: its first step establishes and verifies one.
+
+| Check | Fixture/action and observable result | Environment / owning slice |
+| --- | --- | --- |
+| DB-1 admission | Two connections barrier-race last production unit, finished cake, pickup, delivery window and discount use; one accepted, other capacity/code conflict; no partial allocation | Real PostgreSQL with API and worker roles; GK-023/GK-025 |
+| DB-2 mixed/manual | Ready-stock item plus made-to-order item consume distinct resources; ready item adds no future recipe demand. Manual and website last-slot attempts share admission; one wins. Duplicate quote/key produces one order/collection | Real PostgreSQL; GK-023/GK-025/GK-027 |
+| DB-3 write protection | Runtime attempts direct DML/TRUNCATE protected tables, helper EXECUTE, schema create and SET ROLE owner/migrator; all denied. Permitted command updates order/counters/intent atomically; forced exception before commit leaves none | Real-role empty/upgrade DB; GK-020/GK-023/GK-025/GK-026 |
+| DB-4 expiry | Never-dispatched cleanup vs dispatch admission: cleanup wins => no provider call; admission wins => unknown holds retained. Two expire/event workers with stale generations cannot release a successful capture or consume twice | Real PostgreSQL + instrumented adapter; provider mapping verified separately; GK-025 |
+| DB-5 configuration | Catalog/discount/policy edit races quote acceptance: one coherent old accepted snapshot or changed-quote rejection. Reduction/blackout races checkout: capacity never below held+committed and old commitments preserved | Real PostgreSQL; GK-023/GK-025 |
+| DB-6 cancel/refund | Pilot cancel-first/start-first, 10000 captured/2000 succeeded/3000 unknown/two 4000 attempts; only one partial accepted, remaining full return 1000. 4000 pending fails after 6000 cancellation return => goal short4000, actionable | Real PostgreSQL deterministic barriers; GK-026; safe late-return subset in GK-025 |
+| DB-7 quarantine | Local unknown10000 plus separate external succeeded5000 keeps capped ledger10000, observation5000, exposure15000, available0. Duplicate observation no extra fact; no new dispatch. Proven both succeeded retains actual15000 discrepancy | Real PostgreSQL + selected-provider evidence mapping; GK-025/GK-026 |
+| DB-8 time/move | Lock begun before cutoff but acquired at `2026-10-25T01:30:00Z` rejects cancellation; before equality can win. London `2026-03-29 01:30` rejects as nonexistent; `2026-10-25 01:30` requires offset. Two moves to last target: one succeeds, loser old slot intact; rollback changes neither slot | Real PostgreSQL time fixture plus timezone library; GK-026/GK-031. Historical timing fixture; update action/refund expectations under owner policy before execution |
+| DB-9 lifecycle | Duplicate start/job gives one history/notice/inventory identity; cancelled/expired terminal order cannot be reopened by late capture; completed cannot customer-cancel; wrong mode dispatch denied; offline/online race cannot double-record paid funds | Real PostgreSQL/API role tests; GK-025/GK-026/GK-027/GK-031 |
+| MONEY | 1001+1000 at10%=200 allocated100/100; ties deterministic, allocations sum, invalid bps/overflow/negative/currency/client fee denied; free delivery does not alter goods; zero total follows approved decision | Unit/API tests; GK-025; input policy GK-007 |
+| PAY-1 | Selected sandbox capture exactly accepted GBP total; return URL without evidence stays pending. Actual hosted expiry fits account/API constraints and saved local expiry. Unsupported method rejected/config disabled | Selected provider sandbox; GK-011/GK-025 |
+| PAY-2 | Drop response after provider creates/charges; retry same stable key inside retention creates no second session/capture. Crash/overlap workers retain unknown; retention boundary blocks blind create; retrieve complete provider evidence | Sandbox + controlled network fault wrapper; GK-025 |
+| PAY-3 | Duplicate/reordered signed events, bad signature/account/currency, expired-but-processing, terminal-unpaid, unfulfillable late success, partial/full refund and insufficient refund balance mappings | Selected sandbox when reproducible; unsupported simulation named as gap with provider documentation and acceptance blocker, never fabricate exercised status; GK-025/GK-026 |
+| OPS | Restore pre-success intents into isolated DB+objects; dispatch frozen until complete provider reconciliation, no duplicate charge/refund. Expired lease restart, missing cron, backlog alert and exact operation drilldown | Disposable real PostgreSQL + controlled provider account; GK-025/GK-026 and operations release/acceptance tickets |
+| UI | Mobile/desktop keyboard: change price/date, failed delivery mapping, invalid discount, unknown payment, cancel/pickup race, admin manual/offline distinction, refund quarantine; no inaccessible silent state change or private payload leak | Approved GK-017/GK-018 sketches then browser/API tests in GK-030/GK-031 |
+
+Performance-sensitive paths are multi-resource admission, last-use discount, per-order
+refund aggregation and due reconciliation scan. Reuse architecture's proposed fixture
+(500 products/10000 historical orders/20 readers/5 simultaneous checkouts), local
+transaction p95<=500ms, read p95<=300ms, API deadline10s/DB2s/provider5s, 60s lease with
+fencing, retry1m/5m/15m/1h, maintenance5m and urgent-age alert15m. These are proposals
+for measurement on chosen region/compute, not accepted SLA or achieved results.
+Measure SQL lock waits and end-to-end provider delays separately; cutoff correctness
+must hold even with a stopped scheduler. Bound calendar reads to31 days, lists50,
+job batches, indexed due work. Expand indexes only from real query plans.
+
+| Existing ticket / prerequisite | Concrete refinements to embed, with delivery outcome |
+| --- | --- |
+| GK-001 Creator / confirmed London/hybrid intent | T1 resolve placement/48-hour anchor, pickup/refund interactions and ready-stock conflict; T2 resolve supplied lead/horizon/count/slot values and manual delivery quote windows; AC includes equality, DST, last-slot and existing commitment examples. No invented defaults. |
+| GK-003 + GK-007 Creator | Resolve positive customer/admin state matrix, prior partial/full-return allocations, offline evidence/return path, tax, discount validity/usage/reinstatement/stacking and zero-total orders. AC examples use 10000p with previous pending/failed partial and 1001+1000 percentage allocation; record approved revision or block. |
+| GK-019 Agent design / above policy + identity/provider inputs | Integrate this stack recommendation, exact gateway/lock discipline, terminal late-payment recovery, canonical screens/states/endpoint fields into ADR-0001/0003/0004 and K00/K03–K06/K09. Resolve qualified technical items now; keep only actual Creator/provider gaps. AC fresh reviewer sees same hashes and no contradictory executable claims. |
+| GK-020 Agent bootstrap / accepted stack and required contracts | Establish pinned Go/SvelteKit separate builds and disposable Postgres runner; typed-function migration/role harness demonstrates real failing permission/config assertion then green. Provide exact subsequent unit/API/integration/UI commands and no placeholder jobs. Backend/maintenance share artifact, UI holds no secrets. |
+| GK-023 Agent capacity / bootstrap + approved units/windows + chef design where UI included | Implement DB-1/2/3/5/8 capacity subset: protected all-or-none holds, closed-new-sales behavior, no below-commitments edit, public date projection, London interval fixtures. Tests exercise real concurrent API/manual writer roles. No payment-provider call needed for this slice. |
+| GK-025 Agent checkout / auth/catalog/capacity/notifications/provider and policies | Own MONEY, DB-1/2/4/5/9 collection subset, PAY-1–3 collection, and minimal full-return goal/dispatch/reconciliation + quarantine required for late/unfulfillable payment. Deliver operational safe checkout behind UI gate. Do not expose charge-taking until this recovery is included; cannot depend cyclically on GK-026. |
+| GK-026 Agent customer/admin refunds / safe checkout and approved policy | Add pilot full positive-cancellation/admin exceptions/partial allocation commands, DB-6/7/8, real provider partial/full/refund uncertainty and recovery. Reuse GK-025 money gateway and late-return implementation, no duplicate refund subsystem. A-REFUND/C-ORDER later UI uses these exact summaries. |
+| GK-027 Agent manual agreements / identity+catalog+capacity+checkout+approved offline policy | Same admission/quote uniqueness; customer proof mandatory. DB-2/9 manual subsets and offline pending/reconciliation/return evidence. Hosted payment link default; paid status never arbitrary. No invoice/payment-plan engine. |
+| GK-031 Agent fulfillment / safe checkout/refunds + approved pickup/start policy + chef sketch | DB-8/9 moves/state commands, counter rollback, timed start and reviewed refund-reference movement rule; pickup UI preserves original on failure. Delivery modes and exceptions stay distinct; no courier engine. |
+| GK-030 UI / approved checkout sketch + integrated money/pickup/manual endpoints | Map C-CHECKOUT/C-ORDER all pending/unknown/failed/cutoff states, preserved operation keys, explicit changed-price consent and current endpoint contract. UI approval is independent of backend money evidence. |
+
+Owner Agent financial/capacity tickets request Astra/high fresh scoped context under
+execution-check; bootstrap needs qualified architecture input. Runtime identity,
+actual runner results and review are filled on execution, never prepopulated as
+success. Creator decision/content gathering and unchanged visual exploration may
+proceed in parallel. GK-023/025/026/027/031 share order/resource/financial SQL and
+migration ownership and are sequential unless master assigns explicit disjoint
+files/contract revisions. New UI features activate only after backend support; old
+UI treats unknown states conservatively. Expand schema/API first, deploy compatible
+API/maintenance, then UI; no destructive financial down migration.
+
+## Reconciliation dispositions and remaining blockers
+
+1. **Resolved in shared r3:** Go/SvelteKit baseline and protected SQL gateway are
+   technically accepted; runtime grants/owner constraints and real-role tests are in
+   ADR/bootstrap. The financial pilot enforcement placeholder is resolved design,
+   not an implementation pass.
+2. **Resolved in K04 r3:** explicit configuration/resource/reservation/inventory lock
+   ranks, creation identity and resource-only reject/close rules replace the vague
+   order. Existing booked-order rewrites still require a separately reviewed process.
+3. **Resolved in K05 r3:** refund goals and external observation/quarantine preserve
+   controlled allocations and all provider facts separately; a local cap is not
+   evidence that the provider cannot over-refund.
+4. **Resolved in K04/GK-025/026 r3:** late capture preserves terminal lifecycle and
+   enters full-return recovery; GK-025 delivers the safe core before taking money,
+   GK-026 reuses it. Reacquisition/replacement consent remains a policy blocker.
+5. **Resolved technical rules:** provider-session expiry versus local recheck deadline,
+   never-dispatched cleanup, no infeasible capture confirmation, and offline/online
+   provenance race. Zero-total and offline acceptance choices remain Creator gates.
+6. Creator gates now include placement/reschedule interactions, ready-stock conflict, exact lead times/
+   capacity units, delivery fees/area/responsibility, refund/tax/discount allocations,
+   offline acceptance, legal/retention/recovery targets and provider spending. This
+   assessment cannot approve them. Exact provider setup/sandbox, qualified identity
+   session selection and visual approvals remain prerequisites. Fresh final review
+   is pending; no application or provider tests are claimed.

@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "ticket": "GK-006",
+  "revision": "interview-r1",
+  "date": "2026-10-05",
+  "source": {
+    "kind": "current Codex conversation",
+    "decision_author": "Sasha, technical Creator/developer",
+    "message_timestamps": "not exposed",
+    "question_context": "Summaries, not verbatim assistant messages; user replies verbatim."
+  },
+  "decisions": [
+    {
+      "id": "GK-006-D01",
+      "topic": "production_and_staging",
+      "status": "confirmed",
+      "question_context": "Approve release-only production with separate explicit authorization before each release?",
+      "user_reply_verbatim": "Yes. As well we expect to have a small non-production, where we're able to test the new functionality doesn't break everything",
+      "reply_utf8_sha256": "a971d7203237495e9143f46405049d7b19f66fbfd5e9ccb402b8ae64761551e1"
+    },
+    {
+      "id": "GK-006-D02",
+      "topic": "staging_trigger",
+      "status": "confirmed",
+      "question_context": "Staging has separate UI/backend, test data and sandbox payments. Automatically deploy after each merge once main checks pass, test there, then authorize production of the tested version; changes require retesting. Automatic or on request?",
+      "user_reply_verbatim": "after each successful merge",
+      "reply_utf8_sha256": "183fc69d44a2b5e39137236a4c710009516732998590af9cdbb2349f70f49cd4"
+    },
+    {
+      "id": "GK-006-D03",
+      "topic": "release_authority",
+      "status": "confirmed",
+      "question_context": "Sasha sole approver; agent prepares and publishes specific version after explicit authorization; Sasha may publish directly. Anyone else?",
+      "user_reply_verbatim": "that arrangement works",
+      "reply_utf8_sha256": "b79324b224d6a78badf5b532c455ca872c4a5aa794d5b54e0e802e2f9815025d"
+    },
+    {
+      "id": "GK-006-D04",
+      "topic": "review_policy",
+      "status": "confirmed",
+      "question_context": "Choose checks and independent AI review before automatic merge, or also require human approval per PR. Independent means separate reviewer context. GitHub enforceability remains to verify.",
+      "user_reply_verbatim": "Checks + LOOP: [independent AI review (independent personas who are knowledgeble in the area change touches) -> feedback -> fixes] → automatic merge",
+      "reply_utf8_sha256": "f02acdf0cc5f2aa6dc89d238e28af3d6016605f77e6d5daaa731261a1ae8c810"
+    },
+    {
+      "id": "GK-006-D05",
+      "topic": "component_releases",
+      "status": "confirmed",
+      "question_context": "Approve ui-vX.Y.Z for customer/admin interfaces and api-vX.Y.Z for backend/background jobs; compatible independent releases and joint authorization allowed?",
+      "user_reply_verbatim": "yes",
+      "reply_utf8_sha256": "8a798890fe93817163b10b5f7bd2ca4d25d84c52739a645a889c173eee7d9d3d"
+    },
+    {
+      "id": "GK-006-D06",
+      "topic": "access",
+      "status": "confirmed",
+      "question_context": "Approve Sasha sole routine administrator, separate staging/production data/credentials, separate UI/backend deploy scopes, no production secrets for PR checks/routine agent work, private secrets out of browser, protected deployment credentials, Sasha controls grants/revocation?",
+      "user_reply_verbatim": "Yes",
+      "reply_utf8_sha256": "85a39ab345d672ff8ca9b9c6876f3adcacf45ee7c1e2dbd2408fd338bd55e07e"
+    }
+  ],
+  "verification_limitations": [
+    {
+      "id": "GK-006-L01",
+      "observation": "Read-only github.com gh repo view returned HTTP 401; retry without GH_TOKEN/GITHUB_TOKEN also returned HTTP 401.",
+      "unknown": [
+        "repository visibility and plan",
+        "viewer permissions",
+        "required checks/review enforcement",
+        "native auto-merge support"
+      ],
+      "required_follow_up": "GK-013 verifies access and gate support with GK-020 B1; no bypass permitted."
+    }
+  ],
+  "scope": {
+    "trello_publication": "not authorized or performed",
+    "final_ticket_acceptance": "pending",
+    "configuration_release_deployment": "not authorized or performed",
+    "independent_review": "not performed; same-session document self-check only"
+  },
+  "input_fingerprints": {
+    "docs/design/tickets/GK-006.md": "6234142aac5295e2287ee5960590dc34f43737668316bbec5a80f56c9e59f174",
+    "docs/design/tickets/GK-013.md": "2454bb4aa819f6fe49f4ccaaefc3ab9412c4c6dfb161e92e52608a7170a0b799",
+    "docs/design/adr/0002-providers.md": "0a66f85589533485e3d4f655b1d10eb90e88678a29922c348c3ad64d78d56ba3",
+    "docs/creator/GK-006/source-board-instructions-2026-10-05.json": "a3de285a0ae3fff809eabd37cf4ae85b499400ae422f84bcec34f3f3148985ca",
+    "docs/creator/GK-006/source-card-2026-10-05.json": "9329cfcde1516244bd0b67e715d4a6f20512f4a3b209b356c5a4b0e8d36a01c2",
+    "docs/creator/GK-006/source-comments-2026-10-05.json": "87ff4cae1f0acf69d7fe78684fa79059093768fb115a34b89e5e920084848cec"
+  }
+}

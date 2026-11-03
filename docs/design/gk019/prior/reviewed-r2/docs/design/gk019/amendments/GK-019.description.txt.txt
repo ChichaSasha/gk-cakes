@@ -1,0 +1,76 @@
+## Context
+
+Owner: Agent; Kind: Design
+Priority: P0 — foundational or money/security/fulfillment correctness prerequisite.
+Order: 100; Wave: 1; Parallel group: none; sequential integration by default.
+Requirements: S06, S07, C05, C06, C07, C10, C17, S01, S02, D01, D02; Design/contract revision: GK-019 r6.1, K00 K09.
+Agent execution policy: gpt-6-astra / high; fresh scoped worker; no inherited author discussion for independent review.
+Required input: input-revision.json + creator-decisions.md r2 + approved ADRs, contracts r5 (or re-reviewed successor), relevant feature/screen revisions and prerequisite evidence.
+Execution check: skills/gk-plan/references/execution-check.md; record accepted selection versus effective model, history, fresh hashes and short readback before work/resume. Actual runtime evidence is pending execution.
+Depends on: GK-001, GK-003, GK-004, GK-005, GK-006, GK-007; deliverable: completed approved policy, setup/contract or tested implementation evidence from each listed prerequisite. All GK-020 dependents require B2 unless explicitly named B1.
+Unblocks: GK-020.
+Safe in parallel with: none approved; master can authorize disjoint work after contract/file review.
+Conflicts with: shared contracts/schema/ADRs and adjacent modules; implementation owner coordinates shared edits, no same-wave implied safety.
+Readiness at publication: blocked / specified but dependent: Creator decision revisions pending.
+
+There is currently no application; this is an ordered planning packet. Refresh original requirements, creator-decisions, every ADR and contracts at exact approved revisions. Resolve pending rule values/stack/provider selections and include current primary evidence. This bounded technical-design gate makes policy-dependent backlog executable; do not treat it as another full planning loop.
+
+Applicable common rules: server owns prices/availability/state; GBP integer pence, UTC instants plus Europe/London display and date semantics; role/ownership checked on every action; Idempotency-Key and expected_version protect repeated/stale mutations; pending external result is not success/failure. No network calls under database locks. Detailed requirements and tests below remain mandatory even if linked files change.
+
+References: docs/design/contracts.md K00 K09; docs/design/screens.md; docs/design/coverage.md; relevant docs/design/features/ packet; docs/planning/DELIVERY.md; SETUP.md. These are local unpushed planning artifacts; obtain this checkout's exact fingerprinted packet before execution.
+
+## To dos
+
+T1. Load current requirements/decisions/source assets and choose the bounded sketch or contract outcome (AC1).
+T2. Produce/show editable artifacts, collect Creator feedback for visual work, revise and record exact revision; technical contracts use qualified assessment (AC1–AC3).
+T3. Fresh independent integration review; keep affected UI pending until exact-version Creator approval (AC3, AC4).
+
+## Not to dos
+
+Do not implement unrelated cleanup, register candidate alternatives, expose credentials, publish releases or deploy without the separate scoped authorization. Planning publication does not authorize application execution now. Do not mark Done without the board's acceptance.
+
+## Acceptance Criteria
+
+AC1. Qualified Astra assessment settles stack/authorization/payment/capacity decisions and no contradictory field/state/timeout/lock order remains.
+AC2. All 40 requirement rows still map to screens/contracts/tests/tickets; affected self-contained tickets embed approved values and exact prerequisites.
+AC3. Fresh independent reviewer examines revised hashes and all affected dependents; missing decisions stay blocked and no application code is implemented.
+AC4. Required acceptance evidence is tied to exact input/output revision, checked by the appropriate reviewer/Creator and recorded on Trello. For implementation include relevant tests, all related PRs, required review/checks, merge and main CI; authorized release/deployment/smoke only when separately in scope.
+
+Verification: sketch -> show -> feedback -> revise -> exact Creator approval -> fresh integration review for visual work. Contract-only GK-019 checks schema/coverage/decisions and independent review, not a forced visual session. No application tests or completed design session inferred from this ticket.
+
+Proposed current specification; prior publication text preserved in GK-019 evidence/cards.json. Independent review and approval apply only to the exact current revision. Trello is the live execution record; application work has not started.
+
+Verified prerequisite cards:
+- GK-001: https://trello.com/c/eI8UpD6l
+- GK-003: https://trello.com/c/ftGtoGNB
+- GK-004: https://trello.com/c/RotJkR9L
+- GK-005: https://trello.com/c/OWHhKPBT
+- GK-006: https://trello.com/c/npWFafNi
+- GK-007: https://trello.com/c/iJqMyuN1
+
+Verified dependent cards:
+- GK-020: https://trello.com/c/W8q5svCh
+
+## GK-019 proposed contract amendment — r6.1 / UNPUBLISHED
+
+Owner, title, unrelated scope/labels and list remain unchanged. This dated amendment
+replaces contradictory historical policy/provider examples and adds the acceptance
+evidence below; it does not assert implementation readiness or completed tests.
+
+Contract inputs: K00–K11; ADR0001r5/0002r11/0003–0006r4; docs/design/contracts.md r6.1, owner-data-contract.md
+gk019-owner-r3, gk019/schema.json r1.1 and output-manifest.json exact hashes.
+Required current evidence: Live Done scoped GK-001/003/004/005/006/007 plus setup GK-010/011/012; GK-002 approved content. Refresh live prerequisites and comments before
+execution; a Done setup card proves only its accepted scope.
+
+Behavior: Reconciled policy/setup evidence is gk019-owner-r3 and contracts r6.1, not historical planning r5. All17 methods and current sender preserved. Exact input/output hashes, canonical source history, schema, coverage, independent review and disjoint GK-015 handoff required. Q2–Q5 remain explicit.
+
+Acceptance extension: AC1 remains conditional on named consequential decisions; AC2 retain40 requirement mappings and exact affected amendments; AC3 fresh qualified independent review of exact hashes; AC4 current acceptance evidence recorded only after amendment review/publication approval. No application/release/deployment.
+
+Execution: apply model/context check; then smallest failing meaningful behavior
+case, coherent implementation, focused green checks, required wider checks and
+fresh independent review. Design tickets instead produce/review exact artifacts.
+No application test, UI approval, release or deployment is supplied by this amendment.
+Questions Q2–Q5 apply only where named; unresolved branches stay blocked.
+
+Full brief requirements and nonconflicting safety/verification criteria remain.
+Repository packet is local/unpushed; obtain exact files, not merely a path string.

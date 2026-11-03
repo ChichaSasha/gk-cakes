@@ -1,0 +1,17 @@
+{
+  "provider": "Higgsfield",
+  "model_observed": "GPT Image 2",
+  "generation_id": "586fe276-655c-4fd6-aa70-690effe23a15",
+  "reference_upload_id": "84d8accc-89df-4569-9045-6403e3b44e9c",
+  "prompt": "Extract left cake with stand, unchanged. Grey background. No text.",
+  "submitted_generations": 1,
+  "displayed_credit_cost": 6.5,
+  "displayed_struck_through_cost": 8.5,
+  "maximum_authorized_credits": 20,
+  "first_submission": "Rejected by automatic review for prompt over20tokens; no generation triggered. Replaced with short prompt before successful submission.",
+  "ui_output_size": "2048x1360",
+  "downloaded_preview_width": 1920,
+  "downloaded_file": "poc/assets/hero-reference.webp",
+  "sha256": "97f9c76907f1ddabf564724ac8ffeaecb04f9a91e7bf623166966be2e01f3da7",
+  "asset_scope": "Reference-derived hero illustration for this POC only; catalogue source photos unchanged."
+}

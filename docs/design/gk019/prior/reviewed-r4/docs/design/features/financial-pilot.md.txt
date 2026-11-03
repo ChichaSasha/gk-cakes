@@ -1,0 +1,24 @@
+# Financial reconciliation pilot — GK-019 r6
+
+Status: reconciled technical packet; independent review pending. No application tests
+or visual approval claimed. Prior assessment retained as [historical text](../gk019/prior/financial-pilot.md.txt).
+
+Requirements: C05 C06 A01 S01 S02 S07. Owning tickets: GK-019/025/026/034/035.
+Normative shared contract: [r6 K03/K04/K05/K11](../contracts.md); [typed schema](../gk019/schema.json);
+[source decisions](../creator-decisions.md); [open decisions](../gk019/questions.md).
+
+## Scope and ownership
+
+This successor replaces prior state-only cancellation and one-capture-per-order assumptions. One total obligation is allocated across real cake and delivery collections. Unknown reserves money; unmatched actual facts quarantined without clipping. Current17-method accepted set requires qualification. Free orders never fabricate capture. Post-handover refund case retains fulfilled history.
+
+Existing [screen IDs](../screens.md) remain the design-session inputs. GK-015 visual
+artifacts are owned by another context; this packet grants no visual approval. Current
+behavior changes and exact revisions go through the [GK-015 handoff](../gk019/GK-015-handoff.md).
+
+## Verification and dependency boundary
+
+Pilot:8585p+2000p paid,50% target5293p split4293+1000; prior2000 cake succeeded leaves2293 cake and1000 delivery; unknown1000 reserves until definitive outcome.10000 capture/local unknown10000/external5000 preserves exposure and blocks dispatch. Inspect actual policy/provider failures, not just arithmetic. Q2 is accepted: unknown waits; late paid needs feasible explicit agreement or full return. Q4/Q5 remain explicit gates.
+
+Use [amended ticket specifications](../gk019/amendments/README.md) for exact acceptance
+extensions and prerequisite sources. Existing release/authorization/capability gates
+remain. Tests above are required future implementation evidence, not document checks.

@@ -1,0 +1,90 @@
+## Context
+
+Owner: Agent; Kind: Implementation
+Priority: P0 — foundational/safety prerequisite.
+Order: 220; Wave: 6; Parallel group: none.
+Requirements: C10, C11, C15, C16, A08, A12, S06; Design/contract revision: GK-019 r6.4, K04 K06.
+Agent execution policy: gpt-6-astra / high; fresh scoped worker; fresh independent reviewer.
+Required input: brief, input-revision.json, gk019-owner-r6, ADRs/contracts r6.4 and exact GK-019 manifest, feature/screens, prerequisite evidence, SETUP and DELIVERY.
+Execution check: skills/gk-plan/references/execution-check.md at start/resume; record requested/effective model, history, input hashes and checked readback. Pending.
+Depends on: GK-020, GK-001, GK-007, GK-018, GK-021; deliverable: accepted policy/setup or tested implementation outputs; GK-020 means completed B2.
+Unblocks: GK-025, GK-028, GK-027, GK-032.
+Safe in parallel with: none.
+Conflicts: shared contracts/schema/router/migrations; master coordinates edits.
+Readiness at publication: blocked / specified but dependent: Capacity/lead-time/delivery policy and chef sketch pending.
+
+Implement handover-date capacity counted in cakes, finite physical ready-stock holds and configured pickup/delivery windows. Daily workload is soft for already admitted payments: both last-place successes accepted;7→5 preserves7 accepted. No per-slot count cap. Public schedule shows actual remaining standard places without private data. Delivery chef-quoted from£100, no automatic zones.
+
+Rules: server-owned price/capacity/state; GBP pence, UTC/Europe/London; role+ownership; expected_version+Idempotency-Key; unknown stays pending; no network under DB locks.
+
+Wire/state (approved GK-019 successor required):
+
+POST /api/v1/checkouts {quote_id,quote_version,pickup_slot_id,consented_policy_version,contact} +Idempotency-Key ->202 {operation_id,state:"pending",poll_after_seconds:3}. Atomic order+all resource/discount holds+collection job. Provider calls outside locks; signed inbox dedup by account/environment/event. Verified captured amount/currency records succeeded funds; order confirms only if its applicable handover promise is satisfied. Q2 late success enters paid_awaiting_agreement and blocks production/fulfillment until feasible chef/customer honour agreement, otherwise full return. Unknown retains holds and never permits replacement payment. Terminal-unpaid frees; late paid unfulfillable needs durable full refund/manager recovery before checkout exposure.
+
+POST /api/v1/orders/{id}/pickup {target_slot_id,expected_version:7}. Lock order then sorted old/new resource rows, check receipt-time policy and version, update appointment+history+notice atomically. Same-day self-move allowed at least6h before booked start, equality allowed; date moves chef-agreed. No pickup-slot count cap. Invalid window/stale version/cutoff rejection retains old booking. Fulfillment actions POST /api/v1/admin/orders/{id}/transitions {action:"dispatch",expected_version:7,reason}; method/state/role checked; exception is not completion/refund.
+
+Proposed: API10s/DB2s/provider5s; retries1m/5m/15m/1h then manager, alert15m. Validate; retain unknown funds.
+
+Mandatory AC1–AC3 rules:
+
+Global lock order from K04 r3 is orders -> financial rows -> mutable config -> ranked production/finished-stock/pickup/delivery/discount resources -> reservations -> inventory -> append effects. Pure resource edits never later lock orders; capacity reduction preserves held/accepted obligations and stops new ordinary admissions as necessary; accept_new=false preserves existing promises. Existing slot interval/delete changes cannot silently mutate booked appointments. Recipe/variant price edit versus quote acceptance must see one coherent revision or conflict.
+
+## To dos
+
+T1. Red: smallest AC1–AC3 fixture assertion; infrastructure failure is not red.
+T2. Implement data/API/UI/recovery with snapshots/auth/idempotency (AC1–AC3).
+T3. Integrate migrations/consumers/audit/notices; verify real DB/provider failures (AC1–AC3).
+T4. Green -> refactor -> rerun affected checks; record revision/results (AC4).
+T5. Complete AC4 review/delivery/acceptance evidence; no implied deployment.
+
+## Not to dos
+
+No unrelated cleanup, registrations, leaked secrets or releases/deployments without authority. No app execution now; Done needs Creator acceptance.
+
+## Acceptance Criteria
+
+AC1. Real PostgreSQL: two admitted last-place day payments both succeed and are accepted; the same physical cake has only one allocation. Invalid combined resource acquisition rolls back completely. No pickup count winner/loser test.
+AC2. Both cake types count cakes on handover date, chef extras separately; ready stock does not create fresh ingredient demand. Reducing7→5 retains7. Holds and failed resource commands preserve atomicity; unknown money cannot silently free physical stock.
+AC3. Policy/blackout capacity edit cannot invalidate existing bookings; public shareable schedule exposes no customer/order data; DST slots use valid instants/labelled timezone.
+AC4. Record exact input/tested revision, results, independent review and Creator acceptance on Trello; account for all related PRs, required review/checks, native auto-merges and main CI. Release/deploy/smoke only when separately authorized and in scope.
+
+Test prerequisite: GK-020 B2 verifies pinned runners before this card is Ready. Planned Go: go test ./..., go test -race ./..., go test -tags=integration ./... with disposable PostgreSQL; UI: npm run check, npm test, npm run build + approved browser runner. Provider cases use controlled sandbox accounts/recipients and actual IDs; mocks are not provider proof. No application tests ran during planning.
+
+Proposed current specification; prior publication text preserved in GK-019 evidence/cards.json. Independent review and approval apply only to the exact current revision. Trello is the live execution record; application work has not started.
+
+Verified prerequisite cards:
+- GK-020: https://trello.com/c/W8q5svCh
+- GK-001: https://trello.com/c/eI8UpD6l
+- GK-007: https://trello.com/c/iJqMyuN1
+- GK-018: https://trello.com/c/jjP7btz9
+- GK-021: https://trello.com/c/zEfCJtWD
+
+Verified dependent cards:
+- GK-025: https://trello.com/c/vyFTtISc
+- GK-028: https://trello.com/c/t4HD6N0Z
+- GK-027: https://trello.com/c/G8hLmSBU
+- GK-032: https://trello.com/c/lRzYGTEM
+
+## GK-019 proposed contract amendment — r6.4 / UNPUBLISHED
+
+Owner, title, unrelated scope/labels and list remain unchanged. This dated amendment
+replaces contradictory historical policy/provider examples and adds the acceptance
+evidence below; it does not assert implementation readiness or completed tests.
+
+Contract inputs: K01/K03/K04/K06; docs/design/contracts.md r6.4, owner-data-contract.md
+gk019-owner-r6, gk019/schema.json r1.4 and output-manifest.json exact hashes.
+Required current evidence: GK-020 B2/GK-021/GK-019; GK-001/003/007. Refresh live prerequisites and comments before
+execution; a Done setup card proves only its accepted scope.
+
+Behavior: Seven cakes/day handover count, soft tentative demand, chef extras excluded, reducing7→5 retains7. Finite ready lot exclusive; no per-pickup cap. Thu11–17/Fri10–17/Sat12:30–15/Sun11–12,60m fitting slots.192h ordinary lead,6h same-day move. Individual GK delivery>=£100 before approved discount, no zones.
+
+Acceptance extension: Real Postgres: two admitted last-place purchases accepted; physical lot never doubled; atomic hold rollback/code caps;7→5 preserves commitments; published actual remaining max0; DST/equality and overlapping Saturday starts. Q1 accepted: record chef-approved physical cake/template/version/handover/latest confirmation; ordinary192h remains. At authoritative paid success/free receipt allow latest-time equality, reject revocation equality; delayed webhook uses original success time. Q2 accepted: late-paid chef feasibility plus explicit customer agreement to honour, otherwise full return; no preplanned lead bypass.
+
+Execution: apply model/context check; then smallest failing meaningful behavior
+case, coherent implementation, focused green checks, required wider checks and
+fresh independent review. Design tickets instead produce/review exact artifacts.
+No application test, UI approval, release or deployment is supplied by this amendment.
+Remaining Q4 qualification gates apply only where named; unresolved branches stay blocked.
+
+Full brief requirements and nonconflicting safety/verification criteria remain.
+Repository packet is local/unpushed; obtain exact files, not merely a path string.

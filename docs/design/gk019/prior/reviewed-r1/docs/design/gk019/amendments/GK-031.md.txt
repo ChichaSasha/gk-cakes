@@ -1,0 +1,23 @@
+## GK-019 proposed contract amendment — r6 / UNPUBLISHED
+
+Owner, title, unrelated scope/labels and list remain unchanged. This dated amendment
+replaces contradictory historical policy/provider examples and adds the acceptance
+evidence below; it does not assert implementation readiness or completed tests.
+
+Contract inputs: K04/K06; docs/design/contracts.md r6, owner-data-contract.md
+gk019-owner-r2, gk019/schema.json r1 and output-manifest.json exact hashes.
+Required current evidence: Existing GK-023/030/auth/design dependencies; GK-019/GK-001. Refresh live prerequisites and comments before
+execution; a Done setup card proves only its accepted scope.
+
+Behavior: No per-slot capacity cap. Same-day selfservice>=6h before current start including equality; atomic target/source change keeps original deadline. Date changes chef-mediated with agreement/shelf-life feasibility, no automatic day skip. Chef extras/7→5 commitments retained; separate delivery payment/waiver before dispatch.
+
+Acceptance extension: Real PG stale/duplicate move, DST, fitting overlapping slots, date-change authorization, failed target retains original; existing bookings not rewritten by policy edit. No old pickup-minus-X timer.
+
+Execution: apply model/context check; then smallest failing meaningful behavior
+case, coherent implementation, focused green checks, required wider checks and
+fresh independent review. Design tickets instead produce/review exact artifacts.
+No application test, UI approval, release or deployment is supplied by this amendment.
+Questions Q1–Q5 apply only where named; unresolved branches stay blocked.
+
+Full brief requirements and nonconflicting safety/verification criteria remain.
+Repository packet is local/unpushed; obtain exact files, not merely a path string.

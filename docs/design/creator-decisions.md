@@ -1,0 +1,40 @@
+# Decision register — GK-019 r6
+
+Business approval is attributed to the original owner or Sasha as recorded in each
+source. Technical acceptance belongs to the planning master after independent review.
+Production activation, legal approval and completed integration are separate gates.
+[Input revision](gk019/input-manifest.json), [current contracts](contracts.md),
+[canonical owner mapping](owner-data-contract.md), [open decisions](gk019/questions.md).
+The former combined register is preserved as [history](gk019/prior/creator-decisions.md.txt).
+
+| ID | Status / approver | Current decision and evidence | Consumers |
+| --- | --- | --- | --- |
+| D01 | accepted / Sasha | London UK, GBP, Europe/London; made-to-order plus ready stock. [GK-001 handover](../creator/GK-001/handover.md) | K00/01/04/06 |
+| D02 | accepted / original owner + later Sasha clarifications |7cakes/handover date, quantity counts cakes; chef extras separate; both admitted last-place payments accepted;7→5 does not cancel7.192h ordinary minimum; accepted Q1 permits chef-approved shorter lead for a specific ready/resale cake, original resale handover retained. Concrete uncertain dates chef-agreed. | K04/06, ADR0004 |
+| D03 | accepted / Sasha | Both cake types fixed original−120h deadline:100% before,50% at/after/no-show/post-handover, chef100%; moves never reset. [GK-003 handover](../creator/GK-003/handover.md) | K05, ADR0003 |
+| D04 | accepted / Sasha | Website customer/chef-template payment24h from sent agreement;15m tentative hold. Historical offsite Revolut not new intake. Separate GK delivery payment and chef refund. | K02/04/05 |
+| D05 | accepted / Sasha | [GK-007 approved closure](../creator/GK-007/closure-scope-2026-10-05.md): free confirmation without fake funds, capacity/code consumption, +48h clock; chef actual stock deductions. | K03/04/07 |
+| D06 | accepted / Sasha | [GK-005 interview](../creator/GK-005/interview-2026-10-05.md): half-up pence/display, accepted totals through tax changes, allergens/substitution/retention/access/browser policies. Canonical JSON now gk019-owner-r2; original/history retained. | K01/03/05/09 |
+| D07 | accepted / Sasha; verification deferred | Final legal/privacy/provider/label checks after GK-035 under GK-037 before GK-036. No legal signoff yet. | K09, GK-037 |
+| D08 | accepted / Sasha | GK-007 discounts one code, all cake prices incl decoration/custom/resale, no delivery percentage; free-delivery configured driving limit, no automatic zones; per-customer limited code requires login; no use restoration after paid/free cancellation. | K03 |
+| D09 | accepted / Sasha | GK-007 component batches, chef-selected lots,0.01g/ml half-up, integer counts, expiry next London midnight, negative-stock warning/reason, whole-pack buying. GK-038 retains missing measurements/costs. | K07 |
+| D10 | accepted / Sasha; owner acceptance relayed | [GK-004 final live evidence](gk019/evidence/GK-004-comments.json): Railway/Supabase/B2/Stripe/Resend/UptimeRobot/PostHog/Cloudflare;£61 allowance/£100 ceiling and budget review. | K10, ADR0002 |
+| D11 | accepted / Sasha | GK-004 zero confirmed-order/change/attachment loss target; independent recovery,30d daily snapshots, pause checkout on unavailable protection, money/email reconciliation before reopen. | K11, ADR0006 |
+| D12 | accepted / Sasha | [GK-010 completion receipt](../creator/GK-010/publication-receipt.md) approves sandbox first manager and scoped DB/backup plan. Setup read checks ≠ runtime authorization/restore pass. | K00/09/11 |
+| D13 | accepted / Sasha | [GK-011 r17](../creator/GK-011/README.md): all17 enabled labels accepted, Google Pay disabled; no silent card-only restriction or future additions. | K04, payment inventory |
+| D14 | accepted / Sasha | [GK-012 r5](../creator/GK-012/README.md): gkcake.com purchased, approved addresses, GK Cakes sender, orders@gkcake.com, Gmail replies; Copy request & open Instagram for @gk.cake.london. | K02/08, ADR0005 |
+| D15 | accepted / Sasha | [GK-006 closure](../creator/GK-006/closure-publication-2026-10-05.json): specialist independent AI review/fix loop→auto-merge→main CI→automatic staging; production Sasha-authorized ui-v/api-v release only. | K10, delivery |
+| D16 | proposed / technical master; review pending | Current Go/SvelteKit/API-private PostgreSQL, lock/domain gateway, bearer identity verification, per-order recovery protocol and typed schema integration. No new business approval attributed. | ADR0001/0003–0006 |
+| Q1 | accepted / Sasha explicit Yes | Chef-approved cake-specific ready/resale shorter lead;192h ordinary minimum and original resale handover retained. [Source and hash](gk019/q1-acceptance.json). | K01/K04, ADR0004 |
+| Q2 | accepted / Sasha explicit Aprove |24h initiation, in-flight unknown waits without replacement; late paid honour only if feasible and customer explicitly agrees, otherwise full return. [Source/hash](gk019/q2-acceptance.json). | K02/K04/K05 |
+| Q3 | accepted / Sasha explicit agree | Consented basic checkout steps/repeat visits; no names/emails/order details, account/admin browsing or recording. [Source/hash](gk019/q3-acceptance.json). | K09/K10 |
+| Q4 currency | accepted / Sasha explicit option | Optional local presentment with provider-disclosed conversion charges; GBP shop prices/accounting. [Exact source](gk019/q4-currency-acceptance.json). Bundle/settlement qualification remains separate. | K04/K05 |
+| Q5 | accepted / Sasha explicit yes | Verified alternative owed-refund payout by chef only after definitive provider inability; prior unknown blocks. [Exact source](gk019/q5-acceptance.json). | K05/K11 |
+| Q4 bundle | accepted / Sasha Agree | Current Onelink bundle accepted subject to GBP compatibility; future additions/non-GBP settlement need another decision. [Exact source](gk019/q4-bundle-slots-acceptance.json). Actual qualification remains implementation evidence. | GK-025/026/035 |
+| D17 | accepted / Sasha direct requirement | Show available Delivery/Pickup time slots automatically; no repeated guess-and-Check. Same [source](gk019/q4-bundle-slots-acceptance.json); preserve chef feasibility, no slot cap and server revalidation. | K01/K06, GK-016/017/023/028/031 |
+
+Current original source/decision IDs and hashes remain in each owner packet. GK-001/003
+retain earlier versions and add explicit GK-007 free-order cross-policy references.
+GK-005 retains its original £70 example as historical arithmetic; current example
+is10585p paid→5293p refund allocated4293p cake+1000p delivery. New operational activation
+dates remain unset. The source approval date is not a production effective date.

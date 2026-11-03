@@ -1,0 +1,20 @@
+{
+  "revision": "input-r1",
+  "head": "bb96a89681bcf2fa1c663a02eacbe039e20e6363",
+  "initial_status": "A  innitial--unreviewed-dry-draft-poc-design.md\n?? .agents/\n?? .github/\n?? AGENTS.md\n?? README.md\n?? SETUP.md\n?? docs/\n?? scripts/\n?? skills/\n",
+  "sha256": {
+    "AGENTS.md": "19d6a32065a09bb5ed73ec2cf577b04de15d6eb74e4c93d0893038b2b5144480",
+    "docs/planning/START-PLANNING.md": "4e12f6594f32fe9cb312f51f7c09407e271ef2d00273ca91b3a49bf2df7aa0ed",
+    "docs/planning/PROJECT-BRIEF.md": "f937a182e89d3d990aee848e765a90916e7d70b34a3ee80eee3ab1eb517cae6c",
+    "docs/planning/DELIVERY.md": "dd5ed623a78c8b80e5e747c331748f0454d709ee1338f8935814b806cd8ff4cb",
+    "SETUP.md": "2fb562219f943d91a4b865ff565e37cc13896644c840de1372c3635192a4f342",
+    "innitial--unreviewed-dry-draft-poc-design.md": "a5824eb784af328e7c30db2b7af9be3be0f8c1bd677efa6c64dda793652a580a",
+    "skills/gk-plan/SKILL.md": "0bf79a869deac4f005806e7aa0f6a6e4d5975e88a9bdb0c5224a544a22769988",
+    "skills/gk-plan/references/execution-check.md": "4058fd042aeb2ec66e2d9f00644c5b9725659850d1af6475dcfc755a2d26af32",
+    "skills/gk-plan/references/artifacts.md": "0ef74fdc38ce4bf41f3a2b15167c7aae64fe83be4d4ec9db5d8f00f536e8a95a",
+    "skills/gk-plan/references/trello.md": "9d4e8504bffb845e0d2cfd457acab28addd3bbb4907c9e7ba2a430284639ce4c",
+    "skills/gk-feature/SKILL.md": "b5a68cb7c520cf1f03d51c54d51897864353b34cd1d2abb543764f22f923110c",
+    "skills/gk-feature/references/design-sessions.md": "915e72b29842e6b4cdc63610607d659d815f20d8a672ce128d105fab38012479",
+    "skills/gk-plan-review/SKILL.md": "1dac40d263aa0953538348c29d0300da6be6ed2517fa393704174f5cca6f53b0"
+  }
+}

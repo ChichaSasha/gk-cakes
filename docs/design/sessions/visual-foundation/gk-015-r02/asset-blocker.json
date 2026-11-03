@@ -1,0 +1,8 @@
+{
+  "observed_at": "2026-10-05T22:01:20.461202+00:00",
+  "missing": "photo_assets/logo/3000px-03.png",
+  "status": "Current editable preview cannot load the approved logo. Previously exported previews remain historical evidence of the rendered revision.",
+  "selected_cake_assets": "All three still match approved r4 hashes",
+  "action": "No restore or replacement performed. Creator clarification pending. composite.png is not implicitly approved.",
+  "prior_verification": "asset-verification.json and output-manifest.json record the earlier successful state, not current readiness."
+}

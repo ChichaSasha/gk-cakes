@@ -1,0 +1,730 @@
+{
+  "date": "2026-11-02T23:47:47.190Z",
+  "sources": {
+    "poc/app.js": "f21847c3816c9c45c2de91119f815390aeace27894e084231abbe5c4f96649d0",
+    "poc/styles.css": "7d02973a67ef6450a2d14e86ff93aabedd4f5d3c397a89b046851df497556f5e"
+  },
+  "checks": [
+    {
+      "view": 320,
+      "pages": 16,
+      "result": "pass",
+      "covers": [
+        "no horizontal overflow",
+        "internal page links exist",
+        "page loads and assets",
+        "no JS errors"
+      ]
+    },
+    {
+      "view": 390,
+      "pages": 16,
+      "result": "pass",
+      "covers": [
+        "no horizontal overflow",
+        "internal page links exist",
+        "page loads and assets",
+        "no JS errors"
+      ]
+    },
+    {
+      "view": 768,
+      "pages": 16,
+      "result": "pass",
+      "covers": [
+        "no horizontal overflow",
+        "internal page links exist",
+        "page loads and assets",
+        "no JS errors"
+      ]
+    },
+    {
+      "view": 1440,
+      "pages": 16,
+      "result": "pass",
+      "covers": [
+        "no horizontal overflow",
+        "internal page links exist",
+        "page loads and assets",
+        "no JS errors"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "filters",
+        "empty results/recovery",
+        "sort",
+        "favourites across page navigation"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "empty/available/unavailable/loading date",
+        "disabled unavailable cake",
+        "PEANUTS before purchase",
+        "exact bag total and remove"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "generic custom has no product",
+        "referenced custom exact cake",
+        "edit retains input",
+        "selectable copy-failure recovery",
+        "user text not HTML",
+        "selected Email success/failure handoff"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome success",
+        "GK delivery cannot falsely confirm"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome pending",
+        "GK delivery cannot falsely confirm",
+        "replacement checkout blocked"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome late",
+        "GK delivery cannot falsely confirm",
+        "replacement checkout blocked"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome changed",
+        "GK delivery cannot falsely confirm"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome failed",
+        "GK delivery cannot falsely confirm"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome expired",
+        "GK delivery cannot falsely confirm"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome recovery",
+        "GK delivery cannot falsely confirm"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "calendar month-boundary arrows/PageDown/End",
+        "Escape returns focus",
+        "missing request date validation",
+        "automatic slots on date/mode changes",
+        "old time cleared on mode change",
+        "stale response discarded",
+        "slot empty/error states",
+        "offscreen selected date remains explicit"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "all unavailable days truly disabled",
+        "keyboard skips 23 October",
+        "synthetic clicks cannot select disabled dates",
+        "empty month focus fallback"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "confirmed serving ranges",
+        "Other required and whitespace validation",
+        "preset excludes stale Other value",
+        "local browse and drop",
+        "unsupported file error",
+        "remove focus",
+        "file count and retention on edit",
+        "native channel keyboard selection and visible focus",
+        "full custom request still subject to chef agreement"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "decorative horizontal section borders removed across all routes"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "cancellation exact amounts",
+        "six-hour time change copy",
+        "unknown cake",
+        "corrupt demo storage",
+        "mobile navigation",
+        "keyboard focus",
+        "focus preserved on favourite toggle/removal and bag removal",
+        "disabled button visual state"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "Geist font actually loaded locally",
+        "date label14px500",
+        "plain and referenced inspiration transparent and borderless",
+        "native styled menu keyboard open/select/Escape",
+        "mouse option selection",
+        "selected long flavours fit four widths"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "forced non-base-select CSS branch retains chevron",
+        "native fallback selection filters correctly",
+        "fallback mobile no overflow"
+      ],
+      "limitation": "CSS fallback branch exercised in current Chrome; not a real legacy browser certification"
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "single direction: no review switch or surface/type attributes; retired assets absent",
+        "Geist, Geist Mono and Instrument Serif italic loaded locally; sentence-case display",
+        "r09 hero cutout byte-identical, no backdrop on hero/inner/art/stage",
+        "page shows through every sampled transparent cutout pixel (glass badge, product card and pinned island excluded) at 1440, 320x568 and three tall tablets",
+        "no clipping and no step under the stand at 8 viewports",
+        "cutout in the right column on desktop"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "glass island, badge, product card and shop toolbar use a 22px backdrop blur",
+        "no backdrop root above the island (view-transition name moved onto the island itself)",
+        "island pinned while scrolling",
+        "primary: ink pill, 54px+, chrome 40px orb that turns on hover",
+        "secondary: glass pill",
+        "text-link underline draws in on hover",
+        "four filter fields 60px+, rounded, captions inside",
+        "chevron flips 0→180deg on open; checked option ink; Escape closes",
+        "active filter visibly marked"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "pearl tiles: rounded, index, mono price, name leads, cakes grounded (xMidYMax)",
+        "hover lifts the tile and reveals the View pill",
+        "@view-transition navigation:auto present",
+        "view-transition names unique on home, shop, favourites, detail",
+        "tile and detail share cake-<id> so the cake morphs; navigation completes"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "chrome text flow, pearl drift, badge spin and ticker run with motion allowed",
+        "reveal ends fully visible in view",
+        "reduced motion: no looping animations, duplicate ticker hidden, no reveal",
+        "reduced transparency: solid island",
+        "increased contrast: darker muted text",
+        "print: reveal content visible"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "fact chips without dividers, mono",
+        "custom-version action quieter than the date action",
+        "pill add-to-bag at 14px; serif-italic flavour",
+        "optional label aligned with its field",
+        "13px phone text links; hero facts hidden on phones (ticker repeats them)",
+        "menu toggle phone-only",
+        "order-status action/link gap ≥16px, wrapped link unindented at 320px",
+        "pearl canvas painted without JavaScript",
+        "only Geist, Geist Mono and Instrument Serif italic requested"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "cake tile hover: 3px composited lift only (was 6px + 4.5% zoom + 1.2° rotation)",
+        "specular sweep removed",
+        "cursor spotlight removed on tiles and cake page photo",
+        "measured: aligned frames show no glint (brightened share <2%) and no zoom/shimmer (residual <4)",
+        "View cake pill still appears",
+        "magnetic primary button unchanged",
+        "hero pick card lift 2px",
+        "lift and pill hold while the cursor is on the heart",
+        "keyboard focus gets the same lift and pill",
+        "no lift and no pill on touch screens",
+        "no movement with reduced motion"
+      ]
+    }
+  ],
+  "contrast": [
+    {
+      "fg": "#141416",
+      "bg": "#f8f9fa",
+      "ratio": 17.45,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#55585e",
+      "bg": "#f8f9fa",
+      "ratio": 6.77,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#7d828a",
+      "bg": "#f8f9fa",
+      "ratio": 3.67,
+      "minimum": 3
+    },
+    {
+      "fg": "#2141c8",
+      "bg": "#f8f9fa",
+      "ratio": 7.5,
+      "minimum": 3
+    },
+    {
+      "fg": "#80858e",
+      "bg": "#f8f9fa",
+      "ratio": 3.52,
+      "minimum": 3
+    },
+    {
+      "fg": "#3a3d42",
+      "bg": "#f8f9fa",
+      "ratio": 10.34,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#8f1d1d",
+      "bg": "#f8f9fa",
+      "ratio": 8.44,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#141416",
+      "bg": "#f1f2f5",
+      "ratio": 16.44,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#55585e",
+      "bg": "#f1f2f5",
+      "ratio": 6.37,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#7d828a",
+      "bg": "#f1f2f5",
+      "ratio": 3.45,
+      "minimum": 3
+    },
+    {
+      "fg": "#2141c8",
+      "bg": "#f1f2f5",
+      "ratio": 7.07,
+      "minimum": 3
+    },
+    {
+      "fg": "#80858e",
+      "bg": "#f1f2f5",
+      "ratio": 3.31,
+      "minimum": 3
+    },
+    {
+      "fg": "#3a3d42",
+      "bg": "#f1f2f5",
+      "ratio": 9.74,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#8f1d1d",
+      "bg": "#f1f2f5",
+      "ratio": 7.94,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#141416",
+      "bg": "#f6e6ed",
+      "ratio": 15.3,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#55585e",
+      "bg": "#f6e6ed",
+      "ratio": 5.93,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#7d828a",
+      "bg": "#f6e6ed",
+      "ratio": 3.21,
+      "minimum": 3
+    },
+    {
+      "fg": "#2141c8",
+      "bg": "#f6e6ed",
+      "ratio": 6.58,
+      "minimum": 3
+    },
+    {
+      "fg": "#80858e",
+      "bg": "#f6e6ed",
+      "ratio": 3.08,
+      "minimum": 3
+    },
+    {
+      "fg": "#3a3d42",
+      "bg": "#f6e6ed",
+      "ratio": 9.07,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#8f1d1d",
+      "bg": "#f6e6ed",
+      "ratio": 7.39,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#141416",
+      "bg": "#e2edf6",
+      "ratio": 15.49,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#55585e",
+      "bg": "#e2edf6",
+      "ratio": 6.01,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#7d828a",
+      "bg": "#e2edf6",
+      "ratio": 3.25,
+      "minimum": 3
+    },
+    {
+      "fg": "#2141c8",
+      "bg": "#e2edf6",
+      "ratio": 6.66,
+      "minimum": 3
+    },
+    {
+      "fg": "#80858e",
+      "bg": "#e2edf6",
+      "ratio": 3.12,
+      "minimum": 3
+    },
+    {
+      "fg": "#3a3d42",
+      "bg": "#e2edf6",
+      "ratio": 9.18,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#8f1d1d",
+      "bg": "#e2edf6",
+      "ratio": 7.49,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#141416",
+      "bg": "#ebe6f7",
+      "ratio": 15.06,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#55585e",
+      "bg": "#ebe6f7",
+      "ratio": 5.84,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#7d828a",
+      "bg": "#ebe6f7",
+      "ratio": 3.17,
+      "minimum": 3
+    },
+    {
+      "fg": "#2141c8",
+      "bg": "#ebe6f7",
+      "ratio": 6.48,
+      "minimum": 3
+    },
+    {
+      "fg": "#80858e",
+      "bg": "#ebe6f7",
+      "ratio": 3.04,
+      "minimum": 3
+    },
+    {
+      "fg": "#3a3d42",
+      "bg": "#ebe6f7",
+      "ratio": 8.93,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#8f1d1d",
+      "bg": "#ebe6f7",
+      "ratio": 7.28,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#141416",
+      "bg": "#e9ebee",
+      "ratio": 15.4,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#55585e",
+      "bg": "#e9ebee",
+      "ratio": 5.97,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#7d828a",
+      "bg": "#e9ebee",
+      "ratio": 3.24,
+      "minimum": 3
+    },
+    {
+      "fg": "#2141c8",
+      "bg": "#e9ebee",
+      "ratio": 6.62,
+      "minimum": 3
+    },
+    {
+      "fg": "#80858e",
+      "bg": "#e9ebee",
+      "ratio": 3.1,
+      "minimum": 3
+    },
+    {
+      "fg": "#3a3d42",
+      "bg": "#e9ebee",
+      "ratio": 9.13,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#8f1d1d",
+      "bg": "#e9ebee",
+      "ratio": 7.45,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#141416",
+      "bg": "#ffffff",
+      "ratio": 18.4,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#55585e",
+      "bg": "#ffffff",
+      "ratio": 7.13,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#7d828a",
+      "bg": "#ffffff",
+      "ratio": 3.87,
+      "minimum": 3
+    },
+    {
+      "fg": "#2141c8",
+      "bg": "#ffffff",
+      "ratio": 7.91,
+      "minimum": 3
+    },
+    {
+      "fg": "#80858e",
+      "bg": "#ffffff",
+      "ratio": 3.71,
+      "minimum": 3
+    },
+    {
+      "fg": "#3a3d42",
+      "bg": "#ffffff",
+      "ratio": 10.9,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#8f1d1d",
+      "bg": "#ffffff",
+      "ratio": 8.89,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#2b2c31",
+      "bg": "#fbfbfc",
+      "ratio": 13.47,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#2b2c31",
+      "bg": "#ffffff",
+      "ratio": 13.93,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#7d828a",
+      "bg": "#fbfbfc",
+      "ratio": 3.74,
+      "minimum": 3
+    },
+    {
+      "fg": "#ffffff",
+      "bg": "#141416",
+      "ratio": 18.4,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#ffffff",
+      "bg": "#2d2e33",
+      "ratio": 13.55,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#ffffff",
+      "bg": "#3b3c42",
+      "ratio": 10.99,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#e9eaec",
+      "bg": "#141416",
+      "ratio": 15.28,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#b9bcc3",
+      "bg": "#141416",
+      "ratio": 9.68,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#b9bcc3",
+      "bg": "#1e1f23",
+      "ratio": 8.66,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#a9bcff",
+      "bg": "#1e1f23",
+      "ratio": 8.88,
+      "minimum": 3
+    },
+    {
+      "fg": "#a9bcff",
+      "bg": "#141416",
+      "ratio": 9.92,
+      "minimum": 3
+    },
+    {
+      "fg": "#141416",
+      "bg": "#e4e6e9",
+      "ratio": 14.71,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#5c1414",
+      "bg": "#fff6f6",
+      "ratio": 12.63,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#63666d",
+      "bg": "#eeeef0",
+      "ratio": 4.96,
+      "minimum": 4.5
+    }
+  ],
+  "heroSeeThrough": [
+    {
+      "label": "1440",
+      "points": 656,
+      "maxDiff": 1
+    },
+    {
+      "label": "320x568",
+      "points": 129,
+      "maxDiff": 1
+    },
+    {
+      "label": "768x1024",
+      "points": 171,
+      "maxDiff": 1
+    },
+    {
+      "label": "820x1180",
+      "points": 201,
+      "maxDiff": 2
+    },
+    {
+      "label": "1024x1366",
+      "points": 393,
+      "maxDiff": 1
+    }
+  ],
+  "heroClipChecks": [
+    {
+      "viewport": "320x568",
+      "step": 1.1
+    },
+    {
+      "viewport": "390x844",
+      "step": 0.9
+    },
+    {
+      "viewport": "768x900",
+      "step": 1.5
+    },
+    {
+      "viewport": "768x1024",
+      "step": 1.2
+    },
+    {
+      "viewport": "820x1180",
+      "step": 1.1
+    },
+    {
+      "viewport": "1024x1366",
+      "step": 1
+    },
+    {
+      "viewport": "1366x768",
+      "step": 1.8
+    },
+    {
+      "viewport": "1440x950",
+      "step": 0.1
+    }
+  ],
+  "r11HoverMotion": {
+    "frames": 24,
+    "alignedBrighteningShareMax": 0.004953560371517028,
+    "alignedResidualMeanMax": 1.912194179566564
+  }
+}

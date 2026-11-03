@@ -1,0 +1,72 @@
+{
+ "checked_at": "2026-11-02T19:40:38.579129+00:00",
+ "files": {
+  "docs/design/contracts.md": {
+   "sha256": "b34b0926f371683afbfbd3453de9191efc1df2a625c595ad5c1d5f2b83723512",
+   "matches_gk019_handoff": true
+  },
+  "docs/design/owner-data-contract.md": {
+   "sha256": "e71792978a198263aeae6e28ae1520acc4598e1f699235e14aa049664f593a21",
+   "matches_gk019_handoff": true
+  },
+  "docs/design/creator-decisions.md": {
+   "sha256": "be01c59a3851603edab31ee369b9034c9c0244550dc1314d4412d567e997affd",
+   "matches_gk019_handoff": true
+  },
+  "docs/design/gk019/schema.json": {
+   "sha256": "46fe03910dc9b37e1a246aa2eb8b5e490a99370b612057d2e00296004b27009b",
+   "matches_gk019_handoff": true
+  },
+  "docs/creator/GK-001/decisions.json": {
+   "sha256": "6d3112d8349305049377d5b3dd834f78e85d96b95ac357704c7af7daa1f807e9",
+   "matches_gk019_handoff": true
+  },
+  "docs/creator/GK-003/decisions.json": {
+   "sha256": "41d7792baa5be64eeaa1e91b5d4fe06154511771b764074e529cf71c3062c27c",
+   "matches_gk019_handoff": true
+  },
+  "docs/creator/GK-005/decisions.json": {
+   "sha256": "d6593cfc91948c3294e22fcf112226b4df2838d241abb016a5597c4c88ff6542",
+   "matches_gk019_handoff": true
+  },
+  "docs/design/sessions/visual-foundation/gk-015-r07/output-manifest.json": {
+   "sha256": "902b527bbd6678644b7b3e95f1eb54731e00f9e56449e08e0bf4179d67a24118"
+  },
+  "docs/design/sessions/visual-foundation/gk-015-r07/poc/app.js": {
+   "sha256": "ec6fba35d92ae80ce008e5da0efe428d697d064f5880ab23f1b58a9ea22f1d1c"
+  },
+  "docs/design/sessions/visual-foundation/gk-015-r07/poc/styles.css": {
+   "sha256": "0de8b9c695e1a8b552d909e153974127f9d95cc356f95acd059db3d7d436ebd3"
+  },
+  "docs/design/sessions/visual-foundation/gk-015-r07/verify.cjs": {
+   "sha256": "7f7e96490b375a6053c0ad61025322c2a683273ff0517272b9532224daeba4c8"
+  },
+  "docs/design/sessions/visual-foundation/gk-015-r07/session.md": {
+   "sha256": "5d15482c0bcc3e2942a97d919a1ad6b118686809fa953f06087a4d3c7944dfb6"
+  },
+  "docs/design/sessions/visual-foundation/gk-015-r07/review-r07.md": {
+   "sha256": "ad23c0b5e5f1d64040efd6c5a122570a1489ada164ff2a541f3c502563809d3d"
+  },
+  "docs/design/gk019/GK-015-handoff.md": {
+   "sha256": "51924ba362be6508836450eee2273e684bbdcba52f5e99d4c412e68609de5677"
+  },
+  "docs/design/gk019/publication-receipt-2026-11-02.json": {
+   "sha256": "830f242a932da403db24d184e46bdeff5257d382d4d6283ccf0c86c1a76dbc81"
+  },
+  "skills/gk-feature/references/design-sessions.md": {
+   "sha256": "915e72b29842e6b4cdc63610607d659d815f20d8a672ce128d105fab38012479"
+  }
+ },
+ "live_trello": {
+  "GK-015": {
+   "card_id": "6ab13b744675c2d1ae30ce9f",
+   "list": "📥 Backlog",
+   "comments": 0,
+   "description_sha256_prefix": "d0b16dc19465a4e9",
+   "read": "read-only, 2026-11-02"
+  },
+  "GK-019": "🏁 Done (published 2026-11-02; contracts r6.5 / owner-r7 / schema r1.5 accepted)"
+ },
+ "r07_output_manifest_verified": true,
+ "creator_request_2026_11_02": "Let's itterate on 'GK-015 Visual foundation', which is the key part of the project, as visual details is something that should attract customers and it should be very rich-looking/calm/modern (like minimalism estetics)"
+}

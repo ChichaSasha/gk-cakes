@@ -1,0 +1,11 @@
+GK-012 accepted completion split r5 — 2026-10-05
+
+Sasha explicitly approved GK-012 setup closure and assigning implementation-derived callbacks and redirect verification here, coordinated with GK-020. Source: https://trello.com/c/nveiC5IF ; bootstrap: https://trello.com/c/W8q5svCh .
+
+Before this ticket is accepted, derive exact login callback URLs from the actual GK-020 runtime inventory and selected identity/session implementation. Record/configure separate precise production, staging and local-development allowlists. Approved HTTPS hosts: gkcake.com (admin at /admin), api.gkcake.com, staging.gkcake.com (admin at /admin), staging-api.gkcake.com; www.gkcake.com redirects to the main site. Paths/provider values remain implementation outputs, not guesses. No wildcard production callbacks.
+
+Required proof: approved callbacks succeed; invalid/unapproved/foreign redirects are denied; configuration does not mix production and test. Record actual inputs and tested revision using controlled accounts. Existing local-role, ownership and session checks remain mandatory.
+
+Email identity is GK Cakes <orders@gkcake.com>; Reply-To gk.cake.london@gmail.com, including login emails. GK-012 closure does not claim these callback/application tests passed or authorize deployment, and does not automatically make this card Ready/Done.
+
+Source: docs/creator/GK-012/closure-scope-2026-10-05.md (r5), SHA-256 eb5cc4e9d77d50cf58a9de7a5c6ecc123fd99eacb3f16ae526dc2e1fb855808a

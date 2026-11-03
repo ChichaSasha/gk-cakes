@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-06",
+  "question_exact": "I recommend accepting Onelink’s current bundled funding options, subject to GBP compatibility, while requiring another decision for future additions or non-GBP settlement. Do you agree?",
+  "user_reply_exact": "Agree. As well make sure customer see available time slots when choosing Delivery/Pickup time instead of always clicking on 'Check' as it's difficult for them to guess what exactly slots are free!",
+  "source_text": "Question (verbatim wording, Markdown emphasis omitted):\nI recommend accepting Onelink’s current bundled funding options, subject to GBP compatibility, while requiring another decision for future additions or non-GBP settlement. Do you agree?\nUser reply (verbatim): Agree. As well make sure customer see available time slots when choosing Delivery/Pickup time instead of always clicking on 'Check' as it's difficult for them to guess what exactly slots are free!",
+  "source_id": "chat:GK-019:2026-10-06:bundle-slots",
+  "source_sha256": "c2af0ba1c4f3a4fd38be379cfdc11ad60e34105ffddae3901bb53e42cccdea5f",
+  "approved": {
+    "onelink_current_bundle": [
+      "cards",
+      "Instant Bank Payments",
+      "Klarna",
+      "Pix",
+      "UPI",
+      "eligible stablecoins"
+    ],
+    "conditions": [
+      "GBP compatibility qualification",
+      "future additions require another decision",
+      "non-GBP settlement requires another decision",
+      "no standalone method additions"
+    ],
+    "time_selection": "show available delivery/pickup slots automatically; no repeated guess-and-Check"
+  },
+  "model_requested": "gpt-6-astra/high",
+  "model_observed": "gpt-6-astra/high",
+  "model_evidence": "latest host turn_context, confirmed",
+  "history": "continued master; independent continued reviewer requested separately",
+  "readback": "Design contracts and canonical source update only. Preserve all17methods, GBP scope, chef delivery feasibility and no per-slot cap. Automatic visible slot discovery; server revalidates selection. No visual/app/provider/Trello mutation.",
+  "prior_output_manifest_sha256": "f15556358b4cac4217d96d9537c27981e32915a8dd87cdcfe2bfd7e818e54c23",
+  "live_refresh_file": "evidence/q4-bundle-slots-resume-live.json",
+  "live_refresh_sha256": "a84aaf1dfc48a4d343b347854829e3adff4118dc214b4bea203d0eecd07d362c"
+}

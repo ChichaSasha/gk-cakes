@@ -1,0 +1,190 @@
+{
+  "date": "2026-10-05T23:32:30.951Z",
+  "sources": {
+    "poc/app.js": "a3a7e5573d4d0226d95a9892c455a897b4efc1afc57d9bade607fdfd67d820d2",
+    "poc/styles.css": "7cca1cca880f3e1f20948d8d702655ad5c418ea96e3a83cbaa0e712353e10453"
+  },
+  "checks": [
+    {
+      "view": 320,
+      "pages": 16,
+      "result": "pass",
+      "covers": [
+        "no horizontal overflow",
+        "internal page links exist",
+        "page loads and assets",
+        "no JS errors"
+      ]
+    },
+    {
+      "view": 390,
+      "pages": 16,
+      "result": "pass",
+      "covers": [
+        "no horizontal overflow",
+        "internal page links exist",
+        "page loads and assets",
+        "no JS errors"
+      ]
+    },
+    {
+      "view": 768,
+      "pages": 16,
+      "result": "pass",
+      "covers": [
+        "no horizontal overflow",
+        "internal page links exist",
+        "page loads and assets",
+        "no JS errors"
+      ]
+    },
+    {
+      "view": 1440,
+      "pages": 16,
+      "result": "pass",
+      "covers": [
+        "no horizontal overflow",
+        "internal page links exist",
+        "page loads and assets",
+        "no JS errors"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "filters",
+        "empty results/recovery",
+        "sort",
+        "favourites across page navigation"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "empty/available/unavailable/loading date",
+        "disabled unavailable cake",
+        "PEANUTS before purchase",
+        "exact bag total and remove"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "generic custom has no product",
+        "referenced custom exact cake",
+        "edit retains input",
+        "selectable copy-failure recovery",
+        "user text not HTML",
+        "selected Email success/failure handoff"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome success",
+        "GK delivery cannot falsely confirm"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome pending",
+        "GK delivery cannot falsely confirm",
+        "replacement checkout blocked"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome late",
+        "GK delivery cannot falsely confirm",
+        "replacement checkout blocked"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome changed",
+        "GK delivery cannot falsely confirm"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome failed",
+        "GK delivery cannot falsely confirm"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome expired",
+        "GK delivery cannot falsely confirm"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome recovery",
+        "GK delivery cannot falsely confirm"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "cancellation exact amounts",
+        "six-hour time change copy",
+        "unknown cake",
+        "corrupt demo storage",
+        "mobile navigation",
+        "keyboard focus",
+        "focus preserved on favourite toggle/removal and bag removal",
+        "disabled button visual state"
+      ]
+    }
+  ],
+  "contrast": [
+    {
+      "fg": "#171919",
+      "bg": "#ffffff",
+      "ratio": 17.65,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#5e6262",
+      "bg": "#ffffff",
+      "ratio": 6.18,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#454a4a",
+      "bg": "#f0f1f1",
+      "ratio": 7.96,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#ffffff",
+      "bg": "#151818",
+      "ratio": 17.86,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#075f9a",
+      "bg": "#ffffff",
+      "ratio": 6.75,
+      "minimum": 3
+    },
+    {
+      "fg": "#075f9a",
+      "bg": "#d1d7da",
+      "ratio": 4.64,
+      "minimum": 3
+    },
+    {
+      "fg": "#858b8c",
+      "bg": "#ffffff",
+      "ratio": 3.46,
+      "minimum": 3
+    }
+  ]
+}

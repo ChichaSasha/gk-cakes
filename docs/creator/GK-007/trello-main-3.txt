@@ -1,0 +1,11 @@
+GK-007 accepted policy / scope-split-r1 — part 3/3 — closure evidence
+
+Approved example: vanilla-raspberry, 6-inch Small, 7–10 servings. Planned components: baked sponge 300 g; milk 45 g (40–50 range); cream-cheese filling 550 g; compote 200 g; buttercream coating/decor 600 g (500–700 range). Sum 1695 g is planned component weight, not measured finished cake weight.
+
+Deferred to GK-038 https://trello.com/c/tVlu0Wkg: all measured finished component yields; ingredient-specific unit conversions; banana purchase/edible-quantity data; Oreo pack weight/price; vanilla product, recipe quantity and purchasing details. Missing flavour/size/source inconsistencies remain visible wherever used. Unknown quantities/costs are not zero; no lossless-yield assumption is validated.
+
+GK-038 gates affected validated recipe/ingredient and grocery-cost acceptance in GK-022/GK-032. Coding, sketches, sandbox setup and GK-019 policy reconciliation can continue; other prerequisites remain. GK-019 must reconcile zero-payment orders, separate delivery codes, automatic status versus physical stock, component batches, mandatory expiry, rounding and whole-pack budgets before affected implementation.
+
+Amended stage acceptance: approved discount/free-order examples; approved recipe/stock rules and supplied fixture; exact source/answer revision with explicit gaps; Sasha's approval and linked deferred-data ticket. These are complete for the policy stage. Original full-data AC2 is transferred, not reported passed. No application tests or independent review claimed. Same-session checks passed: seven Decimal arithmetic examples, answer/source hashes and local links; existing owner-intake validation also passed.
+
+Source packet: docs/creator/GK-007/{README.md,interview-2026-10-05.md,interview-2026-10-05.json,closure-scope-2026-10-05.md}. Workbook preserved unchanged; SHA256 1898cdff50c151081c21e9690350dce2af1b4015c2c4c1bb4ce2a7e97fae30f2. Files remain local/unpushed; transfer this exact packet to future workers. Actual Trello read-back and Done transitions are recorded in closure-publication-2026-10-05.json. User authorized publication and both Done transitions by selecting option B after reviewing the consolidated summary.

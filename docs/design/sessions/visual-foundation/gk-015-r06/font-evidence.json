@@ -1,0 +1,17 @@
+{
+  "Manrope-variable.ttf": {
+    "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/manrope/Manrope%5Bwght%5D.ttf",
+    "sha256": "3ae11c49db0455a3cc33e37d380f20fdb8c7f8b41dc07625c177e3d87a9d6ae6",
+    "bytes": 164700
+  },
+  "OFL-Manrope.txt": {
+    "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/manrope/OFL.txt",
+    "sha256": "58172e0c0fac2cda8a37b348164bb55e44b0e69051e557e92b1d3f6910141f7b",
+    "bytes": 4387
+  },
+  "description.html": {
+    "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/manrope/DESCRIPTION.en_us.html",
+    "sha256": "e5634b4e305fc2630136815e24ae338531de7eeff7cd3721be924b1f1ffc2155",
+    "bytes": 311
+  }
+}

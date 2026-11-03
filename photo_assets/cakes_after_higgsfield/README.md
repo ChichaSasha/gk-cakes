@@ -1,0 +1,1 @@
+Use the provided cake assets as examples during development. They do not represent the complete or final cake selection. The owner will add the full selection through the UI once the necessary functionality is implemented.

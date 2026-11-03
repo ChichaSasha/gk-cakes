@@ -1,0 +1,65 @@
+[
+  {
+    "name": "pink",
+    "source": "photo_assets/cakes_after_higgsfield/SaveClip.App_547599309_17900285079260879_5639951130888475467_n.png",
+    "sha256": "b9afcaf3026f4dec914dcabfff5addeaf9b20bf442a8d24482424dd4c4cc2730",
+    "derivative": "docs/design/sessions/visual-foundation/gk-015-r03/poc/assets/pink.png",
+    "operation": "sips max dimension 1100; alpha preserved, no retouch"
+  },
+  {
+    "name": "chocolate",
+    "source": "photo_assets/cakes_after_higgsfield/SaveClip.App_800796406_17949882372260879_4378816107377194523_n.png",
+    "sha256": "2206523d6e926ab3e2277885e7514afc37cf86c1ee2bcb0d25419f4fa2ae8f9d",
+    "derivative": "docs/design/sessions/visual-foundation/gk-015-r03/poc/assets/chocolate.png",
+    "operation": "sips max dimension 1100; alpha preserved, no retouch"
+  },
+  {
+    "name": "raspberry",
+    "source": "photo_assets/cakes_after_higgsfield/SaveClip.App_554651941_17902229079260879_5454453889132635975_n.png",
+    "sha256": "bde9082fa84cf86cc5823d61817579a46d936585bf0ab8fd7f58a21fc29e9123",
+    "derivative": "docs/design/sessions/visual-foundation/gk-015-r03/poc/assets/raspberry.png",
+    "operation": "sips max dimension 1100; alpha preserved, no retouch"
+  },
+  {
+    "name": "midnight",
+    "source": "photo_assets/cakes_after_higgsfield/SaveClip.App_818062508_17951472546260879_7628511166295153297_n.png",
+    "sha256": "2d54df30ae5e691016efc4222a39147c7cce654a76473d20d8d3a573354474b8",
+    "derivative": "docs/design/sessions/visual-foundation/gk-015-r03/poc/assets/midnight.png",
+    "operation": "sips max dimension 1100; alpha preserved, no retouch"
+  },
+  {
+    "name": "silver",
+    "source": "photo_assets/cakes_after_higgsfield/SaveClip.App_793518393_17949282693260879_4417009315382584781_n.png",
+    "sha256": "3d50b100d8b2889e5500797ab0646fe09f6c77065f13b21a16ed3cf75d127d85",
+    "derivative": "docs/design/sessions/visual-foundation/gk-015-r03/poc/assets/silver.png",
+    "operation": "sips max dimension 1100; alpha preserved, no retouch"
+  },
+  {
+    "name": "lily",
+    "source": "photo_assets/cakes_after_higgsfield/SaveClip.App_799983473_17949882267260879_1718580117523416558_n.png",
+    "sha256": "d7fe6e168ae0c01967a60669095ea997741c5d2c6fdcf0b330fde7cf80de4481",
+    "derivative": "docs/design/sessions/visual-foundation/gk-015-r03/poc/assets/lily.png",
+    "operation": "sips max dimension 1100; alpha preserved, no retouch"
+  },
+  {
+    "name": "cherry",
+    "source": "photo_assets/cakes_after_higgsfield/SaveClip.App_825320740_17952959877260879_2356093405932097967_n.png",
+    "sha256": "be60875a31ce88a68370ad62692d7ac8f507fa9b840d3dae0b89d9313f365231",
+    "derivative": "docs/design/sessions/visual-foundation/gk-015-r03/poc/assets/cherry.png",
+    "operation": "sips max dimension 1100; alpha preserved, no retouch"
+  },
+  {
+    "name": "garden",
+    "source": "photo_assets/cakes_after_higgsfield/SaveClip.App_800482332_17949882297260879_7818304725024216919_n.png",
+    "sha256": "e63099aed99d2705d8a6d73e92dd4ae25ea8568ae131b4f85d5d376a39e124e6",
+    "derivative": "docs/design/sessions/visual-foundation/gk-015-r03/poc/assets/garden.png",
+    "operation": "sips max dimension 1100; alpha preserved, no retouch"
+  },
+  {
+    "name": "chrome-emblem",
+    "source": "photo_assets/logo/composite.png",
+    "sha256": "2b79f2f9f21e44fe6f4a6f377b3694ec87fd2896eaacb9f63e0003190e51fd9c",
+    "basis": "Reference screenshot chosen 2026-10-06 shows matching chrome badge; POC treatment only, no canonical GK-002 amendment.",
+    "usage": "Not rendered; copied reference derivative only. Rendered wordmark/seal are POC SVG artwork in app.js, not approved canonical logo."
+  }
+]

@@ -1,0 +1,252 @@
+{
+  "schema_version": 1,
+  "ticket": "GK-003",
+  "revision": "manual-handover-r2",
+  "recorded_at": "2026-10-04T23:32:02.949702+00:00",
+  "authorization": "Current user requests source conversion, manual handover, subagents and main GK-003 Done. No BO card or dependent status changes, application implementation, publication of Terms, release or deployment. Done remains subject to original completeness criteria; approval is already supplied, missing content is not approval.",
+  "input_files_before_changes_sha256": {
+    "START-HERE.md": "b627b93ac74518db66f44fad7658e769156f84516d8ecadcaa8b8437e823a806",
+    "docs/creator/README.md": "72c408d56d3f61e1d9ffe64761998ef81f4343b2c644156a0d5f2c75fb498698",
+    "docs/creator/GK-003/README.md": "e7bbb03e6915cd2c6a7d070ebc8e59bdf96c9a6d1cceae6577016c3fdb324aa1",
+    "docs/creator/GK-003/decisions.json": "3888702d777eff36e4c5d02a0cf4d2f0a0641db634240467a6c4b0f36a97dbe7",
+    "docs/creator/GK-003/source-comments.json": "639cf5c3109b504f2d521c323c195f1a06543452c767b7775db3c29b843fbaef",
+    "docs/creator/GK-003/follow-up.json": "bf4d32c708f7f477c3c05b16ab82c97c8ae155d5ebb20ac92ef55e2e61b6ad16",
+    "docs/creator/GK-001/handover.md": "a3642937976539b6ea62575e4d658ccc9de22cdb5a04875c189201e5087690d3",
+    "docs/creator/GK-001/decisions.json": "7ab32f6c751ebfdaa5e4bae0193970b6937e1411147a360abd2a8bd4485580e0",
+    "docs/creator/GK-001/source-comments.json": "9bf3130802caa0258dd866eb2160b0a5c56a07f8280359f555febe93d7728951",
+    "docs/creator/GK-005/README.md": "ff518b569c1b207826562cc1f635d7802f6c34faede30d63bf80c49795f79624",
+    "docs/creator/GK-005/decisions.json": "3d4bdf96e9824addf5d528ad95135582831d4651779fcb12483581b46db94942",
+    "docs/creator/GK-005/source-comments.json": "d8b6854908a345d6d59028e8fb6e29e013fe6b5df7e84080e4a1667f984c8022",
+    "docs/design/owner-data-contract.md": "6b2884521f785588a3427e68333809c935c5cbd9a27f83c98661a77f7f8730ab",
+    "docs/design/creator-decisions.md": "d2745576906b912670d92c22b072b43dce51af9640f7801065965c11dc63e5af",
+    "docs/design/PLAN.md": "33ffddcd22bdd5b81cbed9b86404cd68267d03ef5a34f367382ecf69dc64f408",
+    "docs/design/tickets/GK-003.md": "6e549d27c8d1730d3e987c6d4cf884103121e26c25f34a9ca9e5987fd8c8e5a7"
+  },
+  "execution_check": {
+    "role": "bounded intake author/master",
+    "model_status": "unknown",
+    "model_observed": null,
+    "effort_observed": null,
+    "history": "continued with actual user replies and refreshed sources",
+    "inputs": "sufficient for final r2 decision handover; prior policy conflicts explicitly resolved by actual GK001/GK003 replies",
+    "head": "bb96a89681bcf2fa1c663a02eacbe039e20e6363",
+    "working_tree": "Existing staged original draft/photo assets and untracked planning files preserved; no commit or push in this documentation intake.",
+    "readback": "Both types fixed original120h 100/50; separate chef delivery; current website/template24h; hold15m; seven cakes; actual identity/payment evidence and historical liabilities retained. Downstream implementation/legal tests remain separate."
+  },
+  "publication": [
+    {
+      "kind": "manual_handover",
+      "card_id": "6ab13b539c0ea3a1a49176e9",
+      "comment_id": "6ac2e6244e6b5aa5c3015786",
+      "url": "https://trello.com/c/ftGtoGNB#comment-6ac2e6244e6b5aa5c3015786",
+      "date": "2026-10-04T23:49:56.476Z",
+      "text": "Creator handoff — GK-003 — manual-handover-r2 — 2026-10-05\n\nFinal expected result and manual handover. Sasha explicitly requested recording these answers, independent subagents and main GK-003 Done. The original chef answer is retained; later user clarifications supersede the conflicting portions. This is decision acceptance, not software completion or legal approval.\n\nSources: Elina's original BO-GK-003 answer [https://trello.com/c/5FbrZxfc#comment-6abac3d56b4b97c36cd21b0c](https://trello.com/c/5FbrZxfc#comment-6abac3d56b4b97c36cd21b0c \"‌\") plus Sasha's actual 2026-10-05 answers in the GK-003 task and the linked GK-001 fixed-deadline/both-cake-type clarifications. New replies are not falsely attributed to the chef.\n\nПогоджений результат:\n\n• Індивідуальний запит: дата, порції/розмір, смак, дизайн і деталі, кольори за потреби; референси можна замінити достатнім описом. Перед оплатою шеф погоджує остаточну ціну, дату, розмір, смак, дизайн і спосіб отримання.\n• Усі поточні оплати через сайт: клієнт оформлює сам або шеф після домовленості в Instagram створює шаблон і дає посилання для погодження та оплати. Строк — 24 години. Неоплачений шаблон ще не прийняте замовлення; після строку оплата вимикається. Попередні 48 годин пропозиції та Revolut як поточний спосіб замінені; старі платежі/докази зберігаються.\n• Пропозиція не бронює дату. Утримання під час оплати — 15 хвилин. Показуємо фактично вільні місця, стандарт 7 тортів за днем видачі. Якщо повна оплата успішна, замовлення прийняте навіть при заповненій даті. Окреме правило підготовки +48 годин із GK-001 не змінюється.\n• Завжди повне ім'я клієнта і дані іншого платника, якщо платить не клієнт. Покупка без кабінету дозволена. Старе замовлення прив'язує шеф лише до перевіреної особи з доказом належності замовлення; сам Instagram/референс не доказ. Повторення потребує актуальних ціни, складу/алергенів, дизайну, дати й доступності.\n• Обидва типи тортів: 100% фактично сплаченої загальної суми більше ніж за 120 годин до ПЕРВІСНОЇ видачі; рівно на межі й пізніше — рівно 50%, включно з неявкою/після видачі. Шеф особисто скасовує — 100%. Зміна дати/часу не змінює збережений початковий дедлайн. Старі 3/4-денні та 0% правила — історія.\n• Доставка GK входить у розрахунок, але шеф задає її ціну окремо, оплата окрема, повертає лише шеф окремо через адмінпанель. Якщо GK не виконав доставку зі своєї вини — повернення доставки 100%, мінус уже повернене. Сторонній кур'єр, оплачений клієнтом, не є платежем GK.\n• Скасоване не відкривається знову: нове замовлення. Розпочатий/готовий торт дозволено скасувати за єдиним правилом; шеф може виставити його за 50% вартості з тими самими датами. Необговорені випадки — особисто через шефа (Instagram/WhatsApp/email), без автоматичної довільної відмови в поверненні. Законні права збережені.\n• Повертаємо всю належну суму в межах кожного платежу однією операцією; доставку окремо шеф. Помилки й залишок фіксуються. Очікуваний/невідомий результат не запускаємо повторно як нове повернення. Частку пенні округлюємо на користь клієнта.\n• Побажання щодо фото — публікація за умовами з опцією відмови. GK-005 перевіряє права/формулювання до публікації; це не дозвіл на сторонні референси. Юриста залучають перед фінальним запуском, перевірку Terms проводять перед їх фінальною публікацією.\n\nState/action matrix: unpaid/expired = nonaccepted template, no refund without actual collection; paid-confirmed/in-production/ready = unified 100/50 by fixed deadline; completed/no-show = 50% with chef handling; cancelled = never reopen and preserve refund debt. Current manual agreements use chef-created website templates; historic offline evidence remains auditable. Unexpected transfer plus pending online payment requires reconciliation, not an arbitrary paid switch.\n\nExact examples (GBP):\n• £100 cake + £20 separately paid GK delivery: ordinary 50% target £60 = £50 cake + £10 chef delivery; 100% target £120 = £100 + £20.\n• Cake £120 minus £20 discount: paid £100, 50% cake allocation £50.\n• Historical target £70, £20 succeeded, £50 pending: £50 owed, £0 extra dispatch. Verified failure leaves £50 retryable as one operation; success leaves £0. Old £70 eligibility is history, not current ordinary 50% policy.\n• One historical collection paid £120: full-return target £120, £20 succeeded, £50 pending: £100 owed. Wait for that collection's pending result: failure leaves £100; success leaves £50. Never resend £120.\n• Cake refund £50 succeeds but delivery refund £10 fails: still owe £10; chef retries only after verified failure. Do not call the whole order fully refunded.\n• 50% of 10001p rounds to 5001p. Technical multi-item allocation: ceil aggregate entitlement, allocate floors plus largest remainders, stable tie order; component totals must equal target and never exceed paid amounts. No separately added VAT in fixtures under current GK-005 evidence.\n\nDeveloper interpretations for GK-019: retain sending-to-customer anchor, payment expires sent_at+24 elapsed hours; at equality disable new initiation and also prohibit repeat payment when paid. Expiry does not erase an in-flight payment. Exact minimal payer/provider fields and UI wording are technical design, not invented chef quotations.\n\nManual handover: load docs/creator/GK-003/handover.md, acceptance-cases.md, decisions.json, source-comments.json and handover.json at the recorded hashes; read latest GK-001/GK-005 and owner-data-contract. These files are local/unpushed: obtain the exact packet before another checkout uses it. GK-019 reconciles changed contracts and dependent tickets; no automatic Ready transitions. Retain historical source and payment facts. No application implementation, service signup, public Terms/photos, release or deployment is authorized.\n\nAcceptance evidence: AC1 state/action matrix; AC2 16 exact money cases; AC3 agreement/verified-claim/payment safeguards plus 16 workflow cases; AC4 source hashes, independent review and publication readback. Three document checks pass: check\\_owner\\_intake.py, check\\_planning\\_kit.py, check\\_role\\_packets.py. Review and final hashes are in the companion verification receipt. Future lawyer/provider/UI execution remains downstream.",
+      "sha256_original_utf8": "2e47da6ccc47ffb019f8696cc98f0e0c48a6c75c82214b04827fc38df0687162",
+      "reviewed_body_sha256": "b5f9d6695fd01e97f15818fa35043ec0c84fa7ad148b01540b1d64c644f081e8",
+      "verification": "CLI readback; only Trello link/blank-line/underscore escaping normalization",
+      "verified_at": "2026-10-04T23:51:07.151842+00:00"
+    },
+    {
+      "kind": "verification_receipt",
+      "card_id": "6ab13b539c0ea3a1a49176e9",
+      "comment_id": "6ac2e66b0622c4d77351ee21",
+      "url": "https://trello.com/c/ftGtoGNB#comment-6ac2e66b0622c4d77351ee21",
+      "date": "2026-10-04T23:51:07.516Z",
+      "text": "GK-003 manual-handover-r2 — verification receipt — 2026-10-05\n\nIndependent fresh reviewer: /root/gk003_final_review; requested gpt-6-astra/xhigh, requested-only effective-model evidence. Verdict: publication-ready; no remaining blocker/major finding. Original AC1-AC3 and expected O1-O3 covered; publishing these receipts completes AC4. User explicitly authorized main GK-003 Done. No new approval or legal/provider/application-test claim.\n\nPassed: check_owner_intake.py, check_planning_kit.py, check_role_packets.py; exact document arithmetic/source/import hash checks.\n\nExact local packet fingerprints (SHA-256; files local/unpushed):\nhandover.md: 7543d78f06cc555e9455cdc8072baa42190b95532cec5583f898ffefb6705bde\nacceptance-cases.md: 94144408d031ec03538938bc51bf4cd2cb701b82134439dea3823e5212a80647\ndecisions.json: 324248cf5f3de58ff58c5719f02aa67bc4a53e350596d1b7db5ae77f1621147e\nsource-comments.json: 72aeedd3f42eebada3e0185580706658b027d9a282d6c85a87b37213c2621d4c\ntrello-handover.md: b5f9d6695fd01e97f15818fa35043ec0c84fa7ad148b01540b1d64c644f081e8\n\nNext: main card Done/readback under existing authorization. GK-019 consumes this packet and checks its other prerequisites; owner card and dependent statuses unchanged. Lawyer/public Terms/privacy and actual software/provider tests remain downstream.\n",
+      "sha256_original_utf8": "a4da7248b8321c5b055927bc6e3f405341570e2a25d73c0d0d60ba2ad7b18336",
+      "reviewed_body_sha256": "a4da7248b8321c5b055927bc6e3f405341570e2a25d73c0d0d60ba2ad7b18336",
+      "verification": "CLI readback; only Trello link/blank-line/underscore escaping normalization",
+      "verified_at": "2026-10-04T23:51:08.209431+00:00"
+    }
+  ],
+  "main_card_observation": {
+    "retrieved_at": "2026-10-04T23:29:07.336222+00:00",
+    "card": {
+      "id": "6ab13b539c0ea3a1a49176e9",
+      "name": "[GK-003][P0][O020][W00] Approve customer agreement, accounts and refund policy",
+      "desc": "## Context\n\nOwner: Creator; Kind: Decision\nPriority: P0 — foundational or money/security/fulfillment correctness prerequisite.\nOrder: 20; Wave: 0; Parallel group: Creator decisions W00.\nRequirements: C03, C04, C05, C06, C07, C08, C12, C13, C18, A01, A07, S02; Design/contract revision: planning r5, K02 K05.\nAgent execution policy: not applicable (Creator-owned action).\nDepends on: none; deliverable: completed approved policy, setup/contract or tested implementation evidence from each listed prerequisite. All GK-020 dependents require B2 unless explicitly named B1.\nUnblocks: GK-019, GK-017, GK-016, GK-018, GK-021, GK-025, GK-026.\nSafe in parallel with: GK-001, GK-004, GK-005, GK-006, GK-007, GK-002. Independent Creator evidence collection; master reconciles overlapping policies before GK-019.\nConflicts with: shared contracts/schema/ADRs and adjacent modules; implementation owner coordinates shared edits, no same-wave implied safety.\nReadiness at publication: ready now for Creator action.\n\nThere is currently no application; this is an ordered planning packet. Decide required custom fields, quote acceptance/expiry, guest checkout and proof-based claim, reorder history/gallery behavior, positive customer cancellation policy, admin exception matrix including completed orders, full-return and partial tax/delivery/discount allocation. Proposed full return of remaining payment is not a legal conclusion.\n\nApplicable common rules: server owns prices/availability/state; GBP integer pence, UTC instants plus Europe/London display and date semantics; role/ownership checked on every action; Idempotency-Key and expected_version protect repeated/stale mutations; pending external result is not success/failure. No network calls under database locks. Detailed requirements and tests below remain mandatory even if linked files change.\n\nReferences: docs/design/contracts.md K02 K05; docs/design/screens.md; docs/design/coverage.md; relevant docs/design/features/ packet; docs/planning/DELIVERY.md; SETUP.md. These are local unpushed planning artifacts; obtain this checkout's exact fingerprinted packet before execution.\n\nReconciled r3 requirements and acceptance extensions (mandatory for AC1–AC3):\n\nApprove offline provenance and evidence-based return workflow, including online-pending versus offline-recording race; no arbitrary paid switch. Full return is durable target, prior failed partial reopens shortfall. All rights/allocations require approved concrete examples.\n\n## To dos\n\nT1. Review current prerequisites and the concrete options/rules in Context; collect missing evidence (AC1).\nT2. Perform only the Creator action described, recording settings/decision versions and safe nonsecret evidence (AC1–AC3).\nT3. Check the acceptance examples, record remaining blockers and hand the approved output to dependent Agent tickets (AC3, AC4).\n\n## Not to dos\n\nDo not implement unrelated cleanup, register candidate alternatives, expose credentials, publish releases or deploy without the separate scoped authorization. Planning publication does not authorize application execution now. Do not mark Done without the board's acceptance.\n\n## Acceptance Criteria\n\nAC1. Versioned policy covers paid confirmed, in-production, ready, completed, expired, cancelled and unpaid states plus manual/offline orders.\nAC2. Prior partial refund and pending-then-failed partial examples state the full-return target and remaining obligation.\nAC3. Customer claim requires verified identity plus order proof; Instagram handle never proves identity. Custom conversation becomes commitment only through reviewed quote/order/payment path.\nAC4. Required acceptance evidence is tied to exact input/output revision, checked by the appropriate reviewer/Creator and recorded on Trello. For implementation include relevant tests, all related PRs, required review/checks, merge and main CI; authorized release/deployment/smoke only when separately in scope.\n\nVerification: inspect the concrete decision/configuration and nonsecret evidence against AC1–AC3. No forced software red/green cycle for human work. Account creation follows accepted-provider gate; no secret values in Trello.\n\nPublication snapshot of the independently reviewed planning packet. Trello is the live execution record; application work has not started.\n\nVerified prerequisite cards:\n- None.\n\nVerified dependent cards:\n- GK-019: https://trello.com/c/lW3wuYq0\n- GK-017: https://trello.com/c/1YGOcOHR\n- GK-016: https://trello.com/c/oapKvUNJ\n- GK-018: https://trello.com/c/jjP7btz9\n- GK-021: https://trello.com/c/zEfCJtWD\n- GK-025: https://trello.com/c/vyFTtISc\n- GK-026: https://trello.com/c/xiEN4jvp",
+      "closed": false,
+      "idBoard": "6ab074a2b3c3763832ddf623",
+      "idList": "6ab074adb3c3763832de0087",
+      "due": null,
+      "url": "https://trello.com/c/ftGtoGNB/17-gk-003p0o020w00-approve-customer-agreement-accounts-and-refund-policy"
+    },
+    "owner_comment_matches_saved": true
+  },
+  "source_ids": [
+    {
+      "id": "6abac3d56b4b97c36cd21b0c",
+      "revision": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+      "type": "commentCard"
+    },
+    {
+      "id": "chat:GK-003:2026-10-05:user-follow-up",
+      "revision": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+      "type": "userChatSubmission"
+    }
+  ],
+  "current_decision_input_revision": "037d57fa3fc3254b357b6d33fb0e5baf0361990e7284984948ec3189618ba614",
+  "changed_decision_keys": [
+    "started_or_ready",
+    "cancelled_order",
+    "resale",
+    "admin_exception",
+    "no_show",
+    "delivery_failure",
+    "paid_commitment",
+    "daily_limit",
+    "checkout_hold",
+    "historical_claim",
+    "offline_evidence",
+    "manual_order_link",
+    "publication_preference",
+    "refund_rounding",
+    "refund_execution",
+    "legal_questions"
+  ],
+  "additional_input_sources": [
+    {
+      "id": "chat:GK-003:2026-10-05:delivery-clarification",
+      "sha256": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04"
+    },
+    {
+      "id": "chat:GK-001:2026-10-05:clarification-1",
+      "sha256": "a51fd7c0287d7c55163b3ac4d55c6f938152cb6f31b96762c2327ad1909b8923"
+    },
+    {
+      "id": "chat:GK-001:2026-10-05:refund-deadline",
+      "sha256": "e60097641c674bf1d1fa0d55c5d9ffd000ee15a8656419d95f3d186fe267aa28"
+    },
+    {
+      "id": "chat:GK-001:2026-10-05:refund-scope",
+      "sha256": "eb7d5d38c3852fc8fbe42c7fd2aca79e157af24b51c473027d225cd957dc3095"
+    },
+    {
+      "id": "chat:GK-003:2026-10-05:website-payment-24h",
+      "sha256": "037d57fa3fc3254b357b6d33fb0e5baf0361990e7284984948ec3189618ba614"
+    }
+  ],
+  "source_audit": {
+    "agent": "/root/gk003_source_audit",
+    "model_requested": "gpt-6-astra",
+    "effort_requested": "high",
+    "model_status": "requested-only",
+    "history": "fresh fork_turns=none",
+    "result": "Follow-up audit: original refund conflict resolved by actual GK-001 replies; separate GK delivery is per-collection decomposition, no new business blocker. Website-only 24h clarification subsequently received; final review required."
+  },
+  "status": "published_and_main_done_verified",
+  "completion": {
+    "authorization": "Already explicit in current request",
+    "AC1": "covered by final reviewed matrix",
+    "AC2": "covered by exact M01–M16 cases",
+    "AC3": "covered by O2 and A01–A16 safeguards",
+    "AC4": "independent review + two verified Trello comments + authorized main Done/readback complete",
+    "downstream": "Technical implementation/provider tests and GK-005 legal/privacy review; not performed"
+  },
+  "output_sha256": {
+    "docs/creator/GK-003/submission-2026-10-05.uk.txt": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+    "docs/creator/GK-003/clarification-2026-10-05.uk.txt": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+    "docs/creator/GK-003/decisions.json": "324248cf5f3de58ff58c5719f02aa67bc4a53e350596d1b7db5ae77f1621147e",
+    "docs/creator/GK-003/source-comments.json": "72aeedd3f42eebada3e0185580706658b027d9a282d6c85a87b37213c2621d4c",
+    "docs/creator/GK-003/README.md": "6f5d94e5dceb791cb5ab225cc87fd283f0d388ce54602864fe1e52c0497b3903",
+    "docs/creator/GK-003/acceptance-cases.md": "94144408d031ec03538938bc51bf4cd2cb701b82134439dea3823e5212a80647",
+    "docs/creator/GK-003/trello-handover.md": "b5f9d6695fd01e97f15818fa35043ec0c84fa7ad148b01540b1d64c644f081e8",
+    "docs/creator/GK-003/clarification-payment-2026-10-05.uk.txt": "037d57fa3fc3254b357b6d33fb0e5baf0361990e7284984948ec3189618ba614",
+    "docs/creator/GK-003/handover.md": "7543d78f06cc555e9455cdc8072baa42190b95532cec5583f898ffefb6705bde"
+  },
+  "attachment_check": {
+    "checked_at": "2026-10-04T23:44:25.883462+00:00",
+    "result": {
+      "parent": {
+        "ok": true,
+        "data": []
+      },
+      "owner": {
+        "ok": true,
+        "data": []
+      }
+    }
+  },
+  "validation": {
+    "checked_at": "2026-10-04T23:46:52.179087+00:00",
+    "commands": [
+      {
+        "command": "python3 scripts/check_owner_intake.py",
+        "result": "PASS: 3 packets,74 decisions,221 numeric occurrences"
+      },
+      {
+        "command": "python3 scripts/check_planning_kit.py",
+        "result": "Planning kit checks passed"
+      },
+      {
+        "command": "python3 scripts/check_role_packets.py",
+        "result": "PASS:34 source mappings,34 developer packets,30 Ukrainian owner packets"
+      },
+      {
+        "command": "Python Fraction arithmetic check (inline)",
+        "result": "PASS: aggregate/per-component allocation, discount, prior-success and pending/failure examples"
+      }
+    ],
+    "scope": "Document/source consistency and exact arithmetic, not software or provider behavior."
+  },
+  "execution_check_at_start": {
+    "role": "bounded intake author/master",
+    "model_status": "unknown",
+    "model_observed": null,
+    "effort_observed": null,
+    "history": "continued",
+    "inputs": "sufficient for faithful source intake and handover; conflicting/incomplete for final refund/account policy",
+    "head": "bb96a89681bcf2fa1c663a02eacbe039e20e6363",
+    "working_tree": "Existing staged original draft/photo assets and untracked planning files preserved; no commit or push in this documentation intake."
+  },
+  "final_review": {
+    "agent": "/root/gk003_final_review",
+    "role": "independent final planning reviewer",
+    "model_requested": "gpt-6-astra",
+    "effort_requested": "xhigh",
+    "model_status": "requested-only",
+    "history": "fresh via fork_turns=none",
+    "verdict": "publication-ready",
+    "findings": "No remaining blocker or major finding; stale dates/metadata/current registry corrected and rechecked; AC1–AC3 and O1–O3 covered. AC4 requires actual review/publication/Done receipts.",
+    "reviewed_substantive_sha256": {
+      "docs/creator/GK-003/submission-2026-10-05.uk.txt": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+      "docs/creator/GK-003/clarification-2026-10-05.uk.txt": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+      "docs/creator/GK-003/decisions.json": "324248cf5f3de58ff58c5719f02aa67bc4a53e350596d1b7db5ae77f1621147e",
+      "docs/creator/GK-003/source-comments.json": "72aeedd3f42eebada3e0185580706658b027d9a282d6c85a87b37213c2621d4c",
+      "docs/creator/GK-003/README.md": "6f5d94e5dceb791cb5ab225cc87fd283f0d388ce54602864fe1e52c0497b3903",
+      "docs/creator/GK-003/acceptance-cases.md": "94144408d031ec03538938bc51bf4cd2cb701b82134439dea3823e5212a80647",
+      "docs/creator/GK-003/trello-handover.md": "b5f9d6695fd01e97f15818fa35043ec0c84fa7ad148b01540b1d64c644f081e8",
+      "docs/creator/GK-003/clarification-payment-2026-10-05.uk.txt": "037d57fa3fc3254b357b6d33fb0e5baf0361990e7284984948ec3189618ba614",
+      "docs/creator/GK-003/handover.md": "7543d78f06cc555e9455cdc8072baa42190b95532cec5583f898ffefb6705bde"
+    },
+    "reviewed_dependency_sha256": {
+      "docs/design/owner-data-contract.md": "30bd0355f991bf0d0e564a115e3179a7f4f42e7006d0fb53191223468a1556db"
+    },
+    "reviewed_at": "2026-10-04T23:49:45.331245+00:00"
+  },
+  "final_live_observation": {
+    "checked_at": "2026-10-04T23:51:10.073418+00:00",
+    "card": {
+      "id": "6ab13b539c0ea3a1a49176e9",
+      "name": "[GK-003][P0][O020][W00] Approve customer agreement, accounts and refund policy",
+      "desc": "## Context\n\nOwner: Creator; Kind: Decision\nPriority: P0 — foundational or money/security/fulfillment correctness prerequisite.\nOrder: 20; Wave: 0; Parallel group: Creator decisions W00.\nRequirements: C03, C04, C05, C06, C07, C08, C12, C13, C18, A01, A07, S02; Design/contract revision: planning r5, K02 K05.\nAgent execution policy: not applicable (Creator-owned action).\nDepends on: none; deliverable: completed approved policy, setup/contract or tested implementation evidence from each listed prerequisite. All GK-020 dependents require B2 unless explicitly named B1.\nUnblocks: GK-019, GK-017, GK-016, GK-018, GK-021, GK-025, GK-026.\nSafe in parallel with: GK-001, GK-004, GK-005, GK-006, GK-007, GK-002. Independent Creator evidence collection; master reconciles overlapping policies before GK-019.\nConflicts with: shared contracts/schema/ADRs and adjacent modules; implementation owner coordinates shared edits, no same-wave implied safety.\nReadiness at publication: ready now for Creator action.\n\nThere is currently no application; this is an ordered planning packet. Decide required custom fields, quote acceptance/expiry, guest checkout and proof-based claim, reorder history/gallery behavior, positive customer cancellation policy, admin exception matrix including completed orders, full-return and partial tax/delivery/discount allocation. Proposed full return of remaining payment is not a legal conclusion.\n\nApplicable common rules: server owns prices/availability/state; GBP integer pence, UTC instants plus Europe/London display and date semantics; role/ownership checked on every action; Idempotency-Key and expected_version protect repeated/stale mutations; pending external result is not success/failure. No network calls under database locks. Detailed requirements and tests below remain mandatory even if linked files change.\n\nReferences: docs/design/contracts.md K02 K05; docs/design/screens.md; docs/design/coverage.md; relevant docs/design/features/ packet; docs/planning/DELIVERY.md; SETUP.md. These are local unpushed planning artifacts; obtain this checkout's exact fingerprinted packet before execution.\n\nReconciled r3 requirements and acceptance extensions (mandatory for AC1–AC3):\n\nApprove offline provenance and evidence-based return workflow, including online-pending versus offline-recording race; no arbitrary paid switch. Full return is durable target, prior failed partial reopens shortfall. All rights/allocations require approved concrete examples.\n\n## To dos\n\nT1. Review current prerequisites and the concrete options/rules in Context; collect missing evidence (AC1).\nT2. Perform only the Creator action described, recording settings/decision versions and safe nonsecret evidence (AC1–AC3).\nT3. Check the acceptance examples, record remaining blockers and hand the approved output to dependent Agent tickets (AC3, AC4).\n\n## Not to dos\n\nDo not implement unrelated cleanup, register candidate alternatives, expose credentials, publish releases or deploy without the separate scoped authorization. Planning publication does not authorize application execution now. Do not mark Done without the board's acceptance.\n\n## Acceptance Criteria\n\nAC1. Versioned policy covers paid confirmed, in-production, ready, completed, expired, cancelled and unpaid states plus manual/offline orders.\nAC2. Prior partial refund and pending-then-failed partial examples state the full-return target and remaining obligation.\nAC3. Customer claim requires verified identity plus order proof; Instagram handle never proves identity. Custom conversation becomes commitment only through reviewed quote/order/payment path.\nAC4. Required acceptance evidence is tied to exact input/output revision, checked by the appropriate reviewer/Creator and recorded on Trello. For implementation include relevant tests, all related PRs, required review/checks, merge and main CI; authorized release/deployment/smoke only when separately in scope.\n\nVerification: inspect the concrete decision/configuration and nonsecret evidence against AC1–AC3. No forced software red/green cycle for human work. Account creation follows accepted-provider gate; no secret values in Trello.\n\nPublication snapshot of the independently reviewed planning packet. Trello is the live execution record; application work has not started.\n\nVerified prerequisite cards:\n- None.\n\nVerified dependent cards:\n- GK-019: https://trello.com/c/lW3wuYq0\n- GK-017: https://trello.com/c/1YGOcOHR\n- GK-016: https://trello.com/c/oapKvUNJ\n- GK-018: https://trello.com/c/jjP7btz9\n- GK-021: https://trello.com/c/zEfCJtWD\n- GK-025: https://trello.com/c/vyFTtISc\n- GK-026: https://trello.com/c/xiEN4jvp",
+      "closed": false,
+      "idBoard": "6ab074a2b3c3763832ddf623",
+      "idList": "6ab074aeb3c3763832de00c3",
+      "due": null,
+      "url": "https://trello.com/c/ftGtoGNB/17-gk-003p0o020w00-approve-customer-agreement-accounts-and-refund-policy"
+    },
+    "list": {
+      "id": "6ab074aeb3c3763832de00c3",
+      "name": "🏁 Done",
+      "closed": false,
+      "idBoard": "6ab074a2b3c3763832ddf623",
+      "pos": 5
+    },
+    "verified": "main GK-003 in Done, not archived; original description unchanged"
+  },
+  "supplemental_receipt_sha256": {
+    "trello-verification.txt": "a4da7248b8321c5b055927bc6e3f405341570e2a25d73c0d0d60ba2ad7b18336"
+  },
+  "scope_verification": "Reviewed substantive file hashes unchanged; original card description unchanged; only main GK-003 comment publication and Done status mutated. BO card/dependents untouched by this task."
+}

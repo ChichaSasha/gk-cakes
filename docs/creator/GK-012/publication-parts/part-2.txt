@@ -1,0 +1,14 @@
+GK-012 accepted decision/setup handoff r4 — part 2/2
+
+Remaining technical work: coordinate exact login callbacks/environment settings
+with GK-020/021 when the implementation exists; reconcile K02/GK-027 with the approved
+combined interaction; test copy/open/paste and fallback on supported devices.
+These remain explicit and are not waived or represented as passed.
+
+AC1 evidence collected; AC2/AC3 partial for the named technical gaps. AC4 records
+Sasha's acceptance and this authorized publication; remaining technical evidence
+is still required. Keep GK-012 open pending that evidence.
+No implementation, deployment, independent review or direct new Elina approval
+is claimed. Detailed source: docs/creator/GK-012/README.md, interview r4.
+
+Source SHA-256 (interview r4 before publication receipt): 16d53052cb163e2113af1dc9823d45e78eca6f1da7439743f4d9f95610887e08

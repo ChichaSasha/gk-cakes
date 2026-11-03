@@ -1,0 +1,9 @@
+{
+  "observed_at": "2026-10-05T21:36:22.840461+00:00",
+  "status": "Concurrent GK-019 r6 draft; independent review pending, not accepted integration input",
+  "files": {
+    "docs/design/contracts.md": "16f5be88ee080cdd6217e311b2e678070ff519461f2e3428380f2e631ea44646",
+    "docs/design/owner-data-contract.md": "c695019b03466b4a37015e4b48a598335d940d981db386eafc558d0f2d039d2c",
+    "docs/design/gk019/questions.md": "1a65546b27bce17d9ce85ba1933dca9e35a428f59496f53940d6daee69a02155"
+  }
+}

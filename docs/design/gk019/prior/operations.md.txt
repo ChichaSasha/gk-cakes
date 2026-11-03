@@ -1,0 +1,527 @@
+# Operations — inventory, communication, reporting and delivery
+
+Owner evidence refresh: before money reporting, communications, recipe/allergen or
+privacy work, load [owner data contract](../owner-data-contract.md) and the applicable
+[owner packets](../../creator/README.md), including decisions/source-comments JSON.
+Exact refund allocations, offline evidence, protected address release and box labels
+are supplied; privacy continuation/retention and full ingredients are still missing.
+Record input hashes. Historical financial fixtures below are technical examples,
+not owner prices or policy defaults.
+
+
+Status: packet r2 aligned to shared contracts/architecture r3, 2026-09-21;
+technical reconciliation complete, final independent review pending.
+Covers A02 A04 A05 A06 A09 A11 S03 S04 S05 S06 S07 D01 D02 and C14.
+No application, approved chef screens, selected provider or implementation test
+results exist. K07–K09 r3 govern the technical baseline; remaining policy proposals
+and readiness blockers below are not accepted by this reconciliation.
+
+## Execution check and scope
+
+- Role: bounded operations author; requested `gpt-6-astra` / high, accepted spawn
+  reported by master, effective model/effort unknown (**requested-only**). Fresh
+  history via `fork_turns=none`; author, not independent reviewer. Master reports
+  financial pilot author/reviewer routing passed following external-refund fix;
+  that evidence does not approve this packet or establish implementation behavior.
+- Read AGENTS.md, gk-feature, execution-check/artifacts/trello, PROJECT-BRIEF,
+  DELIVERY, SETUP, input-revision, Creator r2, contracts r2, architecture/provider
+  research r1, screens r2, financial-pilot r3, ticket-plan and GK-024/032/033/034.
+  Readback verified and go-ahead received before drafting. Input sufficient for
+  proposals; policy/provider/visual/bootstrap gaps block dependent implementation.
+- Base HEAD `bb96a89681bcf2fa1c663a02eacbe039e20e6363`; initial dirty work preserved.
+  Source fingerprints: Creator r2 `c822159b5a2d97c117e493aa8f4c106ee46329ed1fdbbf761cbc76342dc043b6`;
+  contracts `8992a892c444ad07ee36a2b15075e3ca0ac54a70993088a7ed1797a19a20c1b9`;
+  architecture `2a4afb5a11f425627701ea1bf24ee80402f535b007f76b108f3fa15219e5f2a9`;
+  screens `efc8dfcf0b1bed2b35dcd85ab037d94286cf1fd72f3cd99f120b366ea46f77d7`;
+  provider research `83d855152b2812e9b910bb5a98b5e9dc9c3c90b47652ca68713f382ad33be077`.
+  SETUP read at `2fb562219f943d91a4b865ff565e37cc13896644c840de1372c3635192a4f342`;
+  master is updating it; refresh before execution. Other original source hashes
+  are in [input-revision](../input-revision.json), not a claim all current files match it.
+- Only this file is writable for this assignment. No code, external writes,
+  Trello publication or delegation. Master owns shared changes and delivery DAG.
+
+### R3 reconciliation refresh
+
+Continued author context; original accepted Astra/high request remains
+**requested-only**, effective model/effort unknown. Refreshed contracts/architecture
+r3, current SETUP and GK-024/032/033/034; checked dirty state and sent changed-input
+readback. Master verified readback and authorized this file-only alignment before
+edits. Inputs sufficient for alignment, not policy-dependent implementation.
+
+Current source SHA-256 values supersede the historical fingerprints above:
+
+| Source | SHA-256 |
+| --- | --- |
+| contracts r3 | `ce9791654e74f2546a138494e0286023baf838fcb7a195f0e042496e08a358de` |
+| architecture r3 | `b448852467378408d1f09e7ca92ccca5ac4a21776838f2cd7132eb1ca9bad92d` |
+| SETUP | `9b0a513e3e637cc3556dd340f0f3c66b53a2f47d5f8d21ed28d71bc523720c1f` |
+| GK-024 | `ae2f953724123a5b6d03254b1559d8c3ec4b37b676d79770d02995570e318a59` |
+| GK-032 | `9b9b3655806f0cc458ab067de5088e99a3972b486c25396937a1dfcaec8505ce` |
+| GK-033 | `6c717c8de7d313d59cfcaf4769b6b4ed15c8d38f8d6703d40bcd8395448eb229` |
+| GK-034 | `415ca9f4544e90e1c2858c2f506008cc0f358316eb9770be434e8c783bef4b66` |
+
+R3 integrates observed/local financial facts with quarantine, atomic intent+job+
+audit, generation/recipient fencing, exact receipt/reconcile/resend shapes,
+outstanding ingredient usage, inventory lock rank and restore dispatch epoch.
+Go API + SvelteKit Node UI is technically accepted by master, subject to final
+review; provider selection/spend remains blocked. This refresh adds no decisions,
+implementation tests or publication and does not constitute independent review.
+
+The chef needs a trustworthy fridge/grocery view, intelligible email recovery,
+traceable business actions and honestly labelled activity/money reports. Platform
+work must preserve these records and deploy each tested component independently.
+UK/London, GBP, Europe/London, hybrid made-to-order/ready stock and service budget
+up to GBP100/month are accepted. Volume is a sizing assumption; X hours before
+pickup, inventory and privacy policies, approved visuals and release publisher
+remain undecided. These modules do not own payments, order eligibility, customer
+linking, fulfillment capacity, tax rules or catalog publishing; their owners
+produce the snapshots and verified transitions consumed here.
+
+## Small options and recommendation
+
+| Area | Recommendation and alternative | Consequence / decision owner |
+| --- | --- | --- |
+| Inventory | One append-only movement ledger and read-time balances; alternative mutable counts with separate history | Few records at shop scale; ledger allows correction/reconstruction. Measure before adding cached balances. Creator chooses units, expiry and negative-stock behavior. |
+| Grocery planning | Deterministic date-ordered outstanding demand and usable-lot allocation; alternative purchase-order/warehouse system | Covers timeline/budget without procurement automation. Allocation is a forecast, not a physical reservation. Creator approves consumption trigger and expiry assumptions. |
+| Email | Durable DB intents plus one provider; alternative direct request-time send | Intent survives crash and business rollback. No claim of cross-system exactly-once sending; unknown results need provider evidence or explicit manager decision. |
+| Audit/reporting | Restricted business audit plus SQL aggregates and selected provider dashboards; alternative analytics warehouse | Reuses authoritative data and avoids ETL infrastructure. Financial facts must include external observations; privacy policy controls site telemetry. |
+| Platform | One PostgreSQL database, existing provider backups/alerts, separate UI/API artifacts; alternative bespoke orchestration/backup platform | Fewer systems within budget. Object backups, restore proof and fenced maintenance still required. Provider and recovery targets need Creator acceptance. |
+
+No new provider capabilities/prices are asserted here. Candidate evidence is in
+[provider research](../provider-research.md), checked there on 2026-09-21; verify
+current official documentation and actual selected account behavior at setup.
+The provisional USD40/50 monthly infrastructure arithmetic there excludes email,
+object backup, taxes, overage and payment fees; it is not a GBP quote or proof of
+meeting GBP100. Creator approves a combined GBP recurring/usage estimate, alert
+thresholds and response owner before purchase. Existing provider facilities should
+be tried before adding a monitoring or analytics subscription.
+
+## Screens and behavior
+
+All screen IDs reuse [screens r2](../screens.md). No approved sketch exists for
+these workflows; GK-018 must produce coloured mobile/desktop sketches with buttons,
+editable source, feedback and exact-version Creator approval before UI work.
+
+| Screen / requirements | Entry, actions and exit | Data, validation and permission | States and recovery | Planned verification / ticket |
+| --- | --- | --- | --- | --- |
+| A-CATALOG / S03 S05 | Manager chooses cake, creates a size/servings and recipe revision, reviews then publishes through Catalog | Positive servings/yield, canonical ingredient quantities, current price/allergen revision; archived sizes cannot break paid snapshots | Loading; no sizes; draft; validation focus; stale revision refresh; existing purchases show saved revision | Keyboard/table labels, mobile quantity input and historical-order fixture; GK-022 + GK-018, consumed by GK-032 |
+| A-INVENTORY / A06 S03 S05 | Manager opens fridge, filters ingredients/finished cakes, records receipt/use/waste/correction and returns to balances | Ingredient or finished-lot identity, amount/unit, expiry, reason, prior version; separate ingredients and ready cakes; no mixed-unit totals | Empty “No stock recorded”; balance with as-of; incompatible unit rejected; stale adjustment refresh; discrepancy retained; correction appends reversal | Receipt→use→waste walkthrough; keyboard and screen-reader errors; real DB duplicate/race; GK-032 |
+| A-GROCERIES / S03 S04 | Manager chooses production-date range, drills into ingredient shortage and cost assumption | Outstanding committed recipe demand, usable stock, expiry, uncertainty, optional planned purchases; GBP cost per canonical amount and as-of | Loading; no demand; shortages; missing recipe/cost/expiry policy flagged; refresh snapshot; never show incomplete total as zero | 31-day/expiry/partial-use fixtures, 320px timeline cards and keyboard date controls; GK-032 |
+| A-COMMS / A02 A09 A11 C14 | Manager enters from order or recovery queue, inspects evidence; compose→preview→confirm→status; reconcile or explicitly resend only when permitted | Restricted contact identity/version, plain subject/body, approved purpose, intent/attempts/provider facts; recipient immutable for accepted intent | Queued “Waiting to send”; accepted “Email service accepted”; delivered_to_server “Recipient server accepted”; bounced “Could not deliver”; unknown “Send result unknown—check before resending”; changed preview requires review | Mobile preview, focus returns to changed field/status, no colour-only badge; retry/identity/provider cases below; GK-024/033 |
+| A-DASHBOARD / A02 A04 A05 | Manager selects London date range, sees counts/money/telemetry and drills into discrepancies/order audit | Metric definitions, source/account/environment, as-of/freshness, known fees, external observations; no refund action implicit in read | Loading; valid zero; unavailable/null; stale or incomplete with reason; discrepancy links to authorized reconciliation; visits never renamed people | Money/window/dedup fixtures, accessible table plus cards, no empty graph implying zero; GK-033 |
+| C-ORDER / C14 | Owner follows purchase/cancel/refund, reads business progress and contact-help action | Own safe order/refund state; email is secondary evidence and cannot change order truth | “Order confirmed”; “Order cancelled. Refund pending”; confirmed-provider refund wording only after evidence; failed email does not erase confirmation | Owner 404 isolation and timeline/email milestone checks; GK-024/030 |
+| OPS-RELEASE / D01 D02 S06 S07 | Authorized operator reviews existing GitHub/provider evidence, approved release candidate and recovery runbook | SHA/artifact digest, component/environment, deployed counterpart/schema, verified approval and CI; this is an operational workflow, not a new chef dashboard | Blocked main CI; candidate ready; separate release authorization; queued deployment; smoke failure; compatible rollback or restore escalation | Sandbox event/restore/secret checks; GK-020/034/035/036 |
+
+All tables have headings and text status; actions use labelled native controls,
+visible focus and disabled-state explanation. Async updates announce status without
+stealing focus; failures preserve entered text and original idempotency identity.
+Freshness and timezone remain visible on mobile. Creator walkthrough covers actual
+success and recovery paths, contrast, keyboard-only operation and reduced motion.
+
+## Data ownership, constraints, history and queries
+
+K00 applies: UUID IDs, optimistic integer versions, server-authorized writes,
+bounded validated input, GBP integer pence, UTC instants and shop-local dates. All
+business tables private, no client grants. Tables below are proposed minimum
+fields; names shared with K09 remain authoritative. Archives preserve references.
+
+| Entity / owner | Key, relationship and constraints | Query / history / retention |
+| --- | --- | --- |
+| ingredients / Inventory | id; name; canonical dimension/unit; version; archived_at?; approved conversion precision | Active fridge lookup; referenced ingredients archive. Movement/recipe history survives rename. |
+| ingredient_lots / Inventory (proposed) | id; ingredient_id FK; receipt reference; expiry date?; version; storage label optional | Ingredient + expiry + id for usable-date allocation. Null expiry means unknown, not never expires; Creator supplies use policy. Retain lot references with movements. |
+| movements / Inventory | id; ingredient_id/lot_id; kind receipt/use/waste/adjustment/reversal; signed canonical quantity; operation identity UNIQUE; actor/reason; recorded_at; effective_at; order_item_id?; reverses_id? | Ingredient + effective_at + id; linked use by order item. Append-only; reversal links original with bounded remaining reversible quantity. Ledger never rewritten to hide discrepancy. |
+| recipe_versions / Catalog | id; recipe_id + revision UNIQUE; variant/size relation; yield; immutable component quantities/units, ingredients/allergen revision | Existing Catalog owner; per-size recipe v1 remains referenced by purchased order item after v2. No second inventory recipe database. Retention follows purchased snapshots. |
+| order-item usage / Inventory (proposed) | order_item_id + snapshot component key; planned canonical quantity; applied/reversed actual-use links | Remaining demand derived from immutable order recipe and explicit use. Unique production-transition/component identity prevents automatic consumption twice if approved. No separate mutable demand total required. |
+| finished-cake lots / Scheduling-stock owner | Existing ready-stock lot ID, remaining/held units, recipe/batch reference, expiry/availability policy | Inventory reads same ledger/projection as reservations; cannot decrement finished stock through ingredient endpoint. Recipe consumption recorded at actual batch production, not again on cake sale. |
+| ingredient_costs / Inventory | id; ingredient_id FK; supplier label optional; price_minor >=0; currency GBP; canonical quantity >0; effective date; recorded_at | Ingredient + effective date; read most recent eligible assumption, display age and unknown costs. Retain versions used in saved exports/estimates if saving is later requested. |
+| intents / Notifications | id; order/business reference; business transition + milestone + recipient snapshot identity + template revision UNIQUE; immutable content/template inputs; recipient version; state; provider key; version | Order + created_at + id; queued work references intent. Retry keeps intent and provider identity; deliberate resend creates linked successor. Retain unresolved intent/key/evidence regardless of cleanup age. |
+| attempts / Notifications | id; intent_id FK; job generation; provider account/environment; first_dispatch_at; provider_message_id?; result and timestamps; safe code | Intent + attempted_at; unique provider message identity per account/environment when known. Append attempts/evidence, no overwrite of bounce by old acceptance. Content/contact not copied into logs. |
+| inbox / Operations | provider + account + environment + event_id UNIQUE; object identity; verified received_at; processed_at?; bounded safe metadata | One durable verified receipt, routed consumer Notifications or Payments; no unconsumed generic events. Minimum evidence retained after raw-payload expiry. |
+| jobs / Operations | id; kind + logical_operation_id UNIQUE; due time; attempt count; lease owner/until; monotonically increasing generation; state | Due-state + next_attempt_at scan. Claim short transaction, commit before domain work. Unresolved/exhausted jobs retained and discoverable. |
+| audit / Operations | id; actor or system source; action; aggregate type/id/version; request/operation ID; safe before/after/reason; occurred_at | Aggregate + occurred_at + id; time/action for bounded queue filters. Append in same business transaction; runtime update/delete denied. Contacts/content remain in protected source records. |
+| Financial facts / Payments | captures/refund operations/provider_observation identities per financial-pilot r3; reconciliation state and evidence | Reporting read-only projection; provider identity deduplicates matched local/external facts. Financial history, unresolved reservations and discrepancies cannot expire under ordinary job retention. |
+| Release evidence / Platform | component/environment + immutable release identity; resolved SHA; digest; schema version; counterpart versions; CI/review/deploy/smoke references | Prefer existing GitHub/deployment records and committed runbook; no new DB service. Preserve enough evidence to recover supported artifacts; retention/availability verified on selected service. |
+
+Ordinary command-key 30d, operational-log 14d and raw-provider-payload 7d retention
+are existing proposals, not accepted policy. Exact contact/custom-message/audit/
+financial/analytics retention and erasure rules remain Creator review in GK-005/014.
+No production cleanup until resolved. Strip raw provider payloads to minimum
+evidence; never put message bodies, emails, full addresses, auth tokens, webhook
+signatures or secret-bearing URLs in operational logs. Deletion/anonymization
+revokes claims/contact access and preserves required financial obligations; backup
+retention and restore must reapply deletion/revocation records before serving data.
+
+## Inventory and grocery rules
+
+1. Canonical quantities use exact decimal storage/arithmetic with a documented
+   allowed scale selected from chef unit examples; wire quantities are decimal
+   strings, not binary floats. Count may require integers; conversion values are
+   positive bounded exact ratios. g↔kg is dimensional; g↔ml requires recorded
+   ingredient-specific evidence. Never infer density or round a shortage away.
+2. Receipt is positive, use/waste negative, adjustment explicitly signed with
+   reason, reversal opposes a referenced movement and cannot reverse it twice or
+   beyond its unreversed quantity. Lot balance and current version are checked
+   under locks. Recommended initial policy rejects below-zero final balance with
+   an actionable discrepancy; alternative explicit negative adjustments remain
+   a Creator choice. No clipping balances to zero or silent stock correction.
+3. All order-linked use callers lock order first, then inventory ingredient/lot
+   rows in stable ID order and append movement/audit/command atomically. Pure
+   receipt/adjustment only locks those inventory rows and never acquires an order
+   afterward. K04 r3 places inventory rows after resources/reservations and before
+   appended command/history/audit/notification records. Stale
+   adjustment returns 409 and nothing is written. No provider call under lock.
+4. Planned demand is a forecast of committed, not cancelled, made-to-order item
+   recipe snapshots. Include not-yet-recorded consumption even if a production
+   transition already happened: in-production/ready/completed with missing usage
+   appears as “usage not recorded”, not erased demand. Unpaid holds/draft quotes
+   have separate optional projections and never inflate the committed total.
+5. Outstanding demand = snapshot planned quantity minus net linked actual use,
+   floored at zero for future demand only; excess actual use is separately shown
+   as variance. Physical ledger balances are never floored. A partial 300g use
+   against 800g plan leaves 500g demand and already reduces stock by 300g: do not
+   allocate the full 800g again. Waste is not recipe use and does not satisfy demand.
+6. Cancellation removes remaining commitment; actual used/wasted goods stay used.
+   Refund itself changes neither ledger nor demand. Ready-made sale reserves
+   finished stock only; prior batch use is not another future recipe demand.
+   Substitution/scaling changes needing allergen agreement use an explicitly
+   accepted order revision; never mutate an old purchased recipe version.
+7. Recommended simplest consumption is chef-confirmed actual use with prefilled
+   snapshot quantities. Alternative automatic movement at production start uses
+   the unique production transition and may be corrected by linked adjustments;
+   Creator must choose before either ships. Timed/manual start is not evidence
+   that every ingredient has physically been used. X and ready-stock production
+   boundary belong to Orders/Creator, not Inventory.
+8. Compute one consistent DB snapshot for a max31-day request. Starting usable
+   stock accounts for commitments before `from` that remain unconsumed, otherwise
+   selecting a later window would double-spend stock. Allocate chronological
+   demand by production day then stable order-item ID, earliest valid expiry lot
+   first. Treat expiry as usable-through or unusable-on according to approved
+   policy; unknown expiry yields uncertainty until resolved. Allocation is a
+   read-only planning result, not a fulfillment promise or lot reservation.
+9. Per date show cumulative on-hand allocation, outstanding demand and shortage.
+   Future supplier purchases are not on-hand; no purchasing workflow is implied.
+   Budget uses shortage × as-of unit-cost ratio, rounded up to pence per ingredient
+   estimate so fractional cost is not understated; sum displayed rounded values.
+   Example shortage 500g at 240p/1000g estimates 120p. Pack size/minimum-order,
+   delivery fees, tax treatment and missing prices are stated assumptions, not
+   invented exact purchase cost; incomplete total is labelled a known subtotal.
+
+## Notification dispatch, identity and recovery
+
+Orders/Payments produce unique milestones: order_confirmed after verified capture,
+order_cancelled after committed cancellation, refund_requested for an accepted
+refund operation/goal, refund_confirmed only after authoritative success, and an
+approved correction/action-required notice if later evidence changes that truth.
+Refund goal versus operation wording must distinguish partial and full completion.
+Other status/pickup notices reuse their transition identities. A repeated webhook
+with a new event ID but same business milestone cannot create a second notice.
+Customer message templates show saved order amounts/timezone; they do not promise
+inbox arrival, bank posting date or that cancellation alone returned money.
+
+The required state, intent, job and audit commit in the producer's single DB
+transaction under K08 r3; there is no postcommit enqueue gap.
+Provider invocation occurs afterward. Internal worker has transport capability,
+not permission to create arbitrary customer email or change contact ownership.
+
+Claim increments job generation and sets owner/lease atomically. Every finalization,
+retry schedule and intent state update compares current owner + generation + live
+lease. Domain reconciliation separately increments intent reconciliation generation;
+an older fetch result cannot overwrite newer authoritative evidence. A worker
+checks authority immediately before dispatch, but a lease cannot cancel a request
+already in flight. Overlapping workers use the same provider idempotency key and
+immutable payload. Fencing prevents stale local writes, not duplicate external
+delivery by itself; provider capability/retention verification is a release gate.
+
+Before sending, store the stable send identity and first-dispatch instant. Known
+acceptance records provider ID; accepted does not imply delivered. Timeout/crash
+becomes unknown after lease recovery. Retry can call provider create only while
+its verified idempotency guarantee still covers the first call and same payload;
+otherwise use status lookup/provider events or manager investigation. A provider
+without sufficient dedup/status capability requires an approved restricted unknown
+recovery flow, never blind retry presented as exactly once. Retry retention must
+be measured from first dispatch and leave allowance for provider/time uncertainty.
+
+Verified webhook receipt validates signature, replay tolerance under selected
+provider contract, account/environment and mapped object. Persist unique inbox
+receipt before 2xx; DB failure returns retriable failure. Unknown object before
+send response remains pending correlation by stable operation metadata/provider
+lookup, not silently dropped. Invalid signature does not enqueue or mutate status.
+Events append evidence with provider event time and received time. Effective view
+retains delivered_to_server and subsequent bounce/adverse facts; a later-received
+stale accepted event cannot erase bounce. Ordering uncertainties show “Checking”.
+
+Manager preview binds order/customer association, contact ID + version, exact
+recipient address snapshot, subject/body/template revision and manager identity
+into server-held preview evidence. Hash alone is not authorization. Send reloads
+all bound records and rechecks active manager role, allowed transactional purpose,
+order/contact version and content. Recipient input from browser cannot redirect
+the send. No auto-linking or email-string matching. A changed/deleted contact,
+relinked order, edited content or revoked role invalidates preview and creates no
+intent. Signed-out staff retain no server-authorized send action.
+
+Accepted intent freezes its recipient; worker never follows a later profile email
+silently. Contact revocation/privacy deletion and any post-enqueue recipient safety
+change suspend unsent dispatch for manager review under contact-generation check;
+they cannot recall mail already accepted by provider. Correcting recipient uses
+the Identity/Orders ownership workflow, then a new preview and linked deliberate
+send. Unknown prior send is reconciled first; if irreducible, explicit manager
+duplicate-risk acknowledgement and reason creates a successor intent. UI shows
+both attempts. Reconciliation alone cannot resend or modify business/payment state.
+No marketing/bulk send capability is inferred by A11.
+
+```mermaid
+sequenceDiagram
+  participant M as Manager or business producer
+  participant A as Authorized API
+  participant D as PostgreSQL
+  participant W as Notification worker
+  participant P as Selected email provider
+  M->>A: Confirm bound preview or apply business transition
+  A->>D: Atomic state/audit/unique intent/job
+  W->>D: Claim generation G and commit
+  W->>P: Immutable payload + stable provider key
+  alt Provider accepts but response is lost
+    W->>D: Unknown (only if G is current)
+    W->>P: Lookup/reconcile original identity
+    Note over W,P: Expired retention forbids blind create; manager owns unresolved case
+  else Provider reference observed
+    W->>D: Append acceptance evidence with generation guard
+  end
+  P->>A: Signed delivery or bounce event
+  A->>D: Durable unique inbox; correlate and append evidence
+  M->>A: Read status/recovery queue
+  A-->>M: Evidence and truthful recovery action
+```
+
+## Finance, business activity and site metrics
+
+Reports are read-only projections of authoritative facts, not a new financial
+ledger. Query one consistent snapshot; include `as_of`, requested London dates,
+computed UTC bounds, source freshness and completeness reasons. Ranges are local
+calendar dates inclusive at UI; SQL is `[start-of-from, start-of-day-after-to)` in
+Europe/London, allowing 23/25-hour days. Max31 local dates, not 31×24 hours.
+
+- Cash activity counts verified captures by capture instant and verified successful
+  refunds by refund-effective instant within the window. Cross-period refunds may
+  produce negative net receipts; do not clamp. Captured amounts already incorporate
+  checkout discount. `net_customer_receipts = gross_captured - successful_refunds`.
+  Snapshot discounts associated with captures in the window display separately;
+  subtracting them again would be wrong. Quote/draft discounts are excluded.
+- Known fees and fee adjustments use their own observed effective date and currency;
+  `net_after_known_fees = net_customer_receipts - known_net_fees`. Unknown fees are
+  null/incomplete, not zero. This is neither profit, tax filing, bank balance nor
+  provider payout. Inventory estimates cannot become cost-of-goods accounting.
+- Provider observations from financial-pilot r3 are real money evidence even when
+  not admitted into the controlled refund-allocation ledger. Union confirmed local
+  and verified external facts by provider/account/environment/refund identity;
+  matched observation contributes once. Unmatched success contributes observed
+  returned money and a reconciliation warning; contradictory status, amount or
+  identity makes affected aggregates incomplete rather than guessed. Preserve all
+  evidence, not two competing numeric truths. Disputes/chargebacks and duplicate
+  captures are separately identified observed flows/discrepancies until accepted
+  accounting treatment exists; never silently fold them into refunds or omit them.
+- Show local returned, local reserved/unknown, separately observed unmatched
+  returns, quarantined capture count, refund-goal shortfalls and worst-case exposure
+  on the recovery drilldown. `available=0` for quarantined capture regardless of
+  subtraction. Example capture 10000p, unknown local 10000p, distinct external
+  succeeded refund 5000p: observed receipts 5000p with incomplete reconciliation,
+  local reservation 10000p, possible exposure 15000p, available 0. If both distinct
+  refunds are proven successful, recorded observed returned 15000p and receipts
+  -5000p remain visible with over-refund discrepancy; capped allocations must not
+  erase provider truth. Matching the same refund later must not double count it.
+- Business activity defines orders created, payment-confirmed, cancelled, completed
+  by their transition timestamp; selected-window refund cash activity is not an
+  order-cohort report. Source filters distinguish website/provider payments and
+  approved manual/offline records. No offline record is labelled Stripe collected;
+  unknown offline return remains separate from verified provider money.
+- Website pageviews/visits use the selected analytics provider's exact documented
+  definition and bot/privacy filters. They are not unique human daily users or
+  signed-in account counts. A05's desired daily-users meaning is an open Creator
+  decision; visits cannot silently satisfy it. Reuse provider dashboard initially
+  if approved; website admin API returns unavailable with reason until a supported
+  integration/definition is accepted. No new identifying cookies, IP storage,
+  fingerprinting or customer/order fields in analytics without privacy decision.
+
+Proposed money payload for the known fixture (10000p capture, 2000p succeeded refund,
+100p known fees, already-applied 1000p discount):
+
+```json
+{"currency":"GBP","gross_captured_minor":10000,"successful_refunds_minor":2000,"net_customer_receipts_minor":8000,"discounts_minor":1000,"known_net_fees_minor":100,"net_after_known_fees_minor":7900,"complete":true,"incomplete_reasons":[],"pending_refunds_minor":0,"quarantined_capture_count":0,"as_of":"2026-09-21T12:00:00Z"}
+```
+
+`complete` concerns the selected defined data sources/window, not accounting or
+legal completeness. Fee availability/reconciliation source must support that claim.
+
+## Proposed API detail and errors
+
+All endpoints use `/api/v1`, K00 error envelope, UUID IDs and server-generated
+request IDs. Manager-only unless specified; 401/403, not-owned/unknown 404, and
+private `Cache-Control: no-store`. Reads use cursor default20/max50, date reads
+max31 days. Mutation keys scope actor+command+resource; same fingerprint returns
+saved result even if current version changed, changed payload yields 409 KEY_REUSED.
+New key stale mutation yields 409 STALE_VERSION. Other omitted fields are optional
+only when stated below; null is rejected unless explicitly allowed.
+
+| Contract / producer→consumer | Request, required fields and response | Validation/failure/recovery |
+| --- | --- | --- |
+| `GET /admin/inventory` / Inventory→A-INVENTORY | Optional ingredient_id/cursor; returns rows ingredient/lot identity, unit, signed decimal balance, expiry date or null, version, as_of; finished-stock section uses authoritative stock projection | Unknown expiry marked; no summed g+ml. 503 retry read; permission errors cannot expose contacts. |
+| `POST /admin/inventory/movements` / manager→Inventory | Required ingredient_id, kind, quantity decimal string, unit, reason, expected_version, Idempotency-Key; existing-lot commands require lot_id; new receipt instead requires new_lot:{expiry_date:string|null} and forbids lot_id; order use requires order_item_id, reversal requires reverses_id; response 201 movement_id/version/balance | 422 UNIT_INCOMPATIBLE/QUANTITY_INVALID/REASON_REQUIRED; 409 INSUFFICIENT_STOCK under proposed reject policy or STALE_VERSION; nonexistent relation 404; no partial movement. New lot+receipt commit atomically; unit precision and expiry policy remain Creator decisions. |
+| `GET /admin/groceries?from&to` / Inventory+Orders→A-GROCERIES | Required local dates; returns timezone, as_of, recipe source revisions, opening allocation, rows by date/ingredient with demand/outstanding/usable/shortage/unit, cost_minor nullable and warnings | 422 RANGE_INVALID; missing cost/recipe/expiry policy yields explicit incomplete row/total rather than fabricated zero; 503 preserves prior result labelled stale. |
+| `GET /admin/orders/{id}/messages` / Notifications→A-COMMS | Cursor; intent milestone/status/recipient summary, event facts/timestamps, safe provider ref, recovery action, version | Manager only; content/recipient detail accessed only in authorized order context. Unknown state has no automatically enabled resend. |
+| `POST /admin/orders/{id}/messages/preview` / manager→Notifications | Required subject, body, purpose=`transactional`, expected_version; plain text; proposed subject ≤200/body ≤10000 Unicode characters, no CR/LF in subject; response preview_id, preview_hash, bound recipient summary/version, rendered text | Server-generated escaped preview, no HTML execution/attachments. 422 invalid length/header injection/purpose; preview makes no send. Limits are proposals for Creator/transport validation. |
+| `POST /admin/orders/{id}/messages` / manager→Notifications | Required preview_id, preview_hash, expected_version, recipient_version; key; uses stored preview content, returns 202 operation_id/state pending per K00 | 409 PREVIEW_CHANGED/RECIPIENT_CHANGED causes new preview; 403 revoked role; 422 PURPOSE_NOT_ALLOWED. No accepting browser-supplied replacement recipient/body. Preview lifetime proposed 15m; expiry returns 409 PREVIEW_EXPIRED. |
+| `POST /admin/notifications/{id}/reconcile` / manager→Notifications | expected_version + key; returns 202 operation with evidence-lookup-only job | 409 STATE_CHANGED; 503 remains actionable; performs no provider send. Separate POST /admin/notifications/{id}/resends requires original intent/version, fresh preview_id/hash/recipient_version, reason and acknowledge_possible_duplicate=true when irreducibly unknown; manager-only, retained predecessor/successor chain and existing recipient/ownership/financial-state checks. |
+| `GET /admin/orders/{id}/audit` / Operations→A-COMMS/order detail | Cursor; action/actor safe label/time/version/reason/request+operation+safe provider references | Manager-only proposed; fulfillment scope requires explicit approved projection. No raw body/PII/secret logs. |
+| `GET /admin/metrics?from&to` / Payments+Orders+telemetry→A-DASHBOARD | Required date range; money fields above plus business counts, site metric definition or unavailable, freshness/completeness; detail paginated | 422 range; 503 source failure or partial response explicitly incomplete. No false complete totals on failed source read. |
+| Email provider webhook / provider→inbox→Notifications | Selected provider signed raw body within verified limit; internal normalized event id/account/environment/object/type/provider_time/received_at | Invalid signature 401/400 per selected contract; DB persist failure 503; duplicate verified receipt 2xx; no domain mutation based only on unverified browser payload. |
+
+No new API for release publication or raw SQL repair is proposed. Versioning follows
+K09: additive v1 fields, safe unknown enum UI, feature activation after API capability;
+new message fields cannot break previously deployed UI's existing order paths.
+New-lot/reconcile/resend request shapes are integrated in K07/K08 r3; proposed limits still require acceptance before Ready.
+
+## Platform, recovery and performance
+
+Use [architecture](../architecture.md) budgets as proposals: 500 products, 10000
+historical orders, 20 readers/5 checkout attempts; API read p95≤300ms, local
+mutation p95≤500ms and dashboard p95≤1s excluding providers. Add an explicit
+synthetic operations fixture of 200 ingredients, 2000 lots, 100000 movements,
+100 outstanding orders, 500 due jobs and 31-day demand. These are test workloads,
+not observed capacity. Measure query plans/rows scanned, p95 lock wait and whole
+page time on selected compute before approving budgets. Index observed query
+shapes listed above; no warehouse/materialized totals until measurement warrants it.
+
+K00/architecture supplies 10s API, 2s DB lock/statement, 5s provider request, 60s
+lease with heartbeat/fencing and at most three DB conflict retries inside deadline.
+Jobs use bounded batches (propose 20 per claim) and 1m/5m/15m/1h retry delays then
+manager attention, always subject to unknown-result rules. Five-minute scheduling
+cadence and urgent oldest-work alert at15m are proposed detection targets, not
+promised email latency. Record actual scheduling delay, send acceptance delay,
+due age and exhausted/unknown count. No retry storm or unbounded backlog loop.
+
+API and maintenance use the same immutable backend artifact/schema compatibility.
+UI has a separate artifact/target/credentials. Neither main CI nor a branch push
+deploys production. In nonproduction validate the proposed `ui-v`/`api-v` release
+published routing, tag→exact trusted-main SHA, successful required main CI for
+that SHA, immutable digest and artifact provenance. Separate authorized release
+publication is mandatory. Serialize per environment/component and gate database
+migrations globally; replay has one release identity and no repeated migration.
+Queued older release cannot downgrade newer deployment implicitly. Do not cancel
+an in-flight migration when a new event arrives.
+
+Migration role differs from app/backup roles. Expand schema before compatible API,
+then UI, observe old clients and separately approve cleanup. Test empty→current
+and prior-supported→current migration plus current/previous UI/API compatibility.
+Roll back code to a proven compatible digest; do not destroy new data via blind
+down migration. New API capabilities cannot require simultaneous UI release.
+PR jobs have no production secrets, immutable reviewed Actions pins and minimum
+permissions; selected workload identity or scoped environment secret verifies
+target/environment. Production push-deploy hooks must be off before activation.
+
+Recovery runbook is a production gate, not an implementation performed here:
+
+1. Creator approves RPO/RTO, backup retention and incident/financial owner; verify
+   selected DB and object backup facilities, encrypted off-site access and costs.
+2. Restore to isolated DB/storage with no production send/payment credentials or
+   outbound dispatch; record backup timestamp/schema and actual duration/loss.
+   Test purchased snapshots, images/private ACL, movements/balances, inbox identities,
+   pending jobs, audit and command uniqueness, plus deletion/revocation replay.
+3. A restore may predate an external success. Increment deployment/dispatch epoch,
+   revoke old worker authority and keep payment/email creation frozen. Reconcile
+   the entire lost-time window's provider captures/refunds/sends against restored
+   IDs; recover external observations and quarantine ambiguity. Email dedup keys
+   may be expired; a restored queued intent is not permission to send it anew.
+4. Evaluate outstanding resources/expired holds and restored identity roles/tokens
+   using their owner contracts; never accept traffic from stale restored promises.
+   Manager reconciles unknowns, approves unfreeze within incident authorization,
+   then controlled smoke checks establish actual running UI/API/schema/objects.
+   Unresolved financial or email identities remain individually quarantined.
+
+Operational alerts include missed scheduler, oldest unresolved urgent operation,
+repeated failures, provider inbox backlog, backup failure and budget threshold;
+prefer current providers. Controlled alert test must reach the named incident owner.
+Logs carry correlation IDs; recovery queues link authorized domain operations,
+never instruct a nontechnical chef to edit database/provider balances blindly.
+
+## Test-first delivery slices and exact planned evidence
+
+All checks below are **planned**. No application runner exists. GK-020 must select
+toolchain and supply verified commands before implementation Ready; proposed Go
+`go test ./...`, `go test -race ./...`, `go test -tags=integration ./...` and UI
+`npm run check`, `npm test`, `npm run build` are not current runnable evidence.
+Use real PostgreSQL with separate sessions/barriers for transactional/lease claims,
+selected provider sandbox with controlled recipients for transport claims, and
+nonproduction release targets. A missing environment is not a red behavioral test.
+
+| Slice / prerequisites | First failing fixture → implementation increment → green acceptance |
+| --- | --- |
+| GK-024 durable notices / GK-020 + GK-011 verified provider/domain | N1: business transition rolled back after intent insertion yields neither state nor intent/job; committed transition replay under different webhook IDs yields one milestone intent. N2: crash after provider accepts and before local save leaves unknown; recovered worker keeps original key/payload, provider sandbox demonstrates one logical acceptance while retention permits; past retention sends no create call. N3: worker G1 expires, G2 claims, delayed G1 result cannot finalize/retry; concurrent HTTP calls remain deduped by selected provider, not just local fencing. N4: signed delivered/bounced then stale accepted preserves adverse evidence; webhook before send response eventually correlates once, wrong account/signature yields no mutation. N5: rollback/restart + accepted/delivery-or-bounce reference evidence captured for exact revision, no inbox/read claim; unauthorized trace and secret/contact log assertions pass. |
+| GK-032 inventory/recipes / GK-022/023/031, GK-007 approved units/use/expiry, GK-018 approved chef sketch | I1: flour lot1000g, recipe v1 plan800g; edit catalog v2 to1200g, paid order still800g. Record300g use once: on-hand700g, outstanding500g; replay key no change. Cancel: outstanding0, on-hand700g, no restock. I2: same recipe ready-stock sale adds0 future demand; production batch use recorded once separately. I3: simultaneous distinct 700g-use commands on1000g lot yield one success and one insufficient/stale rejection under proposed reject policy; invalid g→ml, over-reversal and changed key payload leave ledger unchanged. I4: 31-day forecast respects earlier outstanding commitments, lot expiry policy and stable allocation; shortage500g at240p/1000g=120p, missing cost produces incomplete subtotal. I5: backdated correction, partial use/variance and missing-use completed order remain traceable; DB migration preserves recipe/movement history. I6: approved mobile/keyboard fridge→groceries walkthrough shows units/as-of/uncertainty and expected retry states. |
+| GK-033 custom email/audit / GK-024/025/026, GK-018/014/005 | C1: preview customer A then change contact/relink order or revoke manager: send rejects with no intent; changed content requires new preview; another actor cannot reuse preview. C2: two sends same key create one intent, changed key body conflicts; post-enqueue contact revocation pauses unsent dispatch, never retargets silently. C3: unknown-send reconcile performs zero sends; approved deliberate successor retains original history and duplicate warning. C4: audit rollback and denied update/delete/unauthorized reads leave no misleading evidence; chef can trace business→intent→attempt→provider reference without raw PII/log access. |
+| GK-033 finance/site metrics / same prerequisites plus integrated financial-pilot r3 | M1: capture10000p/refund2000p/fee100p/already-applied discount1000p gives receipts8000p and after-known-fees7900p; pending refund not subtracted, missing fee incomplete. M2: unknown local10000p plus distinct observed succeeded5000p keeps available0/quarantine and possible exposure15000p; dedup repeat observation; prove both successes and show returned15000p/net-5000p without violating/importing into capped ledger. M3: local and matching observed refund counted once, conflicting amount/status marks incomplete and preserves both evidence; offline/dispute sources remain explicitly separate. M4: London 2026-10-25 includes exactly local-day bounds `2026-10-24T23:00:00Z` through exclusive `2026-10-26T00:00:00Z`; boundary refund/capture attributed once, cross-period net can be negative. M5: provider visits/pageviews display their exact accepted names/definition; disabled analytics returns unavailable, never daily unique people or fake zero. |
+| GK-034 release/migration/restore / GK-020/013/014/006 accepted setup/policy | P1: branch push/draft/wrong prefix/untrusted SHA/red main/wrong artifact digest fixtures cause no deployment; valid published component release deploys only verified digest to intended sandbox target. P2: event replay runs once, two component releases serialize appropriately, older queued release cannot downgrade and migration is not cancelled. P3: empty/prior schema upgrade and current/previous UI/API matrix pass; code rollback preserves added data and jobs. P4: PR/untrusted job cannot read production secrets; component credentials cannot deploy the other target; target/digest/smoke evidence stored. P5 in GK-034: isolated DB+object restore recovers infrastructure fixtures, dispatch epoch/old-worker revocation harness denies synthetic dispatch and duration/data loss is measured. Full contact/claim deletion replay plus real restored payment/refund/email jobs and lost-window reconciliation are GK-035 acceptance after domain modules exist, with unresolved IDs quarantined. P6: injected missed cron/backlog/backup failure reaches named owner using controlled alert. |
+
+Within each ticket: establish prerequisite evidence → smallest real red assertion
+→ one coherent schema/domain/API increment → green → necessary UI/provider/fault
+integration → green affected checks and independent review. All acceptance records
+identify exact source/output revision and environment. Required PR CI/review,
+native auto-merge and resulting main CI remain distinct from Creator acceptance,
+authorized release and deployment/smoke. Trello Done requires board approval.
+
+GK-024 core can precede business producers; producer transaction integration is
+mandatory in their tickets. GK-032 and GK-033 have disjoint nominal modules but
+share recipe/order/job/audit contracts; parallel work uses only the explicitly scoped pairs below.
+The reconciled DAG permits GK-024 with GK-021 after the r4 bootstrap B2 milestone after prerequisites and interface acceptance, limited to owned notification files/migrations versus identity files. It permits GK-034 with GK-028 once each is Ready, limited to release/workflow versus UI files. Master allocates migration IDs; neither pair edits shared contract/auth/router files concurrently. GK-034
+may develop sandbox event fixtures once policy/bootstrap settle, but production
+activation depends on full recovery/security evidence and separate authorization.
+
+Creator actions: GK-007 records real unit/recipe/expiry/use/negative-stock examples;
+GK-005 approves retention, transactional-message purpose and A05 metric definition;
+GK-011 supplies one selected verified sending domain/provider and controlled test
+recipient; GK-014 supplies recovery targets, incident owner and budget/alert plan;
+GK-006/013 confirm release-only deployment meaning/publisher/settings. Follow master
+SETUP/provider instructions once accepted; register nothing from this packet alone.
+
+## R3 integration disposition and remaining decisions
+
+1. **Integrated:** K07 and GK-033 adopt financial-pilot r3 observed/local fact
+   union, deduplication, quarantine/exposure and negative receipts, including M2/M3.
+   Payment owner supplies authoritative identities/statuses/effective times;
+   offline/dispute treatment and provider-specific evidence remain readiness work.
+2. **Integrated:** K08 and GK-024/033 specify atomic state+intent+job+audit,
+   frozen recipient/bound preview, job/reconciliation generations, first-dispatch
+   retention, webhook correlation and exact reconcile/resends commands. Ordinary
+   30d command retention cannot permit another business milestone or blind send.
+   Selected provider retention/dedup/lookup behavior and content policy remain open.
+3. **Integrated:** K07/GK-032 provide decimal-string receipt/new_lot/reversal
+   shapes and net outstanding-use forecast; K04 places inventory locks after
+   resources/reservations. Catalog owns recipes/sizes and Scheduling owns finished
+   lots; S05 creation remains GK-022 with history rechecked in GK-032. Exact decimal
+   scale, expiry, negative stock and actual-consumption trigger remain GK-007.
+   Missing X cannot become automatic use policy or implicit stock reservation.
+4. **Integrated:** GK-024/032/033/034 request Astra/high scoped execution;
+   requested/effective model evidence must still be recorded at execution. Final
+   review requires separate qualified context; this author's alignment is not it.
+5. **Integrated (r5 correction):** GK-034 includes isolated DB+object restore and
+   outbound-freeze/epoch/old-worker-revocation harness. GK-035 owns complete
+   deletion replay and lost-window domain/provider reconciliation. SETUP contains conditional provider runbooks and no
+   provisioning permission. RPO/RTO, retention, exact budget, provider capabilities
+   and controlled evidence remain open; main CI establishes none of those facts.
+6. **Still blocked:** A05 daily-users definition, financial effective-time/fee/
+   dispute coverage, content retention, inventory policies, X/ready-stock boundary,
+   provider acceptance, verified bootstrap commands and approved chef visuals.
+   This packet supplies no statutory retention period or accounting/tax guarantee.
+
+Confidence: high in the reconciled single-database ownership, exact quantities and
+side-effect/evidence boundaries; provider behavior/cost, policy, performance and
+usability remain unverified. Final independent review is pending.
+
+## Master r4 execution reconciliation
+
+Independent review identified prerequisite defects. Current PLAN/ticket metadata
+expands GK-020 into B1 reviewed green bootstrap PR -> GK-013 G1 required-gate
+configuration -> GK-020 B2 native auto-merge/main CI/Creator acceptance. All other
+bootstrap dependents need B2. GK-034 owns infrastructure/dispatch-freeze harness
+restore proof; GK-035 owns full domain/provider lost-window restore reconciliation
+after payment/refund/email modules exist. Earlier r3 source hashes describe author
+input history, not current execution prerequisites. No implementation checks ran.
