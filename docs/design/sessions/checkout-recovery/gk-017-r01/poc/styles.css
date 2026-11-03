@@ -671,3 +671,8 @@ input[type=checkbox][aria-invalid=true]{outline:2px solid var(--error);outline-o
 .co-delivery-note{flex-direction:column;align-items:stretch}
 #code-chip-text:focus{outline:3px solid var(--focus);outline-offset:3px;border-radius:6px}
 .co-date>span{display:block}
+/* GK-017 r01 review round 4: keep the notice dot a dot in the stacked note; visible busy spinner. */
+.co-delivery-note::before{align-self:flex-start;flex:0 0 auto;width:8px;height:8px}
+:is(.button,button).primary.co-pay.is-busy>svg.icon:last-child{display:none}
+:is(.button,button).primary.co-pay.is-busy::after{position:static;inset:auto;z-index:auto;background:none;transform:none;opacity:1;width:16px;height:16px;border-radius:50%;border:2px solid #ffffff66;border-top-color:#fff;animation:co-spin .8s linear infinite}
+@media(prefers-reduced-motion:reduce){:is(.button,button).primary.co-pay.is-busy::after{animation:none}}
