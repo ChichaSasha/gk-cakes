@@ -378,6 +378,9 @@ func TestWindowEndOnTheDatabaseClockStopsTheCall(t *testing.T) {
 	if j := h.job(row.JobID); j.State != "attention" || j.Reason == nil || !strings.Contains(*j.Reason, "reconciliation") {
 		t.Fatalf("job %+v, want attention for reconciliation", j)
 	}
+	if got := h.recoveryState(n.IdempotencyKey); got != "reconcile" || row.State != "unknown" {
+		t.Fatalf("recovery %s, intent %s; want reconcile and unknown", got, row.State)
+	}
 }
 
 // After a primary loss, the journal lists the pending dispatch with the

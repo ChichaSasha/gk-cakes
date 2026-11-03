@@ -20,12 +20,12 @@ const FreezeRecheck = 5 * time.Minute
 // Attention reasons stored on the job (no personal data).
 const (
 	reasonSuspended  = "notification suspended (recipient or contact revoked): no further send attempts; see its attempts for any earlier ones"
-	reasonPayload    = "stored notification payload refused: no send attempt made with it"
+	reasonPayload    = "stored notification payload refused by this build: not dispatched (see its attempts for any earlier ones)"
 	reasonReconcile  = "email outcome unknown past the provider idempotency window; manager reconciliation needed, never a blind resend"
 	reasonRecovery   = "recovery operation conflict for this notification"
 	reasonRefused    = "email provider refused the request: check the API key and the sending domain, then requeue"
 	reasonConflict   = "email provider reports this idempotency key used with a different body; outcome unknown"
-	reasonRejected   = "email rejected by the provider (see its attempts); reach the recipient another way"
+	reasonRejected   = "email rejected by the provider for this attempt: if the notice is failed, reach the recipient another way; if unknown, an earlier attempt may have been sent"
 	statusAccepted   = "accepted"
 	statusRejected   = "rejected"
 	providerEvidence = "provider_message_id"
@@ -88,10 +88,17 @@ func (d *Dispatcher) Handle(ctx context.Context, job jobs.Job) error {
 		Payload: b.Payload, ReplayUntil: b.ReplayUntil}
 	log := d.log.With("job_id", job.ID, "generation", job.Generation, "intent_id", b.IntentID)
 	outcome, err := d.coord.Dispatch(ctx, store, op, d.effect(log, store, op.ID, dispatch))
-	if err == nil && outcome.Status == statusRejected {
-		// Settled and never retried, but a manager must know the
-		// recipient did not get it.
+	var ae *admitError
+	switch {
+	case err == nil && outcome.Status == statusRejected:
+		// Settled and never retried, but a manager must know.
 		return jobs.Attention(reasonRejected, nil)
+	case errors.As(err, &ae) && ae.status == "expired":
+		// The database clock says the window has ended: record the
+		// reconciliation as the worker clock would have.
+		if _, rerr := store.MarkReconcile(ctx, op, "provider replay window ended (database clock) before the call"); rerr != nil {
+			return fmt.Errorf("notifications: mark reconcile: %w (after %v)", rerr, err)
+		}
 	}
 	return outcomeError(err)
 }
