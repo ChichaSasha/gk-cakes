@@ -383,6 +383,30 @@ func TestWindowEndOnTheDatabaseClockStopsTheCall(t *testing.T) {
 	}
 }
 
+// If recording the reconciliation itself fails, nothing is sent and a
+// manager sees it at once (no retry budget is spent first).
+func TestFailedReconciliationRecordNeedsAttentionAtOnce(t *testing.T) {
+	h := newHarness(t)
+	n := newNotice(t, "test")
+	h.enqueue(n)
+	if _, err := h.admin.Exec(h.ctx, `UPDATE business.notification_intent SET first_dispatch_at = now() - interval '23 hours 1 minute',
+		replay_until = now() - interval '1 minute' WHERE id = $1::uuid`, n.IntentID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.admin.Exec(h.ctx, "REVOKE EXECUTE ON FUNCTION business.notification_recovery_reconcile(uuid, uuid, bigint, uuid, text) FROM gk_worker"); err != nil {
+		t.Fatal(err)
+	}
+	h.advance(-2 * time.Hour)
+	h.runOnce(1)
+	row := h.intent(n.IntentID)
+	if j := h.job(row.JobID); j.State != "attention" || j.Failures != 0 || j.Reason == nil || !strings.Contains(*j.Reason, "reconciliation") {
+		t.Fatalf("job %+v, want attention without a counted failure", j)
+	}
+	if _, reqs := h.provider.counts(); reqs != 0 {
+		t.Fatalf("provider requests %d, want 0", reqs)
+	}
+}
+
 // After a primary loss, the journal lists the pending dispatch with the
 // exact stored payload (HTML, '<', '&' and all), so a replay sends the
 // identical request.

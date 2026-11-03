@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net/mail"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -39,6 +40,7 @@ const (
 	maxPayloadBytes = 256 << 10
 	maxAddressBytes = 254
 	intentTagName   = "intent"
+	envTagName      = "env"
 )
 
 // Message is one transactional email to one recipient.
@@ -113,7 +115,7 @@ func NewNotice(env, transitionID, recipientID, templateRevision string, msg Mess
 	n := Notice{IntentID: newUUID(), TransitionID: transitionID, RecipientID: recipientID,
 		TemplateRevision: templateRevision, IdempotencyKey: newUUID()}
 	req := Request{From: From, To: []string{msg.To}, ReplyTo: []string{ReplyTo}, Subject: msg.Subject,
-		Text: msg.Text, HTML: msg.HTML, Tags: []Tag{{Name: intentTagName, Value: n.IntentID}}}
+		Text: msg.Text, HTML: msg.HTML, Tags: requestTags(n.IntentID, env)}
 	reqBytes, err := marshal(req)
 	if err != nil {
 		return Notice{}, err
@@ -127,6 +129,12 @@ func NewNotice(env, transitionID, recipientID, templateRevision string, msg Mess
 	}
 	n.Payload = p
 	return n, nil
+}
+
+// requestTags lets provider events be correlated to their intent and
+// environment (the webhook ignores another environment's events).
+func requestTags(intentID, env string) []Tag {
+	return []Tag{{Name: intentTagName, Value: intentID}, {Name: envTagName, Value: env}}
 }
 
 func marshal(v any) ([]byte, error) {
@@ -202,8 +210,8 @@ func ParseDispatch(stored []byte, env, intentID, key string) (Dispatch, error) {
 		return Dispatch{}, errors.New("notifications: stored request does not use the approved sender")
 	case len(req.To) != 1:
 		return Dispatch{}, errors.New("notifications: stored request must have exactly one recipient")
-	case len(req.Tags) != 1 || req.Tags[0] != (Tag{Name: intentTagName, Value: intentID}):
-		return Dispatch{}, errors.New("notifications: stored request is not tagged with its intent")
+	case !slices.Equal(req.Tags, requestTags(intentID, env)):
+		return Dispatch{}, errors.New("notifications: stored request is not tagged with its intent and environment")
 	}
 	if err := validateMessage(Message{To: req.To[0], Subject: req.Subject, Text: req.Text, HTML: req.HTML}); err != nil {
 		return Dispatch{}, err

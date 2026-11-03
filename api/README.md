@@ -52,7 +52,8 @@ and staging/production reject local hosts and Unix sockets.
 | `PORT`                   | api        | default `8080`                                                                              |
 | `SHUTDOWN_TIMEOUT`       | api, worker | drain budget, default `20s`                                                                |
 | `PAYMENT_SECRET`         | api        | optional until its adapter exists; live keys only in production, test keys only elsewhere   |
-| `PAYMENT_WEBHOOK_SECRET`, `EMAIL_WEBHOOK_SECRET`, `STORAGE_WRITE_KEY` | api | optional until their adapters exist; redacted |
+| `PAYMENT_WEBHOOK_SECRET`, `STORAGE_WRITE_KEY` | api | optional until their adapters exist; redacted |
+| `EMAIL_WEBHOOK_SECRET`   | api        | Resend webhook signing secret (`whsec_` + base64), redacted; when set, the API serves `POST /webhooks/email`, otherwise that path is 404 |
 | `EMAIL_API_KEY`          | worker     | Resend sending key (`re_...`), redacted; see email dispatch below                          |
 | `RECOVERY_B2_KEY_ID`, `RECOVERY_B2_KEY` | worker | B2 application key for the recovery journal (key secret redacted); scope enforced at start, see [Recovery journal](#recovery-journal-k11-gk-024) |
 | `RECOVERY_ENCRYPTION_KEYS` | worker   | journal encryption keys `kid:base64(32 bytes)[,...]`, redacted                              |
@@ -67,7 +68,8 @@ The API still accepts an `EMAIL_API_KEY` but does not use it.
 Not consumed yet: `AUTH_*` issuer/audience/JWKS settings (GK-021). They are added,
 with validation, by the ticket that uses them.
 
-API endpoints: `GET /healthz` (liveness), `GET /readyz` (database reachable).
+API endpoints: `GET /healthz` (liveness), `GET /readyz` (database reachable),
+`POST /webhooks/email` (Resend events, Svix-signed; only with `EMAIL_WEBHOOK_SECRET`).
 
 ### Secret inventory
 
@@ -81,6 +83,7 @@ production stores wait for the first authorized production release (GK-036).
 | `DATABASE_URL` (worker)  | `gk_worker` login, one per environment | worker/cron service variables                  | as above                                                        | as above                                     |
 | `EMAIL_API_KEY`          | Resend sending-only key restricted to `gkcake.com`, one per environment | worker service variables (sealed); Bitwarden | create a new key in Resend, update the variable, redeploy, delete the old key | delete the key in Resend |
 | `RECOVERY_B2_KEY_ID`, `RECOVERY_B2_KEY` | B2 key: one bucket, prefix `recovery/`, list/read/write only (no delete) | worker service variables (sealed); Bitwarden | create a new key with the B2 CLI, update the variables, redeploy, delete the old key | delete the key in B2 |
+| `EMAIL_WEBHOOK_SECRET`   | signing secret of the Resend webhook endpoint for this environment's API | API service variables (sealed) | roll the secret in Resend (it signs with both during the overlap), update the variable, redeploy | delete the webhook endpoint in Resend |
 | `RECOVERY_ENCRYPTION_KEYS` | seals journal envelopes; one list per environment | worker service variables (sealed) **and** Bitwarden (envelopes are unreadable without it) | prepend a new `kid:key`, keep the old ones listed (they still open older envelopes) | never drop a key while envelopes sealed with it are retained |
 | `MIGRATION_DATABASE_URL` | migration credential                | GitHub environment secret, staging: `STAGING_MIGRATION_DATABASE_URL` | rotate the password of the same role (see below)                | rotate; runtime services never hold it       |
 | `RAILWAY_STAGING_TOKEN`  | Railway project token, staging environment only | GitHub environment `staging` secret (deployable from `main` only) | regenerate in Railway, update the secret                  | delete the token in Railway                  |
@@ -99,7 +102,7 @@ are provisioned per environment outside Git and granted exactly one group:
 | Group       | Purpose                       | Privileges                                                  |
 | ----------- | ----------------------------- | ----------------------------------------------------------- |
 | `gk_owner`  | owns business objects         | never granted to runtime; migration credential may `SET ROLE` |
-| `gk_api`    | API runtime                   | schema `USAGE`; gateway functions as features add them      |
+| `gk_api`    | API runtime                   | schema `USAGE`; `EXECUTE` on `email_event_record` (webhook evidence); more gateway functions as features add them |
 | `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions (`job_claim`, `job_heartbeat`, `job_complete`, `job_release`, `job_fail`, `job_attention`) and the lease-fenced notification gateway (`notification_dispatch_begin`, `notification_attempt_record`, `notification_recovery_*`) |
 | `gk_backup` | backup reader                 | `SELECT` on business tables                                 |
 
@@ -325,7 +328,7 @@ table). Restore tooling (as `gk_owner`) freezes all outgoing effects with
 
 Not yet:
 
-- the staging worker service and its variables (GK-024 A3);
+- the staging worker service and its variables (GK-024 A3b);
 - B2 Object Lock retention, restore tooling and the restore drill (GK-034
   Milestone B, GK-035). The restore tooling must replay the journal before
   workers resume: a restored database can re-anchor a notice's window (the
@@ -389,14 +392,43 @@ dispatch and a revocation that lands while the dispatch is being prepared. A
 payload of another environment or sender, or not in canonical form, is refused
 before any call.
 
-`delivered_to_server` and `bounced` are provider evidence from the signed
-webhook (GK-024 A3); the engine never claims inbox delivery or reading. Logs and
-stored evidence carry IDs, HTTP status and the provider's error name only,
-never recipients, content or provider error messages.
+**Provider evidence (webhook).** Resend posts email events to
+`POST /webhooks/email` (configure the endpoint `https://<api host>/webhooks/email`
+in Resend with the events `email.sent`, `email.delivered`,
+`email.delivery_delayed`, `email.complained`, `email.bounced`, `email.failed`,
+`email.suppressed`). The API checks the Svix signature over the raw body
+(`svix-id`, `svix-timestamp` within 5 minutes, `v1` HMAC-SHA256 with the
+signing secret; 401 otherwise; bodies over 256 KiB are 413), then
+`business.email_event_record` stores the event and applies it in one
+transaction before the API answers 200; a storage failure is 503, so Resend
+retries with the same `svix-id`, which deduplicates.
 
-Not yet: the signed webhook inbox, the staging worker service and the sandbox
-proof (GK-024 A3); manager reconcile/resend and custom-message endpoints
-(GK-024 Milestone B, after GK-021 and GK-023/025).
+- Webhooks are account-wide: every request carries the tags `intent` and `env`,
+  and the API stores only events tagged with its own `APP_ENV`. Untagged events
+  (for example auth emails), opens, clicks and non-email events are acknowledged
+  and ignored.
+- Correlation is by provider message ID, or by the intent tag when the
+  acceptance response was lost. A tag and message ID pointing at different
+  intents or messages is a `conflict`; an unknown intent is `unmatched`
+  (pending correlation). Neither changes an intent.
+- Evidence only moves an intent forward: `sending`/`unknown` < `accepted`
+  (`email.sent`) < `delivered_to_server` (`email.delivered`,
+  `email.complained`) < `failed` (`email.failed`, `email.suppressed`) =
+  `bounced` (`email.bounced`). A later, milder event never overwrites a
+  bounce or failure, the worker's own acceptance never overwrites delivery
+  evidence, and a queued intent is never changed. Every event is kept.
+- `business.email_event` keeps the event type, times, IDs, correlation, the
+  applied state, bounce/failure/suppression categories and the payload hash;
+  never recipients, subjects, diagnostic codes or provider messages.
+
+The engine never claims inbox delivery or reading. Logs and stored evidence
+carry IDs, HTTP status and the provider's error name only, never recipients,
+content or provider error messages.
+
+Not yet: the staging worker service and the sandbox proof (GK-024 A3b);
+manager reconcile/resend and custom-message endpoints (GK-024 Milestone B,
+after GK-021 and GK-023/025); re-correlating `unmatched` events after a
+restore (GK-034 Milestone B).
 
 ## Not yet verified
 

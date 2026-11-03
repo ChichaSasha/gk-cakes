@@ -43,9 +43,9 @@ func TestNewNoticeFreezesTheApprovedRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := Request{From: From, To: []string{"ms.example@example.org"}, ReplyTo: []string{ReplyTo}, Subject: "Your order is confirmed",
-		Text: "Thank you — £42.50 paid.", Tags: []Tag{{Name: "intent", Value: n.IntentID}}}
+		Text: "Thank you — £42.50 paid.", Tags: []Tag{{Name: "intent", Value: n.IntentID}, {Name: "env", Value: "staging"}}}
 	if req.From != want.From || req.To[0] != want.To[0] || req.ReplyTo[0] != want.ReplyTo[0] || req.Subject != want.Subject ||
-		req.Text != want.Text || len(req.Tags) != 1 || req.Tags[0] != want.Tags[0] || req.HTML != "" {
+		req.Text != want.Text || len(req.Tags) != 2 || req.Tags[0] != want.Tags[0] || req.Tags[1] != want.Tags[1] || req.HTML != "" {
 		t.Fatalf("request = %+v, want %+v", req, want)
 	}
 	if !bytes.Contains(n.Payload, d.Request) {
@@ -237,7 +237,7 @@ func TestOutcomeErrorMapsToJobDecisions(t *testing.T) {
 	if outcomeError(nil) != nil {
 		t.Error("success must complete the job")
 	}
-	for _, reason := range []string{reasonSuspended, reasonPayload, reasonReconcile, reasonRecovery, reasonRefused, reasonConflict} {
+	for _, reason := range []string{reasonSuspended, reasonPayload, reasonReconcile, reasonRecovery, reasonRefused, reasonConflict, reasonRejected} {
 		if len([]rune(reason)) > 200 {
 			t.Errorf("attention reason longer than the database limit: %q", reason)
 		}
