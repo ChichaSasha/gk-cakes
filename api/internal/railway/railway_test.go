@@ -34,8 +34,10 @@ type fakeRailway struct {
 	metaImage string // image reported in deployment meta, if any
 	// executions are the instance executions reported for the deployment
 	// ("" for the default single RUNNING one); executionsErr refuses the query.
-	executions    []string
-	executionsErr bool
+	executions      []string
+	executionsFails int  // first N execution queries fail (negative: all)
+	olderPage       bool // our executions come on a second page
+	missing         bool // our deployment is never listed
 }
 
 func (f *fakeRailway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -59,7 +61,10 @@ func (f *fakeRailway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.Contains(req.Query, "serviceInstanceDeployV2"):
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"serviceInstanceDeployV2": "dep-123"}})
 	case strings.Contains(req.Query, "deploymentInstanceExecutions"):
-		if f.executionsErr {
+		if f.executionsFails != 0 {
+			if f.executionsFails > 0 {
+				f.executionsFails--
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"errors": []map[string]string{{"message": "Not Authorized"}}})
 			return
 		}
@@ -72,11 +77,24 @@ func (f *fakeRailway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if statuses == nil {
 			statuses = []string{"RUNNING"}
 		}
-		edges := []map[string]any{{"node": map[string]any{"deploymentId": "older-deployment", "status": "REMOVED"}}}
+		older := []map[string]any{{"node": map[string]any{"deploymentId": "older-deployment", "status": "REMOVED"}}}
+		var ours []map[string]any
 		for _, st := range statuses {
-			edges = append(edges, map[string]any{"node": map[string]any{"deploymentId": "dep-123", "status": st}})
+			ours = append(ours, map[string]any{"node": map[string]any{"deploymentId": "dep-123", "status": st}})
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"deploymentInstanceExecutions": map[string]any{"edges": edges}}})
+		if f.missing {
+			ours = nil
+		}
+		edges, next, cursor := append(older, ours...), false, ""
+		if f.olderPage {
+			if req.Variables["after"] == nil {
+				edges, next, cursor = older, true, "cursor-2"
+			} else if req.Variables["after"] == "cursor-2" {
+				edges = ours
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"deploymentInstanceExecutions": map[string]any{
+			"edges": edges, "pageInfo": map[string]any{"hasNextPage": next, "endCursor": cursor}}}})
 	case strings.Contains(req.Query, "deployment("):
 		if f.pollFails > 0 {
 			f.pollFails--
@@ -294,7 +312,9 @@ func TestEnvironmentLogsReadsTheAnchoredWindow(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(body, &got)
 		logs := []map[string]any{
-			{"timestamp": "2026-11-03T12:00:01Z", "message": "email provider call", "attributes": []map[string]string{{"key": "result", "value": "accepted"}}},
+			{"timestamp": "2026-11-03T12:00:01Z", "message": "email provider call", "attributes": []map[string]string{
+				{"key": "result", "value": `"accepted"`}, {"key": "http_status", "value": "200"}, {"key": "reason", "value": `"a \"quoted\" reason"`},
+				{"key": "odd", "value": `"unterminated`}}},
 			{"timestamp": "2026-11-03T12:00:02Z", "message": "request", "attributes": []map[string]string{}},
 		}
 		for len(logs) < count {
@@ -307,7 +327,8 @@ func TestEnvironmentLogsReadsTheAnchoredWindow(t *testing.T) {
 	since := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
 	until := since.Add(10 * time.Minute)
 	lines, complete, err := d.EnvironmentLogs(context.Background(), testEnv, since, until)
-	if err != nil || !complete || len(lines) != 2 || lines[0] != "email provider call result=accepted" || lines[1] != "request" {
+	// JSON-encoded attribute values are decoded; anything else is kept as sent.
+	if err != nil || !complete || len(lines) != 2 || lines[0] != `email provider call result=accepted http_status=200 reason=a "quoted" reason odd="unterminated` || lines[1] != "request" {
 		t.Fatalf("lines = %q, complete %v, %v", lines, complete, err)
 	}
 	// Railway's window: logs between beforeDate (oldest) and the anchor, none after it.
@@ -347,10 +368,23 @@ func TestSettleCatchesACrashLoopBehindASuccessStatus(t *testing.T) {
 	if res, err := deployer(t, steady).Deploy(context.Background(), req); err != nil || len(res.Warnings) != 0 {
 		t.Fatalf("steady: %+v, %v", res, err)
 	}
-	blind := &fakeRailway{statuses: []string{"SUCCESS"}, executionsErr: true}
+	blind := &fakeRailway{statuses: []string{"SUCCESS"}, executionsFails: -1}
 	res, err := deployer(t, blind).Deploy(context.Background(), req)
-	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "status only") {
+	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "not readable") {
 		t.Fatalf("executions unreadable: %+v, %v; want success with a warning", res, err)
+	}
+	transient := &fakeRailway{statuses: []string{"SUCCESS"}, executionsFails: 2}
+	if res, err := deployer(t, transient).Deploy(context.Background(), req); err != nil || len(res.Warnings) != 0 {
+		t.Fatalf("two transient errors: %+v, %v; want the check to continue", res, err)
+	}
+	paged := &fakeRailway{statuses: []string{"SUCCESS"}, olderPage: true, executions: []string{"CRASHED", "RUNNING"}}
+	if _, err := deployer(t, paged).Deploy(context.Background(), req); err == nil {
+		t.Fatal("a restart listed on the second page was missed")
+	}
+	absent := &fakeRailway{statuses: []string{"SUCCESS"}, missing: true}
+	res, err = deployer(t, absent).Deploy(context.Background(), req)
+	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "never appeared") {
+		t.Fatalf("deployment never listed: %+v, %v; want success with a warning, never a silent pass", res, err)
 	}
 }
 

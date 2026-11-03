@@ -15,6 +15,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -446,10 +447,13 @@ func hasMessage(line, msg string) bool {
 		strings.Contains(line, `"msg":"`+msg+`"`) || strings.Contains(line, `"message":"`+msg+`"`)
 }
 
-// hasField matches an attribute in either representation (key=value, or a
-// JSON string or number).
+// hasField matches an attribute in any representation: key=value,
+// key="value" (a JSON-encoded attribute value), or a JSON string or number in
+// a raw JSON line.
 func hasField(line, key, value string) bool {
-	return strings.Contains(line, " "+key+"="+value) || strings.Contains(line, `"`+key+`":"`+value+`"`) ||
+	quoted, _ := json.Marshal(value)
+	return strings.Contains(line, " "+key+"="+value) || strings.Contains(line, " "+key+"="+string(quoted)) ||
+		strings.Contains(line, `"`+key+`":`+string(quoted)) ||
 		strings.Contains(line, `"`+key+`":`+value+`,`) || strings.Contains(line, `"`+key+`":`+value+`}`)
 }
 
@@ -480,7 +484,7 @@ func writeReport(cfg Config, cases []*Case, probes []Probe, stored int, logs log
 	}
 	switch {
 	case len(problems) == 0 && incomplete:
-		fmt.Fprintln(w, "Result: **incomplete**: the log checks were not made.")
+		fmt.Fprintf(w, "Result: **incomplete**: the log checks could not be completed (%s).\n", logs.reason)
 		return
 	case len(problems) == 0:
 		fmt.Fprintln(w, "Result: **pass**.")

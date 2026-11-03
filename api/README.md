@@ -156,9 +156,11 @@ get no image and cannot be released. Workflows: `.github/workflows/staging.yml` 
   deployment must stay SUCCESS and keep running its first instance. Railway
   restarts a crashed process under its restart policy without leaving SUCCESS,
   so a second instance execution, or one that crashed, exited or is restarting,
-  fails the deploy. The worker exits at start when its email or recovery-journal
-  settings are wrong. If the token cannot read instance executions, the check
-  falls back to the status and prints a warning. It is off until
+  fails the deploy (the service runs one replica, so two running executions
+  mean a restart). The worker exits at start when its email or recovery-journal
+  settings are wrong. If the token cannot read instance executions (after five
+  consecutive errors), or the deployment never appears among them, the check
+  falls back to the status and prints a GitHub warning. It is off until
   `STAGING_WORKER_ENABLED` is `true` and is recorded as `staging-worker` (not
   read by the release gate).
 - **Release.** Publish a GitHub release tagged `api-vX.Y.Z` or `ui-vX.Y.Z` on a

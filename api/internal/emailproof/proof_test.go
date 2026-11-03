@@ -103,6 +103,18 @@ func TestLogScanNeedsThisRunAndNoPersonalData(t *testing.T) {
 	if _, problems := checkLogs(context.Background(), Config{Label: "t1", Logs: raw}, time.Now(), cases, probes, subject); len(problems) != 0 {
 		t.Fatalf("raw JSON logs: %v", problems)
 	}
+	// Attribute values JSON-encoded (strings quoted) as Railway may send them.
+	quoted := lines{
+		`email provider call result="accepted" intent_id="` + intentA + `"`,
+		`email webhook event result="recorded" intent_id="` + intentA + `"`,
+		`email webhook refused reason="missing or malformed signature headers" svix_id=""`,
+		`email webhook refused reason="no matching signature" svix_id="msg_probea"`,
+		`email webhook refused reason="timestamp outside the tolerance" svix_id="msg_probeb"`,
+		`request method="POST" path="/webhooks/email" status=413`,
+	}
+	if _, problems := checkLogs(context.Background(), Config{Label: "t1", Logs: quoted}, time.Now(), cases, probes, subject); len(problems) != 0 {
+		t.Fatalf("quoted attribute values: %v", problems)
+	}
 	without := func(drop int) lines {
 		out := append(lines{}, cleanRun[:drop]...)
 		return append(out, cleanRun[drop+1:]...)

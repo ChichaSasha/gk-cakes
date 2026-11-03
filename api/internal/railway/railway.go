@@ -83,8 +83,11 @@ const (
   environmentLogs(environmentId: $environmentId, anchorDate: $anchorDate, beforeDate: $beforeDate,
     beforeLimit: $beforeLimit, afterDate: $anchorDate, afterLimit: 0) { timestamp message attributes { key value } }
 }`
-	executionsQuery = `query gkExecutions($input: DeploymentInstanceExecutionListInput!) {
-  deploymentInstanceExecutions(input: $input, first: 50) { edges { node { deploymentId status } } }
+	executionsQuery = `query gkExecutions($input: DeploymentInstanceExecutionListInput!, $after: String) {
+  deploymentInstanceExecutions(input: $input, first: 50, after: $after) {
+    edges { node { deploymentId status } }
+    pageInfo { hasNextPage endCursor }
+  }
 }`
 )
 
@@ -119,49 +122,87 @@ func (d *Deployer) EnvironmentLogs(ctx context.Context, environmentID string, si
 		var b strings.Builder
 		b.WriteString(l.Message)
 		for _, a := range l.Attributes {
-			b.WriteString(" " + a.Key + "=" + a.Value)
+			b.WriteString(" " + a.Key + "=" + attributeValue(a.Value))
 		}
 		lines = append(lines, b.String())
 	}
 	return lines, len(out.Logs) < MaxLogLines, nil
 }
 
+// attributeValue undoes the JSON encoding Railway may apply to attribute
+// values (a string arrives as "value", quotes included); anything else is
+// kept as sent.
+func attributeValue(v string) string {
+	if strings.HasPrefix(v, `"`) {
+		var s string
+		if json.Unmarshal([]byte(v), &s) == nil {
+			return s
+		}
+	}
+	return v
+}
+
 var badExecution = map[string]bool{"CRASHED": true, "EXITED": true, "RESTARTING": true, "REMOVED": true, "STOPPED": true}
 
-// executionsOK reports whether deploymentID still runs its first instance
-// execution: a crash and restart under Railway's restart policy keeps the
-// deployment SUCCESS, so the status alone cannot show a crash loop.
-func (d *Deployer) executionsOK(ctx context.Context, req Request, deploymentID string) (bool, string, error) {
-	var out struct {
-		Executions struct {
-			Edges []struct {
-				Node struct {
-					DeploymentID string `json:"deploymentId"`
-					Status       string `json:"status"`
-				} `json:"node"`
-			} `json:"edges"`
-		} `json:"deploymentInstanceExecutions"`
-	}
-	if err := d.call(ctx, executionsQuery, map[string]any{
-		"input": map[string]any{"environmentId": req.EnvironmentID, "serviceId": req.ServiceID},
-	}, &out); err != nil {
-		return false, "", err
-	}
+// maxExecutionPages bounds the instance-execution pages read per check.
+const maxExecutionPages = 10
+
+// Instance-execution check results.
+const (
+	executionsSteady  = "steady"
+	executionsBad     = "bad"
+	executionsMissing = "missing" // the deployment is not (yet) listed
+)
+
+// executions checks whether deploymentID still runs its first and only
+// instance execution: a crash and restart under Railway's restart policy keeps
+// the deployment SUCCESS, so the status alone cannot show a crash loop. (With
+// one replica, two running executions mean a restart.)
+func (d *Deployer) executions(ctx context.Context, req Request, deploymentID string) (string, string, error) {
 	var mine []string
-	for _, e := range out.Executions.Edges {
-		if e.Node.DeploymentID == deploymentID {
-			mine = append(mine, e.Node.Status)
+	var after any
+	for page := 0; page < maxExecutionPages; page++ {
+		var out struct {
+			Executions struct {
+				Edges []struct {
+					Node struct {
+						DeploymentID string `json:"deploymentId"`
+						Status       string `json:"status"`
+					} `json:"node"`
+				} `json:"edges"`
+				PageInfo struct {
+					HasNextPage bool   `json:"hasNextPage"`
+					EndCursor   string `json:"endCursor"`
+				} `json:"pageInfo"`
+			} `json:"deploymentInstanceExecutions"`
 		}
+		if err := d.call(ctx, executionsQuery, map[string]any{
+			"input": map[string]any{"environmentId": req.EnvironmentID, "serviceId": req.ServiceID}, "after": after,
+		}, &out); err != nil {
+			return "", "", err
+		}
+		for _, e := range out.Executions.Edges {
+			if e.Node.DeploymentID == deploymentID {
+				mine = append(mine, e.Node.Status)
+			}
+		}
+		if !out.Executions.PageInfo.HasNextPage || out.Executions.PageInfo.EndCursor == "" {
+			break
+		}
+		after = out.Executions.PageInfo.EndCursor
 	}
 	for _, st := range mine {
 		if badExecution[st] {
-			return false, fmt.Sprintf("an instance execution is %s", st), nil
+			return executionsBad, fmt.Sprintf("an instance execution is %s", st), nil
 		}
 	}
-	if len(mine) > 1 {
-		return false, fmt.Sprintf("%d instance executions (restarted)", len(mine)), nil
+	switch {
+	case len(mine) > 1:
+		return executionsBad, fmt.Sprintf("%d instance executions (restarted)", len(mine)), nil
+	case len(mine) == 0:
+		return executionsMissing, "", nil
 	}
-	return true, "", nil
+	return executionsSteady, "", nil
 }
 
 var failed = map[string]bool{"FAILED": true, "CRASHED": true, "REMOVED": true, "REMOVING": true, "SKIPPED": true}
@@ -218,6 +259,8 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 	deadline := time.Now().Add(d.Timeout)
 	var settleUntil time.Time // set once SUCCESS is first seen
 	executionsChecked := req.Settle > 0
+	executionsSeen := false // the deployment appeared among the executions
+	executionErrors := 0
 	pollErrors := 0
 	for {
 		var st struct {
@@ -254,16 +297,25 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 					}
 				}
 				if executionsChecked {
-					ok, why, xerr := d.executionsOK(ctx, req, deployed.ID)
+					state, why, xerr := d.executions(ctx, req, deployed.ID)
 					switch {
 					case xerr != nil:
-						executionsChecked = false
-						res.Warnings = append(res.Warnings, "instance executions not readable; settle checked the deployment status only: "+xerr.Error())
-					case !ok:
+						if executionErrors++; executionErrors >= maxPollErrors {
+							executionsChecked = false
+							res.Warnings = append(res.Warnings, "instance executions not readable; settle checked the deployment status only: "+xerr.Error())
+						}
+					case state == executionsBad:
 						return res, fmt.Errorf("railway: deployment %s is not running steadily within %s of SUCCESS: %s", deployed.ID, req.Settle, why)
+					case state == executionsSteady:
+						executionErrors, executionsSeen = 0, true
+					default:
+						executionErrors = 0
 					}
 				}
 				if time.Now().After(settleUntil) {
+					if executionsChecked && !executionsSeen {
+						res.Warnings = append(res.Warnings, "the deployment never appeared among the service's instance executions; settle checked the deployment status only")
+					}
 					return res, nil
 				}
 			}

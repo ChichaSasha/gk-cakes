@@ -81,7 +81,9 @@ func (b *syncBuffer) Since(context.Context, time.Time) ([]string, bool, error) {
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			line += fmt.Sprintf(" %s=%v", k, fields[k])
+			// Railway may JSON-encode attribute values: strings arrive quoted.
+			v, _ := json.Marshal(fields[k])
+			line += fmt.Sprintf(" %s=%s", k, v)
 		}
 		out = append(out, line)
 	}
