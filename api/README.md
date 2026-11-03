@@ -149,9 +149,18 @@ get no image and cannot be released. Workflows: `.github/workflows/staging.yml` 
   newer schema (GK-034 part 2, AC2).
 
 `gk-release-gate` exit status: `0` deploy, skip or verified; `3` denied, not
-verified or a downgrade; `4` verified but already deployed; `1` error. Records
-created before release records had their own task (the `api-v0.0.1` and
-`ui-v0.0.1` staging test prereleases) are not considered by these checks.
+verified or a downgrade; `4` verified but already deployed; `1` error.
+
+Limits of the record-based checks:
+
+- Records created before release records had their own task (the `api-v0.0.1`
+  and `ui-v0.0.1` staging test prereleases) are not considered: re-running those
+  two releases would deploy them again, and `*-v0.0.0` would pass.
+- A mistaken high tag (say `ui-v10.0.0`) that gets recorded forces every later
+  release of that component above it. The only other way out is deleting that
+  deployment record (mark it inactive, then delete it; needs `deployments:write`).
+- Each environment holds at most 5000 release records; beyond that the checks
+  fail closed until old records are deleted.
 
 Staging configuration (all nonsecret unless noted):
 

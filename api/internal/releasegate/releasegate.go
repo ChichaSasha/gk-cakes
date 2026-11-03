@@ -7,7 +7,8 @@
 // staging-<component> only. Artifact digests are read from the container
 // registry (ghcr.io), the same source the publish step resolves, and the image
 // must carry its commit in the org.opencontainers.image.revision label. A
-// release older than one already deployed to the same environment is denied.
+// release older than any release already recorded in the same environment is
+// denied.
 // Any GitHub or registry API failure is returned as an error so callers fail
 // closed.
 package releasegate
@@ -628,7 +629,9 @@ func (c *Client) AlreadyReleased(ctx context.Context, repo, environment, version
 			return false, nil
 		}
 		ok, err := c.succeeded(ctx, repo, d.ID)
-		released = ok
+		if ok {
+			released = true
+		}
 		return ok, err
 	})
 	return released, err
@@ -711,8 +714,9 @@ const (
 	VerifyRejected VerifyOutcome = "rejected" // not verified, inconsistent request or a downgrade
 )
 
-// VerifyRequest identifies the artifact handed to a deploy job. Environment
-// and Tag enable the replay and downgrade checks and must be given together.
+// VerifyRequest identifies the release artifact handed to a deploy job. All
+// fields are required: Environment and Tag drive the replay and downgrade
+// checks, which a deploy job must never skip.
 type VerifyRequest struct {
 	Repository  string // owner/name
 	Owner       string // registry namespace owner
@@ -738,25 +742,20 @@ func rejected(format string, args ...any) VerifyResult {
 // (reject). Errors from the replay and downgrade lookups are returned so the
 // caller fails closed; artifact verification failures are rejections.
 func (c *Client) Verify(ctx context.Context, r VerifyRequest) (VerifyResult, error) {
-	if (r.Environment == "") != (r.Tag == "") {
-		return rejected("environment and tag must be given together"), nil
+	if r.Environment == "" || r.Tag == "" {
+		return rejected("environment and tag are required for the replay and downgrade checks"), nil
 	}
-	if r.Tag != "" {
-		component, _, ok := parseTag(r.Tag)
-		switch {
-		case !ok:
-			return rejected("tag %q is not ui-vX.Y.Z or api-vX.Y.Z", r.Tag), nil
-		case component != r.Component:
-			return rejected("tag %q is not a %s release", r.Tag, r.Component), nil
-		case r.Environment != "staging-"+r.Component && r.Environment != "production-"+r.Component:
-			return rejected("environment %q is not staging-%s or production-%s", r.Environment, r.Component, r.Component), nil
-		}
+	component, _, ok := parseTag(r.Tag)
+	switch {
+	case !ok:
+		return rejected("tag %q is not ui-vX.Y.Z or api-vX.Y.Z", r.Tag), nil
+	case component != r.Component:
+		return rejected("tag %q is not a %s release", r.Tag, r.Component), nil
+	case r.Environment != "staging-"+r.Component && r.Environment != "production-"+r.Component:
+		return rejected("environment %q is not staging-%s or production-%s", r.Environment, r.Component, r.Component), nil
 	}
 	if err := c.VerifyArtifact(ctx, r.Repository, r.Owner, r.Component, r.CommitSHA, r.Digest); err != nil {
 		return rejected("%v", err), nil
-	}
-	if r.Tag == "" {
-		return VerifyResult{Outcome: VerifyDeploy, Reason: "artifact verified"}, nil
 	}
 	released, err := c.AlreadyReleased(ctx, r.Repository, r.Environment, r.Tag, r.Digest)
 	if err != nil {
@@ -772,5 +771,6 @@ func (c *Client) Verify(ctx context.Context, r VerifyRequest) (VerifyResult, err
 	if newer != "" {
 		return rejected("%s is older than %s, already recorded in %s; a rollback needs a new, higher tag", r.Tag, newer, r.Environment), nil
 	}
-	return VerifyResult{Outcome: VerifyDeploy, Reason: "artifact verified, not yet deployed"}, nil
+	return VerifyResult{Outcome: VerifyDeploy, Reason: fmt.Sprintf("%s %s for commit %s; %s not yet deployed to %s",
+		r.Component, r.Digest, r.CommitSHA, r.Tag, r.Environment)}, nil
 }

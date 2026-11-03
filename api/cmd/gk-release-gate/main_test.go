@@ -57,10 +57,13 @@ func TestVerifyRejectsMalformedArtifactWithoutNetwork(t *testing.T) {
 		"GITHUB_API_URL":          "http://127.0.0.1:1",
 		"GK_REGISTRY_URL":         "http://127.0.0.1:1",
 	}
+	release := []string{"-environment", "staging-ui", "-version", "ui-v1.0.0"}
 	for _, args := range [][]string{
-		{"-verify", "-component", "web", "-commit", strings.Repeat("a", 40), "-digest", "sha256:" + strings.Repeat("b", 64)},
-		{"-verify", "-component", "ui", "-commit", "main", "-digest", "sha256:" + strings.Repeat("b", 64)},
-		{"-verify", "-component", "ui", "-commit", strings.Repeat("a", 40), "-digest", "latest"},
+		append([]string{"-verify", "-component", "web", "-commit", strings.Repeat("a", 40), "-digest", "sha256:" + strings.Repeat("b", 64)}, release...),
+		append([]string{"-verify", "-component", "ui", "-commit", "main", "-digest", "sha256:" + strings.Repeat("b", 64)}, release...),
+		append([]string{"-verify", "-component", "ui", "-commit", strings.Repeat("a", 40), "-digest", "latest"}, release...),
+		// A deploy job must never skip the replay and downgrade checks.
+		{"-verify", "-component", "ui", "-commit", strings.Repeat("a", 40), "-digest", "sha256:" + strings.Repeat("b", 64)},
 	} {
 		var out bytes.Buffer
 		if code := run(context.Background(), args, func(k string) string { return env[k] }, &out); code != exitDenied {

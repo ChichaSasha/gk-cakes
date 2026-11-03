@@ -76,6 +76,7 @@ type fakeGitHub struct {
 	statuses        map[int64][]string       // deployment id -> status states, newest first
 	privateRegistry bool                     // registry refuses anonymous pull tokens
 	failDeployments int32                    // 1-based deployments-list call from which the fake answers 500 (0: never)
+	failStatuses    bool                     // deployment status lookups answer 500
 	deploymentCalls atomic.Int32
 }
 
@@ -240,6 +241,10 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		start := min((page-1)*perPage, len(list))
 		reply(list[start:min(start+perPage, len(list))])
 	case strings.HasPrefix(p, "/repos/"+testRepo+"/deployments/") && strings.HasSuffix(p, "/statuses"):
+		if f.failStatuses {
+			http.Error(w, `{"message":"boom"}`, http.StatusInternalServerError)
+			return
+		}
 		id, _ := strconv.ParseInt(strings.TrimSuffix(strings.TrimPrefix(p, "/repos/"+testRepo+"/deployments/"), "/statuses"), 10, 64)
 		var out []map[string]string
 		for _, s := range f.statuses[id] {
@@ -418,6 +423,22 @@ func TestReplayIsKeyedOnReleaseIdentity(t *testing.T) {
 		t.Fatalf("after failed attempt: action = %q (%s), want deploy", d.Action, d.Reason)
 	}
 
+	// A failed attempt followed by a successful retry: a replay is skipped
+	// (records are newest first: success, then failure).
+	f.deployments["production-api"] = nil
+	f.record("production-api", 8, "api-v1.2.3", apiDigest, "success")
+	f.record("production-api", 7, "api-v1.2.3", apiDigest, "failure")
+	if d := evaluate(t, f, "release", publish("api-v1.2.3")); d.Action != ActionSkip {
+		t.Fatalf("replay after failed attempt and successful retry = %q (%s), want skip", d.Action, d.Reason)
+	}
+
+	// A failed status lookup fails closed instead of treating the release as new.
+	f.failStatuses = true
+	if d, err := Evaluate(context.Background(), Input{EventName: "release", Event: publish("api-v1.2.3"), Repository: testRepo}, client(t, f)); err == nil {
+		t.Fatalf("status lookup failed but Evaluate = %q (%s), want error", d.Action, d.Reason)
+	}
+	f.failStatuses = false
+
 	// Same digest deployed under another identity (e.g. a main deploy) is
 	// not this release.
 	f.deployments["production-api"] = nil
@@ -566,8 +587,8 @@ func TestVerifySequencesArtifactReplayAndDowngrade(t *testing.T) {
 		reason  string
 		wantErr string
 	}{
-		{"new release", nil, VerifyDeploy, "verified", ""},
-		{"artifact only, no replay checks", func(r *VerifyRequest, _ *fakeGitHub) { r.Environment, r.Tag = "", "" }, VerifyDeploy, "verified", ""},
+		{"new release", nil, VerifyDeploy, "ui " + uiDigest + " for commit " + mainSHA + "; ui-v0.4.0 not yet deployed to staging-ui", ""},
+		{"artifact only, without replay checks", func(r *VerifyRequest, _ *fakeGitHub) { r.Environment, r.Tag = "", "" }, VerifyRejected, "required", ""},
 		{"replay of an older, superseded release", func(_ *VerifyRequest, f *fakeGitHub) {
 			f.record("staging-ui", 2, "ui-v0.5.0", oldDigest, "success")
 			f.record("staging-ui", 1, "ui-v0.4.0", uiDigest, "success")
@@ -578,7 +599,8 @@ func TestVerifySequencesArtifactReplayAndDowngrade(t *testing.T) {
 		{"wrong digest", func(r *VerifyRequest, _ *fakeGitHub) { r.Digest = oldDigest }, VerifyRejected, "digest", ""},
 		{"tag of another component", func(r *VerifyRequest, _ *fakeGitHub) { r.Tag = "api-v0.0.0" }, VerifyRejected, "not a ui release", ""},
 		{"environment of another component", func(r *VerifyRequest, _ *fakeGitHub) { r.Environment = "staging-api" }, VerifyRejected, "environment", ""},
-		{"tag without environment", func(r *VerifyRequest, _ *fakeGitHub) { r.Environment = "" }, VerifyRejected, "together", ""},
+		{"tag without environment", func(r *VerifyRequest, _ *fakeGitHub) { r.Environment = "" }, VerifyRejected, "required", ""},
+		{"environment without tag", func(r *VerifyRequest, _ *fakeGitHub) { r.Tag = "" }, VerifyRejected, "required", ""},
 		{"malformed tag", func(r *VerifyRequest, _ *fakeGitHub) { r.Tag = "ui-v0.4" }, VerifyRejected, "is not ui-vX.Y.Z", ""},
 		{"replay lookup fails", func(_ *VerifyRequest, f *fakeGitHub) { f.failDeployments = 1 }, "", "", "replay check"},
 		{"downgrade lookup fails", func(_ *VerifyRequest, f *fakeGitHub) { f.failDeployments = 2 }, "", "", "downgrade check"},

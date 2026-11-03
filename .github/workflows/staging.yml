@@ -7,8 +7,8 @@
 #   workflow_dispatch sent by the release workflow for a prerelease that passed
 #                     the release gate: re-verify the artifact (commit on main,
 #                     green main CI, registry digest and revision label), skip
-#                     if that release is already deployed, refuse it if a newer
-#                     release is, then deploy that component.
+#                     if that release is already deployed, refuse it if a higher
+#                     release of that component is recorded, then deploy it.
 # All staging deploys share one concurrency group and are never cancelled
 # while running. API deploys run migrations first and stay off until the
 # repository variable STAGING_API_ENABLED is true. Each deploy ends with a

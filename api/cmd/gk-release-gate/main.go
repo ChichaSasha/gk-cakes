@@ -1,9 +1,10 @@
 // Command gk-release-gate evaluates the GitHub event of the current workflow
 // run and decides whether a release may deploy. It writes the release manifest
-// and step outputs. With -verify it instead re-checks one artifact (component,
-// commit, digest) before a staging deploy and, given -environment and
-// -version, whether that release is already deployed there or older than a
-// release already deployed there.
+// and step outputs. With -verify it instead re-checks one release artifact
+// (-component, -commit, -digest; -environment and -version are required)
+// before a deploy: the artifact, then whether that release is already deployed
+// there (replay), then whether a higher release is already recorded there
+// (downgrade).
 // Exit status: 0 deploy, skip or verified; 3 denied, not verified or a
 // downgrade; 4 verified but already deployed; 1 error.
 package main
@@ -39,8 +40,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	component := fs.String("component", "", "with -verify: api or ui")
 	commit := fs.String("commit", "", "with -verify: 40-character commit SHA")
 	digest := fs.String("digest", "", "with -verify: sha256 digest")
-	environment := fs.String("environment", "", "with -verify: deployment record environment for the replay check")
-	version := fs.String("version", "", "with -verify: release tag for the replay check")
+	environment := fs.String("environment", "", "with -verify: deployment record environment for the replay and downgrade checks")
+	version := fs.String("version", "", "with -verify: release tag for the replay and downgrade checks")
 	if err := fs.Parse(args); err != nil {
 		return exitError
 	}
