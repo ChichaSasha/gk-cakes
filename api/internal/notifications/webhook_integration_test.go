@@ -317,6 +317,18 @@ func TestAdverseEvidenceIsNeverOverwritten(t *testing.T) {
 	if len(ev) != 8 || strings.Join(applied, ",") != "bounced,-,delivered_to_server,-,bounced,failed,-,-" {
 		t.Fatalf("applied states %v of %d events, want every event kept", applied, len(ev))
 	}
+	// Each applied bounce or failure is audited once; the overridden ones are not.
+	for intent, want := range map[string]string{a.IntentID: "bounced", b.IntentID: "bounced", c.IntentID: "failed"} {
+		var states []string
+		rows, err := h.admin.Query(h.ctx, `SELECT detail->>'state' FROM business.audit_event
+			WHERE action = 'notification.adverse_evidence' AND subject_id = $1::uuid`, intent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if states, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil || len(states) != 1 || states[0] != want {
+			t.Errorf("adverse audits for %s = %v (%v), want one %q", intent, states, err, want)
+		}
+	}
 }
 
 // Events that cannot be correlated safely are kept and change nothing.
@@ -509,5 +521,49 @@ func TestConcurrentEventsForOneEmailNeverRegressEvidence(t *testing.T) {
 	}
 	if ev := h.events(); len(ev) != 1 || ev[0].Applied != nil || ev[0].Correlation != "matched" {
 		t.Fatalf("events %+v, want the sent event kept without being applied", ev)
+	}
+}
+
+// An event naming another message for an intent whose message ID is being
+// recorded concurrently is a conflict; the recorded message is never replaced.
+func TestConcurrentEvidenceNeverReplacesARecordedMessage(t *testing.T) {
+	h := newHarness(t)
+	w := h.webhook()
+	n := newNotice(t, "test")
+	h.enqueue(n)
+	h.provider.queue("lose")
+	h.runOnce(1)
+	tx, err := h.db.AdminConn(t).Begin(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(h.ctx)
+	if _, err := tx.Exec(h.ctx, "UPDATE business.notification_intent SET provider_message_id = 're-msg-a' WHERE id = $1::uuid", n.IntentID); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	body := event("email.delivery_delayed", "re-msg-b", n.IntentID, "test", "")
+	go func() {
+		_, err := w.Receive(h.ctx, signed(t, nextSvixID(), body), []byte(body))
+		done <- err
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for h.count("SELECT count(*) FROM pg_stat_activity WHERE application_name = 'gk-api-test' AND wait_event_type = 'Lock'") == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the webhook transaction never waited for the intent row")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err := tx.Commit(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if row := h.intent(n.IntentID); row.ProviderMessageID == nil || *row.ProviderMessageID != "re-msg-a" || row.State != "unknown" {
+		t.Fatalf("intent %+v, want re-msg-a kept and still unknown", row)
+	}
+	if ev := h.events(); len(ev) != 1 || ev[0].Correlation != "conflict" {
+		t.Fatalf("events %+v, want one conflict", ev)
 	}
 }

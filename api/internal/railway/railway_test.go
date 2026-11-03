@@ -32,6 +32,12 @@ type fakeRailway struct {
 	updateErr string
 	pollFails int    // first N status polls answer with a GraphQL error
 	metaImage string // image reported in deployment meta, if any
+	// executions are the instance executions reported for the deployment
+	// ("" for the default single RUNNING one); executionsErr refuses the query.
+	executions      []string
+	executionsFails int  // first N execution queries fail (negative: all)
+	olderPage       bool // our executions come on a second page
+	missing         bool // our deployment is never listed
 }
 
 func (f *fakeRailway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -54,6 +60,41 @@ func (f *fakeRailway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"serviceInstanceUpdate": true}})
 	case strings.Contains(req.Query, "serviceInstanceDeployV2"):
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"serviceInstanceDeployV2": "dep-123"}})
+	case strings.Contains(req.Query, "deploymentInstanceExecutions"):
+		if f.executionsFails != 0 {
+			if f.executionsFails > 0 {
+				f.executionsFails--
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"errors": []map[string]string{{"message": "Not Authorized"}}})
+			return
+		}
+		input, _ := req.Variables["input"].(map[string]any)
+		if input["serviceId"] != testService || input["environmentId"] != testEnv {
+			http.Error(w, "unexpected input", http.StatusBadRequest)
+			return
+		}
+		statuses := f.executions
+		if statuses == nil {
+			statuses = []string{"RUNNING"}
+		}
+		older := []map[string]any{{"node": map[string]any{"deploymentId": "older-deployment", "status": "REMOVED"}}}
+		var ours []map[string]any
+		for _, st := range statuses {
+			ours = append(ours, map[string]any{"node": map[string]any{"deploymentId": "dep-123", "status": st}})
+		}
+		if f.missing {
+			ours = nil
+		}
+		edges, next, cursor := append(older, ours...), false, ""
+		if f.olderPage {
+			if req.Variables["after"] == nil {
+				edges, next, cursor = older, true, "cursor-2"
+			} else if req.Variables["after"] == "cursor-2" {
+				edges = ours
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"deploymentInstanceExecutions": map[string]any{
+			"edges": edges, "pageInfo": map[string]any{"hasNextPage": next, "endCursor": cursor}}}})
 	case strings.Contains(req.Query, "deployment("):
 		if f.pollFails > 0 {
 			f.pollFails--
@@ -213,5 +254,146 @@ func TestDeploymentRunningAnotherImageFails(t *testing.T) {
 		if _, err := deployer(t, f).Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage}); err != nil {
 			t.Errorf("meta image %q rejected: %v", reported, err)
 		}
+	}
+}
+
+func TestStartCommandOverridesTheEntrypoint(t *testing.T) {
+	f := &fakeRailway{statuses: []string{"SUCCESS"}}
+	if _, err := deployer(t, f).Deploy(context.Background(), Request{
+		ServiceID: testService, EnvironmentID: testEnv, Image: testImage, StartCommand: "/usr/local/bin/gk-worker",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	input, _ := f.requests[0].Variables["input"].(map[string]any)
+	if input["startCommand"] != "/usr/local/bin/gk-worker" {
+		t.Fatalf("update input = %+v, want the start command", input)
+	}
+	if _, ok := input["healthcheckPath"]; ok {
+		t.Fatalf("update input = %+v, want no health check for a worker", input)
+	}
+	for _, bad := range []string{"gk-worker", "/bin/sh -c 'curl x | sh'", "/usr/local/bin/gk-worker; rm -rf /"} {
+		g := &fakeRailway{statuses: []string{"SUCCESS"}}
+		if _, err := deployer(t, g).Deploy(context.Background(), Request{
+			ServiceID: testService, EnvironmentID: testEnv, Image: testImage, StartCommand: bad,
+		}); err == nil || len(g.requests) != 0 {
+			t.Errorf("start command %q: err %v after %d requests, want refusal before calling Railway", bad, err, len(g.requests))
+		}
+	}
+}
+
+func TestSettleCatchesACrashAfterSuccess(t *testing.T) {
+	crash := &fakeRailway{statuses: []string{"DEPLOYING", "SUCCESS", "SUCCESS", "CRASHED"}}
+	d := deployer(t, crash)
+	_, err := d.Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage, Settle: time.Second})
+	if err == nil || !strings.Contains(err.Error(), "CRASHED within") {
+		t.Fatalf("crash during settle: err = %v, want failure", err)
+	}
+	steady := &fakeRailway{statuses: []string{"SUCCESS"}}
+	start := time.Now()
+	res, err := deployer(t, steady).Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage, Settle: 50 * time.Millisecond})
+	if err != nil || res.Status != "SUCCESS" || time.Since(start) < 50*time.Millisecond || steady.polls < 2 {
+		t.Fatalf("steady deployment: %+v, %v after %s and %d polls; want SUCCESS after the settle period", res, err, time.Since(start), steady.polls)
+	}
+	// Without a settle period, SUCCESS returns at once.
+	quick := &fakeRailway{statuses: []string{"SUCCESS", "CRASHED"}}
+	if _, err := deployer(t, quick).Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage}); err != nil || quick.polls != 1 {
+		t.Fatalf("no settle: err %v after %d polls, want SUCCESS at the first poll", err, quick.polls)
+	}
+}
+
+func TestEnvironmentLogsReadsTheAnchoredWindow(t *testing.T) {
+	var got gqlRequest
+	count := 2
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Project-Access-Token") != "project-token" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"errors": []map[string]string{{"message": "Not Authorized"}}})
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &got)
+		logs := []map[string]any{
+			{"timestamp": "2026-11-03T12:00:01Z", "message": "email provider call", "attributes": []map[string]string{
+				{"key": "result", "value": `"accepted"`}, {"key": "http_status", "value": "200"}, {"key": "reason", "value": `"a \"quoted\" reason"`},
+				{"key": "odd", "value": `"unterminated`}}},
+			{"timestamp": "2026-11-03T12:00:02Z", "message": "request", "attributes": []map[string]string{}},
+		}
+		for len(logs) < count {
+			logs = append(logs, map[string]any{"timestamp": "2026-11-03T12:00:03Z", "message": "x", "attributes": []map[string]string{}})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"environmentLogs": logs}})
+	}))
+	defer srv.Close()
+	d := &Deployer{Endpoint: srv.URL, ProjectToken: "project-token", HTTP: srv.Client()}
+	since := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	until := since.Add(10 * time.Minute)
+	lines, complete, err := d.EnvironmentLogs(context.Background(), testEnv, since, until)
+	// JSON-encoded attribute values are decoded; anything else is kept as sent.
+	if err != nil || !complete || len(lines) != 2 || lines[0] != `email provider call result=accepted http_status=200 reason=a "quoted" reason odd="unterminated` || lines[1] != "request" {
+		t.Fatalf("lines = %q, complete %v, %v", lines, complete, err)
+	}
+	// Railway's window: logs between beforeDate (oldest) and the anchor, none after it.
+	if !strings.Contains(got.Query, "environmentLogs") || !strings.Contains(got.Query, "afterLimit: 0") ||
+		got.Variables["environmentId"] != testEnv || got.Variables["beforeDate"] != "2026-11-03T12:00:00Z" ||
+		got.Variables["anchorDate"] != "2026-11-03T12:10:00Z" || got.Variables["beforeLimit"] != float64(MaxLogLines) {
+		t.Fatalf("request = %+v", got)
+	}
+	count = MaxLogLines
+	if lines, complete, err := d.EnvironmentLogs(context.Background(), testEnv, since, until); err != nil || complete || len(lines) != MaxLogLines {
+		t.Fatalf("a full page: %d lines, complete %v, %v; want it reported as possibly truncated", len(lines), complete, err)
+	}
+	if _, _, err := (&Deployer{Endpoint: srv.URL, ProjectToken: "wrong", HTTP: srv.Client()}).EnvironmentLogs(context.Background(), testEnv, since, until); err == nil {
+		t.Fatal("unauthorized log request succeeded")
+	}
+	if _, _, err := d.EnvironmentLogs(context.Background(), testEnv, until, since); err == nil {
+		t.Fatal("an empty window was accepted")
+	}
+}
+
+// Railway restarts a crashed deployment under its restart policy and keeps
+// it SUCCESS, so the settle period also checks the instance executions.
+func TestSettleCatchesACrashLoopBehindASuccessStatus(t *testing.T) {
+	req := Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage, Settle: 50 * time.Millisecond}
+	for name, executions := range map[string][]string{
+		"restarted":      {"CRASHED", "RUNNING"},
+		"two executions": {"RUNNING", "RUNNING"},
+		"exited":         {"EXITED"},
+		"restarting":     {"RESTARTING"},
+	} {
+		f := &fakeRailway{statuses: []string{"SUCCESS"}, executions: executions}
+		if _, err := deployer(t, f).Deploy(context.Background(), req); err == nil || !strings.Contains(err.Error(), "not running steadily") {
+			t.Errorf("%s: err = %v, want the crash loop reported", name, err)
+		}
+	}
+	steady := &fakeRailway{statuses: []string{"SUCCESS"}}
+	if res, err := deployer(t, steady).Deploy(context.Background(), req); err != nil || len(res.Warnings) != 0 {
+		t.Fatalf("steady: %+v, %v", res, err)
+	}
+	blind := &fakeRailway{statuses: []string{"SUCCESS"}, executionsFails: -1}
+	res, err := deployer(t, blind).Deploy(context.Background(), req)
+	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "not readable") {
+		t.Fatalf("executions unreadable: %+v, %v; want success with a warning", res, err)
+	}
+	transient := &fakeRailway{statuses: []string{"SUCCESS"}, executionsFails: 2}
+	if res, err := deployer(t, transient).Deploy(context.Background(), req); err != nil || len(res.Warnings) != 0 {
+		t.Fatalf("two transient errors: %+v, %v; want the check to continue", res, err)
+	}
+	paged := &fakeRailway{statuses: []string{"SUCCESS"}, olderPage: true, executions: []string{"CRASHED", "RUNNING"}}
+	if _, err := deployer(t, paged).Deploy(context.Background(), req); err == nil {
+		t.Fatal("a restart listed on the second page was missed")
+	}
+	absent := &fakeRailway{statuses: []string{"SUCCESS"}, missing: true}
+	res, err = deployer(t, absent).Deploy(context.Background(), req)
+	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "never appeared") {
+		t.Fatalf("deployment never listed: %+v, %v; want success with a warning, never a silent pass", res, err)
+	}
+}
+
+func TestLateSuccessStillGetsItsSettlePeriod(t *testing.T) {
+	f := &fakeRailway{statuses: []string{"DEPLOYING", "SUCCESS"}}
+	d := deployer(t, f)
+	d.PollInterval = 40 * time.Millisecond
+	d.Timeout = 30 * time.Millisecond // SUCCESS arrives after the timeout
+	if _, err := d.Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage, Settle: 50 * time.Millisecond}); err != nil {
+		t.Fatalf("late SUCCESS: %v, want the settle period honoured past the timeout", err)
 	}
 }

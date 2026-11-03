@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Records deployments in GitHub with the exact artifact digest, so the release
 # gate can recognise a replayed release. Environments are per component:
-# staging-api, staging-ui, production-api, production-ui. Release-path records
+# staging-api, staging-ui, production-api, production-ui, plus staging-worker
+# (the API image run as the worker; informational, not read by the gate). Release-path records
 # (version <component>-vX.Y.Z) use task "deploy:release", which the gate's
 # replay and downgrade lookups filter on; main-path records keep "deploy".
 # Requires GH_TOKEN with deployments:write and GITHUB_REPOSITORY.

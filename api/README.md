@@ -85,7 +85,7 @@ production stores wait for the first authorized production release (GK-036).
 | `RECOVERY_B2_KEY_ID`, `RECOVERY_B2_KEY` | B2 key: one bucket, prefix `recovery/`, list/read/write only (no delete) | worker service variables (sealed); Bitwarden | create a new key with the B2 CLI, update the variables, redeploy, delete the old key | delete the key in B2 |
 | `EMAIL_WEBHOOK_SECRET`   | signing secret of the Resend webhook endpoint for this environment's API | API service variables (sealed) | replace the endpoint's secret in Resend, update the variable and redeploy promptly (deliveries signed with a secret the API does not have are refused and retried by Resend) | delete the webhook endpoint in Resend |
 | `RECOVERY_ENCRYPTION_KEYS` | seals journal envelopes; one list per environment | worker service variables (sealed) **and** Bitwarden (envelopes are unreadable without it) | prepend a new `kid:key`, keep the old ones listed (they still open older envelopes) | never drop a key while envelopes sealed with it are retained |
-| `MIGRATION_DATABASE_URL` | migration credential                | GitHub environment secret, staging: `STAGING_MIGRATION_DATABASE_URL` | rotate the password of the same role (see below)                | rotate; runtime services never hold it       |
+| `MIGRATION_DATABASE_URL` | migration credential (used by `gk-migrate` in deploys and by the manual Email proof workflow) | GitHub environment secret, staging: `STAGING_MIGRATION_DATABASE_URL` | rotate the password of the same role (see below)                | rotate; runtime services never hold it       |
 | `RAILWAY_STAGING_TOKEN`  | Railway project token, staging environment only | GitHub environment `staging` secret (deployable from `main` only) | regenerate in Railway, update the secret                  | delete the token in Railway                  |
 | Provider secrets         | per provider account and environment | API service variables                            | provider dashboard, update the variable, redeploy               | revoke the key in the provider dashboard     |
 
@@ -148,6 +148,21 @@ get no image and cannot be released. Workflows: `.github/workflows/staging.yml` 
   public URLs and is recorded as a GitHub deployment
   (`staging-api` / `staging-ui`, payload `version` and `artifact_digest`; task
   `deploy` for main deploys, `deploy:release` for releases).
+- **Worker.** After a successful API deploy (main or release), `deploy-worker`
+  deploys the same API image to the worker's own Railway service with the start
+  command `/usr/local/bin/gk-worker` and no health check or public domain. It
+  refuses a `RAILWAY_WORKER_SERVICE_ID` equal to the API or UI service (the
+  start command persists on a service). It then watches for 90 seconds: the
+  deployment must stay SUCCESS and keep running its first instance. Railway
+  restarts a crashed process under its restart policy without leaving SUCCESS,
+  so a second instance execution, or one that crashed, exited or is restarting,
+  fails the deploy (the service runs one replica, so two running executions
+  mean a restart). The worker exits at start when its email or recovery-journal
+  settings are wrong. If the token cannot read instance executions (after five
+  consecutive errors), or the deployment never appears among them, the check
+  falls back to the status and prints a GitHub warning. It is off until
+  `STAGING_WORKER_ENABLED` is `true` and is recorded as `staging-worker` (not
+  read by the release gate).
 - **Release.** Publish a GitHub release tagged `api-vX.Y.Z` or `ui-vX.Y.Z` on a
   `main` commit. The gate (`gk-release-gate`) deploys only that component and only
   if the tag points at a commit on `main` with a successful main CI run, the
@@ -223,6 +238,8 @@ Staging configuration (all nonsecret unless noted):
 | Name | Where | Purpose |
 | --- | --- | --- |
 | `STAGING_API_ENABLED` | repository variable | `true` enables API deploys (migrations run first) |
+| `STAGING_WORKER_ENABLED` | repository variable | `true` enables worker deploys and the email proof workflow |
+| `RAILWAY_WORKER_SERVICE_ID` | `staging` environment variable | worker deploy target |
 | `RAILWAY_ENVIRONMENT_ID`, `RAILWAY_API_SERVICE_ID`, `RAILWAY_UI_SERVICE_ID` | `staging` environment variables | deploy targets |
 | `RAILWAY_PROJECT_ID` | `staging` environment variable | reference only; not read by the workflows |
 | `STAGING_API_URL`, `STAGING_UI_URL` | `staging` environment variables | public smoke check, `https://<host>` without a trailing slash |
@@ -328,7 +345,6 @@ table). Restore tooling (as `gk_owner`) freezes all outgoing effects with
 
 Not yet:
 
-- the staging worker service and its variables (GK-024 A3b);
 - B2 Object Lock retention, restore tooling and the restore drill (GK-034
   Milestone B, GK-035). The restore tooling must replay the journal before
   workers resume: a restored database can re-anchor a notice's window (the
@@ -369,7 +385,10 @@ prepared envelope is in B2 before the provider call. Right before each call,
 window on the database clock; only then are the stored request bytes sent, in
 canonical form, with the `Idempotency-Key` header (5 s timeout). Every call is
 appended to `business.notification_attempt`, even when the worker's lease was
-lost meanwhile (the call happened).
+lost meanwhile (the call happened). A row is one call made by the worker: Go's
+HTTP client may transparently resend a POST that carries an `Idempotency-Key`
+when a reused keep-alive connection drops before any response, which Resend
+deduplicates by key.
 
 | Provider response                                     | Attempt     | Intent                     | Job                          |
 | ----------------------------------------------------- | ----------- | -------------------------- | ---------------------------- |
@@ -433,8 +452,34 @@ The engine never claims inbox delivery or reading. Logs and stored evidence
 carry IDs, HTTP status and the provider's error name only, never recipients,
 content or provider error messages.
 
-Not yet: the staging worker service and the sandbox proof (GK-024 A3b);
-manager reconcile/resend and custom-message endpoints, and showing or alerting
+**Sandbox proof (AC3).** The manual workflow `.github/workflows/email-proof.yml`
+(`staging` environment, `main` only, needs `STAGING_WORKER_ENABLED`) runs
+`cmd/gk-email-proof`:
+- with the migration credential, it enqueues controlled notices as a domain
+  transaction would: to `delivered+<run>@resend.dev` and `bounced+<run>@resend.dev`,
+  and optionally to the business mailbox for the display-name check;
+- it waits for `delivered_to_server` and `bounced` evidence from the real
+  worker and webhook;
+- it checks that `/webhooks/email` refuses unsigned, forged and stale (401) and
+  oversized (413) deliveries, none of them stored, and matches each refusal to
+  the reason the API logged (`missing or malformed signature headers`,
+  `no matching signature`, `timestamp outside the tolerance`, and the access
+  log's 413), so the stale probe proves the timestamp check, not just a bad
+  signature;
+- it scans the staging environment's logs (Railway, the window since the run
+  started) for the recipients, their local parts, the subject and the run
+  label (which is also in the body). This run's dispatch and recorded webhook
+  lines, carrying its intent IDs, must be present, so an empty, unrelated or
+  partial log cannot pass. The scan waits for log indexing and retries.
+
+Result **pass** means everything above was shown. **Fail** means some evidence
+contradicts AC3. **Incomplete** (also a failed run) means the logs could not be
+read or the window was truncated; the workflow's `skip_logs` input explicitly
+accepts a run without the log checks. The report in the job summary carries
+IDs, states and counts only. Each run sends two or three emails against the
+Resend Free quota.
+
+Not yet: manager reconcile/resend and custom-message endpoints, and showing or alerting
 managers about adverse evidence beyond the audit trail (GK-024 Milestone B,
 after GK-021 and GK-023/025); after a restore, re-correlating `unmatched`
 events and applying `matched` events that arrived while their intent was
