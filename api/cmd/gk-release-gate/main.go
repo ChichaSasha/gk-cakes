@@ -149,7 +149,7 @@ func verifyExit(res releasegate.VerifyResult, err error) (int, string) {
 	case releasegate.VerifyDeploy:
 		return exitOK, "verified: " + res.Reason
 	case releasegate.VerifyReplay:
-		return exitReleased, "already deployed: " + res.Reason
+		return exitReleased, "replay: " + res.Reason
 	case releasegate.VerifyRejected:
 		return exitDenied, "not verified: " + res.Reason
 	default:

@@ -94,7 +94,7 @@ func TestVerifyExitCodes(t *testing.T) {
 		prefix string
 	}{
 		{releasegate.VerifyResult{Outcome: releasegate.VerifyDeploy, Reason: "ok"}, nil, exitOK, "verified: "},
-		{releasegate.VerifyResult{Outcome: releasegate.VerifyReplay, Reason: "x"}, nil, exitReleased, "already deployed: "},
+		{releasegate.VerifyResult{Outcome: releasegate.VerifyReplay, Reason: "x"}, nil, exitReleased, "replay: "},
 		{releasegate.VerifyResult{Outcome: releasegate.VerifyRejected, Reason: "older"}, nil, exitDenied, "not verified: "},
 		{releasegate.VerifyResult{Outcome: releasegate.VerifyDeploy}, errors.New("downgrade check: boom"), exitError, "error: "},
 		{releasegate.VerifyResult{}, nil, exitError, "error: unknown"},

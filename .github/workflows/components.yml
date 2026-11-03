@@ -1,6 +1,8 @@
 # GK-020 component checks for the separately built API and UI.
 # Required check names for GK-013: api, api-postgres, ui.
-# Validation only: no job deploys, publishes or receives secrets.
+# Validation only: no job deploys, publishes or receives secrets. On pull
+# requests, compat (GK-034 AC2) runs the PR's images against what staging runs
+# now through .github/scripts/compat-matrix.sh, using a job-local registry.
 name: Components
 
 on:
@@ -128,3 +130,37 @@ jobs:
           curl -fsS http://127.0.0.1:3000/healthz | grep -q '"status":"ok"'
           kill -TERM "$server"
           wait "$server"
+
+  compat:
+    name: compat
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      deployments: read
+    services:
+      registry:
+        image: registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+        ports:
+          - 5000:5000
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the PR's images into the job registry
+        run: |
+          set -o pipefail
+          for c in api ui; do
+            ref="localhost:5000/gk-cakes-$c:pr"
+            docker buildx build --platform linux/amd64 --provenance=false --sbom=false --push -t "$ref" "$c"
+            digest=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' | jq -r .digest)
+            echo "NEW_${c^^}=localhost:5000/gk-cakes-$c@$digest" >> "$GITHUB_ENV"
+          done
+      - name: Resolve the images staging runs now
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY_OWNER: ${{ github.repository_owner }}
+        run: .github/scripts/resolve-images.sh
+      - name: Compatibility matrix against staging (AC2)
+        run: .github/scripts/compat-matrix.sh

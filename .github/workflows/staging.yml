@@ -10,10 +10,12 @@
 #                     if that release is already deployed, refuse it if a higher
 #                     release of that component is recorded, then deploy it.
 # All staging deploys share one concurrency group and are never cancelled
-# while running. API deploys run migrations first and stay off until the
-# repository variable STAGING_API_ENABLED is true. Each deploy ends with a
-# public smoke check through STAGING_API_URL / STAGING_UI_URL (environment
-# variables of the staging environment).
+# while running. Before any deploy, the compatibility-matrix job runs the
+# deployed and candidate images against a disposable database (AC2, see
+# .github/scripts/compat-matrix.sh). API deploys run migrations first and stay
+# off until the repository variable STAGING_API_ENABLED is true. Each deploy
+# ends with a public smoke check through STAGING_API_URL / STAGING_UI_URL
+# (environment variables of the staging environment).
 name: Staging
 run-name: ${{ inputs.version && format('Staging release {0}', inputs.version) || format('Staging {0}', github.event.workflow_run.head_sha) }}
 
@@ -196,12 +198,42 @@ jobs:
               ;;
           esac
 
+  compat:
+    name: compatibility-matrix
+    needs: [publish, verify]
+    if: >-
+      !cancelled() &&
+      (needs.publish.result == 'success' || needs.verify.result == 'success') &&
+      (needs.publish.outputs.deploy_api == 'true' || needs.verify.outputs.deploy_api == 'true' ||
+       needs.publish.outputs.deploy_ui == 'true' || needs.verify.outputs.deploy_ui == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      deployments: read
+    env:
+      NEW_API: ${{ needs.publish.outputs.api_image || needs.verify.outputs.api_image }}
+      NEW_UI: ${{ needs.publish.outputs.ui_image || needs.verify.outputs.ui_image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+      - name: Resolve deployed and candidate images
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY_OWNER: ${{ github.repository_owner }}
+        run: .github/scripts/resolve-images.sh
+      - name: Previous/current compatibility matrix (AC2)
+        run: .github/scripts/compat-matrix.sh
+
   deploy-api:
     name: deploy-api
-    needs: [publish, verify]
+    needs: [publish, verify, compat]
     if: >-
       !cancelled() && vars.STAGING_API_ENABLED == 'true' &&
       (needs.publish.result == 'success' || needs.verify.result == 'success') &&
+      needs.compat.result == 'success' &&
       (needs.publish.outputs.deploy_api == 'true' || needs.verify.outputs.deploy_api == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -259,10 +291,11 @@ jobs:
 
   deploy-ui:
     name: deploy-ui
-    needs: [publish, verify, deploy-api]
+    needs: [publish, verify, compat, deploy-api]
     if: >-
       !cancelled() &&
       (needs.publish.result == 'success' || needs.verify.result == 'success') &&
+      needs.compat.result == 'success' &&
       (needs.publish.outputs.deploy_ui == 'true' || needs.verify.outputs.deploy_ui == 'true') &&
       (needs.deploy-api.result == 'success' || needs.deploy-api.result == 'skipped')
     runs-on: ubuntu-24.04

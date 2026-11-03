@@ -1,5 +1,7 @@
 // Command gk-migrate applies pending schema migrations once, under a database
-// advisory lock, using the migration credential (MIGRATION_DATABASE_URL).
+// advisory lock, using the migration credential (MIGRATION_DATABASE_URL). On a
+// database that is ahead of this build (a rollback) it verifies its history,
+// applies nothing and exits 0.
 package main
 
 import (
@@ -32,10 +34,16 @@ func main() {
 	}
 	defer conn.Close(context.WithoutCancel(ctx))
 
-	applied, err := migrate.Run(ctx, conn, migrations.FS)
+	report, err := migrate.Apply(ctx, conn, migrations.FS, "")
 	if err != nil {
-		logger.Error("migrate", "error", err.Error(), "applied", applied)
+		logger.Error("migrate", "error", err.Error(), "applied", report.Applied)
 		os.Exit(1)
 	}
-	logger.Info("migrations complete", "applied", applied, "env", string(cfg.Env))
+	if len(report.Ahead) > 0 {
+		// Rollback: an older release on a newer database. Forward-only
+		// migrations stay in place; this build only verified its own history.
+		logger.Info("database is ahead of this build; nothing applied", "ahead", report.Ahead, "env", string(cfg.Env))
+		return
+	}
+	logger.Info("migrations complete", "applied", report.Applied, "env", string(cfg.Env))
 }
