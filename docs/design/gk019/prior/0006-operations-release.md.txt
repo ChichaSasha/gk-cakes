@@ -1,0 +1,27 @@
+# ADR-0006: Durable effects, inventory history and component releases
+
+Status: accepted
+Scope: technical structure only; business/visual/provider policies remain blocked as named below.
+Date: 2026-09-21; revision: r3
+Decision owner: planning master for reversible technical choices; Creator for policy/spend/account ownership. Technical approver: master based on qualified Astra commerce/operations assessment; independent final review pending. Creator policy/spend approver: pending, no fabricated approval.
+Affected requirements: C14 A02 A04 A06 A09 A10 A11 S03 S04 S07 D01 D02. Consumers: feature packets, shared contracts and mapped tickets.
+
+## Context and options
+
+PostgreSQL durable jobs/inbox plus provider tools versus message broker/custom scheduler; versioned recipe snapshots versus mutable historical recipes; component release tags versus shared release.
+
+## Recommendation
+
+Transactional notification intents, evidence-based statuses and bounded retries; immutable recipe and costing snapshots, explicit actual inventory movements. Propose ui-vX.Y.Z/api-vX.Y.Z, separate target authorization, one controlled migration, additive compatibility.
+
+## Evidence and consequences
+
+[Evidence](../../planning/DELIVERY.md) checked 2026-09-21. Documentation research is not an integration test. The option minimizes operated components but still requires explicit authorization, recovery and user-facing workflow work; no free-tier production guarantee. Costs and unknowns are recorded in provider research.
+
+## Verification and change path
+
+Creator confirms release-only deployment interpretation and release publisher. GitHub plan/protection capabilities and sandbox release/restore checks must be verified before enabling credentials.
+
+Supersedes: contradictory POC proposal for this topic only; original input remains unchanged. Superseded by: none. A change invalidates affected contract sections, feature recommendations and ticket readiness; rerun independent integration review before promotion.
+
+Reconciliation r3: contracts.md is authoritative for exact gateway/lock order, late-payment full-return, external observation quarantine, timed-start materialization, notification generation/recipient fencing and exact inventory quantities. Pending statements in the original option analysis refer to Creator/provider/implementation evidence, not acceptance of these technical boundaries.

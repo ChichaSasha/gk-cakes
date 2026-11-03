@@ -1,0 +1,12 @@
+{
+  "observed_on": "2026-10-06",
+  "scope": "GK-019 read-only filesystem observation; no asset edits",
+  "expected_path": "photo_assets/logo/3000px-03.png",
+  "exists": false,
+  "expected_sha256": "2e2c1217ce2236559db51534367720e934d0e81d69eab4fbb4b74527d0abe3e0",
+  "expected_bytes": 1192250,
+  "source": "docs/creator/GK-002/interview-2026-10-05.json",
+  "source_sha256": "4d153e8b597ade2c196f19609bc1674b09a2ff515a3bbaf8d33764e9113c5f29",
+  "availability_gate": "GK-015/affected content must restore approved bytes or obtain explicit approved replacement; composite not selected",
+  "historical_approval_unchanged": true
+}

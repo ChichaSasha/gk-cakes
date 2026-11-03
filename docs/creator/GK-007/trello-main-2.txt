@@ -1,0 +1,13 @@
+GK-007 accepted policy / scope-split-r1 — part 2/3
+
+Recipes/costs: separate entered recipe per cake size; component batches may scale proportionally. Plan midpoint quantities for ranges. Quantities use 0.01 g/ml, nearest rounding with exact halves upward. Whole-item quantities stay whole: 2.5 eggs needs another multiplier or a separate approved recipe. Keep mass/volume/count separate until ingredient-specific conversions are measured; workbook 1 g/ml and 50 g/egg assumptions are not approved measured facts.
+
+Shopping estimates use latest recorded purchase prices; workbook prices have provisional as-of 5 October 2026, not a claimed purchase date. Buy whole packs and budget full pack cost; recipe cost uses consumed quantity. Example: need 500 g butter, pack 1000 g at £6.78 -> buy one pack for £6.78; consumed ingredient estimate £3.39. Agreed customer prices do not automatically change.
+
+Batch workflow: components are prepared/stored for multiple cakes. At chef-confirmed component production start deduct planned raw ingredients from chef-selected lots. At completion record actual finished output and chef-entered expiry. At cake assembly start deduct selected finished-component quantities plus direct ingredients; never deduct their raw inputs again. Record actual-use differences as traceable corrections. Chef chooses each lot; no automatic lot selection.
+
+Allow negative stock with warning and required reason; keep the discrepancy visible. Every ingredient/component batch needs an expiry date. Entered date is last usable day; block at next midnight Europe/London. Expired stock is excluded from usable supply but stays physically recorded until disposal or a reasoned date correction. No automatic waste assumption.
+
+Cancellation after start requires chef review of used/wasted/returned quantities; deductions stay unchanged until review. Remove cancelled outstanding demand, never auto-restock on refund. Before actual start, release demand without inventing consumption. Confirmed orders keep original recipe snapshots; changes need explicit amendment and required ingredient/allergen agreement. Already-made/resold cakes add no duplicate ingredient demand or consumption.
+
+Walkthrough: 1000 g stock /800 g plan -> chef start leaves 200 g stock and zero remaining demand for the deducted amount. If only 750 g was actually used, record an eligible physical return/correction of 50 g ->250 g. With 300 g stock and 500 g use ->-200 g plus reason/warning.

@@ -1,0 +1,103 @@
+{
+  "date": "2026-10-05",
+  "authorisation": {
+    "user_reply": "yes",
+    "context": "Publish prepared summaries and move both GK-002 and BO-GK-002 to Done."
+  },
+  "input_revision": "interview-r4-complete",
+  "input_sha256": "4d153e8b597ade2c196f19609bc1674b09a2ff515a3bbaf8d33764e9113c5f29",
+  "reviewed_snapshot_archive": "evidence-r4/",
+  "cards": [
+    {
+      "key": "GK-002",
+      "card_id": "6ab13b631596908322f9a7d3",
+      "board_id": "6ab074a2b3c3763832ddf623",
+      "url": "https://trello.com/c/JsXtAhB2/22-gk-002p1o070w00-supply-brand-and-cake-content-for-chrome-visual-exploration",
+      "before_list": "6ab074adb3c3763832de0087",
+      "target_list": "6ab074aeb3c3763832de00c3",
+      "target_list_name": "🏁 Done",
+      "description_sha256_before": "021b52b9aa36f153d9cab7e6b07f393191ec7310ba8de76b40674c23eb00b4fd",
+      "comment_file": "closure-summary.en.txt",
+      "comment_sha256": "5c8ab96e24edc184efc8c0b92e71f89b682cc396772688ed9db90b8f4c85bedc",
+      "status": "complete",
+      "comment_id": "6ac2fe020a7064d1f83ee353",
+      "comment_action": "created",
+      "comment_verified": true,
+      "after_list": "6ab074aeb3c3763832de00c3",
+      "done_verified": true,
+      "description_preserved": true
+    },
+    {
+      "key": "BO-GK-002",
+      "card_id": "6ab8590b33bd0173303847de",
+      "board_id": "6ab846cadeac31eff3e42507",
+      "url": "https://trello.com/c/lNT8aDIh/8-bo-gk-002o070-%D0%BD%D0%B0%D0%B4%D0%B0%D1%82%D0%B8-%D0%BB%D0%BE%D0%B3%D0%BE%D1%82%D0%B8%D0%BF-%D1%84%D0%BE%D1%82%D0%BE-%D1%82%D0%B0-%D1%96%D0%BD%D1%84%D0%BE%D1%80%D0%BC%D0%B0%D1%86%D1%96%D1%8E-%D0%BF%D1%80%D0%BE-%D1%82%D0%BE%D1%80%D1%82%D0%B8",
+      "before_list": "6ab846cadeac31eff3e42503",
+      "target_list": "6ab846cadeac31eff3e42506",
+      "target_list_name": "🏁 Done",
+      "description_sha256_before": "95cfa834e0dd7b29dc05bf2ce4150fc4a8d3fabbf6c69e8b5fc4d25bab8219e7",
+      "comment_file": "closure-summary.uk.txt",
+      "comment_sha256": "eab2a80e73f68ee77a6b14ebf11700da7df258a09290d018277ed2f54b113413",
+      "status": "complete",
+      "first_attempt": {
+        "result": "Trello HTTP 414",
+        "subsequent_read": "No owner comments returned; no comment saved."
+      },
+      "comment_parts": [
+        {
+          "file": "docs/creator/GK-002/publication-parts/owner-1.txt",
+          "sha256": "dfa72a2f68750ba5082fdd0525c619e39d3818f493351c379e4545fc89ea3782",
+          "status": "verified",
+          "comment_id": "6ac2fe47e1a3631f448734bf"
+        },
+        {
+          "file": "docs/creator/GK-002/publication-parts/owner-2.txt",
+          "sha256": "60b32f3a1014b492390ba0424fc45346038cf357f747fb3d0e691788d3a6d1fe",
+          "status": "verified",
+          "comment_id": "6ac2fe491dab75b5f5fc296c"
+        },
+        {
+          "file": "docs/creator/GK-002/publication-parts/owner-3.txt",
+          "sha256": "d07b88b2ee50f461acb5b382ee5ef53d1f3280a1408d4d15d5787d5a6616a974",
+          "status": "verified",
+          "comment_id": "6ac2fe4ad13f6ea2629a291f"
+        }
+      ],
+      "comment_verified": true,
+      "after_list": "6ab846cadeac31eff3e42506",
+      "done_verified": true,
+      "description_preserved": true
+    }
+  ],
+  "status": "complete",
+  "updated_at": "2026-10-05T01:33:01.268912+00:00",
+  "reviewed_evidence_mapping": {
+    "docs/creator/GK-002/README.md": {
+      "reviewed_snapshot": "docs/creator/GK-002/evidence-r4/README.md",
+      "sha256": "2490b1f9bde90de432b3b5b9dfa71ac39970b313b3db5d2aed40bccb9b09b5e1"
+    },
+    "docs/creator/GK-002/interview-2026-10-05.json": {
+      "reviewed_snapshot": "docs/creator/GK-002/evidence-r4/interview-2026-10-05.json",
+      "sha256": "4d153e8b597ade2c196f19609bc1674b09a2ff515a3bbaf8d33764e9113c5f29"
+    },
+    "docs/creator/GK-002/assets/price-list-2026-10-05.jpg": {
+      "reviewed_snapshot": "docs/creator/GK-002/assets/price-list-2026-10-05.jpg",
+      "sha256": "0f350be666594f1bf4404c2ea7b0ab9499fcad54f3fde4011c4344fc77faa636"
+    },
+    "docs/creator/GK-002/closure-summary.en.txt": {
+      "reviewed_snapshot": "docs/creator/GK-002/evidence-r4/closure-summary.en.txt",
+      "sha256": "dbbb11d53bcfc859f89b1dc3b2c03b98e6d1fa8add95c472403226a61b349e1c"
+    },
+    "docs/creator/GK-002/closure-summary.uk.txt": {
+      "reviewed_snapshot": "docs/creator/GK-002/evidence-r4/closure-summary.uk.txt",
+      "sha256": "4151779120c82a97be43a03b3b73349245b3024b27111f6e38f8e551eaa3455c"
+    }
+  },
+  "current_handover_sha256": {
+    "docs/creator/GK-002/README.md": "2a66788e4c5eced4e86bbdd85bc82e513dc8c13c6bfc7e9775342a5951ed0a25",
+    "docs/creator/README.md": "e2efaa6b1ca9bab3eb4cda82f6800fec9e0e49d3b1937f105f0aac60f64cb2a7",
+    "docs/creator/GK-002/closure-summary.en.txt": "5c8ab96e24edc184efc8c0b92e71f89b682cc396772688ed9db90b8f4c85bedc",
+    "docs/creator/GK-002/closure-summary.uk.txt": "eab2a80e73f68ee77a6b14ebf11700da7df258a09290d018277ed2f54b113413"
+  },
+  "post_publication_check": "Planning kit checks passed; both cards Done and exact posted text verified; reviewed r4 hashes resolve to preserved snapshots."
+}

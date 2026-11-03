@@ -1,0 +1,23 @@
+## GK-019 proposed contract amendment — r6.2 / UNPUBLISHED
+
+Owner, title, unrelated scope/labels and list remain unchanged. This dated amendment
+replaces contradictory historical policy/provider examples and adds the acceptance
+evidence below; it does not assert implementation readiness or completed tests.
+
+Contract inputs: K00–K11; docs/design/contracts.md r6.2, owner-data-contract.md
+gk019-owner-r4, gk019/schema.json r1.2 and output-manifest.json exact hashes.
+Required current evidence: Existing prerequisite implementation set; GK-019; GK-011/012; GK-037 downstream. Refresh live prerequisites and comments before
+execution; a Done setup card proves only its accepted scope.
+
+Behavior: Integrated sandbox acceptance consumes exact r6.2 outputs; scoped setup Done does not mean adapter/access/recovery tests passed. Cover complete customer/chef/custom/free/separate-delivery and provider failure flows. GK-037 remains after this before launch.
+
+Acceptance extension: Real Postgres interleavings,17-method outcome inventory and pinned versions, current sender, callback/guest/role denial, no duplicate payment/refund/email on restore, stock/retention/image cases. No live money or production release inferred. Block any unresolved applicable Q branch.
+
+Execution: apply model/context check; then smallest failing meaningful behavior
+case, coherent implementation, focused green checks, required wider checks and
+fresh independent review. Design tickets instead produce/review exact artifacts.
+No application test, UI approval, release or deployment is supplied by this amendment.
+Questions Q3–Q5 apply only where named; unresolved branches stay blocked.
+
+Full brief requirements and nonconflicting safety/verification criteria remain.
+Repository packet is local/unpushed; obtain exact files, not merely a path string.

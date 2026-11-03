@@ -1,0 +1,317 @@
+{
+  "ticket": "GK-005",
+  "revision": "scope-split-r1",
+  "recorded_at": "2026-10-05T00:56:50.495274+00:00",
+  "authorization": "Current user explicitly requested separate deferred-verification ticket and closure of the current GK-005/BO-GK-005 input work.",
+  "new_ticket": {
+    "id": "6ac2f5d1d99873c4c8f84bb4",
+    "name": "[GK-037][P0][O335][W12] Complete legal, privacy and food-label checks before launch",
+    "desc": "## Context\n\nOwner: Creator; Kind: Decision; Priority: P0 — production acceptance gate.\nOrder: 335; Wave: 12; no parallel implementation dependency.\nCreator arranges qualified review and accepts final content; Sasha/Agent prepares\nthe actual implementation inventory, evidence and required corrections.\nAgent execution policy: not applicable to the Creator decision. Any delegated\ntechnical work applies the repository model/context check at execution.\n\nUser-authorised split from [GK-005](https://trello.com/c/OWHhKPBT) and\n[BO-GK-005](https://trello.com/c/PSsIz3tI), 2026-10-05. Those cards complete the\nbusiness-input stage. This card retains the deferred verification; their closure\ndoes not assert that these checks passed.\n\nDepends on: GK-005 approved decision packet and\n[GK-035](https://trello.com/c/qtUe3uom) completed sandbox acceptance on the implemented\nUI/API/schema/provider configuration. This card does not block coding, sandbox\nsetup, contract reconciliation or GK-035 sandbox acceptance. Final first production\nrelease authorisation [GK-036](https://trello.com/c/Dtl6mdxP) requires this card Done.\nNo circular dependency: GK-035 -> GK-037 -> GK-036.\nReadiness: Backlog; actual implementation and qualified review are not available yet.\n\nRequired input: current GK-005 interview-r1 source/evidence manifest and published\nclosure summary; current GK-001/GK-003 handovers; actual implemented provider/config,\nproduct/recipe/decoration revisions and exact candidate release artifacts.\nLocal packet: docs/creator/GK-005/interview-2026-10-05.md and linked JSON evidence.\nThese local, unpushed files must be transferred/read in the executing context.\n\n## To dos\n\nT1. After implementation, prepare final Terms, cancellation/refund rules and\nPrivacy/Cookie content for qualified review. Record findings and apply corrections\nthrough versioned administration, preserving accepted order commitments (AC1).\nT2. Inventory actual providers, cookies/browser storage, analytics, data flows,\nsharing/transfers, access, retention and deletion/backup behaviour. Compare with\napproved policy; resolve differences and verify the actual site (AC2).\nT3. Check the eight flavours, every supported size, coatings and edible decorations\nagainst actual products/supplier declarations. Verify before-purchase information\nand a matching order-specific handover label; test substitutions (AC3).\nT4. Recheck the exact corrected candidate and record reviewer/Creator acceptance\nand evidence links; pass the completed gate to GK-036 (AC4).\n\n## Acceptance Criteria\n\nAC1. Qualified legal review records reviewer, date, exact content revision and\nfindings/disposition for the current 120-hour whole-order 100%/50% policy,\nstatutory rights, seller/contact particulars and privacy obligations. No unresolved\nlaunch-blocking finding. VAT status/treatment is rechecked as applicable; no\nexemption or tax rate is guessed. Revised policies are versioned and existing\norders retain their accepted commitments.\n\nAC2. Actual technology inventory records purpose, provider, retention, sharing,\ntransfers, necessary/optional classification and applicable consent/objection\ncontrols. Evidence verifies data minimisation, scoped staff access, deletion,\nwithdrawal and backup expiry/reapplication. Policies match: orders two years;\nunconverted enquiries six months from last substantive customer conversation;\npersonal photos 30 days or specifically permitted use three months from handover,\nearlier withdrawal/removal and necessary private dispute evidence; inactive account\n24 months then warning plus 30 days; device favourites one year; non-sensitive drafts\n30 days; separate financial retention; service email only; aggregate public-page\nmetrics with no private account/admin/checkout routes, ads tracking or recordings.\nExact provider behaviour and controls are checked, not inferred from marketing.\n\nAC3. Owner verifies actual ingredients and allergen declarations, including bought-in\ncomponents and decorations. Confirmed matrix: all flavours EGGS/MILK/SOYA/WHEAT;\nSnickers adds PEANUTS, Chocolate Oreo adds SULPHITES; shared-kitchen notice separate.\nAll sizes use Swiss meringue buttercream; sugar pearls/fruit/berries and any other\nchef-agreed decoration are included in the actual-order check. Approved composition\nchanges require customer agreement; otherwise original cake if feasible or full\nrefund. Purchase content and final box label match the exact order and applicable\nlabelling requirements. Record sample label/version and before-purchase evidence.\n\nAC4. Safe evidence, source dates, actual UI/API/config/content/product hashes,\nqualified findings and explicit Creator acceptance are recorded on this card.\nRequired corrections have relevant tests/review and verified delivery evidence.\nGK-036 links this completed gate and rechecks it against the intended release.\nNo production release, public launch, real sales or final legal approval is inferred\nfrom completing GK-005/BO-GK-005 or from merely creating this card.\n\n## Boundaries and verification\n\nKeep this in Backlog while implementation evidence is unavailable. No deployment,\nlegal filing, purchase of professional services or external messages are authorised\nby the card alone. Do not expose private addresses, customer records or credentials\nin evidence. Required legal/public content uses the authorised business details\nthrough the appropriate content workflow. Review documents and actual controlled\nsite behaviour; do not invent a software red/green cycle for human signoff.",
+    "closed": false,
+    "idBoard": "6ab074a2b3c3763832ddf623",
+    "idList": "6ab074adb3c3763832de0077",
+    "due": null,
+    "url": "https://trello.com/c/Zarzv2Qo/50-gk-037p0o335w12-complete-legal-privacy-and-food-label-checks-before-launch"
+  },
+  "new_ticket_description_sha256": "ddb4e78998cf993ffedc364526ed941f4f75d34270dc3f740e2c31049001e904",
+  "mutations": [
+    {
+      "operation": "create",
+      "id": "6ac2f5d1d99873c4c8f84bb4",
+      "verified": true
+    },
+    {
+      "operation": "description",
+      "id": "6ab13b5a78ce79e5d2b0e208",
+      "verified": true,
+      "description_sha256": "2476892905206c8526f62b8751dd42178a25ba5c8902fc297327501ff1e54cc7",
+      "card": {
+        "id": "6ab13b5a78ce79e5d2b0e208",
+        "name": "[GK-005][P0][O040][W00] Verify UK business, allergen, tax and privacy content",
+        "desc": "## Accepted scope split - 2026-10-05\n\nUser approved closing GK-005 and BO-GK-005 as the completed business-input stage. Deferred legal review, actual provider/privacy inventory and final product-label verification moved to [GK-037](https://trello.com/c/Zarzv2Qo).\n\nRevised acceptance: approved business/FSA/contact/VAT input; recipe/allergen/coating/substitution and money decisions; explicit privacy/retention/access/browser/analytics/email choices; versioned interview evidence and linked deferred checks. See closure decision comments and docs/creator/GK-005/interview-2026-10-05.md with its source/evidence manifest.\n\nGK-005 input is accepted for GK-011/019/027/033; other prerequisites remain. GK-019 must reconcile canonical JSON/SQL/admin contracts from interview-r1 before affected implementation. Older JSON alone is incomplete.\n\nGK-035 sandbox acceptance can finish before GK-037. Gate: GK-035 -> GK-037 -> GK-036. Closure does not claim deferred checks passed or authorise production release.\n\n## Historical original scope (superseded where the split differs)\n\n## Context\n\nOwner: Creator; Kind: Decision\nPriority: P0 — foundational or money/security/fulfillment correctness prerequisite.\nOrder: 40; Wave: 0; Parallel group: Creator decisions W00.\nRequirements: C05, C06, C09, C14, C15, A05, A11, S01, S02; Design/contract revision: planning r5, K01 K03 K08.\nAgent execution policy: not applicable (Creator-owned action).\nDepends on: none; deliverable: completed approved policy, setup/contract or tested implementation evidence from each listed prerequisite. All GK-020 dependents require B2 unless explicitly named B1.\nUnblocks: GK-011, GK-019, GK-027, GK-033, GK-036.\nSafe in parallel with: GK-001, GK-003, GK-004, GK-006, GK-007, GK-002. Independent Creator evidence collection; master reconciles overlapping policies before GK-019.\nConflicts with: shared contracts/schema/ADRs and adjacent modules; implementation owner coordinates shared edits, no same-wave implied safety.\nReadiness at publication: ready now for Creator action.\n\nThere is currently no application; this is an ordered planning packet. Verify existing food-business registration with relevant London local authority and current government/FSA/ICO guidance in provider-research.md. Supply legal/trading/contact details, VAT treatment, before-purchase and handover allergen information, customer promises/statutory-rights wording and retention/privacy/analytics classifications. This task does not authorize agent legal filing or guess exemptions.\n\nApplicable common rules: server owns prices/availability/state; GBP integer pence, UTC instants plus Europe/London display and date semantics; role/ownership checked on every action; Idempotency-Key and expected_version protect repeated/stale mutations; pending external result is not success/failure. No network calls under database locks. Detailed requirements and tests below remain mandatory even if linked files change.\n\nReferences: docs/design/contracts.md K01 K03 K08; docs/design/screens.md; docs/design/coverage.md; relevant docs/design/features/ packet; docs/planning/DELIVERY.md; SETUP.md. These are local unpushed planning artifacts; obtain this checkout's exact fingerprinted packet before execution.\n\n## To dos\n\nT1. Review current prerequisites and the concrete options/rules in Context; collect missing evidence (AC1).\nT2. Perform only the Creator action described, recording settings/decision versions and safe nonsecret evidence (AC1–AC3).\nT3. Check the acceptance examples, record remaining blockers and hand the approved output to dependent Agent tickets (AC3, AC4).\n\n## Not to dos\n\nDo not implement unrelated cleanup, register candidate alternatives, expose credentials, publish releases or deploy without the separate scoped authorization. Planning publication does not authorize application execution now. Do not mark Done without the board's acceptance.\n\n## Acceptance Criteria\n\nAC1. Chef/business owner records registration/status evidence and approved public contact/terms without exposing identity documents.\nAC2. Tax calculation/rounding and refund allocation examples are signed off; product and fulfillment copy includes allergens before purchase and at handover.\nAC3. Transactional versus marketing email, browser storage and analytics/retention decisions are explicit and versioned; unresolved legal points stay blocked.\nAC4. Required acceptance evidence is tied to exact input/output revision, checked by the appropriate reviewer/Creator and recorded on Trello. For implementation include relevant tests, all related PRs, required review/checks, merge and main CI; authorized release/deployment/smoke only when separately in scope.\n\nVerification: inspect the concrete decision/configuration and nonsecret evidence against AC1–AC3. No forced software red/green cycle for human work. Account creation follows accepted-provider gate; no secret values in Trello.\n\nPublication snapshot of the independently reviewed planning packet. Trello is the live execution record; application work has not started.\n\nVerified prerequisite cards:\n- None.\n\nVerified dependent cards:\n- GK-011: https://trello.com/c/ZhcwMqTc\n- GK-019: https://trello.com/c/lW3wuYq0\n- GK-027: https://trello.com/c/G8hLmSBU\n- GK-033: https://trello.com/c/3YbFGdmp\n- GK-036: https://trello.com/c/Dtl6mdxP",
+        "closed": false,
+        "idBoard": "6ab074a2b3c3763832ddf623",
+        "idList": "6ab074aeb3c3763832de00ad",
+        "due": null,
+        "url": "https://trello.com/c/OWHhKPBT/19-gk-005p0o040w00-verify-uk-business-allergen-tax-and-privacy-content"
+      }
+    },
+    {
+      "operation": "description",
+      "id": "6ab13e6779f809315e481d84",
+      "verified": true,
+      "description_sha256": "f4906863c9add0b2c9f829aeafc859258ccb4da83302e2a4e4ca31cb0e624641",
+      "card": {
+        "id": "6ab13e6779f809315e481d84",
+        "name": "[GK-036][P0][O340][W12] Authorize the first production component release",
+        "desc": "## Context\n\nOwner: Creator; Kind: Decision\nPriority: P0 — foundational or money/security/fulfillment correctness prerequisite.\nOrder: 340; Wave: 12; Parallel group: none; sequential integration by default.\nRequirements: D01, D02; Design/contract revision: planning r5, K09.\nAgent execution policy: not applicable (Creator-owned action).\nDepends on: GK-035, GK-005, GK-037; deliverable: completed approved policy, setup/contract or tested implementation evidence from each listed prerequisite. All GK-020 dependents require B2 unless explicitly named B1.\nUnblocks: none.\nSafe in parallel with: none approved; master can authorize disjoint work after contract/file review.\nConflicts with: shared contracts/schema/ADRs and adjacent modules; implementation owner coordinates shared edits, no same-wave implied safety.\nReadiness at publication: blocked / specified but dependent: Full sandbox and business acceptance pending.\n\nThere is currently no application; this is an ordered planning packet. Review complete sandbox acceptance, business readiness, selected spend/restore evidence and exact candidate UI/API/schema artifacts. Decide whether to authorize named first production component release(s) with actor/target/time scope. This planning card is not release permission.\n\nApplicable common rules: server owns prices/availability/state; GBP integer pence, UTC instants plus Europe/London display and date semantics; role/ownership checked on every action; Idempotency-Key and expected_version protect repeated/stale mutations; pending external result is not success/failure. No network calls under database locks. Detailed requirements and tests below remain mandatory even if linked files change.\n\nReferences: docs/design/contracts.md K09; docs/design/screens.md; docs/design/coverage.md; relevant docs/design/features/ packet; docs/planning/DELIVERY.md; SETUP.md. These are local unpushed planning artifacts; obtain this checkout's exact fingerprinted packet before execution.\n\n## To dos\n\nT1. Review current prerequisites and the concrete options/rules in Context; collect missing evidence (AC1).\nT2. Perform only the Creator action described, recording settings/decision versions and safe nonsecret evidence (AC1–AC3).\nT3. Check the acceptance examples, record remaining blockers and hand the approved output to dependent Agent tickets (AC3, AC4).\n\n## Not to dos\n\nDo not implement unrelated cleanup, register candidate alternatives, expose credentials, publish releases or deploy without the separate scoped authorization. Planning publication does not authorize application execution now. Do not mark Done without the board's acceptance.\n\n## Acceptance Criteria\n\nAC1. [GK-037](https://trello.com/c/Zarzv2Qo) is Done with legal, actual privacy/provider and food-label acceptance for this exact release candidate. Creator explicitly accepts or declines exact versions/targets and names release operator; unresolved risks remain visible.\nAC2. Production payment/email/account/domain policy and recovery evidence complete; no test-mode secret or fake content is live.\nAC3. If authorized, separate release operation records published tag, deployment/smoke evidence and rollback owner; no automatic deployment from this decision card.\nAC4. Required acceptance evidence is tied to exact input/output revision, checked by the appropriate reviewer/Creator and recorded on Trello. For implementation include relevant tests, all related PRs, required review/checks, merge and main CI; authorized release/deployment/smoke only when separately in scope.\n\nVerification: inspect the concrete decision/configuration and nonsecret evidence against AC1–AC3. No forced software red/green cycle for human work. Account creation follows accepted-provider gate; no secret values in Trello.\n\nPublication snapshot of the independently reviewed planning packet. Trello is the live execution record; application work has not started.\n\nVerified prerequisite cards:\n- GK-037: https://trello.com/c/Zarzv2Qo\n- GK-035: https://trello.com/c/qtUe3uom\n- GK-005: https://trello.com/c/OWHhKPBT\n\nVerified dependent cards:\n- None.",
+        "closed": false,
+        "idBoard": "6ab074a2b3c3763832ddf623",
+        "idList": "6ab074adb3c3763832de0077",
+        "due": null,
+        "url": "https://trello.com/c/Dtl6mdxP/49-gk-036p0o340w12-authorize-the-first-production-component-release"
+      }
+    },
+    {
+      "operation": "comment",
+      "card_id": "6ab13b5a78ce79e5d2b0e208",
+      "comment": {
+        "id": "6ac2f7d0fc9d1b3dbb08551f",
+        "type": "commentCard",
+        "date": "2026-10-05T01:05:20.332Z",
+        "memberCreator": {
+          "id": "6ab07430e77c7ae74e433bb8",
+          "username": "sashachicha13",
+          "fullName": "sashachicha13"
+        },
+        "data": {
+          "text": "GK-005 closure decisions 2026-10-05 / interview-r1 / 1 of 3\nSasha confirmed and approved the interview replies; this is not fabricated direct chef authorship. Sole trader: Elina Hryhorian trading as GK Cake London. Public contacts: gk.cake.london@gmail.com; Instagram @gk.cake.london. Supplied address is approved for legal use, retained privately in the conversation. Non-VAT registered; no VAT added separately, current user attestation.\nOfficial FSA page verified: GK Cake, FHRS 1963655, Tower Hamlets, rating 5 Very Good, inspection 29 June 2026: https://ratings.food.gov.uk/business/1963655/gk-cake\nRecipe source GK_Cake_Costs.xlsx: eight flavour compositions and component recipes; supplier/finished-label verification remains GK-037.\nAll sizes/flavours contain EGGS, MILK, SOYA, WHEAT (gluten cereals); Chocolate Oreo adds SULPHITES; Snickers adds PEANUTS, prominently. Keep original shared-kitchen notice separately and verbatim. Purchase information and handover box label must match exact order/decoration.\nSwiss meringue buttercream is standard for all sizes/flavours. Sugar pearls, fruits, berries allowed; anything else by prior chef agreement. Elina approves ingredient/allergen changes. Accepted-order composition changes need explicit customer agreement; declined/no response before preparation means original cake if feasible, otherwise full refund. No silent substitution."
+        }
+      },
+      "text_sha256": "d41164fe0f1a7b600d59fa88e7e8476b1fd7edfadee660a7f21c27a879ef0414",
+      "verified": true
+    },
+    {
+      "operation": "comment",
+      "card_id": "6ab13b5a78ce79e5d2b0e208",
+      "comment": {
+        "id": "6ac2f7d1557287f121200e38",
+        "type": "commentCard",
+        "date": "2026-10-05T01:05:21.914Z",
+        "memberCreator": {
+          "id": "6ab07430e77c7ae74e433bb8",
+          "username": "sashachicha13",
+          "fullName": "sashachicha13"
+        },
+        "data": {
+          "text": "GK-005 closure decisions 2026-10-05 / interview-r1 / 2 of 3\nWhole-pound base prices display e.g. GBP100; fractional payable/refund amounts retain pence e.g. GBP85.50. Discounts/refunds nearest penny, exact half-penny UP. GBP5.005 -> 5.01. Integer-pence technical storage; no binary float arithmetic.\nApproved: GBP101 cake less 15% = GBP85.85; separately paid GBP20 delivery gives GBP105.85 total. 50% refund GBP52.93 = cake42.93 + delivery10; full105.85. Delivery20 is illustrative, not a new tariff. General component allocation still requires technical design preserving paid/refundable limits, pending reservations and separate payments.\nCurrent GK-001/GK-003 policy: 100% strictly more than 120 elapsed hours before ORIGINAL handover; 50% at/after boundary, both cake types including no-show/post-handover. Chef cancellation100%. Moves never reset deadline. Percentage targets whole paid order including delivery. Specific GK-003 delivery-failure refund and statutory rights remain. Old 3/4-day/component-only defaults are superseded.\nFuture VAT: accepted customer totals preserved; refund actual paid amounts. Dated new price/tax versions after applicable review; changes to unpaid quotes need fresh agreement. No future tax rate assumed.\nNo legal review completed. Versioned admin policy updates after final review; existing accepted commitments preserved. Legal/privacy/label verification moved to GK-037: https://trello.com/c/Zarzv2Qo"
+        }
+      },
+      "text_sha256": "c4dcad347a57b4b663bc9c0d9ac3f5f7c7d71dec2ca8d4b993997d3e4a713ff5",
+      "verified": true
+    },
+    {
+      "operation": "comment",
+      "card_id": "6ab13b5a78ce79e5d2b0e208",
+      "comment": {
+        "id": "6ac2f7d3f9a60c6c32cd1cb9",
+        "type": "commentCard",
+        "date": "2026-10-05T01:05:23.569Z",
+        "memberCreator": {
+          "id": "6ab07430e77c7ae74e433bb8",
+          "username": "sashachicha13",
+          "fullName": "sashachicha13"
+        },
+        "data": {
+          "text": "GK-005 closure decisions 2026-10-05 / interview-r1 / 3 of 3\nEnquiries not converted: six calendar months from last substantive customer conversation; automated reminders never restart it. Ordinary order data/messages/instructions/nonpersonal references: two years after fulfilment/cancellation, then delete/anonymise; necessary financial/dispute exceptions separate.\nPersonal photos: delete within30 days after collection/delivery. Specific chef-use permission permits three months FROM HANDOVER, specifying website/Instagram publication and/or private design-reference use. Remove originals and controlled public posts at expiry or earlier withdrawal. Necessary active-dispute evidence remains private; no continued public use.\nAccount/profile/favourites/basic history: after24 months without login/new order, warn; delete/anonymise30 days later unless return. Shorter photo/order-detail limits still apply. Financial records follow applicable HMRC retention separately, not blanket retention of all personal data.\nAccess now Elina; Sasha necessary technical support only. Future kitchen/management scoped roles, no staff access now. Accountant if appointed: necessary financial information only.\nBrowser: sign-in/checkout essentials; device favourites one year; non-sensitive unfinished design choices30 days; user clearing; no persistent personal photos. Exact session expiry/reset details require technical design.\nAnalytics: aggregate visits/pageviews/load performance on public pages; exclude account/admin/checkout. No ad trackers/session recordings; visits are not unique people. Service/order emails only; no newsletter/marketing.\nFull evidence: docs/creator/GK-005/interview-2026-10-05.md plus source/evidence manifests (local unpushed files; transfer exact packet for execution). GK-019 reconciles canonical owner JSON/SQL/admin contracts before affected implementation. GK-005 input accepted; GK-037 after GK-035 gates first production release GK-036."
+        }
+      },
+      "text_sha256": "60eac3105dae430125739c987a918e9c87f0c90455d44e4249109048122e3e04",
+      "verified": true
+    },
+    {
+      "operation": "comment",
+      "card_id": "6ab85908163fa9bc11351373",
+      "comment": {
+        "id": "6ac2f7d5f2e92824b2bdabda",
+        "type": "commentCard",
+        "date": "2026-10-05T01:05:25.543Z",
+        "memberCreator": {
+          "id": "6ab07430e77c7ae74e433bb8",
+          "username": "sashachicha13",
+          "fullName": "sashachicha13"
+        },
+        "data": {
+          "text": "BO-GK-005 — завершення збору даних, 05.10.2026\nСаша погодив interview-r1 та закриття GK-005/BO-GK-005. Актуальні рішення й приклади опубліковані трьома коментарями на GK-005: https://trello.com/c/OWHhKPBT\nЮридична перевірка, фактичний перелік сервісів/обробки даних та остаточна перевірка етикеток перенесені в GK-037: https://trello.com/c/Zarzv2Qo\nРозробку це не блокує. Після sandbox-перевірки GK-035 розробник готує фактичні матеріали для GK-037; до першого реального запуску GK-036 потрібне завершення GK-037. Це закриття етапу бізнес-рішень, а не підтвердження пройденої фахової перевірки."
+        }
+      },
+      "text_sha256": "fc4b7acbd19ad6e9b8b52b6bc2d40e1995c072b8c9b7c34f12581d50d0cfb038",
+      "verified": true
+    },
+    {
+      "operation": "comment",
+      "card_id": "6ab13b6a33c1143844e6e0d1",
+      "comment": {
+        "id": "6ac2f7d71e7599180d76c844",
+        "type": "commentCard",
+        "date": "2026-10-05T01:05:27.505Z",
+        "memberCreator": {
+          "id": "6ab07430e77c7ae74e433bb8",
+          "username": "sashachicha13",
+          "fullName": "sashachicha13"
+        },
+        "data": {
+          "text": "GK-005 scope split / 2026-10-05: business input accepted; see closure decisions at https://trello.com/c/OWHhKPBT . Deferred legal, actual privacy/provider and label verification transferred to https://trello.com/c/Zarzv2Qo (GK-037), after GK-035 and before GK-036. This transfer does not block implementation. Other prerequisites remain; no Ready transition is implied. Read docs/creator/GK-005/interview-2026-10-05.md and source/evidence manifests; older decision JSON alone is incomplete."
+        }
+      },
+      "text_sha256": "bcb8ab56cfa0d99899941c897f4660fb7a98237695a09b8168948d758861ccb0",
+      "verified": true
+    },
+    {
+      "operation": "comment",
+      "card_id": "6ab13b6dfb6d82ab64f2ca14",
+      "comment": {
+        "id": "6ac2f7d8d13f6ea2629043e6",
+        "type": "commentCard",
+        "date": "2026-10-05T01:05:28.894Z",
+        "memberCreator": {
+          "id": "6ab07430e77c7ae74e433bb8",
+          "username": "sashachicha13",
+          "fullName": "sashachicha13"
+        },
+        "data": {
+          "text": "GK-005 scope split / 2026-10-05: business input accepted; see closure decisions at https://trello.com/c/OWHhKPBT . Deferred legal, actual privacy/provider and label verification transferred to https://trello.com/c/Zarzv2Qo (GK-037), after GK-035 and before GK-036. This transfer does not block implementation. Other prerequisites remain; no Ready transition is implied. Read docs/creator/GK-005/interview-2026-10-05.md and source/evidence manifests; older decision JSON alone is incomplete. GK-019 owns canonical owner-data JSON/SQL/admin/contract reconciliation of interview-r1 before affected implementation. Preserve source/comment hashes and superseded evidence."
+        }
+      },
+      "text_sha256": "a95f0487a97f1e3e6d24884f02f23da9bd6b4e725d257929593ce981cc993831",
+      "verified": true
+    },
+    {
+      "operation": "comment",
+      "card_id": "6ab13e4fa9d6fa905f1796c7",
+      "comment": {
+        "id": "6ac2f7da8d9e67587b09243c",
+        "type": "commentCard",
+        "date": "2026-10-05T01:05:30.378Z",
+        "memberCreator": {
+          "id": "6ab07430e77c7ae74e433bb8",
+          "username": "sashachicha13",
+          "fullName": "sashachicha13"
+        },
+        "data": {
+          "text": "GK-005 scope split / 2026-10-05: business input accepted; see closure decisions at https://trello.com/c/OWHhKPBT . Deferred legal, actual privacy/provider and label verification transferred to https://trello.com/c/Zarzv2Qo (GK-037), after GK-035 and before GK-036. This transfer does not block implementation. Other prerequisites remain; no Ready transition is implied. Read docs/creator/GK-005/interview-2026-10-05.md and source/evidence manifests; older decision JSON alone is incomplete."
+        }
+      },
+      "text_sha256": "bcb8ab56cfa0d99899941c897f4660fb7a98237695a09b8168948d758861ccb0",
+      "verified": true
+    },
+    {
+      "operation": "comment",
+      "card_id": "6ab13e592de8d928dfad7175",
+      "comment": {
+        "id": "6ac2f7db669e1583317c1240",
+        "type": "commentCard",
+        "date": "2026-10-05T01:05:31.895Z",
+        "memberCreator": {
+          "id": "6ab07430e77c7ae74e433bb8",
+          "username": "sashachicha13",
+          "fullName": "sashachicha13"
+        },
+        "data": {
+          "text": "GK-005 scope split / 2026-10-05: business input accepted; see closure decisions at https://trello.com/c/OWHhKPBT . Deferred legal, actual privacy/provider and label verification transferred to https://trello.com/c/Zarzv2Qo (GK-037), after GK-035 and before GK-036. This transfer does not block implementation. Other prerequisites remain; no Ready transition is implied. Read docs/creator/GK-005/interview-2026-10-05.md and source/evidence manifests; older decision JSON alone is incomplete."
+        }
+      },
+      "text_sha256": "bcb8ab56cfa0d99899941c897f4660fb7a98237695a09b8168948d758861ccb0",
+      "verified": true
+    },
+    {
+      "operation": "comment",
+      "card_id": "6ab13e64505e88e9ce813909",
+      "comment": {
+        "id": "6ac2f7dd2c644d3b434cad96",
+        "type": "commentCard",
+        "date": "2026-10-05T01:05:33.307Z",
+        "memberCreator": {
+          "id": "6ab07430e77c7ae74e433bb8",
+          "username": "sashachicha13",
+          "fullName": "sashachicha13"
+        },
+        "data": {
+          "text": "GK-005 scope split / 2026-10-05: sandbox acceptance may use accepted GK-005 business input and finish before the deferred legal/privacy/product-label gate GK-037. Provide actual implemented UI/API/schema/provider evidence to https://trello.com/c/Zarzv2Qo . Gate order is GK-035 -> GK-037 -> GK-036; GK-035 does not depend on GK-037. Other existing prerequisites and sandbox acceptance checks remain."
+        }
+      },
+      "text_sha256": "d86994f0ea1b47e148456c1d3e5dc03b83b2d9fe2a93872b3d347b5f037e45e8",
+      "verified": true
+    },
+    {
+      "operation": "comment",
+      "card_id": "6ab85921361aab7d2b90a433",
+      "comment": {
+        "id": "6ac2f7de5ceafaf69b6a21da",
+        "type": "commentCard",
+        "date": "2026-10-05T01:05:34.854Z",
+        "memberCreator": {
+          "id": "6ab07430e77c7ae74e433bb8",
+          "username": "sashachicha13",
+          "fullName": "sashachicha13"
+        },
+        "data": {
+          "text": "Перша публікація — додаткова умова від 05.10.2026: після sandbox-перевірки GK-035 потрібно завершити GK-037 (юридична перевірка, фактичні сервіси/приватність, етикетки): https://trello.com/c/Zarzv2Qo . Лише тоді погоджувати перший реальний запуск GK-036. Завершення збору бізнес-даних GK-005 не замінює цієї перевірки."
+        }
+      },
+      "text_sha256": "6b35ffe7b52b183754a93af5830f5390354bab4677d6ec2fff4e3751dfa6dd41",
+      "verified": true
+    },
+    {
+      "operation": "description",
+      "id": "6ab85908163fa9bc11351373",
+      "verified": true,
+      "description_sha256": "1406c4b7d2adb6d08395d80e4aa84304db4af41721d515db5e0b2947c2d9d5ce",
+      "card": {
+        "id": "6ab85908163fa9bc11351373",
+        "name": "[BO-GK-005][O040] Надати дані бізнесу, алергени та правила для клієнтів",
+        "desc": "### Погоджене завершення збору даних — 05.10.2026\n\nСаша погодив завершення GK-005 і BO-GK-005 як етапу збору бізнес-рішень. Дані бізнесу, алергени, округлення, строки зберігання, доступ і браузерні налаштування зафіксовані у версії interview-r1; підсумок є в коментарях GK-005.\n\nЮридичну перевірку, фактичний перелік сервісів/обробки даних та остаточну перевірку продуктів і етикеток перенесено в [GK-037](https://trello.com/c/Zarzv2Qo \"‌\"). Вони виконуються після реалізації та sandbox-перевірки GK-035 і є обов’язковими до першого реального запуску GK-036. Розробку це не блокує; завершення цієї картки не означає, що фахова перевірка вже відбулася.\n\n## Первісний опис — історичний, з урахуванням зміни вище\n\nКонтекст\n\nЩоб на сайті були правдиві дані бізнесу, безпечна інформація про їжу та зрозумілі умови для клієнтів.\n\n**Результат вашої роботи:** Пакет перевірених даних і текстів для публікації з переліком питань, які ще потребують фахової перевірки.\n\n### Коли починати\n\nПочинайте з наявних даних бізнесу й рецептів. Для незрозумілих юридичних/податкових пунктів попросіть розробника підготувати конкретне запитання та джерело.\n\n### Допомога розробника\n\nРозробник підготує чернетки сторінок і прості приклади сум; пояснить, які дані сайт збирає, навіщо й де показує. Актуальні вимоги та спірні податкові/юридичні питання перевіряються за належними джерелами або з фахівцем. Ви не повинні самостійно писати юридичний документ.\n\n### Що зробити\n\n1. Надайте назву бізнесу, публічні контакти й відомий статус реєстрації харчового бізнесу. Напишіть, ким і коли це підтверджено; документи особи не додавайте до картки.\n2. Перевірте склад/алергени кожного товару та можливий випадковий контакт з іншими алергенами на кухні. Погодьте, як ця інформація буде видима до покупки й під час видачі.\n3. Надайте відомий податковий статус. Разом із розробником і, за потреби, фахівцем перевірте умови продажу/повернень та приклади податків і округлення.\n4. Перегляньте пояснення про дані клієнтів: що зберігаємо, скільки часу, як видаляємо замовлення/запити/фото; що сайт зберігає в браузері. Окремо розгляньте листи про замовлення, рекламу й статистику.\n\n### Приклад або пояснення\n\n«Не знаю, чи зареєстрований бізнес для VAT; потрібна перевірка» — корисна відповідь. Вона залишає питання відкритим. Вона не означає «податок не застосовується».\n\n### Що передати розробнику\n\nСкопіюйте форму й дайте відповіді тут у коментарі або повідомленням розробнику з кодом **BO-GK-005**. До файлів додайте доступне посилання або прикріпіть їх. Технічні назви/версії скопіюйте з підготовленого ним матеріалу.\n\n```text\nДля публікації: назва …; контакти …\nРеєстрація харчового бізнесу: відомий статус …; джерело/дата …\nСклад/алергени: документ …; перевірено мною …\nІнформація при видачі: де/як передаємо …\nПодатковий статус, зокрема британський VAT (ПДВ): …; хто підтвердив/дата …\nПриклади податків, округлення й сум повернення від розробника (посилання/версія): …; погоджую / питання …\nУмови продажу/повернень: переглянутий документ і версія …\nПриватність: погоджені дані, строки зберігання/видалення, браузер, статистика …\nЛисти про замовлення / рекламні листи: погоджений підхід …\nПитання до фахівця, на які ще немає відповіді …\nДата відповіді: …\nСтатус: часткова відповідь / готово до перевірки.\n```\n\n### Коли ваша частина готова\n\n- Для кожного тексту/рішення зазначені джерело, дата й погоджена версія; відкриті юридичні питання залишені відкритими.\n- Перевірені алергени для покупки й видачі; є погоджені податкові та грошові приклади.\n- Є явні рішення щодо приватності, браузерного зберігання, статистики, строків зберігання й видалення; документи особи не потрапляють у Trello.\n\nДля завершення потрібне ваше явне погодження саме заповнених правил/матеріалів або показаної версії та перевірка повноти розробником. «Не знаю», відсутні потрібні дані й зауваження, що потребують виправлення, залишають картку «На перевірці». Наведені приклади не вважаються вашими рішеннями.\n\n### Що буде далі\n\nРозробник поверне короткий підсумок українською, збереже вашу відповідь і використає погоджені дані в пов’язаній роботі. Завершення вашої картки не означає автоматичного завершення всієї функції. Якщо ви змінюєте попередню відповідь, зазначте, що саме вона замінює. Паролі, ключі, коди відновлення та документи особи сюди не додавайте.\n\nЗв’язок із загальним планом для розробника: [GK-005](https://trello.com/c/OWHhKPBT/19-gk-005p0o040w00-verify-uk-business-allergen-tax-and-privacy-content \"‌\"). Усі потрібні вам дії описані вище; читати технічну картку для відповіді не потрібно.",
+        "closed": false,
+        "idBoard": "6ab846cadeac31eff3e42507",
+        "idList": "6ab846cadeac31eff3e42505",
+        "due": null,
+        "url": "https://trello.com/c/PSsIz3tI/5-bo-gk-005o040-%D0%BD%D0%B0%D0%B4%D0%B0%D1%82%D0%B8-%D0%B4%D0%B0%D0%BD%D1%96-%D0%B1%D1%96%D0%B7%D0%BD%D0%B5%D1%81%D1%83-%D0%B0%D0%BB%D0%B5%D1%80%D0%B3%D0%B5%D0%BD%D0%B8-%D1%82%D0%B0-%D0%BF%D1%80%D0%B0%D0%B2%D0%B8%D0%BB%D0%B0-%D0%B4%D0%BB%D1%8F-%D0%BA%D0%BB%D1%96%D1%94%D0%BD%D1%82%D1%96%D0%B2"
+      }
+    },
+    {
+      "operation": "move_done",
+      "id": "6ab13b5a78ce79e5d2b0e208",
+      "verified": true,
+      "card": {
+        "id": "6ab13b5a78ce79e5d2b0e208",
+        "name": "[GK-005][P0][O040][W00] Verify UK business, allergen, tax and privacy content",
+        "desc": "## Accepted scope split - 2026-10-05\n\nUser approved closing GK-005 and BO-GK-005 as the completed business-input stage. Deferred legal review, actual provider/privacy inventory and final product-label verification moved to [GK-037](https://trello.com/c/Zarzv2Qo).\n\nRevised acceptance: approved business/FSA/contact/VAT input; recipe/allergen/coating/substitution and money decisions; explicit privacy/retention/access/browser/analytics/email choices; versioned interview evidence and linked deferred checks. See closure decision comments and docs/creator/GK-005/interview-2026-10-05.md with its source/evidence manifest.\n\nGK-005 input is accepted for GK-011/019/027/033; other prerequisites remain. GK-019 must reconcile canonical JSON/SQL/admin contracts from interview-r1 before affected implementation. Older JSON alone is incomplete.\n\nGK-035 sandbox acceptance can finish before GK-037. Gate: GK-035 -> GK-037 -> GK-036. Closure does not claim deferred checks passed or authorise production release.\n\n## Historical original scope (superseded where the split differs)\n\n## Context\n\nOwner: Creator; Kind: Decision\nPriority: P0 — foundational or money/security/fulfillment correctness prerequisite.\nOrder: 40; Wave: 0; Parallel group: Creator decisions W00.\nRequirements: C05, C06, C09, C14, C15, A05, A11, S01, S02; Design/contract revision: planning r5, K01 K03 K08.\nAgent execution policy: not applicable (Creator-owned action).\nDepends on: none; deliverable: completed approved policy, setup/contract or tested implementation evidence from each listed prerequisite. All GK-020 dependents require B2 unless explicitly named B1.\nUnblocks: GK-011, GK-019, GK-027, GK-033, GK-036.\nSafe in parallel with: GK-001, GK-003, GK-004, GK-006, GK-007, GK-002. Independent Creator evidence collection; master reconciles overlapping policies before GK-019.\nConflicts with: shared contracts/schema/ADRs and adjacent modules; implementation owner coordinates shared edits, no same-wave implied safety.\nReadiness at publication: ready now for Creator action.\n\nThere is currently no application; this is an ordered planning packet. Verify existing food-business registration with relevant London local authority and current government/FSA/ICO guidance in provider-research.md. Supply legal/trading/contact details, VAT treatment, before-purchase and handover allergen information, customer promises/statutory-rights wording and retention/privacy/analytics classifications. This task does not authorize agent legal filing or guess exemptions.\n\nApplicable common rules: server owns prices/availability/state; GBP integer pence, UTC instants plus Europe/London display and date semantics; role/ownership checked on every action; Idempotency-Key and expected_version protect repeated/stale mutations; pending external result is not success/failure. No network calls under database locks. Detailed requirements and tests below remain mandatory even if linked files change.\n\nReferences: docs/design/contracts.md K01 K03 K08; docs/design/screens.md; docs/design/coverage.md; relevant docs/design/features/ packet; docs/planning/DELIVERY.md; SETUP.md. These are local unpushed planning artifacts; obtain this checkout's exact fingerprinted packet before execution.\n\n## To dos\n\nT1. Review current prerequisites and the concrete options/rules in Context; collect missing evidence (AC1).\nT2. Perform only the Creator action described, recording settings/decision versions and safe nonsecret evidence (AC1–AC3).\nT3. Check the acceptance examples, record remaining blockers and hand the approved output to dependent Agent tickets (AC3, AC4).\n\n## Not to dos\n\nDo not implement unrelated cleanup, register candidate alternatives, expose credentials, publish releases or deploy without the separate scoped authorization. Planning publication does not authorize application execution now. Do not mark Done without the board's acceptance.\n\n## Acceptance Criteria\n\nAC1. Chef/business owner records registration/status evidence and approved public contact/terms without exposing identity documents.\nAC2. Tax calculation/rounding and refund allocation examples are signed off; product and fulfillment copy includes allergens before purchase and at handover.\nAC3. Transactional versus marketing email, browser storage and analytics/retention decisions are explicit and versioned; unresolved legal points stay blocked.\nAC4. Required acceptance evidence is tied to exact input/output revision, checked by the appropriate reviewer/Creator and recorded on Trello. For implementation include relevant tests, all related PRs, required review/checks, merge and main CI; authorized release/deployment/smoke only when separately in scope.\n\nVerification: inspect the concrete decision/configuration and nonsecret evidence against AC1–AC3. No forced software red/green cycle for human work. Account creation follows accepted-provider gate; no secret values in Trello.\n\nPublication snapshot of the independently reviewed planning packet. Trello is the live execution record; application work has not started.\n\nVerified prerequisite cards:\n- None.\n\nVerified dependent cards:\n- GK-011: https://trello.com/c/ZhcwMqTc\n- GK-019: https://trello.com/c/lW3wuYq0\n- GK-027: https://trello.com/c/G8hLmSBU\n- GK-033: https://trello.com/c/3YbFGdmp\n- GK-036: https://trello.com/c/Dtl6mdxP",
+        "closed": false,
+        "idBoard": "6ab074a2b3c3763832ddf623",
+        "idList": "6ab074aeb3c3763832de00c3",
+        "due": null,
+        "url": "https://trello.com/c/OWHhKPBT/19-gk-005p0o040w00-verify-uk-business-allergen-tax-and-privacy-content"
+      }
+    },
+    {
+      "operation": "move_done",
+      "id": "6ab85908163fa9bc11351373",
+      "verified": true,
+      "card": {
+        "id": "6ab85908163fa9bc11351373",
+        "name": "[BO-GK-005][O040] Надати дані бізнесу, алергени та правила для клієнтів",
+        "desc": "### Погоджене завершення збору даних — 05.10.2026\n\nСаша погодив завершення GK-005 і BO-GK-005 як етапу збору бізнес-рішень. Дані бізнесу, алергени, округлення, строки зберігання, доступ і браузерні налаштування зафіксовані у версії interview-r1; підсумок є в коментарях GK-005.\n\nЮридичну перевірку, фактичний перелік сервісів/обробки даних та остаточну перевірку продуктів і етикеток перенесено в [GK-037](https://trello.com/c/Zarzv2Qo \"‌\"). Вони виконуються після реалізації та sandbox-перевірки GK-035 і є обов’язковими до першого реального запуску GK-036. Розробку це не блокує; завершення цієї картки не означає, що фахова перевірка вже відбулася.\n\n## Первісний опис — історичний, з урахуванням зміни вище\n\nКонтекст\n\nЩоб на сайті були правдиві дані бізнесу, безпечна інформація про їжу та зрозумілі умови для клієнтів.\n\n**Результат вашої роботи:** Пакет перевірених даних і текстів для публікації з переліком питань, які ще потребують фахової перевірки.\n\n### Коли починати\n\nПочинайте з наявних даних бізнесу й рецептів. Для незрозумілих юридичних/податкових пунктів попросіть розробника підготувати конкретне запитання та джерело.\n\n### Допомога розробника\n\nРозробник підготує чернетки сторінок і прості приклади сум; пояснить, які дані сайт збирає, навіщо й де показує. Актуальні вимоги та спірні податкові/юридичні питання перевіряються за належними джерелами або з фахівцем. Ви не повинні самостійно писати юридичний документ.\n\n### Що зробити\n\n1. Надайте назву бізнесу, публічні контакти й відомий статус реєстрації харчового бізнесу. Напишіть, ким і коли це підтверджено; документи особи не додавайте до картки.\n2. Перевірте склад/алергени кожного товару та можливий випадковий контакт з іншими алергенами на кухні. Погодьте, як ця інформація буде видима до покупки й під час видачі.\n3. Надайте відомий податковий статус. Разом із розробником і, за потреби, фахівцем перевірте умови продажу/повернень та приклади податків і округлення.\n4. Перегляньте пояснення про дані клієнтів: що зберігаємо, скільки часу, як видаляємо замовлення/запити/фото; що сайт зберігає в браузері. Окремо розгляньте листи про замовлення, рекламу й статистику.\n\n### Приклад або пояснення\n\n«Не знаю, чи зареєстрований бізнес для VAT; потрібна перевірка» — корисна відповідь. Вона залишає питання відкритим. Вона не означає «податок не застосовується».\n\n### Що передати розробнику\n\nСкопіюйте форму й дайте відповіді тут у коментарі або повідомленням розробнику з кодом **BO-GK-005**. До файлів додайте доступне посилання або прикріпіть їх. Технічні назви/версії скопіюйте з підготовленого ним матеріалу.\n\n```text\nДля публікації: назва …; контакти …\nРеєстрація харчового бізнесу: відомий статус …; джерело/дата …\nСклад/алергени: документ …; перевірено мною …\nІнформація при видачі: де/як передаємо …\nПодатковий статус, зокрема британський VAT (ПДВ): …; хто підтвердив/дата …\nПриклади податків, округлення й сум повернення від розробника (посилання/версія): …; погоджую / питання …\nУмови продажу/повернень: переглянутий документ і версія …\nПриватність: погоджені дані, строки зберігання/видалення, браузер, статистика …\nЛисти про замовлення / рекламні листи: погоджений підхід …\nПитання до фахівця, на які ще немає відповіді …\nДата відповіді: …\nСтатус: часткова відповідь / готово до перевірки.\n```\n\n### Коли ваша частина готова\n\n- Для кожного тексту/рішення зазначені джерело, дата й погоджена версія; відкриті юридичні питання залишені відкритими.\n- Перевірені алергени для покупки й видачі; є погоджені податкові та грошові приклади.\n- Є явні рішення щодо приватності, браузерного зберігання, статистики, строків зберігання й видалення; документи особи не потрапляють у Trello.\n\nДля завершення потрібне ваше явне погодження саме заповнених правил/матеріалів або показаної версії та перевірка повноти розробником. «Не знаю», відсутні потрібні дані й зауваження, що потребують виправлення, залишають картку «На перевірці». Наведені приклади не вважаються вашими рішеннями.\n\n### Що буде далі\n\nРозробник поверне короткий підсумок українською, збереже вашу відповідь і використає погоджені дані в пов’язаній роботі. Завершення вашої картки не означає автоматичного завершення всієї функції. Якщо ви змінюєте попередню відповідь, зазначте, що саме вона замінює. Паролі, ключі, коди відновлення та документи особи сюди не додавайте.\n\nЗв’язок із загальним планом для розробника: [GK-005](https://trello.com/c/OWHhKPBT/19-gk-005p0o040w00-verify-uk-business-allergen-tax-and-privacy-content \"‌\"). Усі потрібні вам дії описані вище; читати технічну картку для відповіді не потрібно.",
+        "closed": false,
+        "idBoard": "6ab846cadeac31eff3e42507",
+        "idList": "6ab846cadeac31eff3e42506",
+        "due": null,
+        "url": "https://trello.com/c/PSsIz3tI/5-bo-gk-005o040-%D0%BD%D0%B0%D0%B4%D0%B0%D1%82%D0%B8-%D0%B4%D0%B0%D0%BD%D1%96-%D0%B1%D1%96%D0%B7%D0%BD%D0%B5%D1%81%D1%83-%D0%B0%D0%BB%D0%B5%D1%80%D0%B3%D0%B5%D0%BD%D0%B8-%D1%82%D0%B0-%D0%BF%D1%80%D0%B0%D0%B2%D0%B8%D0%BB%D0%B0-%D0%B4%D0%BB%D1%8F-%D0%BA%D0%BB%D1%96%D1%94%D0%BD%D1%82%D1%96%D0%B2"
+      }
+    }
+  ],
+  "closure_verified": true,
+  "verified_at": "2026-10-05T01:06:17.981247+00:00",
+  "historical_interview_readmes": {
+    "docs/creator/GK-005/README.md": {
+      "snapshot": "docs/creator/GK-005/evidence-2026-10-05/GK-005-README-interview-r1.md",
+      "sha256": "0469229442dfbef842346eacb7617dbc189a54bd20b6f5cb6ffef173e595fa2f"
+    },
+    "docs/creator/README.md": {
+      "snapshot": "docs/creator/GK-005/evidence-2026-10-05/creator-README-interview-r1.md",
+      "sha256": "06230f98ce97c20405026d9c0cdaf8211a6ffa05d0b0e4b28ef38602ae08eaa8"
+    }
+  },
+  "output_hashes": {
+    "docs/creator/GK-005/README.md": "eb12ff9fbb5e0243a3bf61e449361696bd3d6e534577816ea6ffdad77f204aaa",
+    "docs/creator/README.md": "96b4a0d7d96dd98f8bbfb8f5e519a54fa49c8e88db3c55de123bf8c3d5fc05ea",
+    "docs/design/PLAN.md": "8ac5fd21d6a2d34c52a1db0134a6ddc1328eac7a9487e70006305b209446b9e1",
+    "docs/design/tickets/GK-037.md": "c4a8925ba783be7d91e3d4e3c8259f6956878efa26a093b83e3f139f7df68708",
+    "docs/creator/GK-005/closure-scope-2026-10-05.md": "b2d9ba75045406650526a1c8617b0b9b940bf321ead7772c15616396b6d83585"
+  },
+  "checks": [
+    "PASS: check_owner_intake.py (historical canonical intake)",
+    "PASS: check_planning_kit.py",
+    "PASS: check_planning_kit.py --self-test",
+    "PASS: interview-r1 hashes including preserved README snapshots; current output hashes; verified comment hashes; one new card and two verified Done transitions"
+  ]
+}

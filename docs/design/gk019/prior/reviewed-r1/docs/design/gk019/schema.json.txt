@@ -1,0 +1,580 @@
+{
+  "revision": "gk019-schema-r1",
+  "status": "technical design; not migration or seed",
+  "conventions": {
+    "ids": "UUID",
+    "money": "bigint pence GBP, checked intermediates",
+    "instants": "timestamptz UTC",
+    "local_dates": "date Europe/London",
+    "quantities": "numeric(14,2), wire decimal strings",
+    "common_fields": [
+      "version integer",
+      "created_at timestamptz",
+      "updated_at timestamptz"
+    ],
+    "configuration": "typed versioned relations; no generic operational JSON store"
+  },
+  "relations": [
+    {
+      "name": "policy_version",
+      "owner": "orders",
+      "columns": {
+        "id": "uuid PK",
+        "source_decision_id": "text NOT NULL",
+        "source_revision_sha256": "char(64) NOT NULL",
+        "predecessor_id": "uuid FK policy_version NULL",
+        "recorded_at": "timestamptz NOT NULL",
+        "effective_at": "timestamptz NULL until activation",
+        "approver_evidence": "text NOT NULL"
+      },
+      "constraints": [
+        "immutable once accepted; changes create successor"
+      ]
+    },
+    {
+      "name": "profile",
+      "owner": "identity",
+      "columns": {
+        "id": "uuid PK",
+        "provider_subject": "uuid UNIQUE NOT NULL",
+        "issuer": "text NOT NULL",
+        "last_login_at": "timestamptz",
+        "last_order_at": "timestamptz",
+        "deletion_due_at": "timestamptz NULL"
+      },
+      "constraints": [
+        "no email/Instagram auto claim"
+      ]
+    },
+    {
+      "name": "staff_capability",
+      "owner": "identity",
+      "columns": {
+        "profile_id": "uuid FK profile",
+        "capability": "text",
+        "active": "boolean",
+        "scope": "text",
+        "granted_by": "uuid FK profile"
+      },
+      "constraints": [
+        "PK(profile_id,capability,scope); every staff command checks active"
+      ]
+    },
+    {
+      "name": "order_claim",
+      "owner": "identity",
+      "columns": {
+        "id": "uuid PK",
+        "order_id": "uuid FK orders",
+        "profile_id": "uuid FK profile",
+        "proof_ref": "protected uuid",
+        "chef_id": "uuid FK profile NULL until approved",
+        "state": "pending|approved|denied",
+        "challenge_digest": "bytea UNIQUE",
+        "expires_at": "timestamptz"
+      },
+      "constraints": [
+        "single use, verified account and chef evidence; generic denied response"
+      ]
+    },
+    {
+      "name": "recipe_version",
+      "owner": "catalog",
+      "columns": {
+        "id": "uuid PK",
+        "variant_id": "uuid FK variant",
+        "source_hash": "char(64)",
+        "policy_version_id": "uuid FK policy_version"
+      },
+      "constraints": [
+        "immutable purchased version; separate recipe per cake size"
+      ]
+    },
+    {
+      "name": "recipe_component",
+      "owner": "inventory",
+      "columns": {
+        "recipe_id": "uuid FK recipe_version",
+        "component_id": "uuid FK ingredient_or_component",
+        "quantity": "numeric(14,2)",
+        "unit": "g|ml|count"
+      },
+      "constraints": [
+        "positive quantities; whole count only; unit conversion requires measured evidence"
+      ]
+    },
+    {
+      "name": "image_revision",
+      "owner": "catalog",
+      "columns": {
+        "id": "uuid PK",
+        "object_key": "text UNIQUE",
+        "sha256": "char(64)",
+        "visibility": "public|private",
+        "state": "pending|ready|cleanup_tombstone"
+      },
+      "constraints": [
+        "immutable bytes; ready before public use; pin/cleanup same row lock"
+      ]
+    },
+    {
+      "name": "custom_request",
+      "owner": "custom",
+      "columns": {
+        "id": "uuid PK",
+        "owner_id": "uuid FK profile NULL for guest",
+        "capability_digest": "bytea NULL",
+        "desired_date": "date",
+        "servings": "integer NULL",
+        "size": "text NULL",
+        "flavour": "text",
+        "description": "text",
+        "palette": "text NULL",
+        "inspiration_id": "uuid FK inspiration NULL",
+        "image_revision_id": "uuid FK image_revision NULL",
+        "last_substantive_contact_at": "timestamptz",
+        "capability_revoked_at": "timestamptz NULL"
+      },
+      "constraints": [
+        "servings OR size; paired reference or both NULL; contact ownership;6 calendar months retention"
+      ]
+    },
+    {
+      "name": "order_template",
+      "owner": "orders",
+      "columns": {
+        "id": "uuid PK",
+        "version": "integer",
+        "sent_at": "timestamptz",
+        "expires_at": "timestamptz",
+        "price_minor": "bigint",
+        "currency": "GBP",
+        "policy_version_id": "uuid FK policy_version",
+        "recipe_version_id": "uuid FK recipe_version",
+        "handover_at": "timestamptz",
+        "agreed_payload_hash": "char(64)",
+        "owner_id": "uuid FK profile NULL for guest",
+        "buyer_capability_digest": "bytea NULL for authenticated owner",
+        "buyer_capability_revoked_at": "timestamptz NULL",
+        "converted_order_id": "uuid FK orders UNIQUE NULL"
+      },
+      "constraints": [
+        "expires=sent+24elapsed h; resend never resets; one converted order/version",
+        "quote/template access requires bound owner or active buyer proof, never identifier alone; pending/free conversion binds order grant atomically",
+        "one of owner or guest proof; proof rotation revokes old, no sent_at reset; source expiry does not revoke independently persisted order grant"
+      ]
+    },
+    {
+      "name": "orders",
+      "owner": "orders",
+      "columns": {
+        "id": "uuid PK",
+        "template_id": "uuid FK order_template",
+        "version": "integer",
+        "customer_id": "uuid FK profile NULL",
+        "customer_full_name": "text",
+        "different_payer_name": "text NULL",
+        "lifecycle": "awaiting_payment|confirmed|in_production|ready|completed|cancelled",
+        "payment_requirement": "full|none",
+        "original_handover_at": "timestamptz",
+        "full_refund_deadline_at": "timestamptz",
+        "paid_at": "timestamptz NULL",
+        "free_confirmed_at": "timestamptz NULL",
+        "preparation_effective_at": "timestamptz NULL",
+        "actual_started_at": "timestamptz NULL",
+        "recovery_state": "prepared|confirmation_pending|secured"
+      },
+      "constraints": [
+        "deadline immutable original minus120h; exactly one paid/free anchor for confirmation; terminal history never reopened"
+      ]
+    },
+    {
+      "name": "order_item",
+      "owner": "orders",
+      "columns": {
+        "id": "uuid PK",
+        "order_id": "uuid FK orders",
+        "variant_id": "uuid FK variant",
+        "recipe_version_id": "uuid FK recipe_version",
+        "quantity": "integer>0",
+        "net_paid_minor": "bigint>=0",
+        "physical_lot_id": "uuid FK finished_cake_lot NULL"
+      },
+      "constraints": [
+        "immutable configuration/allergen/price snapshot; no current-price refund recomputation"
+      ]
+    },
+    {
+      "name": "handover_day",
+      "owner": "scheduling",
+      "columns": {
+        "day": "date PK",
+        "standard_limit": "integer>=0",
+        "version": "integer"
+      },
+      "constraints": [
+        "default7; limit below commitments preserves accepted orders"
+      ]
+    },
+    {
+      "name": "capacity_allocation",
+      "owner": "scheduling",
+      "columns": {
+        "id": "uuid PK",
+        "order_id": "uuid FK orders",
+        "day": "date FK handover_day",
+        "cake_quantity": "integer>0",
+        "classification": "standard|chef_extra",
+        "state": "tentative|committed|released",
+        "expires_at": "timestamptz NULL",
+        "chef_evidence": "text NULL"
+      },
+      "constraints": [
+        "UNIQUE(order_id,day); day limit soft; chef_extra requires chef evidence; tentative15m is reconcile trigger"
+      ]
+    },
+    {
+      "name": "finished_cake_lot",
+      "owner": "inventory",
+      "columns": {
+        "id": "uuid PK",
+        "produced_quantity": "integer>=0",
+        "reserved_quantity": "integer>=0",
+        "sold_quantity": "integer>=0",
+        "expires_at": "timestamptz",
+        "original_handover_at": "timestamptz"
+      },
+      "constraints": [
+        "reserved+sold<=produced; resale same lot; no automatic restock or recipe deductions"
+      ]
+    },
+    {
+      "name": "pickup_slot",
+      "owner": "scheduling",
+      "columns": {
+        "id": "uuid PK",
+        "schedule_version_id": "uuid FK policy_version",
+        "local_day": "date",
+        "starts_at": "timestamptz",
+        "ends_at": "timestamptz",
+        "timezone": "Europe/London"
+      },
+      "constraints": [
+        "duration60m within window; overlaps allowed; no count cap"
+      ]
+    },
+    {
+      "name": "pickup_change",
+      "owner": "scheduling",
+      "columns": {
+        "id": "uuid PK",
+        "order_id": "uuid FK orders",
+        "old_slot_id": "uuid FK pickup_slot",
+        "new_slot_id": "uuid FK pickup_slot",
+        "actor_id": "uuid FK profile",
+        "agreement_ref": "text NULL",
+        "received_at": "timestamptz"
+      },
+      "constraints": [
+        "same-day selfservice>=6h; date change chef+agreement; no clock/deadline mutation"
+      ]
+    },
+    {
+      "name": "delivery_agreement",
+      "owner": "fulfillment",
+      "columns": {
+        "id": "uuid PK",
+        "order_id": "uuid FK orders",
+        "mode": "collection|customer_courier|gk_delivery",
+        "address_ref": "protected uuid NULL",
+        "window_id": "uuid FK pickup_slot",
+        "base_fee_minor": "bigint>=0",
+        "net_fee_minor": "bigint>=0",
+        "distance_meters": "integer NULL",
+        "distance_evidence": "text NULL",
+        "chef_id": "uuid FK profile NULL"
+      },
+      "constraints": [
+        "GK quote base>=10000 before discount; separate payment; approved waiver can make0; no automatic zones"
+      ]
+    },
+    {
+      "name": "code_application",
+      "owner": "pricing",
+      "columns": {
+        "id": "uuid PK",
+        "order_id": "uuid FK orders UNIQUE",
+        "code_version_id": "uuid FK discount_code_version",
+        "state": "reserved|consumed|released",
+        "discount_minor": "bigint>=0",
+        "customer_id": "uuid FK profile NULL"
+      },
+      "constraints": [
+        "one code across cake+delivery; percustomer limited requires account; paid/free cancellation never restores usage"
+      ]
+    },
+    {
+      "name": "collection",
+      "owner": "payments",
+      "columns": {
+        "id": "uuid PK",
+        "order_id": "uuid FK orders",
+        "purpose": "cake|delivery",
+        "expected_minor": "bigint>0",
+        "currency": "GBP",
+        "account": "text",
+        "environment": "sandbox|production",
+        "provider_object_id": "text NULL",
+        "operation_key": "uuid UNIQUE",
+        "body_hash": "char(64)",
+        "state": "created|pending|unknown|succeeded|failed|cancelled",
+        "started_at": "timestamptz NULL",
+        "success_at": "timestamptz NULL",
+        "observed_at": "timestamptz NULL",
+        "provider": "text NOT NULL"
+      },
+      "constraints": [
+        "UNIQUE(provider,account,environment,object); one potentially collectible operation per purpose; no provider row for free cake"
+      ]
+    },
+    {
+      "name": "refund_goal",
+      "owner": "payments",
+      "columns": {
+        "id": "uuid PK",
+        "order_id": "uuid FK orders",
+        "reason": "text",
+        "target_minor": "bigint>=0",
+        "policy_version_id": "uuid FK policy_version",
+        "received_at": "timestamptz"
+      },
+      "constraints": [
+        "one current entitlement snapshot; goal not additional reserved balance",
+        "single cumulative order goal nets all collection successes/reservations; explicit service-failure floor merged once, bounded by total paid"
+      ]
+    },
+    {
+      "name": "refund_allocation",
+      "owner": "payments",
+      "columns": {
+        "goal_id": "uuid FK refund_goal",
+        "collection_id": "uuid FK collection",
+        "target_minor": "bigint>=0"
+      },
+      "constraints": [
+        "PK(goal_id,collection_id); aggregate rounded target preserved; allocation<=actual capture"
+      ]
+    },
+    {
+      "name": "refund_operation",
+      "owner": "payments",
+      "columns": {
+        "id": "uuid PK",
+        "collection_id": "uuid FK collection",
+        "goal_id": "uuid FK refund_goal",
+        "amount_minor": "bigint>0",
+        "state": "reserved|submitting|pending|unknown|requires_action|succeeded|failed|cancelled",
+        "operation_key": "uuid UNIQUE",
+        "body_hash": "char(64)",
+        "provider_id": "text NULL",
+        "chef_authorized": "boolean"
+      },
+      "constraints": [
+        "succeeded+reserved<=capture for controlled ledger; unknown reserves; separate chef delivery dispatch",
+        "one unresolved operation per collection across reserved/submitting/pending/unknown/requires_action; raised goal waits for definitive outcome"
+      ]
+    },
+    {
+      "name": "provider_observation",
+      "owner": "payments",
+      "columns": {
+        "id": "uuid PK",
+        "provider": "text",
+        "account": "text",
+        "environment": "text",
+        "object_id": "text",
+        "observed_state": "text",
+        "actual_minor": "bigint",
+        "currency": "text",
+        "observed_at": "timestamptz",
+        "matched_operation_id": "uuid NULL"
+      },
+      "constraints": [
+        "unique provider identity; unmatched real money preserved/quarantined even over controlled cap"
+      ]
+    },
+    {
+      "name": "inventory_lot",
+      "owner": "inventory",
+      "columns": {
+        "id": "uuid PK",
+        "ingredient_or_component_id": "uuid FK ingredient_or_component",
+        "expiry_date": "date NOT NULL",
+        "quantity": "numeric(14,2)",
+        "unit": "g|ml|count",
+        "source_batch_id": "uuid NULL"
+      },
+      "constraints": [
+        "negative allowed only audited reason/warning; expires next London midnight; no automatic lot selection"
+      ]
+    },
+    {
+      "name": "stock_movement",
+      "owner": "inventory",
+      "columns": {
+        "id": "uuid PK",
+        "lot_id": "uuid FK inventory_lot",
+        "order_item_id": "uuid FK order_item NULL",
+        "component_batch_id": "uuid NULL",
+        "quantity_delta": "numeric(14,2)",
+        "operation_key": "uuid UNIQUE",
+        "reverses_id": "uuid FK stock_movement NULL",
+        "actor_id": "uuid FK profile",
+        "reason": "text"
+      },
+      "constraints": [
+        "chef actual start only; component input vs cake component use distinct; correction append only"
+      ]
+    },
+    {
+      "name": "photo_permission",
+      "owner": "privacy",
+      "columns": {
+        "id": "uuid PK",
+        "photo_id": "uuid FK image_revision",
+        "order_id": "uuid FK orders",
+        "scope": "website|instagram|private_reference",
+        "granted_at": "timestamptz",
+        "fulfilment_anchor": "timestamptz",
+        "withdrawn_at": "timestamptz NULL"
+      },
+      "constraints": [
+        "specific evidence;3months from fulfilment not permission; earlier withdrawal removes controlled copies"
+      ]
+    },
+    {
+      "name": "legal_hold",
+      "owner": "privacy",
+      "columns": {
+        "id": "uuid PK",
+        "record_id": "uuid",
+        "purpose": "text",
+        "review_due_at": "timestamptz",
+        "approved_by": "uuid FK profile",
+        "released_at": "timestamptz NULL"
+      },
+      "constraints": [
+        "necessary private evidence only; no indefinite unreviewed hold or continued public photo use"
+      ]
+    },
+    {
+      "name": "notification_intent",
+      "owner": "notifications",
+      "columns": {
+        "id": "uuid PK",
+        "transition_id": "uuid",
+        "recipient_id": "uuid",
+        "template_revision": "text",
+        "state": "queued|sending|accepted|delivered_to_server|bounced|failed|unknown",
+        "first_dispatch_at": "timestamptz NULL",
+        "key": "uuid UNIQUE",
+        "body_hash": "char(64)"
+      },
+      "constraints": [
+        "unique transition/recipient/template; immutable sender and recipient; no marketing"
+      ]
+    },
+    {
+      "name": "job",
+      "owner": "operations",
+      "columns": {
+        "id": "uuid PK",
+        "operation_id": "uuid",
+        "next_attempt_at": "timestamptz",
+        "lease_owner": "uuid NULL",
+        "generation": "bigint",
+        "lease_until": "timestamptz NULL",
+        "state": "queued|running|retry|attention|completed"
+      },
+      "constraints": [
+        "generation fences stale finalization; external calls outside locks; exhaustion visible"
+      ]
+    },
+    {
+      "name": "recovery_operation",
+      "owner": "operations",
+      "columns": {
+        "id": "uuid PK",
+        "aggregate_id": "uuid",
+        "prior_version": "integer",
+        "payload_hash": "char(64)",
+        "envelope_key": "text UNIQUE",
+        "prepared_ack_at": "timestamptz NULL",
+        "outcome_ack_at": "timestamptz NULL",
+        "state": "reserved|prepared|committed|secured|reconcile"
+      },
+      "constraints": [
+        "peraggregate serialize; independent durable intent before external effects; confirmed visible only after secured outcome"
+      ]
+    },
+    {
+      "name": "deletion_tombstone",
+      "owner": "privacy",
+      "columns": {
+        "id": "uuid PK",
+        "record_or_blob_ref": "text",
+        "effective_at": "timestamptz",
+        "scope": "text",
+        "source_policy_id": "uuid FK policy_version"
+      },
+      "constraints": [
+        "propagate to independent recovery; replay cannot resurrect deleted data"
+      ]
+    },
+    {
+      "name": "order_guest_capability",
+      "owner": "identity",
+      "columns": {
+        "id": "uuid PK",
+        "order_id": "uuid FK orders NOT NULL",
+        "capability_digest": "bytea UNIQUE NOT NULL",
+        "allowed_commands": "text[] NOT NULL",
+        "revoked_at": "timestamptz NULL",
+        "replaced_by": "uuid FK order_guest_capability NULL"
+      },
+      "constraints": [
+        "cryptographically unguessable bearer secret never stored; active digest checked per request and after mutation locks",
+        "order binding independent of custom_request; no account or staff role required",
+        "rotation/claim atomically revokes old grant; private responses no-store; external404 hides foreign/invalid grants"
+      ]
+    }
+  ],
+  "indexes": [
+    "orders(customer_id,created_at,id)",
+    "capacity_allocation(day,order_id)",
+    "capacity_allocation(day,state)",
+    "collection(state,observed_at)",
+    "job(state,next_attempt_at)",
+    "inventory_lot(ingredient_or_component_id,expiry_date)",
+    "stock_movement(lot_id,created_at)",
+    "notification_intent(state,first_dispatch_at)",
+    "recovery_operation(aggregate_id,prior_version) UNIQUE",
+    "provider_observation(provider,account,environment,object_id) UNIQUE"
+  ],
+  "unexpanded_existing_catalog_relations": [
+    "variant",
+    "inspiration",
+    "ingredient_or_component",
+    "discount_code_version"
+  ],
+  "deployment": "GK-020/owning vertical slices implement schema incrementally and real PostgreSQL tests; no application edits authorized now",
+  "open_gates": [
+    "Q1",
+    "Q2",
+    "Q3",
+    "Q4",
+    "Q5",
+    "GK-037",
+    "GK-038"
+  ]
+}

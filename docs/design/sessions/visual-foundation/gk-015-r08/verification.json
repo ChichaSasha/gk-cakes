@@ -1,0 +1,477 @@
+{
+  "date": "2026-11-02T20:16:11.728Z",
+  "sources": {
+    "poc/app.js": "0bbdc750281a0017c18b1fb5107770475cdd24e1fde59e63212a606230ad77a1",
+    "poc/styles.css": "cc43cc6cbd5d901171ae58e17b1ebf914f0a2ec8ace02fe90d9b72725eb41163"
+  },
+  "checks": [
+    {
+      "view": 320,
+      "pages": 16,
+      "result": "pass",
+      "covers": [
+        "no horizontal overflow",
+        "internal page links exist",
+        "page loads and assets",
+        "no JS errors"
+      ]
+    },
+    {
+      "view": 390,
+      "pages": 16,
+      "result": "pass",
+      "covers": [
+        "no horizontal overflow",
+        "internal page links exist",
+        "page loads and assets",
+        "no JS errors"
+      ]
+    },
+    {
+      "view": 768,
+      "pages": 16,
+      "result": "pass",
+      "covers": [
+        "no horizontal overflow",
+        "internal page links exist",
+        "page loads and assets",
+        "no JS errors"
+      ]
+    },
+    {
+      "view": 1440,
+      "pages": 16,
+      "result": "pass",
+      "covers": [
+        "no horizontal overflow",
+        "internal page links exist",
+        "page loads and assets",
+        "no JS errors"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "filters",
+        "empty results/recovery",
+        "sort",
+        "favourites across page navigation"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "empty/available/unavailable/loading date",
+        "disabled unavailable cake",
+        "PEANUTS before purchase",
+        "exact bag total and remove"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "generic custom has no product",
+        "referenced custom exact cake",
+        "edit retains input",
+        "selectable copy-failure recovery",
+        "user text not HTML",
+        "selected Email success/failure handoff"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome success",
+        "GK delivery cannot falsely confirm"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome pending",
+        "GK delivery cannot falsely confirm",
+        "replacement checkout blocked"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome late",
+        "GK delivery cannot falsely confirm",
+        "replacement checkout blocked"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome changed",
+        "GK delivery cannot falsely confirm"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome failed",
+        "GK delivery cannot falsely confirm"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome expired",
+        "GK delivery cannot falsely confirm"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome recovery",
+        "GK delivery cannot falsely confirm"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "calendar month-boundary arrows/PageDown/End",
+        "Escape returns focus",
+        "missing request date validation",
+        "automatic slots on date/mode changes",
+        "old time cleared on mode change",
+        "stale response discarded",
+        "slot empty/error states",
+        "offscreen selected date remains explicit"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "all unavailable days truly disabled",
+        "keyboard skips 23 October",
+        "synthetic clicks cannot select disabled dates",
+        "empty month focus fallback"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "confirmed serving ranges",
+        "Other required and whitespace validation",
+        "preset excludes stale Other value",
+        "local browse and drop",
+        "unsupported file error",
+        "remove focus",
+        "file count and retention on edit",
+        "native channel keyboard selection and visible focus",
+        "full custom request still subject to chef agreement"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "decorative horizontal section borders removed across all routes"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "cancellation exact amounts",
+        "six-hour time change copy",
+        "unknown cake",
+        "corrupt demo storage",
+        "mobile navigation",
+        "keyboard focus",
+        "focus preserved on favourite toggle/removal and bag removal",
+        "disabled button visual state"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "Manrope font actually loaded locally",
+        "date label14px500",
+        "plain and referenced inspiration transparent and borderless",
+        "native styled menu keyboard open/select/Escape",
+        "mouse option selection",
+        "selected long flavours fit four widths"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "forced non-base-select CSS branch retains chevron",
+        "native fallback selection filters correctly",
+        "fallback mobile no overflow"
+      ],
+      "limitation": "CSS fallback branch exercised in current Chrome; not a real legacy browser certification"
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "default Satin silver + Serif proposal",
+        "switch applies in place, keeps typed form content, moves focus to the chosen option and updates the URL",
+        "Clear demo data also clears the design choice",
+        "Instrument Serif regular and italic loaded locally",
+        "Manrope retained for buttons/UI",
+        "hero photograph is an unmasked cover panel reaching the viewport edge",
+        "promise icons removed",
+        "preview-bar switch changes surface and persists across pages",
+        "invalid option parameters ignored",
+        "Sans heading comparison uses Manrope"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "Porcelain, Satin silver and Brushed metal (r07 bytes) at 320/768/1440 across 8 routes without overflow",
+        "fixed pointer-transparent surface layer per option",
+        "per-surface muted text colour",
+        "r06 frameless inspiration aside retained on every surface",
+        "transparent footer"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "decorative fact dividers removed",
+        "tertiary custom-version action visually quieter",
+        "2px architectural button radius",
+        "optional label and its field aligned",
+        "design-option links keyboard reachable with visible focus on mobile",
+        "each option label stays on the line of its first option at 320/390",
+        "12px button text",
+        "name-led product cards (serif name, Manrope price)",
+        "order-status disabled action and Continue link separated (≥16px)"
+      ]
+    }
+  ],
+  "contrast": [
+    {
+      "fg": "#1c1b1a",
+      "bg": "#efede9",
+      "ratio": 14.71,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#1c1b1a",
+      "bg": "#e6e3de",
+      "ratio": 13.44,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#1c1b1a",
+      "bg": "#fbfaf8",
+      "ratio": 16.49,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#1c1b1a",
+      "bg": "#e8efe8",
+      "ratio": 14.69,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#57524d",
+      "bg": "#efede9",
+      "ratio": 6.6,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#57524d",
+      "bg": "#e6e3de",
+      "ratio": 6.03,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#57524d",
+      "bg": "#f7f6f3",
+      "ratio": 7.15,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#57524d",
+      "bg": "#fbfaf7",
+      "ratio": 7.4,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#57524d",
+      "bg": "#e4e0da",
+      "ratio": 5.87,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#7f7871",
+      "bg": "#e5e2dc",
+      "ratio": 3.36,
+      "minimum": 3
+    },
+    {
+      "fg": "#7f7871",
+      "bg": "#efede9",
+      "ratio": 3.72,
+      "minimum": 3
+    },
+    {
+      "fg": "#7f7871",
+      "bg": "#fbfaf8",
+      "ratio": 4.17,
+      "minimum": 3
+    },
+    {
+      "fg": "#7f7871",
+      "bg": "#e6e3de",
+      "ratio": 3.4,
+      "minimum": 3
+    },
+    {
+      "fg": "#57524d",
+      "bg": "#e5e2dc",
+      "ratio": 5.97,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#1c1b1a",
+      "bg": "#e5e2dc",
+      "ratio": 13.3,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#003354",
+      "bg": "#efede9",
+      "ratio": 11.21,
+      "minimum": 3
+    },
+    {
+      "fg": "#003354",
+      "bg": "#e6e3de",
+      "ratio": 10.24,
+      "minimum": 3
+    },
+    {
+      "fg": "#ffffff",
+      "bg": "#1c1b1a",
+      "ratio": 17.2,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#ffffff",
+      "bg": "#3a3835",
+      "ratio": 11.69,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#7a1f14",
+      "bg": "#efede9",
+      "ratio": 8.83,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#7a1f14",
+      "bg": "#f4e9e6",
+      "ratio": 8.68,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#5f5a55",
+      "bg": "#e6e3de",
+      "ratio": 5.33,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#595b5b",
+      "bg": "#fbfaf8",
+      "ratio": 6.55,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#1c1b1a",
+      "bg": "#d4d8da",
+      "ratio": 11.98,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#45494c",
+      "bg": "#d4d8da",
+      "ratio": 6.33,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#45494c",
+      "bg": "#d7dbdd",
+      "ratio": 6.52,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#45494c",
+      "bg": "#eef0f1",
+      "ratio": 7.95,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#6e7377",
+      "bg": "#f7f8f8",
+      "ratio": 4.5,
+      "minimum": 3
+    },
+    {
+      "fg": "#6e7377",
+      "bg": "#d4d8da",
+      "ratio": 3.34,
+      "minimum": 3
+    },
+    {
+      "fg": "#003354",
+      "bg": "#d4d8da",
+      "ratio": 9.14,
+      "minimum": 3
+    },
+    {
+      "fg": "#5f5a55",
+      "bg": "#d7dbdd",
+      "ratio": 4.89,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#7a1f14",
+      "bg": "#d4d8da",
+      "ratio": 7.2,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#1c1b1a",
+      "bg": "#d7dbdd",
+      "ratio": 12.34,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#171919",
+      "bg": "#858688",
+      "ratio": 4.84,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#1c1b1a",
+      "bg": "#858688",
+      "ratio": 4.72,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#003354",
+      "bg": "#858688",
+      "ratio": 3.6,
+      "minimum": 3
+    },
+    {
+      "fg": "#363838",
+      "bg": "#858688",
+      "ratio": 3.24,
+      "minimum": 3
+    },
+    {
+      "fg": "#350606",
+      "bg": "#858688",
+      "ratio": 4.88,
+      "minimum": 4.5
+    }
+  ]
+}

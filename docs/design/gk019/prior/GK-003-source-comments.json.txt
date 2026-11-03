@@ -1,0 +1,2683 @@
+{
+  "schema_version": 1,
+  "ticket": "GK-003",
+  "board": {
+    "retrieved_at": "2026-10-04T20:59:11.639752+00:00",
+    "command": [
+      "boards",
+      "get",
+      "--board",
+      "6ab846cadeac31eff3e42507"
+    ],
+    "returncode": 0,
+    "payload": {
+      "ok": true,
+      "data": {
+        "id": "6ab846cadeac31eff3e42507",
+        "name": "GK Business Owner Board",
+        "desc": "A simple Trello workflow for the GK Cakes system project, designed so your AI Agent can quickly sort work by status and move cards through a clear path from idea to done.",
+        "closed": false,
+        "url": "https://trello.com/b/cAQFJIOQ/gk-business-owner-board"
+      }
+    }
+  },
+  "card_snapshots": [
+    {
+      "role": "owner",
+      "retrieved_at": "2026-10-04T20:59:14.852812+00:00",
+      "source_modified_at": null,
+      "modified_at_note": "cards get does not expose description revision time",
+      "card": {
+        "id": "6ab8590615d32993baafa183",
+        "name": "[BO-GK-003][O020] Погодити індивідуальні замовлення, оплату й повернення",
+        "desc": "### Контекст\n\nЩоб ви й клієнт однаково розуміли, коли домовленість стає замовленням і що відбувається при скасуванні.\n\n**Результат вашої роботи:** Погоджені правила замовлення та заповнена таблиця «коли можна скасувати і скільки повернути».\n\n### Коли починати\n\nМожна описувати свою звичайну роботу зараз. Остаточні приклади скасування узгодьте з правилами початку виготовлення.\n\n### Допомога розробника\n\nРозробник дасть просту таблицю станів і пораховані приклади повернень. Він пояснить захист клієнтських даних і відмінність між отриманими, поверненими та ще очікуваними коштами. Юридичні питання збере окремо для перевірки належним фахівцем.\n\n### Що зробити\n\n1. Опишіть, що клієнт має повідомити для індивідуального торта: дата, порції, вигляд, бажані зміни, контакти тощо. Визначте, як він погоджує остаточну ціну й деталі та скільки діє ця пропозиція.\n2. Оберіть, чи дозволена покупка без створення кабінету. Погодьте повторне замовлення з перевіркою актуальної ціни, складу й дати; для додавання старого замовлення в кабінет потрібне підтвердження, що воно належить цій людині.\n3. Заповніть із розробником таблицю для неоплаченого, оплаченого, вже розпочатого, готового, виданого, простроченого й скасованого замовлення: що дозволено клієнту та які винятки можете зробити ви.\n4. Погодьте приклади повного/часткового повернення з доставкою, знижкою й податками, включно з попереднім поверненням, яке ще очікується або не вдалося. Опишіть, які докази зберігаєте для оплати й повернення поза сайтом.\n\n### Приклад або пояснення\n\nПриклад для пояснення: із £100 вже успішно повернули £20. Повне повернення означає ще £80, а не нові £100. Якщо частина лише очікує підтвердження, розробник покаже її окремо. Це не рішення про те, у яких випадках ви зобов’язані повертати кошти.\n\n### Що передати розробнику\n\nСкопіюйте форму й дайте відповіді тут у коментарі або повідомленням розробнику з кодом **BO-GK-003**. До файлів додайте доступне посилання або прикріпіть їх. Технічні назви/версії скопіюйте з підготовленого ним матеріалу.\n\n```text\nІндивідуальний запит: обов’язкові дані …\nПогодження ціни/деталей: як …; пропозиція діє …\nПокупка без кабінету: дозволена / ні / потрібне пояснення …\nПовторне замовлення та підтвердження старого замовлення: …\nДля кожного стану з таблиці розробника:\n- Клієнт може скасувати? …\n- Я можу зробити виняток? За яких умов? …\n- Що повертаємо, включно з доставкою/знижкою/податком? …\nОплата поза сайтом: приймаємо …; доказ …; доказ повернення …\nПораховані приклади: погоджую … / змінити …\nЮридичні питання, які ще треба перевірити: …\nДата відповіді: …\nСтатус: часткова відповідь / готово до перевірки.\n```\n\n### Коли ваша частина готова\n\n- Є погоджені правила для всіх перелічених станів і ручних замовлень; переписка сама по собі не створює оплаченого замовлення.\n- Приклади показують загальну суму, вже повернене, очікуване та залишок зобов’язання, зокрема після невдалої часткової операції.\n- Юридичні питання перевірені разом із даними бізнесу й умовами продажу; пропозиція розробника не вважається вашим рішенням або юридичним висновком.\n\nДля завершення потрібне ваше явне погодження саме заповнених правил/матеріалів або показаної версії та перевірка повноти розробником. «Не знаю», відсутні потрібні дані й зауваження, що потребують виправлення, залишають картку «На перевірці». Наведені приклади не вважаються вашими рішеннями.\n\n### Що буде далі\n\nРозробник поверне короткий підсумок українською, збереже вашу відповідь і використає погоджені дані в пов’язаній роботі. Завершення вашої картки не означає автоматичного завершення всієї функції. Якщо ви змінюєте попередню відповідь, зазначте, що саме вона замінює. Паролі, ключі, коди відновлення та документи особи сюди не додавайте.\n\nЗв’язок із загальним планом для розробника: [GK-003](https://trello.com/c/ftGtoGNB/17-gk-003p0o020w00-approve-customer-agreement-accounts-and-refund-policy \"‌\"). Усі потрібні вам дії описані вище; читати технічну картку для відповіді не потрібно.",
+        "closed": false,
+        "idBoard": "6ab846cadeac31eff3e42507",
+        "idList": "6ab846cadeac31eff3e42505",
+        "due": null,
+        "url": "https://trello.com/c/5FbrZxfc/3-bo-gk-003o020-%D0%BF%D0%BE%D0%B3%D0%BE%D0%B4%D0%B8%D1%82%D0%B8-%D1%96%D0%BD%D0%B4%D0%B8%D0%B2%D1%96%D0%B4%D1%83%D0%B0%D0%BB%D1%8C%D0%BD%D1%96-%D0%B7%D0%B0%D0%BC%D0%BE%D0%B2%D0%BB%D0%B5%D0%BD%D0%BD%D1%8F-%D0%BE%D0%BF%D0%BB%D0%B0%D1%82%D1%83-%D0%B9-%D0%BF%D0%BE%D0%B2%D0%B5%D1%80%D0%BD%D0%B5%D0%BD%D0%BD%D1%8F"
+      },
+      "description_sha256": "bd5e5d03946c479c117cfd2e890b9fd51dfcd8cb6d2e16d6fe6c7a65c8e709cf",
+      "classification": "task instructions/proposals/examples, not owner answers"
+    },
+    {
+      "role": "parent",
+      "retrieved_at": "2026-10-04T20:59:16.308086+00:00",
+      "source_modified_at": null,
+      "modified_at_note": "cards get does not expose description revision time",
+      "card": {
+        "id": "6ab13b539c0ea3a1a49176e9",
+        "name": "[GK-003][P0][O020][W00] Approve customer agreement, accounts and refund policy",
+        "desc": "## Context\n\nOwner: Creator; Kind: Decision\nPriority: P0 — foundational or money/security/fulfillment correctness prerequisite.\nOrder: 20; Wave: 0; Parallel group: Creator decisions W00.\nRequirements: C03, C04, C05, C06, C07, C08, C12, C13, C18, A01, A07, S02; Design/contract revision: planning r5, K02 K05.\nAgent execution policy: not applicable (Creator-owned action).\nDepends on: none; deliverable: completed approved policy, setup/contract or tested implementation evidence from each listed prerequisite. All GK-020 dependents require B2 unless explicitly named B1.\nUnblocks: GK-019, GK-017, GK-016, GK-018, GK-021, GK-025, GK-026.\nSafe in parallel with: GK-001, GK-004, GK-005, GK-006, GK-007, GK-002. Independent Creator evidence collection; master reconciles overlapping policies before GK-019.\nConflicts with: shared contracts/schema/ADRs and adjacent modules; implementation owner coordinates shared edits, no same-wave implied safety.\nReadiness at publication: ready now for Creator action.\n\nThere is currently no application; this is an ordered planning packet. Decide required custom fields, quote acceptance/expiry, guest checkout and proof-based claim, reorder history/gallery behavior, positive customer cancellation policy, admin exception matrix including completed orders, full-return and partial tax/delivery/discount allocation. Proposed full return of remaining payment is not a legal conclusion.\n\nApplicable common rules: server owns prices/availability/state; GBP integer pence, UTC instants plus Europe/London display and date semantics; role/ownership checked on every action; Idempotency-Key and expected_version protect repeated/stale mutations; pending external result is not success/failure. No network calls under database locks. Detailed requirements and tests below remain mandatory even if linked files change.\n\nReferences: docs/design/contracts.md K02 K05; docs/design/screens.md; docs/design/coverage.md; relevant docs/design/features/ packet; docs/planning/DELIVERY.md; SETUP.md. These are local unpushed planning artifacts; obtain this checkout's exact fingerprinted packet before execution.\n\nReconciled r3 requirements and acceptance extensions (mandatory for AC1–AC3):\n\nApprove offline provenance and evidence-based return workflow, including online-pending versus offline-recording race; no arbitrary paid switch. Full return is durable target, prior failed partial reopens shortfall. All rights/allocations require approved concrete examples.\n\n## To dos\n\nT1. Review current prerequisites and the concrete options/rules in Context; collect missing evidence (AC1).\nT2. Perform only the Creator action described, recording settings/decision versions and safe nonsecret evidence (AC1–AC3).\nT3. Check the acceptance examples, record remaining blockers and hand the approved output to dependent Agent tickets (AC3, AC4).\n\n## Not to dos\n\nDo not implement unrelated cleanup, register candidate alternatives, expose credentials, publish releases or deploy without the separate scoped authorization. Planning publication does not authorize application execution now. Do not mark Done without the board's acceptance.\n\n## Acceptance Criteria\n\nAC1. Versioned policy covers paid confirmed, in-production, ready, completed, expired, cancelled and unpaid states plus manual/offline orders.\nAC2. Prior partial refund and pending-then-failed partial examples state the full-return target and remaining obligation.\nAC3. Customer claim requires verified identity plus order proof; Instagram handle never proves identity. Custom conversation becomes commitment only through reviewed quote/order/payment path.\nAC4. Required acceptance evidence is tied to exact input/output revision, checked by the appropriate reviewer/Creator and recorded on Trello. For implementation include relevant tests, all related PRs, required review/checks, merge and main CI; authorized release/deployment/smoke only when separately in scope.\n\nVerification: inspect the concrete decision/configuration and nonsecret evidence against AC1–AC3. No forced software red/green cycle for human work. Account creation follows accepted-provider gate; no secret values in Trello.\n\nPublication snapshot of the independently reviewed planning packet. Trello is the live execution record; application work has not started.\n\nVerified prerequisite cards:\n- None.\n\nVerified dependent cards:\n- GK-019: https://trello.com/c/lW3wuYq0\n- GK-017: https://trello.com/c/1YGOcOHR\n- GK-016: https://trello.com/c/oapKvUNJ\n- GK-018: https://trello.com/c/jjP7btz9\n- GK-021: https://trello.com/c/zEfCJtWD\n- GK-025: https://trello.com/c/vyFTtISc\n- GK-026: https://trello.com/c/xiEN4jvp",
+        "closed": false,
+        "idBoard": "6ab074a2b3c3763832ddf623",
+        "idList": "6ab074adb3c3763832de0087",
+        "due": null,
+        "url": "https://trello.com/c/ftGtoGNB/17-gk-003p0o020w00-approve-customer-agreement-accounts-and-refund-policy"
+      },
+      "description_sha256": "d2a129ed22de5a107a405f6b3a4d25ca079857a7aab8cb51a747c87c75b2cec4",
+      "classification": "task instructions/proposals/examples, not owner answers"
+    }
+  ],
+  "retrieval": {
+    "method": "Installed Scale-Flow Trello CLI using existing Keychain authentication; authenticated browser read-only cross-check",
+    "comments_returned": 1,
+    "pagination": "comments list exposes no limit/before/cursor flags. Browser comment view shows this one comment followed by original card-creation event, no older-comment/load-more control. No pagination pages offered.",
+    "completeness": "All currently exposed comments checked via CLI and browser; no assertion about deleted comments, earlier edited text or full historical revisions.",
+    "browser_check_recorded_at": "2026-10-04T21:08:24.662098+00:00",
+    "browser_comment_permalink": "https://trello.com/c/5FbrZxfc#comment-6abac3d56b4b97c36cd21b0c",
+    "browser_terminal_action_id": "6ab8590615d32993baafa18e",
+    "source_content_incomplete": false,
+    "source_content_note": null,
+    "inaccessible_evidence": [
+      "Deleted/earlier comment revisions not exposed."
+    ]
+  },
+  "attachments": {
+    "owner": {
+      "retrieved_at": "2026-10-04T20:59:15.794016+00:00",
+      "command": [
+        "attachments",
+        "list",
+        "--card",
+        "6ab8590615d32993baafa183"
+      ],
+      "returncode": 0,
+      "payload": {
+        "ok": true,
+        "data": []
+      }
+    },
+    "parent": {
+      "retrieved_at": "2026-10-04T20:59:17.189957+00:00",
+      "command": [
+        "attachments",
+        "list",
+        "--card",
+        "6ab13b539c0ea3a1a49176e9"
+      ],
+      "returncode": 0,
+      "payload": {
+        "ok": true,
+        "data": []
+      }
+    },
+    "referenced_version": null,
+    "note": "Both attachment lists returned empty; no file versions supplied. Future public hygiene record, separate instructions and invoice evidence are mentioned, not attached."
+  },
+  "parent_comments": {
+    "retrieved_at": "2026-10-04T20:59:16.747106+00:00",
+    "command": [
+      "comments",
+      "list",
+      "--card",
+      "6ab13b539c0ea3a1a49176e9"
+    ],
+    "returncode": 0,
+    "payload": {
+      "ok": true,
+      "data": []
+    }
+  },
+  "comments": [
+    {
+      "id": "6abac3d56b4b97c36cd21b0c",
+      "type": "commentCard",
+      "author": {
+        "id": "6aba9a6ee5e52c67f1fbb09b",
+        "username": "elinahryhorian",
+        "fullName": "Elina Hryhorian"
+      },
+      "permalink": "https://trello.com/c/5FbrZxfc#comment-6abac3d56b4b97c36cd21b0c",
+      "permalink_evidence": "Observed browser timestamp link",
+      "attribution": "Owner business response: same author self-attributes verification as owner in BO-GK-005; no external identity check.",
+      "current_revision": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+      "revisions": [
+        {
+          "sha256_original_utf8": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+          "sha256_stored_utf8": "5054a11ed6c4dfa8a5d012fdc9e999074550645199f48e9dd5fbb3299827e6cb",
+          "source_timestamp": "2026-09-28T19:45:25.019Z",
+          "source_timestamp_meaning": "Trello action date; not proven last edit timestamp",
+          "retrieved_at": "2026-10-04T20:59:15.339916+00:00",
+          "text": "# BO-GK-003\n\n## Індивідуальний запит\n\nІндивідуальні запити клієнт може надсилати через Instagram.\n\nДля розрахунку індивідуального замовлення клієнт має надати:\n\n- бажану дату видачі / доставки;\n- кількість порцій або бажаний розмір торта;\n- бажаний смак / начинку;\n- повний опис того, як клієнт бачить майбутній торт;\n- бажаний дизайн та всі важливі деталі;\n- бажану кольорову гаму, якщо вона має значення;\n- один або декілька референсів дизайну.\n\nРеференси можуть бути роботами GK Cake London, інших кондитерів або дизайнерів, зображеннями з Pinterest, Instagram чи інших джерел. Клієнт також може надати декілька різних референсів, якщо хоче поєднати окремі елементи або створити власну ідею на їх основі.\n\nКлієнт може описати власну ідею без готового референсу. Важливо надати достатньо інформації про бажаний результат, щоб GK Cake London могла оцінити дизайн, обсяг роботи та вартість.\n\nДля оформлення замовлення клієнт додатково залишає:\n\n- повне ім’я;\n- номер телефону;\n- Instagram username;\n- email.\n\n## Комунікація\n\nДля звичайних індивідуальних замовлень основним каналом комунікації є Instagram.\n\nEmail може використовуватися для комунікації з компаніями, великими замовленнями, зйомками, корпоративними клієнтами або в інших випадках, коли клієнту зручніше вести офіційну комунікацію електронною поштою.\n\nНомер телефону та email збираються як контактні дані клієнта, але це не означає, що комунікація обов’язково відбуватиметься через ці канали.\n\n## Погодження ціни та деталей\n\nУсі індивідуальні замовлення погоджуються вручну.\n\nПеред оформленням замовлення GK Cake London погоджує з клієнтом:\n\n- остаточну ціну;\n- дату;\n- розмір / кількість порцій;\n- смак / начинку;\n- дизайн та погоджені деталі;\n- спосіб отримання / доставки.\n\nПісля погодження клієнтом остаточної ціни та деталей клієнт може перейти до оплати.\n\nЗамовлення вважається розміщеним, а дата та місце у виробничому графіку заброньованими лише після успішної повної оплати замовлення.\n\n## Строк дії пропозиції та резервування дати\n\nІндивідуальна пропозиція із погодженою ціною та деталями дійсна протягом 48 годин з моменту її надсилання клієнту.\n\nСтрок дії пропозиції не означає резервування дати.\n\nДата та місце у виробничому графіку бронюються лише після успішної повної оплати замовлення.\n\nКількість замовлень, які GK Cake London може прийняти на один день, обмежена. Тому протягом 48 годин доступність бажаної дати може змінитися, якщо вільні місця будуть заброньовані іншими клієнтами.\n\nЯкщо на момент оплати бажана дата вже заповнена, замовлення на цю дату не може бути підтверджене. Клієнту може бути запропонована інша доступна дата або інший варіант замовлення.\n\nПісля закінчення 48 годин ціна, дата та інші умови пропозиції можуть бути переглянуті.\n\n## Доступність слотів\n\nНа сайті відображається стандартна кількість доступних слотів на кожен робочий день. Стандартний денний ліміт становить 7 замовлень.\n\nЯкщо всі стандартні слоти на бажану дату вже заповнені, клієнт все одно може надіслати індивідуальний запит.\n\nТакі запити розглядаються вручну залежно від поточного завантаження, складності замовлень на цю дату, розміру та типу торта, наявного часу та виробничої можливості GK Cake London.\n\nЗа наявності додаткової можливості GK Cake London може погодити замовлення понад стандартний денний ліміт.\n\nТому відсутність доступних слотів на сайті не завжди означає, що замовлення на цю дату неможливе.\n\n## Формування остаточної ціни\n\nБазова ціна торта може змінюватися залежно від складності дизайну, кількості декору, використаних матеріалів та додаткового обсягу роботи.\n\nДодаткова вартість може застосовуватися, зокрема, за:\n\n- металізоване покриття;\n- велику кількість або складний piping;\n- бантики та інші додаткові декоративні елементи;\n- вишні та інший спеціальний декор;\n- свіжі ягоди та фрукти;\n- живі квіти;\n- dome-shaped cakes, якщо така форма збільшує кількість порцій або обсяг роботи;\n- інші складні або додаткові елементи дизайну.\n\nТочна вартість визначається індивідуально для кожного замовлення.\n\nКлієнт отримує остаточну ціну до оплати та самостійно вирішує, чи погоджується на запропонований варіант.\n\n## Покупка без кабінету\n\nПокупка без створення облікового запису дозволена.\n\nПри повторному замовленні необхідно повторно підтвердити актуальну ціну, дату, доступність, смак / склад, дизайн та інші деталі нового замовлення.\n\nСтаре замовлення може бути пов’язане з обліковим записом лише після підтвердження, що воно належить відповідному клієнту.\n\n## Оплата\n\nОсновним способом оплати є онлайн-оплата через checkout.\n\nЗамовлення оплачується у розмірі 100% до резервування дати.\n\nЗамовлення вважається розміщеним і дата вважається заброньованою лише після успішної повної оплати.\n\nДля окремих замовлень, зокрема великих або корпоративних, оплата може здійснюватися за інвойсом через Revolut.\n\nДля таких платежів застосовуються ті самі правила оплати, скасування та повернення коштів, що й для замовлень, оплачених через checkout.\n\n## Скасування та повернення коштів\n\n### Оплачено, виробництво ще не розпочато, більше ніж 4 дні до видачі / доставки\n\nКлієнт може скасувати замовлення.\n\nПовернення становить 50% від фактично сплаченої ціни торта.\n\nЯкщо доставка ще не була виконана, вартість доставки повертається у повному обсязі.\n\n### 4 дні або менше до видачі / доставки\n\nКлієнт може скасувати замовлення, але повернення вартості торта не здійснюється.\n\nЯкщо доставка ще не була виконана, вартість доставки повертається у повному обсязі.\n\n### Виробництво розпочато\n\nПовернення вартості торта не здійснюється.\n\nЯкщо доставка ще не була виконана, вартість доставки повертається у повному обсязі.\n\n### Торт готовий\n\nПовернення вартості торта не здійснюється.\n\nЯкщо доставка ще не була виконана, вартість доставки повертається у повному обсязі.\n\n### Торт переданий клієнту\n\nПісля передачі торта клієнту скасування замовлення та повернення коштів за звичайною процедурою скасування не передбачаються.\n\nЦе не обмежує обов’язкові права клієнта у випадках, коли товар не відповідає погодженому замовленню або застосовуються інші передбачені законом права споживача.\n\n## Якщо клієнт не забирає торт\n\nЯкщо клієнт не забирає готовий торт у погоджений час, повернення коштів не здійснюється.\n\nЯкщо це можливо, отримання може бути перенесене на наступний доступний робочий день відповідно до правил перенесення.\n\nЯкщо день отримання припадає на неділю, перенесення на понеділок неможливе, оскільки понеділок є неробочим днем.\n\nЯкщо клієнт не забирає торт і в погоджений перенесений день, торт може бути утилізований без повернення коштів.\n\n## Якщо замовлення скасовує GK Cake London\n\nЯкщо GK Cake London скасовує вже підтверджене замовлення не через порушення клієнтом погоджених умов, клієнту повертається 100% фактично сплаченої суми.\n\n## Розрахунок повернення коштів\n\nВідсоток повернення застосовується лише до фактично сплаченої ціни торта.\n\nВартість доставки розраховується окремо.\n\nЯкщо доставка ще не була виконана, сплачена за неї сума повертається у повному обсязі.\n\nЯкщо доставка вже була виконана, вартість доставки не повертається.\n\nЯкщо на замовлення була надана знижка, відсоток повернення розраховується від фактично сплаченої після знижки ціни торта, а не від початкової ціни.\n\n### Приклад 1\n\nТорт £100 + доставка £20 = £120 сплачено.\n\nЯкщо клієнт має право на повернення 50% вартості торта і доставка ще не була виконана:\n\n£50 за торт + £20 за доставку = £70 повернення.\n\n### Приклад 2\n\nПочаткова ціна торта £120.\n\nЗнижка £20.\n\nФактично сплачено £100.\n\nПри поверненні 50% сума повернення становить £50.\n\n### Приклад 3\n\nЗагальна сума, яку необхідно повернути клієнту, становить £70.\n\nЯкщо £20 уже було успішно повернуто, необхідно додатково повернути £50.\n\nЯкщо частина повернення має статус pending і ще не була успішно завершена, вона відображається окремо та не вважається завершеним поверненням.\n\n## Оплата поза сайтом\n\nДля окремих замовлень оплата може бути здійснена за інвойсом через Revolut.\n\nДля підтвердження оплати GK Cake London зберігає:\n\n- інвойс;\n- підтвердження успішної оплати / банківську транзакцію;\n- дату та суму платежу;\n- інформацію про замовлення, до якого належить платіж.\n\nУ разі повернення коштів зберігається підтвердження здійсненого refund / переказу та сума повернення.\n\n## Юридичні питання, які ще треба перевірити\n\nНеобхідно окремо перевірити з кваліфікованим спеціалістом з UK consumer law:\n\n- чи відповідають правила повернення 50% / 0% вимогам щодо справедливості та пропорційності cancellation charges;\n- чи є правило «більше ніж 4 дні / 4 дні або менше» юридично коректним та достатньо обґрунтованим;\n- чи потрібні окремі формулювання для індивідуально виготовлених, швидкопсувних, великих та весільних тортів;\n- чи потребують додаткового формулювання умови 100% передоплати та пов’язані з ними правила повернення.\n\nДата відповіді: 28.09.2026\n\nСтатус: **готово до перевірки / юридичні положення щодо скасування та повернення коштів залишаються на перевірці.**",
+          "redactions": [],
+          "coverage": [
+            {
+              "line": 1,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 2,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 3,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 4,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 5,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.request_fields"
+              ]
+            },
+            {
+              "line": 6,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.request_fields"
+              ]
+            },
+            {
+              "line": 7,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.request_fields"
+              ]
+            },
+            {
+              "line": 8,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.request_fields"
+              ]
+            },
+            {
+              "line": 9,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.request_fields"
+              ]
+            },
+            {
+              "line": 10,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.request_fields"
+              ]
+            },
+            {
+              "line": 11,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.request_fields"
+              ]
+            },
+            {
+              "line": 12,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.request_fields"
+              ]
+            },
+            {
+              "line": 13,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.request_fields"
+              ]
+            },
+            {
+              "line": 14,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.request_fields"
+              ]
+            },
+            {
+              "line": 15,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.request_fields"
+              ]
+            },
+            {
+              "line": 16,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.request_fields"
+              ]
+            },
+            {
+              "line": 17,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.request_fields"
+              ]
+            },
+            {
+              "line": 18,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.request_fields"
+              ]
+            },
+            {
+              "line": 19,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.request_fields"
+              ]
+            },
+            {
+              "line": 20,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 21,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.order_contacts"
+              ]
+            },
+            {
+              "line": 22,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.order_contacts"
+              ]
+            },
+            {
+              "line": 23,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.order_contacts"
+              ]
+            },
+            {
+              "line": 24,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.order_contacts"
+              ]
+            },
+            {
+              "line": 25,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.order_contacts"
+              ]
+            },
+            {
+              "line": 26,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.order_contacts"
+              ]
+            },
+            {
+              "line": 27,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 28,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 29,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 30,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.communication"
+              ]
+            },
+            {
+              "line": 31,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.communication"
+              ]
+            },
+            {
+              "line": 32,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.communication"
+              ]
+            },
+            {
+              "line": 33,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.communication"
+              ]
+            },
+            {
+              "line": 34,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.communication"
+              ]
+            },
+            {
+              "line": 35,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 36,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 37,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 38,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.agreement"
+              ]
+            },
+            {
+              "line": 39,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.agreement"
+              ]
+            },
+            {
+              "line": 40,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.agreement"
+              ]
+            },
+            {
+              "line": 41,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.agreement"
+              ]
+            },
+            {
+              "line": 42,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.agreement"
+              ]
+            },
+            {
+              "line": 43,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.agreement"
+              ]
+            },
+            {
+              "line": 44,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.agreement"
+              ]
+            },
+            {
+              "line": 45,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.agreement"
+              ]
+            },
+            {
+              "line": 46,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.agreement"
+              ]
+            },
+            {
+              "line": 47,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.agreement"
+              ]
+            },
+            {
+              "line": 48,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.agreement"
+              ]
+            },
+            {
+              "line": 49,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.agreement"
+              ]
+            },
+            {
+              "line": 50,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 51,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.paid_commitment"
+              ]
+            },
+            {
+              "line": 52,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 53,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 54,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 55,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.quote_validity"
+              ]
+            },
+            {
+              "line": 56,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.quote_validity"
+              ]
+            },
+            {
+              "line": 57,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.quote_validity"
+              ]
+            },
+            {
+              "line": 58,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 59,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.paid_commitment"
+              ]
+            },
+            {
+              "line": 60,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.paid_commitment"
+              ]
+            },
+            {
+              "line": 61,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.paid_commitment"
+              ]
+            },
+            {
+              "line": 62,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.paid_commitment"
+              ]
+            },
+            {
+              "line": 63,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.paid_commitment"
+              ]
+            },
+            {
+              "line": 64,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 65,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.quote_validity"
+              ]
+            },
+            {
+              "line": 66,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 67,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 68,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 69,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.daily_limit"
+              ]
+            },
+            {
+              "line": 70,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 71,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.capacity_exception"
+              ]
+            },
+            {
+              "line": 72,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.capacity_exception"
+              ]
+            },
+            {
+              "line": 73,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.capacity_exception"
+              ]
+            },
+            {
+              "line": 74,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.capacity_exception"
+              ]
+            },
+            {
+              "line": 75,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.capacity_exception"
+              ]
+            },
+            {
+              "line": 76,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.capacity_exception"
+              ]
+            },
+            {
+              "line": 77,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.capacity_exception"
+              ]
+            },
+            {
+              "line": 78,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 79,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 80,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 81,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.pricing_factors"
+              ]
+            },
+            {
+              "line": 82,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.pricing_factors"
+              ]
+            },
+            {
+              "line": 83,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.pricing_factors"
+              ]
+            },
+            {
+              "line": 84,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.pricing_factors"
+              ]
+            },
+            {
+              "line": 85,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.pricing_factors"
+              ]
+            },
+            {
+              "line": 86,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.pricing_factors"
+              ]
+            },
+            {
+              "line": 87,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.pricing_factors"
+              ]
+            },
+            {
+              "line": 88,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.pricing_factors"
+              ]
+            },
+            {
+              "line": 89,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.pricing_factors"
+              ]
+            },
+            {
+              "line": 90,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.pricing_factors"
+              ]
+            },
+            {
+              "line": 91,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.pricing_factors"
+              ]
+            },
+            {
+              "line": 92,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.pricing_factors"
+              ]
+            },
+            {
+              "line": 93,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.pricing_factors"
+              ]
+            },
+            {
+              "line": 94,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.pricing_factors"
+              ]
+            },
+            {
+              "line": 95,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.pricing_factors"
+              ]
+            },
+            {
+              "line": 96,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.pricing_factors"
+              ]
+            },
+            {
+              "line": 97,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 98,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 99,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 100,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.guest_purchase"
+              ]
+            },
+            {
+              "line": 101,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 102,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.reorder"
+              ]
+            },
+            {
+              "line": 103,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 104,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.historical_claim"
+              ]
+            },
+            {
+              "line": 105,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 106,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 107,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 108,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.payment_methods"
+              ]
+            },
+            {
+              "line": 109,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 110,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.paid_commitment"
+              ]
+            },
+            {
+              "line": 111,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.paid_commitment"
+              ]
+            },
+            {
+              "line": 112,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.paid_commitment"
+              ]
+            },
+            {
+              "line": 113,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 114,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.payment_methods"
+              ]
+            },
+            {
+              "line": 115,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.payment_methods"
+              ]
+            },
+            {
+              "line": 116,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.payment_methods"
+              ]
+            },
+            {
+              "line": 117,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 118,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 119,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 120,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.cancellation_early"
+              ]
+            },
+            {
+              "line": 121,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.cancellation_early"
+              ]
+            },
+            {
+              "line": 122,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.cancellation_early"
+              ]
+            },
+            {
+              "line": 123,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.cancellation_early"
+              ]
+            },
+            {
+              "line": 124,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.cancellation_early"
+              ]
+            },
+            {
+              "line": 125,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.cancellation_early"
+              ]
+            },
+            {
+              "line": 126,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.cancellation_early"
+              ]
+            },
+            {
+              "line": 127,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 128,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.cancellation_late"
+              ]
+            },
+            {
+              "line": 129,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.cancellation_late"
+              ]
+            },
+            {
+              "line": 130,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.cancellation_late"
+              ]
+            },
+            {
+              "line": 131,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.cancellation_late"
+              ]
+            },
+            {
+              "line": 132,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.cancellation_late"
+              ]
+            },
+            {
+              "line": 133,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 134,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 135,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 136,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 137,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 138,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 139,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 140,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 141,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 142,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 143,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 144,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 145,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 146,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.after_handover"
+              ]
+            },
+            {
+              "line": 147,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.after_handover"
+              ]
+            },
+            {
+              "line": 148,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.after_handover"
+              ]
+            },
+            {
+              "line": 149,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.after_handover"
+              ]
+            },
+            {
+              "line": 150,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.after_handover"
+              ]
+            },
+            {
+              "line": 151,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 152,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 153,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 154,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.no_show"
+              ]
+            },
+            {
+              "line": 155,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.no_show"
+              ]
+            },
+            {
+              "line": 156,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.no_show"
+              ]
+            },
+            {
+              "line": 157,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.no_show"
+              ]
+            },
+            {
+              "line": 158,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.no_show"
+              ]
+            },
+            {
+              "line": 159,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.no_show"
+              ]
+            },
+            {
+              "line": 160,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.no_show"
+              ]
+            },
+            {
+              "line": 161,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 162,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 163,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 164,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.business_cancellation"
+              ]
+            },
+            {
+              "line": 165,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 166,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 167,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 168,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_allocation"
+              ]
+            },
+            {
+              "line": 169,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_allocation"
+              ]
+            },
+            {
+              "line": 170,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_allocation"
+              ]
+            },
+            {
+              "line": 171,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_allocation"
+              ]
+            },
+            {
+              "line": 172,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_allocation"
+              ]
+            },
+            {
+              "line": 173,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_allocation"
+              ]
+            },
+            {
+              "line": 174,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_allocation"
+              ]
+            },
+            {
+              "line": 175,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_allocation"
+              ]
+            },
+            {
+              "line": 176,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_allocation"
+              ]
+            },
+            {
+              "line": 177,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 178,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_delivery"
+              ]
+            },
+            {
+              "line": 179,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_delivery"
+              ]
+            },
+            {
+              "line": 180,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_delivery"
+              ]
+            },
+            {
+              "line": 181,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_delivery"
+              ]
+            },
+            {
+              "line": 182,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_delivery"
+              ]
+            },
+            {
+              "line": 183,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_delivery"
+              ]
+            },
+            {
+              "line": 184,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_delivery"
+              ]
+            },
+            {
+              "line": 185,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 186,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_discount"
+              ]
+            },
+            {
+              "line": 187,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_discount"
+              ]
+            },
+            {
+              "line": 188,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_discount"
+              ]
+            },
+            {
+              "line": 189,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_discount"
+              ]
+            },
+            {
+              "line": 190,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_discount"
+              ]
+            },
+            {
+              "line": 191,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_discount"
+              ]
+            },
+            {
+              "line": 192,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_discount"
+              ]
+            },
+            {
+              "line": 193,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_discount"
+              ]
+            },
+            {
+              "line": 194,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_discount"
+              ]
+            },
+            {
+              "line": 195,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 196,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_remaining"
+              ]
+            },
+            {
+              "line": 197,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_remaining"
+              ]
+            },
+            {
+              "line": 198,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_remaining"
+              ]
+            },
+            {
+              "line": 199,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_remaining"
+              ]
+            },
+            {
+              "line": 200,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_remaining"
+              ]
+            },
+            {
+              "line": 201,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_remaining"
+              ]
+            },
+            {
+              "line": 202,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.refund_example_remaining"
+              ]
+            },
+            {
+              "line": 203,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 204,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 205,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 206,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.payment_methods"
+              ]
+            },
+            {
+              "line": 207,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 208,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.offline_evidence"
+              ]
+            },
+            {
+              "line": 209,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.offline_evidence"
+              ]
+            },
+            {
+              "line": 210,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.offline_evidence"
+              ]
+            },
+            {
+              "line": 211,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.offline_evidence"
+              ]
+            },
+            {
+              "line": 212,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.offline_evidence"
+              ]
+            },
+            {
+              "line": 213,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.offline_evidence"
+              ]
+            },
+            {
+              "line": 214,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.offline_evidence"
+              ]
+            },
+            {
+              "line": 215,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.offline_evidence"
+              ]
+            },
+            {
+              "line": 216,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 217,
+              "disposition": "heading",
+              "decision_ids": []
+            },
+            {
+              "line": 218,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 219,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.legal_questions"
+              ]
+            },
+            {
+              "line": 220,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.legal_questions"
+              ]
+            },
+            {
+              "line": 221,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.legal_questions"
+              ]
+            },
+            {
+              "line": 222,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.legal_questions"
+              ]
+            },
+            {
+              "line": 223,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.legal_questions"
+              ]
+            },
+            {
+              "line": 224,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.legal_questions"
+              ]
+            },
+            {
+              "line": 225,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 226,
+              "disposition": "submission_metadata",
+              "decision_ids": []
+            },
+            {
+              "line": 227,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 228,
+              "disposition": "submission_metadata",
+              "decision_ids": []
+            }
+          ],
+          "numeric_occurrences": [
+            {
+              "line": 1,
+              "occurrence": 1,
+              "written": "003",
+              "disposition": "identifier",
+              "decision_ids": []
+            },
+            {
+              "line": 15,
+              "occurrence": 1,
+              "written": "один",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.request_fields"
+              ]
+            },
+            {
+              "line": 15,
+              "occurrence": 2,
+              "written": "декілька",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.request_fields"
+              ]
+            },
+            {
+              "line": 17,
+              "occurrence": 1,
+              "written": "декілька",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.request_fields"
+              ]
+            },
+            {
+              "line": 55,
+              "occurrence": 1,
+              "written": "48",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.quote_validity"
+              ]
+            },
+            {
+              "line": 61,
+              "occurrence": 1,
+              "written": "один",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.paid_commitment"
+              ]
+            },
+            {
+              "line": 61,
+              "occurrence": 2,
+              "written": "48",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.paid_commitment"
+              ]
+            },
+            {
+              "line": 65,
+              "occurrence": 1,
+              "written": "48",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.quote_validity"
+              ]
+            },
+            {
+              "line": 69,
+              "occurrence": 1,
+              "written": "7",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.daily_limit"
+              ]
+            },
+            {
+              "line": 110,
+              "occurrence": 1,
+              "written": "100",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.paid_commitment"
+              ]
+            },
+            {
+              "line": 120,
+              "occurrence": 1,
+              "written": "4",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.cancellation_early"
+              ]
+            },
+            {
+              "line": 124,
+              "occurrence": 1,
+              "written": "50",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.cancellation_early"
+              ]
+            },
+            {
+              "line": 128,
+              "occurrence": 1,
+              "written": "4",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.cancellation_late"
+              ]
+            },
+            {
+              "line": 164,
+              "occurrence": 1,
+              "written": "100",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.business_cancellation"
+              ]
+            },
+            {
+              "line": 178,
+              "occurrence": 1,
+              "written": "1",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.refund_example_delivery"
+              ]
+            },
+            {
+              "line": 180,
+              "occurrence": 1,
+              "written": "100",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.refund_example_delivery"
+              ]
+            },
+            {
+              "line": 180,
+              "occurrence": 2,
+              "written": "20",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.refund_example_delivery"
+              ]
+            },
+            {
+              "line": 180,
+              "occurrence": 3,
+              "written": "120",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.refund_example_delivery"
+              ]
+            },
+            {
+              "line": 182,
+              "occurrence": 1,
+              "written": "50",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.refund_example_delivery"
+              ]
+            },
+            {
+              "line": 184,
+              "occurrence": 1,
+              "written": "50",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.refund_example_delivery"
+              ]
+            },
+            {
+              "line": 184,
+              "occurrence": 2,
+              "written": "20",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.refund_example_delivery"
+              ]
+            },
+            {
+              "line": 184,
+              "occurrence": 3,
+              "written": "70",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.refund_example_delivery"
+              ]
+            },
+            {
+              "line": 186,
+              "occurrence": 1,
+              "written": "2",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.refund_example_discount"
+              ]
+            },
+            {
+              "line": 188,
+              "occurrence": 1,
+              "written": "120",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.refund_example_discount"
+              ]
+            },
+            {
+              "line": 190,
+              "occurrence": 1,
+              "written": "20",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.refund_example_discount"
+              ]
+            },
+            {
+              "line": 192,
+              "occurrence": 1,
+              "written": "100",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.refund_example_discount"
+              ]
+            },
+            {
+              "line": 194,
+              "occurrence": 1,
+              "written": "50",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.refund_example_discount"
+              ]
+            },
+            {
+              "line": 194,
+              "occurrence": 2,
+              "written": "50",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.refund_example_discount"
+              ]
+            },
+            {
+              "line": 196,
+              "occurrence": 1,
+              "written": "3",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.refund_example_remaining"
+              ]
+            },
+            {
+              "line": 198,
+              "occurrence": 1,
+              "written": "70",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.refund_example_remaining"
+              ]
+            },
+            {
+              "line": 200,
+              "occurrence": 1,
+              "written": "20",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.refund_example_remaining"
+              ]
+            },
+            {
+              "line": 200,
+              "occurrence": 2,
+              "written": "50",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.refund_example_remaining"
+              ]
+            },
+            {
+              "line": 221,
+              "occurrence": 1,
+              "written": "50",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.legal_questions"
+              ]
+            },
+            {
+              "line": 221,
+              "occurrence": 2,
+              "written": "0",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.legal_questions"
+              ]
+            },
+            {
+              "line": 222,
+              "occurrence": 1,
+              "written": "4",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.legal_questions"
+              ]
+            },
+            {
+              "line": 222,
+              "occurrence": 2,
+              "written": "4",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.legal_questions"
+              ]
+            },
+            {
+              "line": 224,
+              "occurrence": 1,
+              "written": "100",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.legal_questions"
+              ]
+            },
+            {
+              "line": 226,
+              "occurrence": 1,
+              "written": "28.09.2026",
+              "disposition": "identifier",
+              "decision_ids": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chat:GK-003:2026-10-05:user-follow-up",
+      "type": "userChatSubmission",
+      "author": {
+        "display_name": "Sasha",
+        "role": "developer/user; relayed answers, not verified direct chef authorship"
+      },
+      "permalink": null,
+      "permalink_evidence": "Current Codex task; no invented public URL",
+      "attribution": "User-supplied new answers and explicitly marked first-person proposal.",
+      "current_revision": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+      "revisions": [
+        {
+          "sha256_original_utf8": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+          "sha256_stored_utf8": "7aaf5f36e747767c4f25490fe26dc6a008ed3fd8eab6862da5a069f9b38b20fb",
+          "source_timestamp": "2026-10-05",
+          "source_timestamp_meaning": "Chat intake local date, not invented precise message timestamp",
+          "retrieved_at": "2026-10-04T23:32:02.949702+00:00",
+          "text": "Source: Sasha's GK-003 message in the current Codex task, received 2026-10-05 (Europe/London). This is a chat source, not a Trello comment or a direct new chef-authored statement. The four answer bodies below are preserved verbatim. Questions are in follow-up.md and Trello comment 6ac2cb7b9d60195e8789c1ed. Parenthetical first-person proposal remains Sasha's proposal.\n\nrefund_matrix: \"клієнт може скасувати вже розпочатий/готовий торт, але отримає тільки 50% повернення. В такому випадку цей торт на сайті може відмітитися, як торт за 50% від вартості і продаватися з тими ж датами видачі, які вже були зазначені\". Не можна відкрити його знову, потрібне нове. Які винятки може робити адміністратор, зокрема після видачі, хто це погоджує та які потрібні докази - ніякі, все це тільки через особисте (інстаграм. вотсап. імейл) спілкування з шефом. При неявці чи повертаємо невиконану доставку - ні. Необговорені моменти корегуються особисто адміністратором. Якщо доставка ще не була виконана по вині GK Cake, вартість доставки повертається у повному обсязі.\n\npayment_capacity: допускається коротке технічне утримання місця лише під час оплати, хоча пропозиція сама не бронює дату. 15 хвилин.  фактично вільні місця. Деталі вказуться самим шуфом через адмін панель.Якщо оплата пройшла, а місця вже немає - замовлення все рівно прийшято. 7 тортів на день.\n\nproof_payment: Які докази достатні для прив'язки старого замовлення до перевіреного клієнт - тільки підтвердження шефом через адмін панель. Який безпечний доказ Revolut-оплати/повернення бачить перевіряльник, хто має доступ і хто може підтвердити його- підтверджує шеф, яки при принятті замоелвнння дає унікальний референс яки користувач вказує при оплаті, щоб шеф міг підвердити платіж по конкретному замоевення і перевести в статус оплачено (Але я вважаю, що замовлення може створити сам адмін через адмін панель, а потім поширити посиланняз результатами замовлення для клієнта, який оплатить через офіціний веб сайт піля погодження всіх умов введених адміністратором). Чи історія/повторення замовлення дає окремий дозвіл показувати його фото публічно, чи потрібна окрема згода - згода буде автоматично додана до умов замовлення (повинна бути опція, яку користувач обирає для того, аби його замовлення не публікували, але без цієї галочки замовлення автоматично вважається дозволеним до публікування)\n\nrefund_examples: округлення частки пенні на користь користувача. Для фахової перевірки буде найнято юриста перед запуском фінальної версії продукту.Повернення виконується або повністю (якщо повинні повернути 50, то пробуємо повернути 50, а не 20 і 30 окремо) і відповідна помилка реєструється, якщо не вдалося. Не існує частковиї повернень (де тільки частина грошей, які ми повинні були повернуи була повернена)\n",
+          "redactions": [],
+          "coverage": [
+            {
+              "line": 1,
+              "disposition": "submission_metadata",
+              "decision_ids": []
+            },
+            {
+              "line": 2,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 3,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.admin_exception",
+                "BO-GK-003.cancelled_order",
+                "BO-GK-003.delivery_failure",
+                "BO-GK-003.no_show",
+                "BO-GK-003.resale",
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 4,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 5,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.checkout_hold",
+                "BO-GK-003.daily_limit",
+                "BO-GK-003.paid_commitment"
+              ]
+            },
+            {
+              "line": 6,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 7,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.historical_claim",
+                "BO-GK-003.manual_order_link",
+                "BO-GK-003.offline_evidence",
+                "BO-GK-003.publication_preference"
+              ]
+            },
+            {
+              "line": 8,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 9,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.legal_questions",
+                "BO-GK-003.refund_execution",
+                "BO-GK-003.refund_rounding"
+              ]
+            }
+          ],
+          "numeric_occurrences": [
+            {
+              "line": 1,
+              "occurrence": 1,
+              "written": "003",
+              "disposition": "identifier",
+              "decision_ids": []
+            },
+            {
+              "line": 1,
+              "occurrence": 2,
+              "written": "2026",
+              "disposition": "identifier",
+              "decision_ids": []
+            },
+            {
+              "line": 1,
+              "occurrence": 3,
+              "written": "10",
+              "disposition": "identifier",
+              "decision_ids": []
+            },
+            {
+              "line": 1,
+              "occurrence": 4,
+              "written": "05",
+              "disposition": "identifier",
+              "decision_ids": []
+            },
+            {
+              "line": 1,
+              "occurrence": 5,
+              "written": "6",
+              "disposition": "identifier",
+              "decision_ids": []
+            },
+            {
+              "line": 1,
+              "occurrence": 6,
+              "written": "2",
+              "disposition": "identifier",
+              "decision_ids": []
+            },
+            {
+              "line": 1,
+              "occurrence": 7,
+              "written": "7",
+              "disposition": "identifier",
+              "decision_ids": []
+            },
+            {
+              "line": 1,
+              "occurrence": 8,
+              "written": "9",
+              "disposition": "identifier",
+              "decision_ids": []
+            },
+            {
+              "line": 1,
+              "occurrence": 9,
+              "written": "60195",
+              "disposition": "identifier",
+              "decision_ids": []
+            },
+            {
+              "line": 1,
+              "occurrence": 10,
+              "written": "8789",
+              "disposition": "identifier",
+              "decision_ids": []
+            },
+            {
+              "line": 1,
+              "occurrence": 11,
+              "written": "1",
+              "disposition": "identifier",
+              "decision_ids": []
+            },
+            {
+              "line": 3,
+              "occurrence": 1,
+              "written": "50",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.admin_exception",
+                "BO-GK-003.cancelled_order",
+                "BO-GK-003.delivery_failure",
+                "BO-GK-003.no_show",
+                "BO-GK-003.resale",
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 3,
+              "occurrence": 2,
+              "written": "50",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.admin_exception",
+                "BO-GK-003.cancelled_order",
+                "BO-GK-003.delivery_failure",
+                "BO-GK-003.no_show",
+                "BO-GK-003.resale",
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 5,
+              "occurrence": 1,
+              "written": "15",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.checkout_hold",
+                "BO-GK-003.daily_limit",
+                "BO-GK-003.paid_commitment"
+              ]
+            },
+            {
+              "line": 5,
+              "occurrence": 2,
+              "written": "7",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.checkout_hold",
+                "BO-GK-003.daily_limit",
+                "BO-GK-003.paid_commitment"
+              ]
+            },
+            {
+              "line": 9,
+              "occurrence": 1,
+              "written": "50",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.legal_questions",
+                "BO-GK-003.refund_execution",
+                "BO-GK-003.refund_rounding"
+              ]
+            },
+            {
+              "line": 9,
+              "occurrence": 2,
+              "written": "50",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.legal_questions",
+                "BO-GK-003.refund_execution",
+                "BO-GK-003.refund_rounding"
+              ]
+            },
+            {
+              "line": 9,
+              "occurrence": 3,
+              "written": "20",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.legal_questions",
+                "BO-GK-003.refund_execution",
+                "BO-GK-003.refund_rounding"
+              ]
+            },
+            {
+              "line": 9,
+              "occurrence": 4,
+              "written": "30",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.legal_questions",
+                "BO-GK-003.refund_execution",
+                "BO-GK-003.refund_rounding"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chat:GK-003:2026-10-05:delivery-clarification",
+      "type": "userChatSubmission",
+      "author": {
+        "display_name": "Sasha",
+        "role": "user/developer"
+      },
+      "permalink": null,
+      "attribution": "Direct answer to current task refund clarification, not a Trello action.",
+      "current_revision": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+      "revisions": [
+        {
+          "text": "100% повернення більш ніж за 5 днів та 50% із загальної суми разом із доставкою, якщо доставкою займається GK Cake chef. Оплата за доставку ьуде окремою і вноситься шуфом через адмін палель, тому вона може бути повернута тільки шефом окремо через адміл панель.",
+          "sha256_original_utf8": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+          "sha256_stored_utf8": "2d74d41e99e304e1111de3199009c5225e80b0e5aa34fe0296c77726ec933c04",
+          "source_timestamp": "2026-10-05",
+          "source_timestamp_meaning": "Local intake date only",
+          "redactions": [],
+          "coverage": [
+            {
+              "line": 1,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.after_handover",
+                "BO-GK-003.business_cancellation",
+                "BO-GK-003.cancellation_early",
+                "BO-GK-003.cancellation_late",
+                "BO-GK-003.no_show",
+                "BO-GK-003.refund_allocation",
+                "BO-GK-003.refund_execution",
+                "BO-GK-003.started_or_ready"
+              ]
+            }
+          ],
+          "numeric_occurrences": [
+            {
+              "line": 1,
+              "occurrence": 1,
+              "written": "100",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.after_handover",
+                "BO-GK-003.business_cancellation",
+                "BO-GK-003.cancellation_early",
+                "BO-GK-003.cancellation_late",
+                "BO-GK-003.no_show",
+                "BO-GK-003.refund_allocation",
+                "BO-GK-003.refund_execution",
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 1,
+              "occurrence": 2,
+              "written": "5",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.after_handover",
+                "BO-GK-003.business_cancellation",
+                "BO-GK-003.cancellation_early",
+                "BO-GK-003.cancellation_late",
+                "BO-GK-003.no_show",
+                "BO-GK-003.refund_allocation",
+                "BO-GK-003.refund_execution",
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 1,
+              "occurrence": 3,
+              "written": "50",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.after_handover",
+                "BO-GK-003.business_cancellation",
+                "BO-GK-003.cancellation_early",
+                "BO-GK-003.cancellation_late",
+                "BO-GK-003.no_show",
+                "BO-GK-003.refund_allocation",
+                "BO-GK-003.refund_execution",
+                "BO-GK-003.started_or_ready"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chat:GK-001:2026-10-05:clarification-1",
+      "type": "userChatMessage",
+      "source_card_id": null,
+      "source_card_role": null,
+      "related_card_id": "6ab13b4fa34d3a2205f61353",
+      "author": {
+        "name": "Sasha",
+        "role": "developer/user",
+        "trello_identity_asserted_for_this_message": false
+      },
+      "permalink": null,
+      "permalink_evidence": "Chat message has no exposed stable message ID/URL; local source ID is not a Trello action.",
+      "attribution": "Direct current user reply in this Codex task, explicitly executing the existing GK-001 handover. Not direct chef authorship.",
+      "current_revision": "a51fd7c0287d7c55163b3ac4d55c6f938152cb6f31b96762c2327ad1909b8923",
+      "local_source_file": "submission-2026-10-05.uk.txt",
+      "revisions": [
+        {
+          "sha256_original_utf8": "a51fd7c0287d7c55163b3ac4d55c6f938152cb6f31b96762c2327ad1909b8923",
+          "sha256_stored_utf8": "a51fd7c0287d7c55163b3ac4d55c6f938152cb6f31b96762c2327ad1909b8923",
+          "source_timestamp": null,
+          "source_timestamp_meaning": "Exact chat-send timestamp not exposed; date in local ID is intake date Europe/London, not an invented source timestamp.",
+          "retrieved_at": "2026-10-04T23:31:09.760055+00:00",
+          "text": "&#x20;Повертаємо рівно 50%. «будь-коли» охоплює неявку та час після видачі.  Коли скасовує шеф повертаємо 100%.  Як рахуємо право після перенесення часу або дати без його відновлення? - право розрахувується тільки при оформленні і не змінюється через перенесення дат.\n\n192 годин. Неточності дат уточняться особисто з шефом, який має доступ до адмін панелі.&#x20;\n\nЯкщо вже прийнято 7 тортів, а ліміт змінюємо на 5, то всі прийняті торти все рівно вважа.ться прийнятими і можуть бути скасовані тільки шефом особисто.\n\nThen execute 'Manual handover steps for the next worker'\n",
+          "redactions": [],
+          "representation_note": "Exact message wording, typos and literal &#x20; markers as presented to the agent; UTF-8 text file with one terminal newline. Hash identifies this preserved representation.",
+          "coverage": [
+            {
+              "line": 1,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.after_handover",
+                "BO-GK-003.business_cancellation",
+                "BO-GK-003.cancellation_early",
+                "BO-GK-003.cancellation_late",
+                "BO-GK-003.no_show",
+                "BO-GK-003.refund_allocation",
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 2,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 3,
+              "disposition": "submission_metadata",
+              "decision_ids": []
+            },
+            {
+              "line": 4,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 5,
+              "disposition": "submission_metadata",
+              "decision_ids": []
+            },
+            {
+              "line": 6,
+              "disposition": "formatting",
+              "decision_ids": []
+            },
+            {
+              "line": 7,
+              "disposition": "submission_metadata",
+              "decision_ids": []
+            }
+          ],
+          "numeric_occurrences": [
+            {
+              "line": 1,
+              "occurrence": 1,
+              "written": "20",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.after_handover",
+                "BO-GK-003.business_cancellation",
+                "BO-GK-003.cancellation_early",
+                "BO-GK-003.cancellation_late",
+                "BO-GK-003.no_show",
+                "BO-GK-003.refund_allocation",
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 1,
+              "occurrence": 2,
+              "written": "50",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.after_handover",
+                "BO-GK-003.business_cancellation",
+                "BO-GK-003.cancellation_early",
+                "BO-GK-003.cancellation_late",
+                "BO-GK-003.no_show",
+                "BO-GK-003.refund_allocation",
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 1,
+              "occurrence": 3,
+              "written": "100",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.after_handover",
+                "BO-GK-003.business_cancellation",
+                "BO-GK-003.cancellation_early",
+                "BO-GK-003.cancellation_late",
+                "BO-GK-003.no_show",
+                "BO-GK-003.refund_allocation",
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 3,
+              "occurrence": 1,
+              "written": "192",
+              "disposition": "identifier",
+              "decision_ids": []
+            },
+            {
+              "line": 3,
+              "occurrence": 2,
+              "written": "20",
+              "disposition": "identifier",
+              "decision_ids": []
+            },
+            {
+              "line": 5,
+              "occurrence": 1,
+              "written": "7",
+              "disposition": "identifier",
+              "decision_ids": []
+            },
+            {
+              "line": 5,
+              "occurrence": 2,
+              "written": "5",
+              "disposition": "identifier",
+              "decision_ids": []
+            }
+          ]
+        }
+      ],
+      "imported_from": "../GK-001/source-comments.json"
+    },
+    {
+      "id": "chat:GK-001:2026-10-05:refund-deadline",
+      "type": "userClarificationReply",
+      "source_card_id": null,
+      "related_card_id": "6ab13b4fa34d3a2205f61353",
+      "author": {
+        "name": "Sasha",
+        "role": "developer/user",
+        "trello_identity_asserted_for_this_message": false
+      },
+      "permalink": null,
+      "attribution": "Explicit user selection supplied through the clarification tool; not agent approval or direct chef authorship.",
+      "question_context": "One refund detail changes the result: does “право розраховується тільки при оформленні” mean we save the deadline from the original handover time, or fix the refund percentage permanently at checkout? With a 192-hour minimum, fixing the percentage at checkout would make every standard order qualify for the earlier “more than 5 days” full refund, even after handover.",
+      "question_context_disposition": "Agent-authored question, not standalone approval; only the selected answer is approved.",
+      "current_revision": "e60097641c674bf1d1fa0d55c5d9ffd000ee15a8656419d95f3d186fe267aa28",
+      "revisions": [
+        {
+          "sha256_original_utf8": "e60097641c674bf1d1fa0d55c5d9ffd000ee15a8656419d95f3d186fe267aa28",
+          "sha256_stored_utf8": "e60097641c674bf1d1fa0d55c5d9ffd000ee15a8656419d95f3d186fe267aa28",
+          "source_timestamp": null,
+          "source_timestamp_meaning": "Exact reply-send timestamp not exposed.",
+          "retrieved_at": "2026-10-04T23:32:52.860740+00:00",
+          "text": "Save original deadline: 100% more than 120 hours before original handover; exactly 50% afterwards. Moving date/time never changes that deadline.",
+          "redactions": [],
+          "coverage": [
+            {
+              "line": 1,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.after_handover",
+                "BO-GK-003.business_cancellation",
+                "BO-GK-003.cancellation_early",
+                "BO-GK-003.cancellation_late",
+                "BO-GK-003.no_show",
+                "BO-GK-003.refund_allocation",
+                "BO-GK-003.started_or_ready"
+              ]
+            }
+          ],
+          "numeric_occurrences": [
+            {
+              "line": 1,
+              "occurrence": 1,
+              "written": "100",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.after_handover",
+                "BO-GK-003.business_cancellation",
+                "BO-GK-003.cancellation_early",
+                "BO-GK-003.cancellation_late",
+                "BO-GK-003.no_show",
+                "BO-GK-003.refund_allocation",
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 1,
+              "occurrence": 2,
+              "written": "120",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.after_handover",
+                "BO-GK-003.business_cancellation",
+                "BO-GK-003.cancellation_early",
+                "BO-GK-003.cancellation_late",
+                "BO-GK-003.no_show",
+                "BO-GK-003.refund_allocation",
+                "BO-GK-003.started_or_ready"
+              ]
+            },
+            {
+              "line": 1,
+              "occurrence": 3,
+              "written": "50",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.after_handover",
+                "BO-GK-003.business_cancellation",
+                "BO-GK-003.cancellation_early",
+                "BO-GK-003.cancellation_late",
+                "BO-GK-003.no_show",
+                "BO-GK-003.refund_allocation",
+                "BO-GK-003.started_or_ready"
+              ]
+            }
+          ]
+        }
+      ],
+      "imported_from": "../GK-001/source-comments.json"
+    },
+    {
+      "id": "chat:GK-001:2026-10-05:refund-scope",
+      "type": "userClarificationReply",
+      "source_card_id": null,
+      "related_card_id": "6ab13b4fa34d3a2205f61353",
+      "author": {
+        "name": "Sasha",
+        "role": "developer/user",
+        "trello_identity_asserted_for_this_message": false
+      },
+      "permalink": null,
+      "attribution": "Explicit user selection supplied through the clarification tool; not agent approval or direct chef authorship.",
+      "question_context": "Does this new GK-001 refund policy replace the previous 3-day/4-day and separate delivery-refund rules for both made-to-order and ready-made cakes?",
+      "question_context_disposition": "Agent-authored question, not standalone approval; only the selected answer is approved.",
+      "current_revision": "eb7d5d38c3852fc8fbe42c7fd2aca79e157af24b51c473027d225cd957dc3095",
+      "revisions": [
+        {
+          "sha256_original_utf8": "eb7d5d38c3852fc8fbe42c7fd2aca79e157af24b51c473027d225cd957dc3095",
+          "sha256_stored_utf8": "eb7d5d38c3852fc8fbe42c7fd2aca79e157af24b51c473027d225cd957dc3095",
+          "source_timestamp": null,
+          "source_timestamp_meaning": "Exact reply-send timestamp not exposed.",
+          "retrieved_at": "2026-10-04T23:32:52.860740+00:00",
+          "text": "Yes—use the new policy for both cake types; retain the old wording only as history.",
+          "redactions": [],
+          "coverage": [
+            {
+              "line": 1,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.after_handover",
+                "BO-GK-003.business_cancellation",
+                "BO-GK-003.cancellation_early",
+                "BO-GK-003.cancellation_late",
+                "BO-GK-003.no_show",
+                "BO-GK-003.refund_allocation",
+                "BO-GK-003.started_or_ready"
+              ]
+            }
+          ],
+          "numeric_occurrences": [
+            {
+              "line": 1,
+              "occurrence": 1,
+              "written": "both",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.after_handover",
+                "BO-GK-003.business_cancellation",
+                "BO-GK-003.cancellation_early",
+                "BO-GK-003.cancellation_late",
+                "BO-GK-003.no_show",
+                "BO-GK-003.refund_allocation",
+                "BO-GK-003.started_or_ready"
+              ]
+            }
+          ]
+        }
+      ],
+      "imported_from": "../GK-001/source-comments.json"
+    },
+    {
+      "id": "chat:GK-003:2026-10-05:website-payment-24h",
+      "type": "userChatSubmission",
+      "author": {
+        "display_name": "Sasha",
+        "role": "user/developer"
+      },
+      "permalink": null,
+      "attribution": "Actual direct answer to current task question, not a Trello action.",
+      "current_revision": "037d57fa3fc3254b357b6d33fb0e5baf0361990e7284984948ec3189618ba614",
+      "revisions": [
+        {
+          "text": "неоплаченим/простроченим замовленням - замовлення завжди оплачуються! чи дозволено оплатити рівно через 48 годин  - оплата протягом 24 годин. Якщо е оплачено - функція оплати більше не працює (оплата буде проходити через сайт. Або через замовлення клієнта через сайт, або через інстаграм але в такому випадку шеф все рівно реєстреє замовлення через сайт і кидає посилання на \"template\" замовлення користувачу для підтвердження та оплати). які контакти обов’язкові без Instagram - Завжди повне імя клієнта,  а також дані людини, яка оплачує, якщо це інша людина.",
+          "sha256_original_utf8": "037d57fa3fc3254b357b6d33fb0e5baf0361990e7284984948ec3189618ba614",
+          "sha256_stored_utf8": "037d57fa3fc3254b357b6d33fb0e5baf0361990e7284984948ec3189618ba614",
+          "source_timestamp": "2026-10-05",
+          "source_timestamp_meaning": "Local intake date only",
+          "redactions": [],
+          "coverage": [
+            {
+              "line": 1,
+              "disposition": "captured",
+              "decision_ids": [
+                "BO-GK-003.manual_order_link",
+                "BO-GK-003.order_contacts",
+                "BO-GK-003.paid_commitment",
+                "BO-GK-003.payment_methods",
+                "BO-GK-003.quote_validity"
+              ]
+            }
+          ],
+          "numeric_occurrences": [
+            {
+              "line": 1,
+              "occurrence": 1,
+              "written": "48",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.manual_order_link",
+                "BO-GK-003.order_contacts",
+                "BO-GK-003.paid_commitment",
+                "BO-GK-003.payment_methods",
+                "BO-GK-003.quote_validity"
+              ]
+            },
+            {
+              "line": 1,
+              "occurrence": 2,
+              "written": "24",
+              "disposition": "adopted_value",
+              "decision_ids": [
+                "BO-GK-003.manual_order_link",
+                "BO-GK-003.order_contacts",
+                "BO-GK-003.paid_commitment",
+                "BO-GK-003.payment_methods",
+                "BO-GK-003.quote_validity"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "latest_live_observation": {
+    "retrieved_at": "2026-10-04T23:29:07.336222+00:00",
+    "parent_comment_ids": [
+      "6ac2cb7b9d60195e8789c1ed"
+    ],
+    "owner_comment_ids": [
+      "6abac3d56b4b97c36cd21b0c"
+    ],
+    "owner_text_matches_original": true,
+    "limitation": "CLI exposed current comments, not deleted or earlier edits; attachments checked separately."
+  }
+}

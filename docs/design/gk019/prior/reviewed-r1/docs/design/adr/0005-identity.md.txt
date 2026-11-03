@@ -1,0 +1,24 @@
+# ADR-0005: Managed identity, owner proof, Instagram and privacy
+
+Status: proposed integration revision; independent review pending
+Date: 2026-10-05; revision: r4 / GK-019
+Owner: planning master for technical integration; Sasha/original owner for attributed business decisions.
+Affected requirements: C03 C04 C07 C08 C12 C13 C18 A02.
+
+## Context and options
+
+Managed provider versus custom passwords: keep existing accepted managed provider. Browser SDK approach keeps one business backend; private shell avoids server-shared PII caching. Persistent session/XSS and logout/revocation behavior need actual GK-021 tests; no claim of HttpOnly isolation for browser SDK refresh tokens.
+
+## Decision proposed for technical acceptance
+
+Use actor-specific K00 authorization: guests use independently persisted revocable order capabilities; customers use a current Supabase session/account and ownership; staff additionally require active local capability and scope. Guest commands do not require a provider account or staff membership. Claims revoke the old guest grant on approved association. Chef-confirmed historical claims require verified account and ownership evidence. Current Instagram action combines copy/open but never claims send. Adopt current privacy retention and scoped photo permission.
+
+Governing detail: [contracts r6](../contracts.md) K00/K02/K09; [owner mapping](../owner-data-contract.md); [decision register](../creator-decisions.md). Business values are already approved where attributed; this status concerns their technical integration.
+
+## Consequences and verification
+
+GK-020 supplies real runtime/callback origins; GK-021 qualifies session storage, CSP, revocation and exact redirect allowlists. GK-027 tests combined button and fallback; reported link-open tests do not cover it. Q3 analytics overlap remains blocked; GK-037 final privacy/legal validation.
+
+Documentation checks are not implementation or provider tests. No extra vendor, deployment or public policy is activated. Any material contract change invalidates affected ticket readiness and requires re-review.
+
+Supersedes prior r3 execution defaults for this topic; [exact historical text](../gk019/prior/0005-identity.md.txt) and original evidence remain. Source and output hashes are recorded in the GK-019 manifests; no old review verdict is carried forward.

@@ -1,0 +1,14 @@
+{
+  "decision": "Q2 accepted",
+  "user_reply_exact": "Aprove",
+  "question_exact": "Next: if payment starts within 24 hours but finishes too late for preparation, I recommend waiting for the result, then honouring the date only if feasible and explicitly agreed with the customer; otherwise refunding fully. Never request another payment while the first is unknown.\n\nApprove this approach?",
+  "source_id": "chat:GK-019:2026-10-05:Q2",
+  "source_sha256": "b2c418220bc1e4aa09f29ed8ce1ff786bf21757b42b3aa70eac07c8be5e26cbe",
+  "model_observed": "gpt-6-astra/high",
+  "model_evidence": "latest host turn_context",
+  "history": "continued integration; separate reviewer continued independently",
+  "readback": "24h initiation, unknown waits without replacement, paid too late requires chef feasibility plus explicit customer agreement or full return. Preserve17methods,softcapacity,physicalstock,anchors; no Trello/visual/app/release changes.",
+  "prior_output_manifest_sha256": "0e511dbd53b828fb1af16f7007278806a6bcad3a16d73f242d2c834ff3a7486c",
+  "live_refresh_file": "evidence/q2-resume-live.json",
+  "live_refresh_sha256": "a84aaf1dfc48a4d343b347854829e3adff4118dc214b4bea203d0eecd07d362c"
+}

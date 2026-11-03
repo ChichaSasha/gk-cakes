@@ -1,0 +1,14 @@
+{
+  "checked_at": "2026-10-05T23:36:44.070159+00:00",
+  "poc_output_manifest_sha256": "4064e85685a890a841f41145b18ff12bbbe69b84a66159d9b4975d89ac703817",
+  "verdict": "Current shared r6.4 conditional PASS consumed; no POC changes required; Creator approval, missing logo and applicable provider qualification remain",
+  "files": {
+    "docs/design/gk019/review.md": "cfa876d3f4999a93b5faa220cc6ab6e2c13ed93ee675413485dc98b118915d17",
+    "docs/design/gk019/GK-015-handoff.md": "e1323445c3318ca15a0a103afefea483639491abe3d3bb5ae732a5bee3d07b18",
+    "docs/design/gk019/output-manifest.json": "f15556358b4cac4217d96d9537c27981e32915a8dd87cdcfe2bfd7e818e54c23",
+    "docs/design/contracts.md": "58a4c4bd673a78b63a0502ff214ddb62d5db5d4835dacb954e2f5e9dc37925dd",
+    "docs/design/owner-data-contract.md": "ef32e8763e7aad43aa0220fa5111000833f5d8426b9c3d75b97561be4201f89b",
+    "docs/design/gk019/schema.json": "e0c4c0758cb7677f749cbf3db54fda355ab1f47af877bb4b871415cffcc69256",
+    "docs/design/gk019/asset-availability.json": "23459aa7eca389c8c7bc0eba099953c98db96d26693cc1b512acd918c0b1de02"
+  }
+}

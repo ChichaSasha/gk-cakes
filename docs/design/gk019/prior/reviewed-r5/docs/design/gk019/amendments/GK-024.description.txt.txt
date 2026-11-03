@@ -1,0 +1,85 @@
+## Context
+
+Owner: Agent; Kind: Implementation
+Priority: P0 — foundational/safety prerequisite.
+Order: 200; Wave: 5; Parallel group: W05-notifications.
+Requirements: C14, A02, A09, S07; Design/contract revision: GK-019 r6.4, K08.
+Agent execution policy: gpt-6-astra / high; fresh scoped worker; fresh independent reviewer.
+Required input: brief, input-revision.json, gk019-owner-r6, ADRs/contracts r6.4 and exact GK-019 manifest, feature/screens, prerequisite evidence, SETUP and DELIVERY.
+Execution check: skills/gk-plan/references/execution-check.md at start/resume; record requested/effective model, history, input hashes and checked readback. Pending.
+Depends on: GK-020, GK-011; deliverable: accepted policy/setup or tested implementation outputs; GK-020 means completed B2.
+Unblocks: GK-025, GK-026, GK-027, GK-033.
+Safe in parallel with: GK-021 after all prerequisites and shared schemas/interfaces are accepted. Own proposed internal/notifications and owned notification migrations. Master allocates nonconflicting migration IDs and integrates changes; neither worker edits shared contract/auth/router files concurrently.
+Conflicts: shared contracts/schema/router/migrations; master coordinates edits.
+Readiness at publication: blocked / specified but dependent: Email account/domain and provider behavior evidence pending.
+
+Commit unique business notification intent with state transition, then provider transport outside DB transaction. Preserve attempt/evidence states queued/sending/accepted/delivered_to_server/bounced/failed/unknown. Fenced job leases and signed webhook inbox prevent duplicate application; actual inbox receipt never claimed.
+
+Rules: server-owned price/capacity/state; GBP pence, UTC/Europe/London; role+ownership; expected_version+Idempotency-Key; unknown stays pending; no network under DB locks.
+
+Wire/state (approved GK-019 successor required):
+
+POST /api/v1/admin/orders/{id}/messages/preview {subject,body,purpose:"transactional",expected_version:7} ->{preview_id,recipient,recipient_version,preview_hash}; POST .../messages {preview_id,preview_hash,expected_version,recipient_version} +Idempotency-Key rechecks recipient/content then stores unique notice/audit. queued->sending->accepted; delivered_to_server/bounced/failed/unknown are evidence, not inbox read. Signed provider events persisted before ack; claim lease/fencing prevents stale completion; unknown uses original provider key/reference, not new blind send.
+
+Proposed: API10s/DB2s/provider5s; retries1m/5m/15m/1h then manager, alert15m. Validate; retain unknown funds.
+
+Mandatory AC1–AC3 rules:
+
+Choose one atomic producer transaction including state+unique intent+job+audit, no postcommit enqueue gap. Job owner/generation/live lease and separate reconciliation generation guard finalization/retries; first_dispatch_at anchors provider key retention. Webhook before response remains pending correlation. Retry admission must honor frozen recipient/contact revocation, not silently follow changed profile email. Past provider retention ->lookup/manager, no new send key.
+
+## To dos
+
+T1. Red: smallest AC1–AC3 fixture assertion; infrastructure failure is not red.
+T2. Implement data/API/UI/recovery with snapshots/auth/idempotency (AC1–AC3).
+T3. Integrate migrations/consumers/audit/notices; verify real DB/provider failures (AC1–AC3).
+T4. Green -> refactor -> rerun affected checks; record revision/results (AC4).
+T5. Complete AC4 review/delivery/acceptance evidence; no implied deployment.
+
+## Not to dos
+
+No unrelated cleanup, registrations, leaked secrets or releases/deployments without authority. No app execution now; Done needs Creator acceptance.
+
+## Acceptance Criteria
+
+AC1. Red DB rollback test leaves neither business change nor notice; commit+worker restart sends one logical operation with stable provider key.
+AC2. Lost response keeps unknown and reconciles original provider reference; past idempotency retention blocks blind resend, bounce/late accepted preserves truthful evidence.
+AC3. Selected provider sandbox controlled recipient demonstrates accepted/delivery-or-bounce evidence and valid/invalid signature handling; unauthorized access and log PII rejected.
+AC4. Record exact input/tested revision, results, independent review and Creator acceptance on Trello; account for all related PRs, required review/checks, native auto-merges and main CI. Release/deploy/smoke only when separately authorized and in scope.
+
+Test prerequisite: GK-020 B2 verifies pinned runners before this card is Ready. Planned Go: go test ./..., go test -race ./..., go test -tags=integration ./... with disposable PostgreSQL; UI: npm run check, npm test, npm run build + approved browser runner. Provider cases use controlled sandbox accounts/recipients and actual IDs; mocks are not provider proof. No application tests ran during planning.
+
+Proposed current specification; prior publication text preserved in GK-019 evidence/cards.json. Independent review and approval apply only to the exact current revision. Trello is the live execution record; application work has not started.
+
+Verified prerequisite cards:
+- GK-020: https://trello.com/c/W8q5svCh
+- GK-011: https://trello.com/c/ZhcwMqTc
+
+Verified dependent cards:
+- GK-025: https://trello.com/c/vyFTtISc
+- GK-026: https://trello.com/c/xiEN4jvp
+- GK-027: https://trello.com/c/G8hLmSBU
+- GK-033: https://trello.com/c/3YbFGdmp
+
+## GK-019 proposed contract amendment — r6.4 / UNPUBLISHED
+
+Owner, title, unrelated scope/labels and list remain unchanged. This dated amendment
+replaces contradictory historical policy/provider examples and adds the acceptance
+evidence below; it does not assert implementation readiness or completed tests.
+
+Contract inputs: K08/K11; docs/design/contracts.md r6.4, owner-data-contract.md
+gk019-owner-r6, gk019/schema.json r1.4 and output-manifest.json exact hashes.
+Required current evidence: GK-020 B2; GK-019; GK-010 B2 setup and GK-011/012. Refresh live prerequisites and comments before
+execution; a Done setup card proves only its accepted scope.
+
+Behavior: Current sender GK Cakes <orders@gkcake.com>, Reply-To gk.cake.london@gmail.com; Resend Free eu-west-1 sending-only. Historical delivered test used prior display name. Transactional intent+job+audit, immutable preview/recipient, fenced worker and unknown-outcome reconciliation. BEFORE first send, implement minimal K11 shared recovery coordinator, independent B2 prepared/outcome journal and essential blob copy; ownership explicitly includes shared recovery schema/code/B2, coordinating migrations, superseding email-only parallel boundary.
+
+Acceptance extension: Test current display name, signed webhook correlation/duplicates/adverse ordering, recipient changed after preview, timeout/crash/provider-idempotency expiry, deliberate resend warning and recovery freeze. Test K11 phase crashes, B2 outage and primary loss with synthetic operations before dependent GK-025/026/027 dispatch/confirmation. DMARC and actual secret deployment remain required. No marketing.
+
+Execution: apply model/context check; then smallest failing meaningful behavior
+case, coherent implementation, focused green checks, required wider checks and
+fresh independent review. Design tickets instead produce/review exact artifacts.
+No application test, UI approval, release or deployment is supplied by this amendment.
+Remaining Q4 qualification gates apply only where named; unresolved branches stay blocked.
+
+Full brief requirements and nonconflicting safety/verification criteria remain.
+Repository packet is local/unpushed; obtain exact files, not merely a path string.

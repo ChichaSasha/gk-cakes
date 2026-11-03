@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "data": [
+    {
+      "id": "6ac2f7da8d9e67587b09243c",
+      "type": "commentCard",
+      "date": "2026-10-05T01:05:30.378Z",
+      "memberCreator": {
+        "id": "6ab07430e77c7ae74e433bb8",
+        "username": "sashachicha13",
+        "fullName": "sashachicha13"
+      },
+      "data": {
+        "text": "GK-005 scope split / 2026-10-05: business input accepted; see closure decisions at https://trello.com/c/OWHhKPBT . Deferred legal, actual privacy/provider and label verification transferred to https://trello.com/c/Zarzv2Qo (GK-037), after GK-035 and before GK-036. This transfer does not block implementation. Other prerequisites remain; no Ready transition is implied. Read docs/creator/GK-005/interview-2026-10-05.md and source/evidence manifests; older decision JSON alone is incomplete."
+      }
+    }
+  ]
+}

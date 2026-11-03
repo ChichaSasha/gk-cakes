@@ -1,0 +1,26 @@
+{
+  "source": "docs/creator/GK-002/interview-2026-10-05.json",
+  "result": "Four source assets match approved r4 inventory SHA-256",
+  "assets": [
+    {
+      "path": "photo_assets/cakes_after_higgsfield/SaveClip.App_547599309_17900285079260879_5639951130888475467_n.png",
+      "bytes": 5022668,
+      "sha256": "b9afcaf3026f4dec914dcabfff5addeaf9b20bf442a8d24482424dd4c4cc2730"
+    },
+    {
+      "path": "photo_assets/cakes_after_higgsfield/SaveClip.App_554651941_17902229079260879_5454453889132635975_n.png",
+      "bytes": 6675234,
+      "sha256": "bde9082fa84cf86cc5823d61817579a46d936585bf0ab8fd7f58a21fc29e9123"
+    },
+    {
+      "path": "photo_assets/cakes_after_higgsfield/SaveClip.App_800796406_17949882372260879_4378816107377194523_n.png",
+      "bytes": 6419683,
+      "sha256": "2206523d6e926ab3e2277885e7514afc37cf86c1ee2bcb0d25419f4fa2ae8f9d"
+    },
+    {
+      "path": "photo_assets/logo/3000px-03.png",
+      "bytes": 1192250,
+      "sha256": "2e2c1217ce2236559db51534367720e934d0e81d69eab4fbb4b74527d0abe3e0"
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "ticket": "GK-005",
+  "revision": "interview-r1",
+  "source_kind": "current Codex conversation",
+  "author": "Sasha, the developer/user; not direct Elina authorship",
+  "timestamp_note": "Conversation date 2026-10-05 Europe/London. Individual message timestamps and external message IDs are unavailable. IDs below are local references only.",
+  "transcription_note": "Relevant user-message excerpts are retained verbatim, including spelling and transport entities; assistant context is an explicitly labelled summary. Address value is omitted from this repository supplement; its later authorisation for legal use is retained. The exact address remains in the conversation.",
+  "messages": [
+    {
+      "id": "chat:GK-005:2026-10-05:identity-rating",
+      "user_excerpt": "GK Cake London: sole trader; \"Business name: GK Cake\nFHRS ID: 1963655\nLocal Authority: Tower Hamlets",
+      "additional_user_excerpt": "Contact details: gk.cake.london\\@gmail.com, Instagram: @gk.cake.london; \"\" Food hygeene ratig 5/5, data is attached",
+      "attachment": "/Users/sasha.chycha/Downloads/1963655.json",
+      "official_url": "https://ratings.food.gov.uk/business/1963655/gk-cake"
+    },
+    {
+      "id": "chat:GK-005:2026-10-05:legal-name-vat",
+      "assistant_context_summary": "Q1 asked whether Elina Hryhorian trading as GK Cake London is the exact legal seller name. Q2 asked about an address. Q3 asked whether non-VAT registration and no separately added VAT remain current.",
+      "user_excerpt": "1. Yes;",
+      "additional_user_excerpt": "3. Does the existing statement **“not VAT registered; no VAT added separately”** remain current? - Yes",
+      "excluded_content": "Q2 supplied a private address; retained in the conversation only. Legal-use permission follows in the next source."
+    },
+    {
+      "id": "chat:GK-005:2026-10-05:address-recipe-change",
+      "assistant_context_summary": "Q1 distinguished legal/contact publication from private collection-only use. Q2 requested existing ingredient files. Q3 proposed Elina approves ingredient/allergen changes; changes affecting accepted orders require explicit customer agreement; decline or no response before preparation requires original cake if feasible, otherwise cancellation/full refund.",
+      "user_excerpt": "1. Can be used as legal address.\n2. attached file with all the additional details\n3. Agree",
+      "attachment": "/Users/sasha.chycha/Downloads/GK_Cake_Costs.xlsx"
+    },
+    {
+      "id": "chat:GK-005:2026-10-05:allergens",
+      "user_excerpt": "Allergens: All flavours besides chockolate+oreo and snickers: Eggs, Milk, Soy, Cereals. snickers: Eggs, Milk, Soy, Cereals + peanut. Oreo: Eggs, Milk, Soy, Cereals + sulfiets. For all sizes",
+      "interpretation_note": "Spelling normalised to soya, peanuts and sulphites. Wheat specificity is carried from the unchanged original Elina statement, not invented from the new word Cereals."
+    },
+    {
+      "id": "chat:GK-005:2026-10-05:coating-whole-prices",
+      "user_excerpt": "Is Swiss meringue buttercream the standard coating for **every size and flavour**?  - yes. Which other edible decorations may be added? - sugar pearls, fruits, berries (anything else by prior approval/discussion with chef).&#x20;\nPrice display: Just integers, no float prices.\n\nRounding: we always use integers for simplicity!",
+      "supersession_note": "The later penny-rounding and display replies clarify this: base prices in whole GBP; discounted totals/refunds may contain pence. Do not implement whole-pound rounding."
+    },
+    {
+      "id": "chat:GK-005:2026-10-05:penny-rounding",
+      "user_excerpt": "One rounding decision remains: **50% of £101 is £50.50.&#x20;**&#x77;e round discounts and refunds to the nearest penny"
+    },
+    {
+      "id": "chat:GK-005:2026-10-05:money-enquiries-photos",
+      "assistant_context_summary": "Q1 proposed whole-price display £100, fractional payable display £85.50, and half-penny up £5.005 to £5.01. Q2 proposed six months from last substantive customer conversation, never reset by automatic reminders. Q3 proposed deletion of personal photos within 30 days after collection/delivery except active complaint/dispute.",
+      "user_excerpt": "1. Agree. 2. un from the **last substantive customer conversation**, with automated reminders not restarting it; 3. Yes, unless customer allows to use these by chef, so then we retain for 3 months"
+    },
+    {
+      "id": "chat:GK-005:2026-10-05:photo-permission",
+      "assistant_context_summary": "Q1 asked whether permission can specify public website/Instagram use or private design reference, or either with specific permission. Q2 asked whether the three months start at fulfilment or permission. Q3 first proposed removal of original and public posts at three months or earlier withdrawal, with original-only retention offered as an alternative. Assistant readback adopted the first proposal and distinguished private dispute evidence.",
+      "user_excerpt": "1. Yes; 2. collection/delivery; 3. yes",
+      "interpretation_note": "The affirmative replies are interpreted with the stated proposals and subsequent readback; they are not a general permission to publish any customer's photo."
+    },
+    {
+      "id": "chat:GK-005:2026-10-05:order-account-access",
+      "assistant_context_summary": "Q1 proposed 12 months after fulfilment/cancellation for ordinary order messages, delivery instructions and non-personal design references, separate financial/dispute retention. Q2 proposed account/profile/favourites/basic history while used, 24 months with no login/new order then a warning and deletion/anonymisation 30 days later unless customer returns. Q3 proposed Elina operational access, Sasha only necessary technical support, accountant only necessary financial records; asked about other people.",
+      "user_excerpt": "1. No, we need to keep data about orders for 2 years; 2. Yes; 3. Not at this point, but workers from kitchen and managment in the future. So not now, but easy to extent in the future",
+      "interpretation_note": "Two years replaces proposed 12 months; the original fulfilment/cancellation trigger and shorter photo exceptions were retained in the readback. Future staff do not receive access now. No accountant appointment is asserted."
+    },
+    {
+      "id": "chat:GK-005:2026-10-05:browser-analytics-review",
+      "assistant_context_summary": "Q1 proposed sign-in/checkout essentials, six months of saved favourites, 30 days of non-sensitive unfinished design choices, user clearing, no personal photos in browser persistence. Q2 proposed aggregate visits/pageviews/loading performance, no private account/admin/checkout pages, advertising trackers or session recordings, visits not unique people. Q3 asked whether current five-day/50% policy had qualified legal review and who will arrange it.",
+      "user_excerpt": "1. Yes, but saved favourites for **a year**\n2. yes\n3. Not and review will be arranged after the whole project is completed, so we can work on policy when everyting is set up, so admin can refacor based on legal recommndations",
+      "interpretation_note": "One year replaces six months for device favourites. No legal review has occurred; review after implementation is expressly deferred. Existing prepublication review requirement is not waived, nor is live launch authorised."
+    },
+    {
+      "id": "chat:GK-005:2026-10-05:refund-vat-examples",
+      "assistant_context_summary": "Q1 proposed £101 cake less 15% = £85.85 plus £20 separately paid delivery = £105.85, 50% whole-order refund rounded half-up £52.93 allocated £42.93 cake and £10 delivery, full refund £105.85. Q2 proposed preserving accepted customer totals/refunding actual paid sums through future VAT changes; new pricing/tax treatment dated after applicable tax review; unpaid quotes needing changes require fresh customer agreement.",
+      "user_excerpt": "1. Yes! 2. Yes"
+    }
+  ]
+}

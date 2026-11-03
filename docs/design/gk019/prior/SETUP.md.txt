@@ -1,0 +1,346 @@
+# Creator setup guide
+
+[Start here: ticket order, decisions and assets](START-HERE.md).
+
+Status: GK-004 provider decision reconciled 2026-10-05; package selected and business-owner approval reported by Sasha. Technical gates are recorded in [the decision record](docs/design/provider-research.md). Selection does not authorize provisioning. The original Creator label combines human duties. Sasha is the developer and a separate Ukrainian-speaking business owner supplies policy/content and business approval.
+Use the [current role split](docs/roles/README.md): Sasha owns/administers infrastructure accounts; the owner pays and has emergency recovery access. The owner completes merchant/payout verification. Verify each provider's recovery mechanism during setup. No new account, paid plan or production resource has been
+created by this kit. Do not register every candidate named in the old draft.
+
+The planning master must replace undecided provider rows with the accepted
+provider's current, exact instructions and official links, then create linked
+**Owner: Creator** tickets. Keep setup tasks separate from Agent implementation.
+This file is the guide; Trello records live status and evidence.
+
+
+## Current run and first actions
+
+[Design index](docs/design/PLAN.md) · [Creator decisions](docs/design/creator-decisions.md) ·
+[Provider research and dated costs](docs/design/provider-research.md).
+
+Confirmed by Creator: London-only UK launch, GBP, Europe/London; made-to-order plus
+occasional ready stock; up to GBP100/month with lower starting spend preferred.
+Current [owner intake](docs/creator/README.md) and [data contract](docs/design/owner-data-contract.md)
+include the [GK-001 manual handover](docs/creator/GK-001/handover.md): successful full
+payment anchors 48 elapsed hours; confirmation starts preparation, including ready
+cakes; late processing retains scheduled effect. Capacity counts cakes by handover
+date, chef extras are separate, and both simultaneous last-place orders may proceed.
+Delivery uses pickup hours and chef quotes from £100 without zones or a pickup-slot
+count cap. GK-001 now supplies 192 elapsed hours minimum and personal chef/admin
+resolution of uncertain dates. Reducing 7 accepted cakes to limit 5 retains all 7.
+Both cake types use a saved original-handover minus 120-hour refund deadline:
+100% before it, exactly 50% at/after it, chef cancellation100%; moves never reset it.
+GK-003's remaining accounting and GK-005 privacy/legal gaps remain separate. Load
+source/decision JSON and record hashes
+before affected work; this does not authorize dependent implementation.
+Read [GK-003 current handover](docs/creator/GK-003/handover.md) for website-only
+customer/chef-template payments within 24 hours and separate GK delivery payment/
+chef-admin refund. Old off-site balance/invoice paths are historical for new intake;
+preserve real historical money evidence. Provider configuration still requires its
+own accepted-provider prerequisites.
+Logo/photos are supplied and approved in the [GK-002 content intake](docs/creator/GK-002/README.md):
+use `3000px-03.png` and the Higgsfield photo folder. Website design still requires
+its separate Creator review; chrome `composite.png` is not the selected logo.
+No service has been registered, bought, or configured by this run.
+
+| Creator packet | Concrete output |
+| --- | --- |
+| [GK-001](docs/design/tickets/GK-001.md) | Consume reviewed r2 and exact hashes; reconcile downstream contracts for +48h start, 192h minimum, personal chef resolution of uncertain dates, original 120h refund deadline and accepted-order preservation on capacity reduction |
+| [GK-002](docs/design/tickets/GK-002.md) | Actual logo/photo assets and chef-verified product/allergen content |
+| [GK-003](docs/design/tickets/GK-003.md) | Quote, guest/claim, cancellation/admin exception and refund allocation rules |
+| [GK-004](docs/design/tickets/GK-004.md) | One selected provider package, exact budget, region, restore targets and incident owner |
+| [GK-005](docs/design/tickets/GK-005.md) | UK trading/allergen/tax/privacy/retention evidence and public wording |
+| [GK-006](docs/design/tickets/GK-006.md) | Confirm production release-only deployment and publisher/review policy |
+| [GK-007](docs/design/tickets/GK-007.md) | Discounts and recipe/inventory/grocery-cost examples |
+
+These decisions/content tasks can be worked on concurrently; the master reconciles
+overlap before GK-019. Do not register every candidate. Later account tasks GK-010–014
+remain dependent. Trello links live in PLAN.md after verified publication.
+
+## Selected-provider runbooks — later authorized setup
+
+The package below is selected in [ADR-0002](docs/design/adr/0002-providers.md).
+These instructions require separate setup authorization and completion of applicable
+technical gates; they are not permission to purchase. Record
+chosen settings/IDs/evidence in the card, secret names only. Official links checked
+2026-10-05 for changed provider choices; recheck pricing/UI at setup. Preferred target identifiers below are
+proposals, not existing resources; replace with actual IDs before downstream work.
+
+### Data, identity and photos — Supabase Pro / GK-010 and downstream verification
+
+GK-010 completion is Creator account/resource/verified-subject/secret-store evidence
+only. Steps describing migrations, exact callbacks, local roles and application
+access checks below occur in their named Agent tickets, with Creator entering
+provider settings as those outputs become available. They do not block GK-010 on
+GK-021, which consumes its resource evidence.
+
+1. Sasha uses [Supabase dashboard](https://supabase.com/dashboard), MFA and owner
+   emergency recovery access. Create one Pro production organisation/project on
+   Micro compute in London (USD25/month allowance), and `gk-cakes-sandbox` in a
+   separate Free organisation with synthetic data only. Verify the Free region and
+   account limits; it may pause and has different backup/availability properties.
+   Do not accidentally create a second paid project. Recheck actual tax/FX and limits.
+2. Follow [database connection guidance](https://supabase.com/docs/guides/database/connecting-to-postgres).
+   Record host/project ID/TLS method, not credentials. Creator gives Agent scoped
+   sandbox secret-store access. Agent GK-020 migrations create private business schema,
+   distinct runtime/migration/backup roles and no anon/authenticated Data API grants.
+   Store `DATABASE_URL` in backend environment; migration URL in CI migration environment.
+3. Configure managed identity with [redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls):
+   at GK-021, use exact actual site/login callback and local dev URL from GK-020 and the selected identity implementation, no wildcard
+   production callback. Public `AUTH_URL`/publishable key are deliberate; issuer,
+   audience, JWKS trusted URL and signing algorithm are backend config. Creator
+   identifies first manager by verified account subject in GK-010; Agent GK-021 records local role,
+   never user-editable metadata. Customer/provider account recovery remains personal.
+4. [Storage access policy](https://supabase.com/docs/guides/storage/security/access-control):
+   `catalog` public read with manager/backend-only write; `custom-private` private
+   attachments and short-lived authorized reads. Record allowed origins/size and
+   retention; backend validates content before publishing. `STORAGE_WRITE_KEY`
+   stays backend-only, never VITE_/PUBLIC_ config.
+   Size for 300–400 launch photos, 100 additions/month and 20,000–30,000 monthly
+   visits. Generate responsive compressed images and measure actual storage/egress;
+   distinguish Supabase cached and uncached allowances. Launch uses photos only;
+   future video support requires a delivery/volume cost review before activation.
+5. Agent verification after implementation: GK-020 verifies TLS/runtime privileges;
+   GK-021 verifies callback and local staff disable; GK-022/GK-027 verify catalog/private
+   objects. Verify TLS read/write using app role in sandbox, denial of business reads by
+   browser/anonymous clients, anonymous image read and denied write, valid/invalid
+   callback and local staff disable. Record outputs without tokens/addresses.
+6. [Backups](https://supabase.com/docs/guides/platform/backups): Sasha approved the
+   recovery approach in GK-004; implementation must verify it. A daily database
+   backup does not include storage-object bytes. Use selected B2 EU Central for
+   encrypted independent exports/object copies, with narrowly scoped credentials
+   and recoverable keys. Retain 30 days of daily DB restore points and recoverable
+   photo versions, as accepted by Sasha. Expiring historical backups must not
+   remove current independent recovery copies of retained confirmed orders or
+   essential attachments; business-record retention is a separate policy.
+   GK-019 must size retention/egress within the GBP1 allowance
+   and reconcile durable independent records before order confirmation or confirmed
+   changes. Copies of nonessential uploads must meet the 24-hour loss tolerance.
+   Do not enable checkout without the confirmed-order recovery safeguard. Use an
+   isolated restore target. Agent GK-035 restores both and freezes
+   provider dispatch until reconciliation. Failure: check role/schema/TLS/callback
+   before broadening permissions; rotate/revoke scoped key and restore from approved
+   backup rather than exposing service role to the browser.
+
+### Payments and transactional email — Stripe / Resend Free / GK-011
+
+Current provisioning evidence: [GK-011 accepted handoff](docs/creator/GK-011/README.md).
+GK-011 is verified Done for the approved account-provisioning split. The user
+created the Stripe sandbox, Resend account and verified domain and saved setup
+keys; the controlled email test was delivered. Current sender display name is
+`GK Cakes`. Runtime credentials, actual signed webhook endpoints, full payment
+method qualification, refunds and DMARC checks remain assigned to GK-019/024/025/026.
+The steps below are the integration runbook, not evidence those tests have run.
+
+1. Creator uses [Stripe dashboard](https://dashboard.stripe.com/register), business
+   owner/bank verification and MFA personally. Use sandbox/test mode first, GBP,
+   allowed UK account/methods; current [UK pricing](https://stripe.com/gb/pricing)
+   shows standard UK cards 1.5%+20p, other methods/cards differ. Record fee schedule;
+   payment fees are usage costs separate from hosting target.
+2. Agent supplies actual sandbox `/webhooks/stripe` URL after backend target exists;
+   configure selected signed Checkout/payment/refund events per adapter mapping,
+   exact API version and account/environment. Follow [webhooks](https://docs.stripe.com/webhooks)
+   and [Checkout](https://docs.stripe.com/payments/checkout). `PAYMENT_SECRET` and
+   `PAYMENT_WEBHOOK_SECRET` live in backend sandbox store; production separate.
+3. Verify test capture and two partial refunds, full remaining refund, signed bad
+   webhook denial, lost-response same-key recovery, terminal-unpaid expiry and
+   late success. Exact provider expiration minimum/method processing state must be
+   confirmed, not hardcoded from this plan. Unknown refund cannot free balance.
+4. Sasha uses [Resend dashboard](https://resend.com/signup), initially Free with
+   3,000 messages/month and 100/day shared by auth/order emails. Configure advance
+   usage alerts and review before limits; verify test/production webhook allocation.
+   Sasha accepts Resend's US processing with documented safeguards and minimal
+   shared data. Record applicable terms/transfer safeguards; an Ireland sending
+   region does not mean EU storage. Include only necessary message data.
+   Then [verify the domain](https://resend.com/docs/dashboard/domains/introduction).
+   Copy exact provider DKIM/SPF records into owned DNS; avoid duplicate/conflicting
+   SPF records. Proposed `EMAIL_FROM` is `orders@gkcake.com`; `EMAIL_REPLY_TO` is
+   `gk.cake.london@gmail.com`. Verify the sender before use; review DMARC policy
+   with existing domain use. `EMAIL_API_KEY` backend-only; controlled recipient only.
+5. Configure signed [email webhooks](https://resend.com/docs/webhooks/introduction)
+   at actual `/webhooks/email`; secret `EMAIL_WEBHOOK_SECRET`; preserve sent,
+   delivered, bounced/failed evidence according to selected provider mapping.
+   [Idempotency](https://resend.com/docs/dashboard/emails/idempotency-keys) must be
+   verified in the send adapter; no blind retry after provider retention boundary.
+6. Verify domain, controlled acceptance and delivery-to-server OR bounce event,
+   invalid signature and sender denial. DNS propagation/suppression failure is
+   actionable; do not repeatedly send or call “accepted” inbox receipt. Rotate
+   sender/API/webhook keys by environment; revoke unused grants. No marketing
+   campaign or real customer message is authorized by this setup task.
+
+### Hosting, DNS, CI and monitoring — Railway Pro / GK-012–014,034
+
+Apply the [approved GK-006 policy](docs/creator/GK-006/README.md): staging updates
+automatically after green CI on each merged revision; production requires Sasha's
+explicit authorization of a tested component release. Enforce the independent
+specialist AI review/fix loop before native auto-merge. Verify GitHub plan/access
+and enforceable gates in GK-013; current CLI verification returned HTTP 401.
+Keep the existing test-runtime budget and separate environment credentials.
+
+1. Sasha verifies Cloudflare Registrar availability/checkout price for `gkcake.com`,
+   registrar MFA, owner emergency access and annual renewal (unreserved, unpurchased).
+   Choose storefront/API/admin placement and sender
+   domain, then exact origin/callback config. @gk.cake.london manual handoff device tests
+   require Creator account control; no API application needed for copy/open fallback.
+2. Follow [Railway services](https://docs.railway.com/services)
+   to create separately permissioned `gk-ui-sandbox` and `gk-api-sandbox` targets;
+   customer/admin share UI artifact; backend/jobs share API revision. Proposed
+   region is Amsterdam. Use Pro with a USD25 combined runtime/jobs/test allowance
+   (USD20 plan minimum includes usage). Measure all services within that allowance.
+   Disable [production GitHub autodeploys](https://docs.railway.com/deployments/github-autodeploys);
+   ordinary Git pushes must not deploy production. Enable outbound IPv6 for direct
+   Supabase connectivity or verify the IPv4 session pooler; enforce TLS.
+3. Agent GK-020 supplies actual pinned build/start commands; proposed SvelteKit
+   `npm ci && npm run build` / `node build`, backend reviewed container with server
+   and maintenance commands. Do not enter commands until bootstrap verifies them.
+   UI `ORIGIN`, public API origin and public auth config; backend secret store has
+   database/payment/storage/email secrets. Set liveness/readiness health paths.
+4. [Railway cron jobs](https://docs.railway.com/cron-jobs): same backend image, approved bounded
+   reconciliation command, provisional every five minutes; record resource/owner.
+   Monitor oldest unresolved money/email work, last successful run and exhausted
+   queue; no process-only fire-and-forget job. Protect deployments from overlap.
+5. Bootstrap handoff: GK-020 B1 supplies a reviewed PR, green real checks and exact
+   job names while remaining in Review. Creator GK-013 G1 configures/verifies those
+   required checks/reviews and native auto-merge availability; it does not wait for
+   GK-020 Done. GK-020 B2 then revalidates, auto-merges and records main CI and Creator
+   acceptance before other downstream work. Native
+   auto-merge never bypasses red/stale checks. Agent GK-034 validates published
+   `ui-v`/`api-v` release events, exact main-CI SHA and artifact, component environment,
+   one locked migration and counterpart rollback in sandbox. No release authorized
+   by this guide. Store deploy/migration credentials only in separate CI environments.
+6. Creator GK-014 configures UptimeRobot Solo phone push and recurring outage alerts
+   to Sasha; test an ongoing overnight incident is visible when support resumes.
+   Response hours are daily 10:00–23:00 Europe/London, including DST; recovery clock
+   pauses outside them. Monitor backend technical metrics with authenticated JSON
+   containing only health indicators/aggregate metrics, never customer/order data.
+   Sasha accepts the documented ancillary processing outside the UK/EU with
+   safeguards; record applicable terms during setup. Use these JSON responses for
+   assertions independently of visitor analytics. Sasha selected PostHog Cloud EU
+   instead of Umami; use Free initially within its 1M analytics events/month.
+   Verify EU project/ingestion endpoint, consent-gated tracking, SPA pageviews and
+   checkout attribution. Use its separate dashboard initially; own DB supplies
+   admin order/revenue charts. Keep session replay/unnecessary autocapture off and
+   exclude customer names, email and order contents from analytics payloads.
+   Review dashboard usage and projected monthly totals early: Free drops additional
+   events at its quota. No paid upgrade or new admin embedding is assumed.
+   Visitor analytics is a launch requirement: verify the agreed measurements,
+   consent behaviour, capacity and data handling before launch. Launching with
+   tracking disabled pending retention verification is not an accepted fallback.
+   Sasha accepts PostHog's standard retention policy, replacing the six-month
+   active deletion and fixed 30-day analytics backup tail. Record applicable terms
+   and plan at setup; one-year Free history is not a guaranteed purge deadline.
+   Privacy information must match that lifecycle. Review retention changes before
+   any paid upgrade. Shop operational backups still retain 30 days of restore points.
+   The prepared Umami inquiry is superseded and need not be sent.
+   Controlled alert and DB+object restore evidence remains required.
+   Configure aggregate budget alerts before GBP71 forecast (initial GBP61 baseline
+   plus GBP10); request approval for increases greater than GBP10 cumulatively.
+   Rebase after approval, retain GBP100 ceiling. Without approval, stop test then
+   affected live services while retaining orders/backups. Allow for tax/FX and
+   continuing subscriptions/storage: alerts and compute stops alone are no universal cap.
+7. Failure/recovery: inspect nonsecret health/job/deploy version; roll back compatible
+   artifact, never erase database; keep unknown financial intents frozen after
+   restore until authoritative provider reconciliation. Revoke/rotate deployment
+   grants without replacing business records; export database/object/auth migration
+   data before closing an accepted provider account.
+
+## Before accounts: decide what will be operated
+
+1. Confirmed: UK/London, GBP, Europe/London, GBP61 baseline / GBP100 ceiling; three support-hour routine recovery, zero confirmed-order loss, up to 24 hours of nonessential uploads. Pickup/address and delivery-policy evidence remain in their own owner packets.
+2. Existing logo needs metallic-chrome exploration; no approved web design. Supply the source logo, authentic cake photos, recipes/allergens/servings, catalog
+   prices, Instagram ownership and existing design links. Confirm photo rights.
+3. Decide production lead times/capacity, pickup windows/cutoffs, cancellation
+   eligibility, custom-quote/payment process and delivery responsibilities. The
+   master will group unresolved choices into specific Creator decision tickets.
+4. Consume the approved GK-004 package and its remaining verification gates in
+   [provider research](docs/design/provider-research.md); recheck actual quotes before
+   purchases. Do not reopen accepted choices unless evidence changes feasibility/cost.
+
+## Registration/configuration order
+
+| Order | Service/capability | Creator action and prerequisites | Evidence before dependent implementation |
+| --- | --- | --- | --- |
+| 01 | Existing GitHub repository and Trello board | Verify owner/admin access, MFA and recovery. Reuse `ChichaSasha/gk-cakes` and the named board; no duplicate workspace | Correct repo/board URLs and scoped access verified without exposing credentials |
+| 02 | Domain/DNS | Check ownership of GKCake.com, spelling, registration/renewal cost and DNS control before purchase. Decide actual storefront/admin/API hostnames | Approved domain and DNS management access; no claim the requested domain is available |
+| 03 | PostgreSQL and backup service | Register the accepted provider or reuse an approved project. Choose region, environment separation, budget and backup/retention plan | Sandbox database reachable over TLS, restore capability documented/test planned; resource IDs only |
+| 04 | Object storage for cake photos | Reuse selected platform storage if appropriate; otherwise create approved storage account. Separate public catalog images and private customer uploads if needed | Bucket names/access policy, browser read test, denied anonymous writes, allowed origin and retention plan |
+| 05 | Managed identity | Reuse chosen provider where suitable; configure app URLs, callbacks and allowed environments. Provision first admin by explicit verified identity | Customer login and admin bootstrap verification plan; no user-editable metadata confers admin |
+| 06 | Payments | Register approved business account after country/currency/owner decision; complete identity/bank steps personally. Start in sandbox/test mode | Test-mode account, allowed currency/methods, webhook target/events, full and partial refund test plan |
+| 07 | Transactional email | Select provider after volume/cost/deliverability review. Verify sending domain with provider-specified DNS records; configure sender/reply-to and bounce handling | Domain verified, controlled test accepted/delivery or bounce event observed; inbox receipt not guaranteed |
+| 08 | Instagram | Confirm control of @gk.cake.london and intended account type. First validate manual open-conversation/copy-summary flow; developer app/permissions only if approved API design requires them | Mobile/desktop handoff evidence; precise supported/unsupported behaviour and fallback |
+| 09 | UI/backend hosting and scheduled work | Create separate approved deployment targets/environments. Configure runtime/region/domain, resource limits and scheduled reconciliation as designed | Target names, health URLs, environment matrix, service identity and scheduled-job owner |
+| 10 | CI permissions and release environments | After CI exists, enable required checks/review and native auto-merge. Configure scoped deploy identities and component environments; confirm release publisher | Protection/permission evidence, blocked bad-PR test, successful sandbox component release |
+| 11 | Monitoring, analytics and recovery | Prefer selected providers' existing tools. Configure error/availability alerts, budget alerts, backup restore and site-analytics definitions/privacy settings | Test alert, named incident contact, restore evidence, analytics smoke check and data retention |
+
+Rows 03–09 may be grouped by the chosen provider; one provider account can cover
+several capabilities. Separate payment/email accounts are not architecture modules.
+Account provisioning can proceed in parallel only after prerequisites are settled.
+
+## What the master must fill for each accepted service
+
+Use a section per selected service, linked to its ADR and Creator/Agent Trello cards:
+
+```text
+Service/provider and official registration/setup URL (date checked)
+Purpose; accepted decision ID; required before which ticket/wave
+Account owner; region; sandbox/staging/production resource names
+Current expected cost, usage assumptions, limits and billing alert/cap
+Prerequisites and step-by-step UI/CLI setup instructions
+Exact settings: callbacks/origins/domains/webhook events/schedules as applicable
+Public configuration names and where used
+Secret names, purpose, scope and safe storage location — NEVER values
+Who configures each step: Creator or Agent; least-privilege access grant
+How to verify: action, expected outcome, environment and nonsecret evidence
+Common setup failure and recovery; revoke/rotate/close/backup procedure
+Related Trello URLs; current unresolved decision if any
+```
+
+Do not call an account-setup ticket Ready when its provider or required settings
+are undecided. A decision ticket can be Ready with clear options and evidence.
+The Creator performs legal/business verification and account ownership steps;
+agents can prepare config and verify scoped access when authorized.
+
+## Configuration and secrets
+
+The following are example names, not an implemented configuration schema. The
+selected implementation must supply a committed `.env.example` containing names
+and harmless placeholders, plus ignore rules for local secrets.
+
+| Classification | Examples | Location |
+| --- | --- | --- |
+| Public, deliberately exposed | Site/API origin, shop timezone/currency, provider publishable key where supported | Frontend build/runtime config after review |
+| Backend secrets | `DATABASE_URL`, payment secret, webhook signing secret, storage write credential, email API key | Backend secret store; local ignored env for sandbox development |
+| Release credentials | Component deploy identity, migration database role | Scoped CI environment/workload identity; separate from application role |
+| Creator-only recovery | Provider MFA recovery codes, registrar/account recovery | Personal password manager; not agent context or Trello |
+
+Use separate environments and least-privilege roles. Never ask for raw secrets in
+chat, cards or screenshots. The Creator enters secrets directly into the intended
+store; the agent verifies the variable/resource exists and behaviour succeeds
+without echoing its value. Rotate/revoke exposed credentials and remove exposure
+through an authorized incident procedure; deletion from a current file is not
+revocation. Do not let frontend `PUBLIC_*`/`VITE_*`/equivalent prefixes expose secrets.
+
+## Go-live evidence required by the future release plan
+
+Run customer purchase and custom-order paths in sandbox first, then an authorized
+production smoke procedure appropriate to the payment provider. Verify production
+and pickup capacity, cancellation/refund, notification evidence, admin recovery,
+backups/restore and independent component rollback. Live money operations and
+emails to customers need their own authorization; use controlled test recipients.
+Record the actual deployed versions and unresolved risks, not just checked boxes.
+
+The kit's CI file does not turn these services on. Follow the
+[delivery contract](docs/planning/DELIVERY.md) and accepted provider runbooks.
+
+## Verified initial Creator cards
+
+Published planning snapshots; Trello owns current execution state. Provider setup
+remains conditional on the selected package, and no service was registered or
+purchased in the planning run. Start with these decision/content cards:
+
+- [GK-001 — Set production, pickup and London delivery policy](https://trello.com/c/eI8UpD6l/16-gk-001p0o010w00-set-production-pickup-and-london-delivery-policy)
+- [GK-003 — Approve customer agreement, accounts and refund policy](https://trello.com/c/ftGtoGNB/17-gk-003p0o020w00-approve-customer-agreement-accounts-and-refund-policy)
+- [GK-004 — Select provider package and recovery budget](https://trello.com/c/RotJkR9L/18-gk-004p0o030w00-select-provider-package-and-recovery-budget)
+- [GK-005 — Verify UK business, allergen, tax and privacy content](https://trello.com/c/OWHhKPBT/19-gk-005p0o040w00-verify-uk-business-allergen-tax-and-privacy-content)
+- [GK-006 — Confirm release-only deployment and repository access policy](https://trello.com/c/npWFafNi/20-gk-006p0o050w00-confirm-release-only-deployment-and-repository-access-policy)
+- [GK-007 — Set discounts, recipe scaling and ingredient accounting rules](https://trello.com/c/iJqMyuN1/21-gk-007p0o060w00-set-discounts-recipe-scaling-and-ingredient-accounting-rules)
+- [GK-002 — Supply brand and cake content for chrome visual exploration](https://trello.com/c/JsXtAhB2/22-gk-002p1o070w00-supply-brand-and-cake-content-for-chrome-visual-exploration)

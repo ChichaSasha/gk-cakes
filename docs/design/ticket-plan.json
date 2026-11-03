@@ -1,0 +1,968 @@
+[
+  {
+    "id": "GK-001",
+    "title": "Set production, pickup and London delivery policy",
+    "owner": "Creator",
+    "kind": "Decision",
+    "priority": "P0",
+    "requirements": [
+      "C06",
+      "C10",
+      "C11",
+      "C15",
+      "C16",
+      "C17",
+      "A07",
+      "A08",
+      "A12"
+    ],
+    "depends": [],
+    "wave": 0,
+    "order": 10,
+    "parallel": [
+      "GK-003",
+      "GK-004",
+      "GK-005",
+      "GK-006",
+      "GK-007",
+      "GK-002"
+    ],
+    "publication_list": "Ready",
+    "blocked": false
+  },
+  {
+    "id": "GK-003",
+    "title": "Approve customer agreement, accounts and refund policy",
+    "owner": "Creator",
+    "kind": "Decision",
+    "priority": "P0",
+    "requirements": [
+      "C03",
+      "C04",
+      "C05",
+      "C06",
+      "C07",
+      "C08",
+      "C12",
+      "C13",
+      "C18",
+      "A01",
+      "A07",
+      "S02"
+    ],
+    "depends": [],
+    "wave": 0,
+    "order": 20,
+    "parallel": [
+      "GK-001",
+      "GK-004",
+      "GK-005",
+      "GK-006",
+      "GK-007",
+      "GK-002"
+    ],
+    "publication_list": "Ready",
+    "blocked": false
+  },
+  {
+    "id": "GK-004",
+    "title": "Select provider package and recovery budget",
+    "owner": "Creator",
+    "kind": "Decision",
+    "priority": "P0",
+    "requirements": [
+      "C05",
+      "C07",
+      "C14",
+      "A05",
+      "S06",
+      "S07",
+      "D02"
+    ],
+    "depends": [],
+    "wave": 0,
+    "order": 30,
+    "parallel": [
+      "GK-001",
+      "GK-003",
+      "GK-005",
+      "GK-006",
+      "GK-007",
+      "GK-002"
+    ],
+    "publication_list": "Ready",
+    "blocked": false
+  },
+  {
+    "id": "GK-005",
+    "title": "Verify UK business, allergen, tax and privacy content",
+    "owner": "Creator",
+    "kind": "Decision",
+    "priority": "P0",
+    "requirements": [
+      "C05",
+      "C06",
+      "C09",
+      "C14",
+      "C15",
+      "A05",
+      "A11",
+      "S01",
+      "S02"
+    ],
+    "depends": [],
+    "wave": 0,
+    "order": 40,
+    "parallel": [
+      "GK-001",
+      "GK-003",
+      "GK-004",
+      "GK-006",
+      "GK-007",
+      "GK-002"
+    ],
+    "publication_list": "Ready",
+    "blocked": false
+  },
+  {
+    "id": "GK-006",
+    "title": "Confirm release-only deployment and repository access policy",
+    "owner": "Creator",
+    "kind": "Decision",
+    "priority": "P0",
+    "requirements": [
+      "D01",
+      "D02"
+    ],
+    "depends": [],
+    "wave": 0,
+    "order": 50,
+    "parallel": [
+      "GK-001",
+      "GK-003",
+      "GK-004",
+      "GK-005",
+      "GK-007",
+      "GK-002"
+    ],
+    "publication_list": "Ready",
+    "blocked": false
+  },
+  {
+    "id": "GK-007",
+    "title": "Set discounts, recipe scaling and ingredient accounting rules",
+    "owner": "Creator",
+    "kind": "Decision",
+    "priority": "P0",
+    "requirements": [
+      "S01",
+      "S03",
+      "S04",
+      "S05",
+      "A06",
+      "A08"
+    ],
+    "depends": [],
+    "wave": 0,
+    "order": 60,
+    "parallel": [
+      "GK-001",
+      "GK-003",
+      "GK-004",
+      "GK-005",
+      "GK-006",
+      "GK-002"
+    ],
+    "publication_list": "Ready",
+    "blocked": false
+  },
+  {
+    "id": "GK-002",
+    "title": "Supply brand and cake content for chrome visual exploration",
+    "owner": "Creator",
+    "kind": "Setup",
+    "priority": "P1",
+    "requirements": [
+      "C01",
+      "C02",
+      "C09",
+      "UX01"
+    ],
+    "depends": [],
+    "wave": 0,
+    "order": 70,
+    "parallel": [
+      "GK-001",
+      "GK-003",
+      "GK-004",
+      "GK-005",
+      "GK-006",
+      "GK-007"
+    ],
+    "publication_list": "Ready",
+    "blocked": false
+  },
+  {
+    "id": "GK-010",
+    "title": "Provision selected data, identity and storage sandbox",
+    "owner": "Creator",
+    "kind": "Setup",
+    "priority": "P0",
+    "requirements": [
+      "C01",
+      "C07",
+      "S06",
+      "D02"
+    ],
+    "depends": [
+      "GK-004"
+    ],
+    "wave": 1,
+    "order": 80,
+    "parallel": [
+      "GK-011",
+      "GK-012"
+    ],
+    "publication_list": "Backlog",
+    "blocked": true
+  },
+  {
+    "id": "GK-011",
+    "title": "Provision selected payment and email test accounts",
+    "owner": "Creator",
+    "kind": "Setup",
+    "priority": "P0",
+    "requirements": [
+      "C05",
+      "C14",
+      "A09",
+      "S02"
+    ],
+    "depends": [
+      "GK-004",
+      "GK-005"
+    ],
+    "wave": 1,
+    "order": 90,
+    "parallel": [
+      "GK-010",
+      "GK-012"
+    ],
+    "publication_list": "Backlog",
+    "blocked": true
+  },
+  {
+    "id": "GK-019",
+    "title": "Reconcile approved policies into executable contracts",
+    "owner": "Agent",
+    "kind": "Design",
+    "priority": "P0",
+    "requirements": [
+      "S06",
+      "S07",
+      "C05",
+      "C06",
+      "C07",
+      "C10",
+      "C17",
+      "S01",
+      "S02",
+      "D01",
+      "D02"
+    ],
+    "depends": [
+      "GK-001",
+      "GK-003",
+      "GK-004",
+      "GK-005",
+      "GK-006",
+      "GK-007"
+    ],
+    "wave": 1,
+    "order": 100,
+    "parallel": [],
+    "publication_list": "Backlog",
+    "blocked": true
+  },
+  {
+    "id": "GK-012",
+    "title": "Verify domain, Instagram ownership and approved origins",
+    "owner": "Creator",
+    "kind": "Setup",
+    "priority": "P1",
+    "requirements": [
+      "C03",
+      "C12",
+      "C18",
+      "D02"
+    ],
+    "depends": [
+      "GK-002",
+      "GK-004"
+    ],
+    "wave": 1,
+    "order": 110,
+    "parallel": [
+      "GK-010",
+      "GK-011"
+    ],
+    "publication_list": "Backlog",
+    "blocked": true
+  },
+  {
+    "id": "GK-015",
+    "title": "Approve chrome-led visual foundation with the Creator",
+    "owner": "Agent",
+    "kind": "Design",
+    "priority": "P1",
+    "requirements": [
+      "UX01",
+      "C01",
+      "C02",
+      "C09"
+    ],
+    "depends": [
+      "GK-002"
+    ],
+    "wave": 1,
+    "order": 120,
+    "parallel": [],
+    "publication_list": "Backlog",
+    "blocked": true
+  },
+  {
+    "id": "GK-017",
+    "title": "Review checkout and order recovery sketches",
+    "owner": "Agent",
+    "kind": "Design",
+    "priority": "P0",
+    "requirements": [
+      "C05",
+      "C06",
+      "C08",
+      "C10",
+      "C14",
+      "C15",
+      "C16",
+      "C17",
+      "S01",
+      "S02",
+      "UX01"
+    ],
+    "depends": [
+      "GK-015",
+      "GK-001",
+      "GK-003",
+      "GK-007"
+    ],
+    "wave": 2,
+    "order": 130,
+    "parallel": [],
+    "publication_list": "Backlog",
+    "blocked": true
+  },
+  {
+    "id": "GK-020",
+    "title": "Bootstrap separately buildable UI and transactional API",
+    "owner": "Agent",
+    "kind": "Implementation",
+    "priority": "P0",
+    "requirements": [
+      "S06",
+      "S07",
+      "D01",
+      "D02"
+    ],
+    "depends": [
+      "GK-019"
+    ],
+    "wave": 2,
+    "order": 140,
+    "parallel": [],
+    "publication_list": "Backlog",
+    "blocked": true,
+    "milestones": {
+      "B1": "Green reviewed bootstrap PR and exact commands/check names for GK-013",
+      "B2": "After GK-013 G1: required reviews/checks, native auto-merge, main CI and Creator acceptance"
+    },
+    "completion_after": [
+      "GK-013"
+    ]
+  },
+  {
+    "id": "GK-016",
+    "title": "Review discovery, bespoke and account flow sketches",
+    "owner": "Agent",
+    "kind": "Design",
+    "priority": "P1",
+    "requirements": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C07",
+      "C09",
+      "C11",
+      "C12",
+      "C13",
+      "C18",
+      "UX01"
+    ],
+    "depends": [
+      "GK-015",
+      "GK-003"
+    ],
+    "wave": 2,
+    "order": 150,
+    "parallel": [],
+    "publication_list": "Backlog",
+    "blocked": true
+  },
+  {
+    "id": "GK-018",
+    "title": "Review daily chef operations sketches",
+    "owner": "Agent",
+    "kind": "Design",
+    "priority": "P1",
+    "requirements": [
+      "A01",
+      "A02",
+      "A03",
+      "A04",
+      "A06",
+      "A07",
+      "A08",
+      "A09",
+      "A11",
+      "A12",
+      "S03",
+      "S04",
+      "S05",
+      "UX01"
+    ],
+    "depends": [
+      "GK-015",
+      "GK-001",
+      "GK-003",
+      "GK-007"
+    ],
+    "wave": 2,
+    "order": 160,
+    "parallel": [],
+    "publication_list": "Backlog",
+    "blocked": true
+  },
+  {
+    "id": "GK-013",
+    "title": "Configure required CI review and native auto-merge gates",
+    "owner": "Creator",
+    "kind": "Setup",
+    "priority": "P0",
+    "requirements": [
+      "D01",
+      "D02"
+    ],
+    "depends": [
+      "GK-006",
+      "GK-020"
+    ],
+    "wave": 3,
+    "order": 170,
+    "parallel": [],
+    "publication_list": "Backlog",
+    "blocked": true,
+    "dependency_deliverables": {
+      "GK-020": "B1: reviewed green bootstrap PR, exact real check names and verified commands; GK-020 remains Review, not Done"
+    }
+  },
+  {
+    "id": "GK-014",
+    "title": "Configure monitoring and verify restore ownership",
+    "owner": "Creator",
+    "kind": "Setup",
+    "priority": "P0",
+    "requirements": [
+      "A02",
+      "A05",
+      "A09",
+      "S06",
+      "S07",
+      "D02"
+    ],
+    "depends": [
+      "GK-004",
+      "GK-020"
+    ],
+    "wave": 5,
+    "order": 180,
+    "parallel": [],
+    "publication_list": "Backlog",
+    "blocked": true
+  },
+  {
+    "id": "GK-021",
+    "title": "Authorize customers, staff and safe historical claims",
+    "owner": "Agent",
+    "kind": "Implementation",
+    "priority": "P0",
+    "requirements": [
+      "C07",
+      "C08",
+      "C13",
+      "C18",
+      "A02"
+    ],
+    "depends": [
+      "GK-020",
+      "GK-010",
+      "GK-003"
+    ],
+    "wave": 5,
+    "order": 190,
+    "parallel": [
+      "GK-024"
+    ],
+    "publication_list": "Backlog",
+    "blocked": true,
+    "parallel_group": "W05-identity"
+  },
+  {
+    "id": "GK-024",
+    "title": "Deliver durable transactional email and evidence",
+    "owner": "Agent",
+    "kind": "Implementation",
+    "priority": "P0",
+    "requirements": [
+      "C14",
+      "A02",
+      "A09",
+      "S07"
+    ],
+    "depends": [
+      "GK-020",
+      "GK-011"
+    ],
+    "wave": 5,
+    "order": 200,
+    "parallel": [
+      "GK-021"
+    ],
+    "publication_list": "Backlog",
+    "blocked": true,
+    "parallel_group": "W05-notifications"
+  },
+  {
+    "id": "GK-022",
+    "title": "Publish cake catalog, variants and recipe history",
+    "owner": "Agent",
+    "kind": "Implementation",
+    "priority": "P0",
+    "requirements": [
+      "C01",
+      "C02",
+      "C09",
+      "S03",
+      "S05",
+      "S06"
+    ],
+    "depends": [
+      "GK-020",
+      "GK-010",
+      "GK-007",
+      "GK-016",
+      "GK-018",
+      "GK-021"
+    ],
+    "wave": 6,
+    "order": 210,
+    "parallel": [],
+    "publication_list": "Backlog",
+    "blocked": true
+  },
+  {
+    "id": "GK-023",
+    "title": "Reserve production, ready stock and pickup independently",
+    "owner": "Agent",
+    "kind": "Implementation",
+    "priority": "P0",
+    "requirements": [
+      "C10",
+      "C11",
+      "C15",
+      "C16",
+      "A08",
+      "A12",
+      "S06"
+    ],
+    "depends": [
+      "GK-020",
+      "GK-001",
+      "GK-007",
+      "GK-018",
+      "GK-021"
+    ],
+    "wave": 6,
+    "order": 220,
+    "parallel": [],
+    "publication_list": "Backlog",
+    "blocked": true
+  },
+  {
+    "id": "GK-034",
+    "title": "Build verified independent component release pipelines",
+    "owner": "Agent",
+    "kind": "Implementation",
+    "priority": "P0",
+    "requirements": [
+      "D01",
+      "D02",
+      "S06",
+      "S07"
+    ],
+    "depends": [
+      "GK-020",
+      "GK-013",
+      "GK-014",
+      "GK-006"
+    ],
+    "wave": 6,
+    "order": 230,
+    "parallel": [
+      "GK-028"
+    ],
+    "publication_list": "Backlog",
+    "blocked": true,
+    "parallel_group": "W06-delivery"
+  },
+  {
+    "id": "GK-025",
+    "title": "Collect full payment with safe holds and discounts",
+    "owner": "Agent",
+    "kind": "Implementation",
+    "priority": "P0",
+    "requirements": [
+      "C02",
+      "C05",
+      "C10",
+      "C15",
+      "C16",
+      "S01",
+      "S06",
+      "S07"
+    ],
+    "depends": [
+      "GK-021",
+      "GK-022",
+      "GK-023",
+      "GK-024",
+      "GK-011",
+      "GK-003",
+      "GK-007"
+    ],
+    "wave": 7,
+    "order": 240,
+    "parallel": [],
+    "publication_list": "Backlog",
+    "blocked": true
+  },
+  {
+    "id": "GK-028",
+    "title": "Deliver appetising discovery and public availability",
+    "owner": "Agent",
+    "kind": "Implementation",
+    "priority": "P1",
+    "requirements": [
+      "C01",
+      "C02",
+      "C09",
+      "C10",
+      "C11",
+      "C12"
+    ],
+    "depends": [
+      "GK-022",
+      "GK-023",
+      "GK-016"
+    ],
+    "wave": 7,
+    "order": 250,
+    "parallel": [
+      "GK-034"
+    ],
+    "publication_list": "Backlog",
+    "blocked": true,
+    "parallel_group": "W07-customer-discovery"
+  },
+  {
+    "id": "GK-026",
+    "title": "Cancel and refund safely across production races",
+    "owner": "Agent",
+    "kind": "Implementation",
+    "priority": "P0",
+    "requirements": [
+      "C06",
+      "A01",
+      "S02",
+      "A02",
+      "A03",
+      "S07"
+    ],
+    "depends": [
+      "GK-025",
+      "GK-024",
+      "GK-001",
+      "GK-003"
+    ],
+    "wave": 8,
+    "order": 260,
+    "parallel": [],
+    "publication_list": "Backlog",
+    "blocked": true
+  },
+  {
+    "id": "GK-027",
+    "title": "Convert bespoke agreements and manual orders to payment",
+    "owner": "Agent",
+    "kind": "Implementation",
+    "priority": "P1",
+    "requirements": [
+      "C03",
+      "C04",
+      "C05",
+      "C12",
+      "A07"
+    ],
+    "depends": [
+      "GK-021",
+      "GK-022",
+      "GK-023",
+      "GK-024",
+      "GK-025",
+      "GK-016",
+      "GK-018",
+      "GK-012",
+      "GK-005"
+    ],
+    "wave": 8,
+    "order": 270,
+    "parallel": [],
+    "publication_list": "Backlog",
+    "blocked": true
+  },
+  {
+    "id": "GK-031",
+    "title": "Run chef fulfillment and atomic pickup changes",
+    "owner": "Agent",
+    "kind": "Implementation",
+    "priority": "P0",
+    "requirements": [
+      "A03",
+      "A07",
+      "A08",
+      "A10",
+      "A12",
+      "C15",
+      "C16",
+      "C17"
+    ],
+    "depends": [
+      "GK-025",
+      "GK-026",
+      "GK-018",
+      "GK-001"
+    ],
+    "wave": 9,
+    "order": 280,
+    "parallel": [],
+    "publication_list": "Backlog",
+    "blocked": true
+  },
+  {
+    "id": "GK-029",
+    "title": "Deliver account history, favourites and profile UI",
+    "owner": "Agent",
+    "kind": "Implementation",
+    "priority": "P1",
+    "requirements": [
+      "C04",
+      "C07",
+      "C08",
+      "C13",
+      "C18"
+    ],
+    "depends": [
+      "GK-021",
+      "GK-016",
+      "GK-027"
+    ],
+    "wave": 9,
+    "order": 290,
+    "parallel": [],
+    "publication_list": "Backlog",
+    "blocked": true
+  },
+  {
+    "id": "GK-033",
+    "title": "Expose email recovery, audit and business metrics to chef",
+    "owner": "Agent",
+    "kind": "Implementation",
+    "priority": "P1",
+    "requirements": [
+      "A02",
+      "A04",
+      "A05",
+      "A09",
+      "A11"
+    ],
+    "depends": [
+      "GK-024",
+      "GK-025",
+      "GK-026",
+      "GK-018",
+      "GK-014",
+      "GK-005"
+    ],
+    "wave": 9,
+    "order": 300,
+    "parallel": [],
+    "publication_list": "Backlog",
+    "blocked": true
+  },
+  {
+    "id": "GK-030",
+    "title": "Deliver checkout, order timeline and refund recovery UI",
+    "owner": "Agent",
+    "kind": "Implementation",
+    "priority": "P0",
+    "requirements": [
+      "C05",
+      "C06",
+      "C08",
+      "C14",
+      "C15",
+      "C16",
+      "C17",
+      "S01",
+      "S02"
+    ],
+    "depends": [
+      "GK-025",
+      "GK-026",
+      "GK-027",
+      "GK-031",
+      "GK-017"
+    ],
+    "wave": 10,
+    "order": 310,
+    "parallel": [],
+    "publication_list": "Backlog",
+    "blocked": true
+  },
+  {
+    "id": "GK-032",
+    "title": "Track fridge ingredients and grocery budget by date",
+    "owner": "Agent",
+    "kind": "Implementation",
+    "priority": "P1",
+    "requirements": [
+      "A06",
+      "S03",
+      "S04",
+      "S05"
+    ],
+    "depends": [
+      "GK-022",
+      "GK-023",
+      "GK-031",
+      "GK-007",
+      "GK-018"
+    ],
+    "wave": 10,
+    "order": 320,
+    "parallel": [],
+    "publication_list": "Backlog",
+    "blocked": true
+  },
+  {
+    "id": "GK-035",
+    "title": "Verify complete customer and chef launch scenarios",
+    "owner": "Agent",
+    "kind": "Implementation",
+    "priority": "P0",
+    "requirements": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05",
+      "C06",
+      "C07",
+      "C08",
+      "C09",
+      "C10",
+      "C11",
+      "C12",
+      "C13",
+      "C14",
+      "C15",
+      "C16",
+      "C17",
+      "C18",
+      "A01",
+      "A02",
+      "A03",
+      "A04",
+      "A05",
+      "A06",
+      "A07",
+      "A08",
+      "A09",
+      "A10",
+      "A11",
+      "A12",
+      "S01",
+      "S02",
+      "S03",
+      "S04",
+      "S05",
+      "S06",
+      "S07",
+      "D01",
+      "D02",
+      "UX01"
+    ],
+    "depends": [
+      "GK-028",
+      "GK-029",
+      "GK-030",
+      "GK-032",
+      "GK-033",
+      "GK-034"
+    ],
+    "wave": 11,
+    "order": 330,
+    "parallel": [],
+    "publication_list": "Backlog",
+    "blocked": true
+  },
+  {
+    "id": "GK-036",
+    "title": "Authorize the first production component release",
+    "owner": "Creator",
+    "kind": "Decision",
+    "priority": "P0",
+    "requirements": [
+      "D01",
+      "D02"
+    ],
+    "depends": [
+      "GK-035",
+      "GK-005"
+    ],
+    "wave": 12,
+    "order": 340,
+    "parallel": [],
+    "publication_list": "Backlog",
+    "blocked": true
+  }
+]

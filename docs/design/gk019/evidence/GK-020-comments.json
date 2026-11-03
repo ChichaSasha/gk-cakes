@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "data": [
+    {
+      "id": "6ac40c02ef95b6c9b322653f",
+      "type": "commentCard",
+      "date": "2026-10-05T20:43:46.628Z",
+      "memberCreator": {
+        "id": "6ab07430e77c7ae74e433bb8",
+        "username": "sashachicha13",
+        "fullName": "sashachicha13"
+      },
+      "data": {
+        "text": "GK-012 accepted completion split r5 — 2026-10-05\n\nSasha explicitly approved recording this split and marking GK-012 Done as a domain/account/decision setup ticket: https://trello.com/c/nveiC5IF . The following implementation evidence remains required here and in GK-021; it was not tested or waived by GK-012 closure.\n\nGK-020 owns the actual UI/API/local-development environment inventory and bootstrap configuration, using the accepted provider/session contract. Approved HTTPS layout: gkcake.com (www redirects), gkcake.com/admin, api.gkcake.com; staging.gkcake.com with /admin, staging-api.gkcake.com. Keep test credentials/data isolated.\n\nSupply concrete runtime origins/local-development values to GK-021: https://trello.com/c/zEfCJtWD . Coordinate exact callback derivation with that implementation; do not invent callback paths or allow production wildcards. Existing AC1 missing-origin/secret and unsafe environment-mixing rejection checks remain mandatory.\n\nGK-021 owns final exact callback allowlists/configuration and positive/negative redirect tests. GK-012's completion is not proof of those checks, permission to deploy or an automatic Ready/Done transition for this card. All other prerequisites and delivery/review requirements remain.\n\nSource: docs/creator/GK-012/closure-scope-2026-10-05.md (r5), SHA-256 eb5cc4e9d77d50cf58a9de7a5c6ecc123fd99eacb3f16ae526dc2e1fb855808a\n"
+      }
+    }
+  ]
+}

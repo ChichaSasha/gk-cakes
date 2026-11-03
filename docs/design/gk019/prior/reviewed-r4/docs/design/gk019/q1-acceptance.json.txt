@@ -1,0 +1,22 @@
+{
+  "role": "GK-019 master integration Q1 acceptance",
+  "model_requested": "gpt-6-astra/high",
+  "model_observed": "gpt-6-astra/high",
+  "model_status": "confirmed from latest host turn_context",
+  "history": "continued after compacted resume; independent previous review retained",
+  "readback": "Accept only cake-specific chef-approved shorter ready/resale lead; retain192h ordinary lead,original resale handover,safety,physical-stock exclusion,refund/preparation anchors. Q2 payment timing still unanswered. No Trello writes or visual edits.",
+  "source_id": "chat:GK-019:2026-10-05:Q1",
+  "source_sha256": "f9cb6d23a7d0864921b15c4ef287151d5290a7c42713487eaf9a3d6a9ce18ffd",
+  "source_file": "docs/creator/GK-001/source-comments.json",
+  "input_manifest_sha256": "463aaacb680b1e628b23b15c8d93eeb5aa85d61bbbc75d60c2af5539e958cda0",
+  "live_refresh_file": "evidence/q1-resume-live.json",
+  "live_refresh_sha256": "a84aaf1dfc48a4d343b347854829e3adff4118dc214b4bea203d0eecd07d362c",
+  "current_input_hashes": {
+    "docs/creator/GK-001/source-comments.json": "dcbaec33e69fd7d3b323da340051ed4a2373ddef49ad57a8139d6f7b74b51e11",
+    "docs/creator/GK-001/decisions.json": "df487d1946b1a6bf760e99e2551f0a15d61e5ae76f06f4ddbc9056f8cc240155",
+    "docs/creator/GK-003/source-comments.json": "0cf038769212b4166be875b7ce765ef37546f3d51aea83504a30f9bb15b4a8d1",
+    "docs/creator/GK-003/decisions.json": "5a62a2b53cafa9713998027e07a6c81037a3bce9c8ce4948952f04ae870355b6",
+    "docs/creator/GK-005/source-comments.json": "407acfaa755b15500ec9bbe0dc5fabe04e55706f689decf5892d379dadcb6cfe",
+    "docs/creator/GK-005/decisions.json": "07f7bcd8f08ea46a478f3e01eebc2f8f9f52fe9897e497d8aa70f484485015f7"
+  }
+}

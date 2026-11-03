@@ -1,0 +1,8 @@
+# Hash-pinned evidence, unmodified licences and reviewed artifacts: keep exact bytes, skip whitespace lint.
+docs/design/gk019/evidence/** -whitespace
+docs/design/gk019/prior/** -whitespace
+docs/design/sessions/**/assets/fonts/OFL-*.txt -whitespace
+docs/design/sessions/visual-foundation/gk-015-r11/tools/** -whitespace
+docs/creator/GK-002/publication-parts/** -whitespace
+docs/roles/business-owner.uk.md -whitespace
+docs/roles/developer.en.md -whitespace

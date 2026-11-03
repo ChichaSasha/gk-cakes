@@ -1,0 +1,18 @@
+{
+  "date": "2026-10-05",
+  "status": "proposed completion split; Creator acceptance and publication pending",
+  "review": "author self-check only; no independent review",
+  "validation": "python3 scripts/check_planning_kit.py passed",
+  "sha256": {
+    "docs/creator/GK-011/README.md": "0bf02d7bbaef614542f20be15e0d6b0a1f11a3575c987e5ac21252ea94dd92d7",
+    "docs/creator/GK-011/closure-scope-proposed.md": "0a023c50ddec17661ddb86f73cbf6c103b00b92c07b236489fd2eb0bcfb1d4c8",
+    "docs/creator/GK-011/public-email-dns-2026-10-05.json": "08482d8fab4f2bc9cd9e388c96850275e4826125b182a54444a8c25ed9d59c83",
+    "docs/creator/GK-012/README.md": "5ee69309a60836dd8f2482b89fbfec74e976486c45e8ce85375a3b7ec91dae2a",
+    "docs/creator/GK-005/README.md": "eb12ff9fbb5e0243a3bf61e449361696bd3d6e534577816ea6ffdad77f204aaa",
+    "docs/creator/GK-005/source-comments.json": "d8b6854908a345d6d59028e8fb6e29e013fe6b5df7e84080e4a1667f984c8022",
+    "docs/creator/GK-005/decisions.json": "3d4bdf96e9824addf5d528ad95135582831d4651779fcb12483581b46db94942",
+    "docs/creator/GK-005/interview-2026-10-05.md": "5c687921384a7fac328ae862118a024e5e901d68a50aae2ca059129e6b4d1d6d",
+    "docs/design/owner-data-contract.md": "30bd0355f991bf0d0e564a115e3179a7f4f42e7006d0fb53191223468a1556db",
+    "docs/design/tickets/GK-011.md": "9d9d996c9c044abc95da9058a7b19ea3034185f45fe737747600f08eab2d6bd9"
+  }
+}

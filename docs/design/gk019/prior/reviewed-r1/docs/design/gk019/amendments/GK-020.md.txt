@@ -1,0 +1,23 @@
+## GK-019 proposed contract amendment — r6 / UNPUBLISHED
+
+Owner, title, unrelated scope/labels and list remain unchanged. This dated amendment
+replaces contradictory historical policy/provider examples and adds the acceptance
+evidence below; it does not assert implementation readiness or completed tests.
+
+Contract inputs: K00/K09/K10/K11; docs/design/contracts.md r6, owner-data-contract.md
+gk019-owner-r2, gk019/schema.json r1 and output-manifest.json exact hashes.
+Required current evidence: GK-019; GK-010/012 setup; GK-013 before B2. Refresh live prerequisites and comments before
+execution; a Done setup card proves only its accepted scope.
+
+Behavior: Go API/jobs + SvelteKit customer/admin; Supabase sandbox flbgymxjelzexgoxrcss, private business schema, separate runtime/migration/backup credentials. Approved endpoints gkcake.com/admin, api.gkcake.com, staging.gkcake.com/admin, staging-api.gkcake.com; real values/callback origins must be produced. B2 approved bucket/prefixes in GK-010.
+
+Acceptance extension: B1 supplies exact runnable toolchain/tests, migrations and environment inventory to GK-013; B2 follows gates. Verify real-role denial, TLS verify-full, empty/upgrade migrations and no browser secrets. Reserve K11 schema/config primitives; GK-024 implements the coordinator before dispatch. No claim of implemented backups.
+
+Execution: apply model/context check; then smallest failing meaningful behavior
+case, coherent implementation, focused green checks, required wider checks and
+fresh independent review. Design tickets instead produce/review exact artifacts.
+No application test, UI approval, release or deployment is supplied by this amendment.
+Questions Q1–Q5 apply only where named; unresolved branches stay blocked.
+
+Full brief requirements and nonconflicting safety/verification criteria remain.
+Repository packet is local/unpushed; obtain exact files, not merely a path string.

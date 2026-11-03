@@ -1,0 +1,23 @@
+## GK-019 proposed contract amendment — r6 / UNPUBLISHED
+
+Owner, title, unrelated scope/labels and list remain unchanged. This dated amendment
+replaces contradictory historical policy/provider examples and adds the acceptance
+evidence below; it does not assert implementation readiness or completed tests.
+
+Contract inputs: K00/K01/K02/K09; docs/design/contracts.md r6, owner-data-contract.md
+gk019-owner-r2, gk019/schema.json r1 and output-manifest.json exact hashes.
+Required current evidence: GK-015 exact visual approval; GK-019 current contract packet; GK-002/003/005/012. Refresh live prerequisites and comments before
+execution; a Done setup card proves only its accepted scope.
+
+Behavior: Design customer catalog/request/account flows with current allergens, selected image revision, guest purchase, chef-approved historical claim, minimal payer fields and specific personal-photo permissions. Combined Copy request & open Instagram to @gk.cake.london with fallback; no sent claim.
+
+Acceptance extension: Review exact mobile/desktop revision with Creator. Include archived inspiration, image replaced before freeze, clipboard/open failure, unknown private state and account/guest access. Current business values in contracts r6 supersede original contact/Instagram defaults.
+
+Execution: apply model/context check; then smallest failing meaningful behavior
+case, coherent implementation, focused green checks, required wider checks and
+fresh independent review. Design tickets instead produce/review exact artifacts.
+No application test, UI approval, release or deployment is supplied by this amendment.
+Questions Q1–Q5 apply only where named; unresolved branches stay blocked.
+
+Full brief requirements and nonconflicting safety/verification criteria remain.
+Repository packet is local/unpushed; obtain exact files, not merely a path string.

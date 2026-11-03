@@ -1,0 +1,52 @@
+{
+  "checked_at": "2026-11-02T22:49:58.555779+00:00",
+  "families": {
+    "Geist": {
+      "role": "Display and all functional text (navigation, body, labels, buttons, forms)",
+      "license": "SIL Open Font License 1.1 (poc/assets/fonts/OFL-Geist.txt); Copyright 2024 The Geist Project Authors",
+      "source_listing": "https://github.com/google/fonts/tree/main/ofl/geist",
+      "files": {
+        "Geist-variable.ttf": {
+          "source": "https://github.com/google/fonts/raw/main/ofl/geist/Geist%5Bwght%5D.ttf",
+          "sha256": "73894e0448cae90a92b6c2f8732b7bb9acb7b94c418bff559dad4a18e1de9659"
+        },
+        "OFL-Geist.txt": {
+          "source": "https://github.com/google/fonts/raw/main/ofl/geist/OFL.txt",
+          "sha256": "1781d2806a07d91c4edf4740b88449fab7d0eadad53f7c351b94cd4d4eb8c00f"
+        }
+      }
+    },
+    "Geist Mono": {
+      "role": "Captions, prices, chips, indices, ticker",
+      "license": "SIL Open Font License 1.1 (poc/assets/fonts/OFL-GeistMono.txt); Copyright 2024 The Geist Project Authors",
+      "source_listing": "https://github.com/google/fonts/tree/main/ofl/geistmono",
+      "files": {
+        "GeistMono-variable.ttf": {
+          "source": "https://github.com/google/fonts/raw/main/ofl/geistmono/GeistMono%5Bwght%5D.ttf",
+          "sha256": "d00e590b8eb3a59acc329b2d044fd143ae935090b7da33199ebee27cc7de8196"
+        },
+        "OFL-GeistMono.txt": {
+          "source": "https://github.com/google/fonts/raw/main/ofl/geistmono/OFL.txt",
+          "sha256": "1781d2806a07d91c4edf4740b88449fab7d0eadad53f7c351b94cd4d4eb8c00f"
+        }
+      }
+    },
+    "Instrument Serif": {
+      "role": "Italic accent words only (e.g. 'unforgettable', 'celebration', flavour line)",
+      "license": "SIL Open Font License 1.1 (poc/assets/fonts/OFL-InstrumentSerif.txt)",
+      "files": {
+        "InstrumentSerif-Italic.ttf": {
+          "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/instrumentserif/InstrumentSerif-Italic.ttf",
+          "sha256": "08939b8bdf534afec24ae0ef5e03f948940cd9a8fe08e7fecbad040e62327385"
+        },
+        "OFL-InstrumentSerif.txt": {
+          "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/instrumentserif/OFL.txt",
+          "sha256": "129ed7618959716959f2941fdd5b49e0ad6e6c1d78726761786a00253d865521"
+        }
+      },
+      "provenance": "Unchanged bytes from gk-015-r08 (hashes re-verified)"
+    }
+  },
+  "use": "Unmodified files served locally; no runtime font CDN request. verify.cjs asserts only these three files are ever requested.",
+  "departure": "Replaces Manrope (Creator-accepted in r06). Chosen after a side-by-side spec render (Geist vs Manrope at display and UI sizes) because Geist's tighter, contemporary grotesque reads as current-generation shop design; Manrope reads friendlier but more generic at display sizes. Aesthetic recommendation for the Creator to confirm, not an objective ranking."
+}

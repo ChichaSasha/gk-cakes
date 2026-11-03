@@ -1,0 +1,578 @@
+# Customer discovery, custom request and account packet
+
+Current business inputs: [owner data contract](../owner-data-contract.md),
+[GK-003](../../creator/GK-003/README.md), [GK-005](../../creator/GK-005/README.md),
+and each packet's decisions/source-comments JSON. Guest purchase and custom fields
+are supplied; exact claim proof, privacy and availability display still need review.
+Record source revisions in future work; earlier packet examples are not owner policy.
+
+
+Status: proposed decision packet r4, reconciled to shared contracts r4 after the
+independent C12 preservation correction on
+2026-09-21. Covers C01–C04, C07–C09,
+C11–C13, C18 and UX01. No application, approved screen, supplied brand asset,
+identity sandbox, provider test or implementation check exists. Focused independent
+re-review of this correction remains pending before the pilot qualifies further
+Sol author work.
+
+## Execution and source boundary
+
+- Role: bounded customer feature author. Requested `gpt-5.6-sol` / high through
+  an explicit fresh `fork_turns=none` spawn. The host exposed no effective model
+  or effort identity, so selection is **requested-only**. Author independence is
+  not applicable; a separate reviewer is pending.
+- Base input is `input-r1`, HEAD
+  `bb96a89681bcf2fa1c663a02eacbe039e20e6363`. This packet refreshed Creator
+  decisions r2, shared skeleton r1, contracts r4 K00–K03/K09/K02A, architecture
+  r1, provider evidence r1, the refreshed screen map and
+  GK-015/016/021/022/027/028/029. Source hashes
+  were checked before the readback; `creator-decisions.md` is
+  `c822159b5a2d97c117e493aa8f4c106ee46329ed1fdbbf761cbc76342dc043b6`
+  and refreshed `contracts.md` is
+  `ae7ec8b1aa6ce5e75ec1b471e775c69184635b9f6c9187dc552946c6cafe0cf2`.
+- Creator r2 confirms London UK, GBP, Europe/London, hybrid made-to-order and
+  occasional ready stock, a chrome logo direction and no approved web design.
+  The actual logo and authentic cake photographs have not been supplied.
+- Readback was accepted by the master before research or writing. Inputs are
+  sufficient for an options and integration draft. They are insufficient for
+  visual approval, identity/claim implementation or policy-dependent commerce.
+- The r4 changed-input readback was accepted before this final own-file alignment.
+- Only this file is owned by this worker. Shared routes, schemas, ADRs, screens
+  and tickets remain authoritative and master-owned. This packet records remaining
+  gates without silently changing them. No Trello write, app code, account,
+  setting, push, release or deployment is authorized or performed.
+
+### Shared reconciliation history
+
+Shared r3
+(`ce9791654e74f2546a138494e0286023baf838fcb7a195f0e042496e08a358de`)
+accepted K02A
+after this packet's first draft. It resolved the former
+representation gaps: public archived detail is 404 with a generic custom-request
+entry; only authorized favourite/history snapshots may show the saved title or
+inspiration reference. K02A now owns custom GET/PATCH/summary routes and
+`save_location`, favourites/profile reads and versioned writes, client set-union,
+the order projection and reorder `changed_fields`. First release stores no “I sent
+it” self-report. Public date-range validation is 422 `RANGE_INVALID`. Identity
+session and claim delivery remain blocked on GK-004/GK-019, a chosen provider,
+Creator policy and the qualified Astra assessment. Refreshed `screens.md` SHA-256
+is `b5c9bca073af76cf5db69302a5a241e0057321fd7dbe6830c6dca2f3b75ca379`.
+
+Independent final review then found one material r3 gap: the summary froze an
+inspiration ID/text but not the exact image the customer referenced. The proposal
+was corrected in this packet and is now authoritative shared r4: an immutable image
+object pin and version metadata on the summary revision, authorized customer/chef
+retrieval, pin/cleanup serialization and quote provenance. GK-022, GK-027,
+`screens.md` and `coverage.md` carry the same rule. Focused independent re-review
+of the corrected pilot remains pending.
+
+Current aligned r4 fingerprints: GK-022
+`15be4b0d98bd32fc9abff8dca157ee61491ca1b35c7ea94eae84a412afedbdc4`,
+GK-027 `30f6ee6ed0cefd1851ca1fc5383f8fd58f2ab9a25ab30cc16c526db815cc209c`,
+screens `d1ad851e283fc162be7c6eb8398ee17343acff1bbdb510f849776e44220c5a6b`
+and coverage `414aa2d05120f917f606754ca8a94c7e7cdd18fb539c37759b04c0e86d52988b`.
+
+## Outcome and smallest complete option
+
+Recommend one customer journey rather than separate storefront experiences:
+
+1. A public gallery distinguishes inspiration from an orderable cake and shows
+   authentic imagery, a starting GBP price, servings and availability language.
+2. A cake detail page makes the next decision explicit: **Choose this cake** for
+   current variants or **Request changes** for a recoverable custom summary.
+3. A public schedule shares only advisory day-level availability. It never shows
+   customer, order or capacity-count data and never reserves a date.
+4. The custom flow saves a versioned draft and summary, then offers **Copy
+   summary** and **Open @gk.cake.london** as separate user-controlled actions. Neither
+   action claims that Instagram received a message.
+5. An optional account contains the customer's own order history/timeline,
+   favourites and private Instagram handle. Signed-out favourites stay on that
+   device and merge only after the customer chooses.
+6. Reorder always rebuilds current choices, price, allergen revision and
+   availability. It never clones the historical order or proceeds directly to
+   payment.
+
+This covers the requested customer tasks with the existing modular monolith,
+K00–K02 APIs and one shared UI. Skip a search service, recommendation engine,
+social-login linkage, Instagram messaging integration and separate favourites
+service. Add them only after observed demand and an approved contract.
+
+Adjacent requirements C05/C06/C10/C14–C17 and A07 remain owned by checkout,
+financial, scheduling, notification and manual-order packets. This packet shows
+their entry points and dependencies but does not redefine their rules.
+
+## Requirement coverage
+
+| Requirement | Packet outcome | Primary screen/module | Delivery ticket |
+| --- | --- | --- | --- |
+| C01 | Browse authentic chef cake examples and distinguish inspiration from product | C-GALLERY / Catalog | GK-015, GK-016, GK-028 |
+| C02 | Select a current size/servings variant or leave through the custom path | C-DETAIL / Catalog | GK-015, GK-016, GK-028 |
+| C03 | Save a custom request and retain its summary through user-controlled Instagram handoff failure | C-CUSTOM / Custom request | GK-016, GK-027 |
+| C04 | Start from history or inspiration and revalidate current price, allergens and availability | C-REORDER / Reorder | GK-016, GK-027, GK-029 |
+| C07 | Sign in/out and read only the customer's own account/order history | C-SIGNIN, C-ACCOUNT / Identity | GK-016, GK-021, GK-029 |
+| C08 | Show a customer-safe order timeline without collapsing payment/refund/fulfilment states | C-ACCOUNT history / Orders projection | GK-021, GK-029 |
+| C09 | Show chef-approved ingredients, allergens and cross-contact wording before buy | C-DETAIL / Catalog | GK-015, GK-016, GK-028 |
+| C11 | Share advisory day-level availability with no private order/customer data | C-SCHEDULE / Scheduling projection | GK-016, GK-028 |
+| C12 | Preserve the exact inspiration reference/image revision and requested differences through summary, manual conversation and quote provenance | C-DETAIL, C-CUSTOM / Custom request | GK-016, GK-027, GK-028 |
+| C13 | Save/revisit favourites with explicit signed-out-to-account merge and archived labels | C-ACCOUNT favourites / Favourites | GK-016, GK-021, GK-029 |
+| C18 | Save a private Instagram handle without treating it as identity proof | C-ACCOUNT profile / Identity | GK-016, GK-021, GK-029 |
+| UX01 | Run future mobile/desktop coloured sketch sessions through exact-version Creator approval | GK-015 foundation and GK-016 customer flows | GK-015, GK-016 |
+
+## Current reference research and visual direction
+
+Checked 2026-09-21 against current official pages. This is interaction research,
+not permission to copy brand expression or proof that GK Cakes assets work in the
+same treatment.
+
+| Official example | Evidence observed | Useful lesson for GK Cakes |
+| --- | --- | --- |
+| [Peggy Porschen layer cakes](https://www.peggyporschen.com/collections/layer-cakes) and [The Belgravia](https://www.peggyporschen.com/collections/party-cakes/products/the-belgravia) | Live desktop page visually inspected: generous white space, large isolated cake photography, price ranges and prominent sold-out labels. Product text exposes serving size, allergens, lead time, collection and change/cancellation information. | Let the cake image lead, but keep price/servings/availability and dietary facts in the decision area rather than hiding them behind atmosphere. An unavailable card must remain understandable without colour alone. |
+| [Anges de Sucre cakes](https://www.angesdesucre.com/collections/cakes), [personalised cakes](https://www.angesdesucre.com/pages/personalised-cakes-london) and [Tea Time Treats Cake](https://www.angesdesucre.com/products/tea-time-treats-cake) | Live desktop collection visually inspected: warm cream frame, editorial hero photography and restrained black type. Current product semantics expose tier, size-to-servings, date, postcode and message before basket. The site explicitly distinguishes personalise, customise and bespoke. | Preserve the GK distinction between matching product, changes to an inspiration and a from-scratch request. Put servings and date before commitment and explain what each route will do. |
+| [Cutter & Squidge layer cakes](https://cutterandsquidge.com/collections/layer-cakes) | Live page visually and semantically inspected: product cards use starting prices and tags; page content offers postcode-first delivery-day checking. A first-order marketing modal appeared above the collection during inspection. | Early delivery feasibility is useful. Avoid interrupting discovery with promotional overlays; availability recovery must remain the primary task. |
+
+The existing `sessions/visual-foundation/v01.html` and PNGs are an exploratory
+master artifact, not a screen baseline: temporary wordmark/illustration, partial
+gallery/detail/date/custom states and no Creator approval.
+
+### Direction A — warm cream with restrained chrome (recommended for GK-015)
+
+- Proposed tokens to test, based on v01 rather than approval: paper `#F7F3EE`,
+  surface `#FFFAF5`, ink `#242323`, secondary text `#615B57`, line `#C9C0B8`,
+  burgundy action `#593B43`, focus `#1F6475`.
+- Chrome belongs in the supplied logo, fine dividers or a small decorative
+  highlight. Body text, buttons, price, errors and focus use solid colours.
+- A system sans-serif for controls/body and Georgia as a temporary display face
+  avoid a font dependency before the Creator approves typography.
+- Authentic cake images use a consistent aspect ratio and neutral surface so
+  colour and texture stay appetising. Generated or temporary images are labelled.
+
+This is the smallest coherent extension of v01 and gives food photography warmth.
+It still requires actual assets, contrast/focus checks and Creator feedback.
+
+### Direction B — graphite with chrome
+
+- Proposed comparison tokens: graphite `#181818`, raised surface `#242424`, warm
+  white `#F7F3EE`, muted text `#C9C0B8`, steel line `#74777C`, solid pale action
+  `#F0D8DE`, dark action text `#242323`, focus `#78C7DB`.
+- The direction can feel more editorial and make the metallic logo prominent,
+  but dark framing risks making pale cakes and dense allergen text feel austere.
+  Every image would need an intentionally lit crop and a light information panel.
+
+Recommend Direction A as the single launch foundation. A small graphite section
+may be explored in GK-015, but do not maintain two themes. GK-015 must show both
+directions with the same authentic cake and same gallery/detail task; GK-016 then
+uses the exact Creator-approved foundation. No direction is approved here.
+
+Proposed layout is one card column at 320px, two when content fits, and three at
+wide desktop; an 8px spacing base; visible 44px-equivalent control targets; image
+`width`/`height`, responsive sources and lazy loading below the first viewport.
+These are prototype inputs, not finished tokens or measured performance evidence.
+
+## Module responsibilities and data
+
+The names below are logical modules inside the shared backend, not deployable
+services.
+
+| Module | Owns | Does not own |
+| --- | --- | --- |
+| Catalog | Inspiration/product distinction, cake/variant publication, current serving/price display linkage, image metadata, recipe/allergen display revision and archive state | Checkout totals, capacity commitments, customer favourites or purchased snapshots |
+| Customer identity | Verified subject mapping, customer profile, proof-based historical claim coordination and local authorization integration | Provider password/session implementation, staff role policy, Instagram identity or typed-email linking |
+| Custom request | Draft, versions, requested differences, frozen inspiration/image revision, summary/reference and save location | A quote, order, Instagram DM delivery, sent-state evidence or price agreement |
+| Customer account | Own order/history projection and safe timeline presentation | Authoritative order state transitions or financial state |
+| Favourites | Customer/cake set membership and explicit merge of local IDs | Catalog publication or recommendation ranking |
+| Reorder | Resolve a historical source to current catalog/availability and create a new current request/quote candidate | Copy historical price/allergens, reserve capacity or charge payment |
+
+### Proposed data details for master reconciliation
+
+| Owner/entity | Minimum fields and constraints | History, privacy and query use |
+| --- | --- | --- |
+| Catalog `inspiration` | UUID, title, description, active/archive state, display order, version | May exist without an orderable product. Public list/detail includes active records only; archived detail is 404 with no tombstone data. |
+| Catalog `cake_product` / `variant` | UUID, inspiration link optional, active/archive state, variant servings, current GBP price reference, recipe/allergen display revision, version | Purchased order keeps snapshots elsewhere. Query active gallery/detail by stable cursor; never mutate past order facts. |
+| Catalog `image` | immutable image_revision_id UUID, owner/reference, state pending/ready/failed, public/private class, object key, MIME, dimensions, alt text, ordering, version | Public response exposes only ready public images. Object bytes are outside DB; failed/pending never become broken catalog cards. Alt text requires chef/editor review. |
+| Identity `customer_profile` | verified subject UNIQUE, nullable private Instagram handle, created/updated, version | Handle is bounded escaped display text and is not identity proof. Exact accepted syntax and retention await setup/privacy approval. Never return it publicly. |
+| Favourites `customer_favourite` | customer ID + cake ID UNIQUE, created_at | Set semantics make repeated PUT/DELETE safe. Keep archive reference so account can label it unavailable. Signed-out IDs remain browser-local until explicit merge. |
+| Custom `custom_request` | UUID, owner subject or approved scoped capability, paired nullable inspiration_id and selected image_revision_id, servings/date/requested differences/contact choice, state, version, created/updated | Exact mandatory business fields remain blocked. Signed-out recovery is labelled device-only unless an approved server capability is used. Mutable draft is not an order or commitment. |
+| Custom `custom_request_revision` | request ID + version UNIQUE, normalized summary snapshot, inspiration ID, exact catalog image revision ID, immutable object key/version, image metadata snapshot (dimensions/MIME/alt), reference, save location, changed_at, actor/source | Freeze and pin atomically so customer and associated chef retrieve the exact image after replacement/archive. Pin creation serializes with cleanup on the same image-reference row; an existing cleanup tombstone rejects the freeze with 409 `REFERENCE_UNAVAILABLE`. Avoid recording every keystroke; no sent-state event in the first version. |
+| Orders projection | Owned order ID, created date, current lifecycle, payment/refund/fulfilment summaries, production/pickup display, immutable purchase/policy/allergen snapshots, version | Orders remains authoritative. Customer query index follows K09 `(customer_id, created_at, id)`. Timeline entries are safe domain history, not raw audit/provider payload. |
+| Reorder result | Source order/inspiration reference plus current selected variant/date and resulting request/quote ID | No separate durable reorder aggregate is needed. Preserve provenance on the new request/quote; unique conversion rules remain with K02. |
+
+Retention for profiles, custom drafts, local favourites and referenced images is
+blocked on GK-005/Creator-approved privacy policy. A summary's object pin prevents
+incidental catalog replacement, archive or cleanup from deleting the referenced
+bytes. Explicit request deletion follows the approved policy and releases the pin
+only after every dependent request/quote reference is handled. An order snapshot/
+audit may have a different legally required retention. Do not put contact data,
+handles or custom text in operational logs or analytics.
+
+## Rules and state transitions
+
+### Catalog, availability and allergens
+
+- Inspiration, product and variant are different. An inspiration may support only
+  **Request changes**; an active product with an eligible variant may support
+  **Choose this cake**. The UI never infers orderability from having a photo.
+- Price, servings, recipe/allergen revision and availability come from the API.
+  The UI may preserve a viewed value while refreshing, but must label it stale and
+  require review when the server changes it.
+- Ingredient/allergen and chef-approved cross-contact wording appear before the
+  purchase path. Missing approved wording disables buying that variant; it does
+  not show “allergen free” or guess from recipe rows.
+- Public schedule stays advisory and private; owner now requests standard available
+  slots. Numeric remaining-versus-total display needs clarification; the former
+  flags-only assumption is not settled owner policy.
+- Hybrid ready stock needs a distinct badge and availability source. Do not imply
+  a made-to-order date rule covers ready stock until the scheduling packet settles it.
+
+### Custom request and Instagram handoff
+
+Proposed draft states are `draft -> ready_for_handoff -> archived`; quote/order
+conversion belongs to Orders and does not make the request itself “paid”. Each
+accepted edit uses `expected_version`. At summary generation, store one immutable
+revision and display its short request reference. That revision pins the exact
+ready catalog image bytes by immutable object key/version and records the catalog
+image revision plus display metadata; a later catalog upload or archive changes
+the public cake, not what this request means. Replacements always use a new immutable
+key. Pin creation and cleanup admission lock/serialize on the same image-reference
+row: a committed pin blocks cleanup, while a cleanup tombstone that wins first
+causes 409 `REFERENCE_UNAVAILABLE` and asks the customer to choose a current image.
+
+The summary includes only the approved request fields, date as London local date,
+servings, the frozen inspiration image/reference and requested differences. The
+text handoff contains a safe request reference rather than a secret object URL.
+Authorized request owner/capability retrieval may display the frozen image; a
+manager retrieves it only through the chef request association. The agreed quote
+records the request summary revision and frozen image provenance. It excludes
+security capability, contact data not intended for the chef and any assertion of
+availability or price. Buttons behave as follows:
+
+- **Save draft**: persists under the current owner/capability and confirms where
+  it is saved. Signed-out browser-only save says “Saved on this device”.
+- **Copy summary**: uses the browser clipboard when allowed; failure keeps a
+  selectable text block and says “Select and copy this summary”.
+- **Open @gk.cake.london**: opens the approved account/profile/conversation target after
+  setup validation. It does not pre-announce success.
+If clipboard or Instagram is unavailable, the exact summary and request reference
+remain on screen and in the saved draft. No timer, reload or failed open discards it.
+
+```mermaid
+sequenceDiagram
+  participant C as Customer
+  participant UI as Customer UI
+  participant API as Custom request module
+  participant IG as Instagram
+  C->>UI: Review request summary
+  UI->>API: Save revision (key, expected version)
+  API-->>UI: Request reference + saved summary
+  C->>UI: Copy summary
+  alt Clipboard succeeds
+    UI-->>C: “Summary copied”
+  else Clipboard fails
+    UI-->>C: Selectable summary + manual-copy instruction
+  end
+  C->>UI: Open @gk.cake.london
+  UI->>IG: User-controlled navigation only
+  IG--xUI: No delivery receipt contract
+  UI-->>C: Summary retained; no “message sent” claim
+```
+
+### Identity, profile, history and claims
+
+Managed authentication and local authorization remain the K00/ADR-0005 candidate.
+No provider is accepted. The UI may define sign-in/out/session-expiry behavior, but
+token storage, browser session architecture, claim proof, guest capability and
+account-link decisions are high risk and **must remain provisional until a fresh
+Astra integration assessment accepts them**.
+
+Hard constraints already shared and not reopened here:
+
+- every private read checks the current verified subject and object ownership;
+  unknown and foreign order IDs have the same 404 behavior;
+- Instagram handle, typed email, delivery address and order number alone never
+  prove ownership or link an order;
+- a historical claim needs verified contact plus an order capability/challenge,
+  is expiring, single-use and audited, and cannot reveal whether another account
+  owns an order;
+- staff roles come from active local membership, never token metadata alone;
+- sign-out clears private in-memory/browser caches and private pages use no shared
+  cache. A service worker must not cache authenticated API responses.
+
+Profile editing trims only approved surrounding whitespace, bounds input, escapes
+output and permits explicit clearing with JSON `null` under K00. Store a display
+handle rather than promising Instagram ownership. Exact syntax (`@`, Unicode,
+length and case rules) needs the approved account/device setup evidence.
+
+Order history shows human labels derived from separate order, payment/refund and
+fulfilment states. It never collapses “cancelled” into “refunded” or a provider
+pending state into failure. New unknown enums show “Status updating — refresh or
+contact the chef” and enable no destructive action.
+
+### Favourites and reorder
+
+- Signed-out favourites are a local set of stable cake IDs. The UI says “Saved on
+  this device”; clearing browser data can remove them. Privacy classification for
+  this storage remains a Creator review item.
+- After sign-in, show local/account counts and ask **Add these favourites to my
+  account** or **Keep account favourites only**. Never silently upload or erase.
+- Merge is set union through existing PUT operations. A retry reuses the original
+  idempotency key per item, preserves local IDs until acknowledgement and
+  reauthorizes the current actor before returning replayed results. First release
+  has no batch or generic sync endpoint.
+- Archived favourites remain in the account with “No longer available” and a
+  **Request something similar** action when K01/K02 can resolve a safe inspiration.
+- **Reorder** starts K02 `POST /reorders` with an owned source order. The response
+  must show current size/servings, GBP price, allergen revision and date options.
+  Any change is explicit; unavailable/archived source offers a custom request.
+  Checkout/payment starts only after a new current quote is reviewed.
+
+```mermaid
+sequenceDiagram
+  participant C as Customer
+  participant UI as Account UI
+  participant API as Orders/Reorder
+  participant DB as PostgreSQL
+  C->>UI: Reorder historical cake
+  UI->>API: POST /reorders (source order, key)
+  API->>DB: Verify owner; resolve current catalog and availability
+  alt Current choices available
+    API-->>UI: Current options + changed facts + new reference
+    UI-->>C: Review price, allergens, servings and date
+  else Source archived or date unavailable
+    API-->>UI: Revalidation result, no order/payment
+    UI-->>C: Choose another date or request something similar
+  end
+```
+
+## Screen behavior for GK-015 and GK-016
+
+All IDs are the proposed shared screen IDs. A row is behavior input for a future
+Creator session, not a rendered or approved screen.
+
+| Screen | Entry, primary actions and exit | Required states and plain-language recovery | Mobile, keyboard and accessibility evidence plan |
+| --- | --- | --- | --- |
+| C-GALLERY | Public/home entry; open cake, save favourite, choose matching cake or request changes; exit to detail/custom/schedule | Skeleton with reserved image ratio; empty “No cakes are published yet”; cards; API error “We couldn't load the cakes” + Retry; archived public detail returns 404 and offers only a generic custom request | One-column scan at 320px; meaningful image alt, product/inspiration label, price/servings in text, favourite accessible name/state, no colour-only sold-out badge; approved mobile/desktop walkthrough planned |
+| C-DETAIL | Gallery/favourite/history entry; select current variant, read ingredients/allergens, check date, choose cake or request changes | Loading; variant unavailable; missing approved allergens disables buy; advisory date full with Try another date; price/recipe changed requires review; fetch retry retains safe selection | Variant controls as labelled radio group; focus moves to changed-facts summary; allergens are text, not tooltip-only; image gallery has useful alt and no forced carousel motion |
+| C-SCHEDULE | Nav/detail entry; choose up to 31-day range/date and share public URL | Loading; no available days; available/limited/unavailable; fetch error + Retry; “Availability is a guide until your order is reserved” | Native date input or simple labelled grid after session comparison; London time labelled; status announced; keyboard dates and non-colour symbols verified |
+| C-CUSTOM | Detail/gallery/direct entry; edit request, save draft, preview frozen inspiration image plus text, copy/open summary; exit to saved request/account/Instagram | Empty guidance; field errors; saving; saved device/account; stale-version refresh without losing local edits; clipboard failure with selectable summary; Instagram unavailable with retained image/reference/text; unauthorized image retrieval is non-enumerating; no sent state or claim | Single-column form, explicit optional labels, frozen image has saved alt metadata, error summary linked to fields, save status live region, all summary actions keyboard reachable; mobile account/device switch test planned |
+| C-SIGNIN | Account/reorder/favourite merge/claim entry; sign in, retry, sign out, begin claim | Idle/loading; provider unavailable; invalid/expired session; generic claim invalid/expired/used response; no existence oracle; return to original safe task | Focus returns to task heading; auth error announced; loading disables duplicate action; browser back/sign-out cannot reveal private page; provider flows need sandbox/device evidence |
+| C-ACCOUNT history | Account entry; inspect own orders, open timeline, reorder | Loading; empty “Your orders will appear here”; list; timeline loading/error; session expiry -> sign in and return; unknown state safe fallback | Semantic list/headings; dates labelled Europe/London; status not colour-only; private cache/logout browser history checks planned |
+| C-ACCOUNT favourites | Account or nav entry; merge signed-out set, open/remove/request similar | Loading; empty; merge choice; partial network failure with retry; archived labelled unavailable; session expiry preserves local set only | Toggle names include cake; focus retained after remove; merge dialog explains device/account consequences; keyboard and 320px wrap checks planned |
+| C-ACCOUNT profile | Account entry; update or clear private Instagram handle | Current value loading; invalid bounded text; saving; saved; stale version; session expiry; “This does not verify your Instagram account” | Label/help/error association; null clear is explicit; never expose handle in public page/source; password manager/autofill behavior assessed after provider selection |
+| C-REORDER | History or safe inspiration entry; revalidate source, choose current option or request similar | Loading; foreign source 404; archived source; changed price/servings/allergens; unavailable date; retry same key; success exits to current quote review, not payment | Changed-facts heading receives focus; every historical/current value is labelled; customer must actively confirm current choice; mobile comparison avoids side-by-side-only meaning |
+
+Shared controls need visible default, focus, disabled and loading appearances. Buttons
+use verbs that match outcomes: **Choose this cake**, **Request changes**, **Save
+draft**, **Copy summary**, **Open @gk.cake.london**, **Add favourites to my account**,
+**Review current options**. A prototype must label simulated actions. Reduced-motion
+preference removes decorative transitions without hiding status changes.
+
+## Contract use and r4 reconciliation
+
+Do not add a parallel customer API. Use K00 authorization, idempotency, deadlines,
+errors and `/api/v1`; K01 public catalog/schedule; K02 custom/reorder/history/
+favourites/profile; K03 current quote arithmetic; K09 compatibility and retention.
+
+### Existing route behavior to preserve
+
+| Producer -> consumer | Authoritative route | Customer-relevant result/recovery |
+| --- | --- | --- |
+| Public UI -> Catalog | `GET /api/v1/cakes?cursor`, `GET /api/v1/cakes/{id}` | Active, current public cake/inspiration facts and ready images with immutable image_revision_id; cursor max/default follow K00. Retry bounded reads; no private fields. |
+| Public UI -> Scheduling projection | `GET /api/v1/availability?from&to`, `GET /api/v1/schedule` | Max 31 local dates, advisory public date flags only. 422 `RANGE_INVALID`; 503 shows Retry, never stale commitment. |
+| Customer/manager UI -> Custom | `POST /api/v1/custom-requests`; `GET/PATCH /api/v1/custom-requests/{id}`; `POST /api/v1/custom-requests/{id}/summary`; `GET /api/v1/custom-requests/{id}/revisions/{revision}/image` | Draft create/PATCH carries the paired inspiration_id/image_revision_id; summary uses key + expected version + matching selected image_revision_id (null for generic). Summary atomically freezes/pins revision or returns 409 `REFERENCE_UNAVAILABLE`. Image GET rechecks owner/capability or active associated-manager access and returns a refreshable short-lived URL plus revision/MIME/dimensions/alt; unrelated actor 404. Copy/open never mutate a sent state. |
+| Account UI -> Orders | `GET /api/v1/me/orders`, `GET /api/v1/orders/{id}` | Own summaries/timeline; 401 prompts sign-in, foreign/unknown 404, 503 retains no shared private cache. |
+| Account UI -> Favourites | `GET /api/v1/me/favourites`; `PUT/DELETE /api/v1/me/favourites/{cake_id}` | Authorized saved title/reference and archive status; per-item set membership. Explicit client union retains local IDs until each acknowledgement. |
+| Account UI -> Profile | `GET/PATCH /api/v1/me/profile` | GET returns private handle/version; PATCH uses key + expected version, omitted handle unchanged and explicit `null` clears. |
+| History/detail UI -> Reorder | `POST /api/v1/reorders` | Exactly one owned `source_order_id` or active public `inspiration_id`; returns current options, `changed_fields`, availability, nullable quote and `requires_review:true`. No automatic order/payment. |
+
+### Reconciled r4 decisions and remaining gates
+
+The first draft's catalog representation, archived-source recovery, custom draft/
+summary routes, favourite merge, profile version, order projection and reorder
+changed-fact questions are historical: K02A resolves them. The catalog payload is
+`kind`, `archive_state`, `orderability`, images, variants, nullable starting GBP
+price, recipe display revision, allergen approval and stock mode. Public archived
+detail is 404; authorized snapshots alone can request similar. First release uses
+per-item favourite set union and no batch/sync engine or persisted sent self-report.
+
+Remaining active gates are business/provider decisions rather than wire ambiguity:
+exact mandatory custom fields and signed-out capability remain GK-003; managed
+identity/session and historical-claim challenge delivery/expiry/revocation remain
+GK-004/GK-019 plus chosen-provider and Creator decisions. K02A's `/order-claims`
+proposal is not implementation-ready until that Astra-qualified prerequisite is
+embedded in GK-021. Sign-out clearing the UI cache does not revoke an issued token.
+
+Shared r4 now requires for C12 that the summary revision contain the
+frozen inspiration ID, exact catalog image revision, immutable object reference/
+version and safe image metadata. Object writes use new immutable keys. Storage
+cleanup treats that reference as a pin, and pin creation/cleanup admission serialize
+on the same image-reference row. A cleanup tombstone prevents a new pin and summary
+freeze returns 409 `REFERENCE_UNAVAILABLE` rather than a broken reference.
+Owner/capability reads and the manager's associated request view may retrieve it;
+other actors receive 404. The image endpoint returns a short-lived authorized URL
+and safe revision metadata after each authorization check; expiry refreshes through
+that endpoint, never a permanent public key. Quote creation records the exact
+summary/image provenance. Catalog replacement/archive cannot release the pin. Only
+the GK-005/Creator-approved explicit request/quote-deletion path may release it
+atomically after every retained link permits; retention duration remains policy,
+not invented here.
+
+Proposed error vocabulary for reconciliation, within K00's envelope:
+
+| Status/code | UI meaning | Retry/recovery |
+| --- | --- | --- |
+| 401 `AUTHENTICATION_REQUIRED` / `SESSION_EXPIRED` | Sign in to view private data | Reauthenticate, then return to the safe task; never replay a mutation without its original key |
+| 404 `NOT_FOUND` | Resource unavailable or not owned | Same copy for unknown/foreign; offer gallery/account navigation without revealing existence |
+| 409 `STALE_VERSION` | Draft/profile changed | Fetch current, preserve local edits separately and ask before replacing |
+| 409 `PRICE_CHANGED` / `RECIPE_CHANGED` | Current reorder/detail facts changed | Show old viewed fact only as context, show current fact, require explicit review |
+| 409 `CAKE_UNAVAILABLE` / `CAPACITY_UNAVAILABLE` | Variant/date cannot continue | Pick another current option or start custom request; no automatic substitution |
+| 409 `KEY_REUSED` | Retry key was used with different input | Stop; create a new key only for a deliberately new action |
+| 422 `INVALID_REQUEST` / field code | Customer input needs correction | Link plain-language errors to fields; retain safe input |
+| 429 / 503 | Temporarily unavailable | Respect `Retry-After`; read retry within K00 budget, mutation same-key replay/operation lookup |
+| 404 `CLAIM_UNAVAILABLE` | Claim cannot be completed | Same copy for missing/expired/used/foreign; challenge delivery/expiry/retry awaits the GK-019 provider/policy gate |
+
+Compatibility follows K09: add optional response fields, tolerate unknown fields and
+show safe unknown enum states. A UI requiring a new field activates only after API
+capability is present. No customer release may assume simultaneous API deployment.
+
+## Performance and operational proposals
+
+Use architecture r1 proposals until measured and approved: public API p95 <=300ms,
+local mutations p95 <=500ms and initial mobile LCP <=2.5s under an agreed throttled
+fixture. These are planning budgets, not observed SLAs.
+
+- Measure gallery/detail with representative authentic image sizes, a cold cache,
+  chosen device/network profile and 500 active products. Record median/p75/p95,
+  LCP element and transferred bytes; do not report a mock card grid as evidence.
+- Serve responsive formats/sizes from validated ready image metadata; set intrinsic
+  dimensions, preload only the actual LCP image and lazy-load below-fold images.
+  Do not load original 10MB uploads in cards.
+- Public catalog cursor pages default 20/max 50. Initial gallery needs ordering and
+  simple filters only if GK-016 approves them; no search index or infinite-scroll
+  dependency. Preserve a real next-page control and URL state.
+- Account history uses K09 `(customer_id, created_at, id)` cursor pagination. Fetch
+  detail/timeline on demand; do not return raw audit or every order item in the list.
+- Favourites set operations use the unique key. A client-driven merge is acceptable
+  for the expected small set and is the first-version K02A contract. A later batch
+  would require new evidence and shared-contract review.
+- Custom-request autosave, if GK-016 wants it, is debounced and still requires an
+  explicit saved status. The first release can use a **Save draft** button and avoid
+  background conflict complexity.
+- Public responses may use short HTTP caching with revalidation after master
+  defines freshness. Private responses are `no-store`; CDN/service-worker caches
+  never contain account, custom or claim content.
+
+Provider latency and identity SDK behavior need sandbox/browser measurement after
+selection. Operational logs record request IDs and safe resource IDs, not handle,
+custom text or contact data. K00's request/job defaults govern retries; this packet
+adds no competing timeouts.
+
+## Planned verification only
+
+There is no application runner. Every check below is a proposed red/green
+acceptance check for the eventual implementation and must be tied to the exact
+revision/environment when run. Mocks do not prove PostgreSQL constraints, identity
+provider validation, browser storage behavior or real Instagram navigation.
+
+| Planned check | Example input and observable result | Required evidence |
+| --- | --- | --- |
+| Catalog privacy and kind | Public page containing one inspiration and one product | Correct separate actions; only ready public images/current public fields; no order/customer/capacity counts |
+| Allergen gate | Variant without approved display revision | Buy action unavailable with explanation; request-changes remains available if policy permits |
+| Schedule privacy | 31-day London query with private bookings | Only day flags returned; >31 or invalid dates return 422 `RANGE_INVALID`; no counts/identifiers |
+| Custom save/retry | Same key and payload twice, then same key changed payload | One saved summary revision/original result; changed payload 409; copy/open creates no sent-state mutation |
+| Custom recovery | Clipboard denied and Instagram unavailable | Selectable summary/request reference remains after reload under its stated save location; no sent claim |
+| Inspiration replacement/archive and cleanup race | Freeze request summary from image revision A while cleanup competes, then publish B and archive/clean the public entry before quote agreement | If pin wins, cleanup cannot delete A; authorized customer/associated manager refresh a short-lived URL for exact A bytes/metadata and quote provenance names A. If tombstone wins, summary returns 409 `REFERENCE_UNAVAILABLE` with no broken reference. Public archived detail and unrelated actor return 404; explicit approved deletion releases only when no retained request/quote link remains. |
+| Ownership matrix | Customer A reads/updates/claims customer B data | Same 404 as absent resource and no association leak; current actor checked on replay |
+| Token/session boundary | Invalid signature/audience/expiry and stale browser history after sign-out | 401; private cached content unavailable. Real provider/rotation evidence pending accepted identity design |
+| Historical claim | Expired, reused and wrong-subject proof | Generic rejection, no link, single-use constraint/audit preserved. Exact flow blocked on Astra/Creator policy |
+| Favourite set/concurrency | Concurrent repeated PUT for same customer/cake; explicit local union | One row; stable success; archived favourite visible as unavailable; no silent local upload |
+| Profile | Valid bounded handle, unsafe markup, explicit clear and foreign profile | Escaped private display; invalid input rejected; `null` clears; foreign resource unavailable |
+| Reorder revalidation | Historical source with changed price/allergen and unavailable date | No cloned order/payment; current differences shown; customer chooses again or requests similar |
+| Unknown state compatibility | API returns a new order status to previous UI | Safe “Status updating” display and no newly enabled action |
+| Real PostgreSQL constraints | Disposable DB, concurrent favourite/request/reorder conversion operations | Unique/version/ownership constraints and query plans behave under actual transactions; restore keeps draft/claim/idempotency identities per policy |
+| Visual/a11y session | Approved fixtures at 320px/mobile and desktop, keyboard/reduced-motion/contrast tools | Actual coloured sketch revision, button/state walkthrough, focus/error announcements and Creator approval evidence |
+| Performance | Agreed mobile throttle, authentic responsive images, 500-product/10k-order fixture | Recorded LCP/API/history timings and bytes against proposed budgets; failures lead to a scoped correction, not a claimed pass |
+
+Identity sandbox tests need an approved test tenant, issuer/audience/JWKS rotation
+and browser storage decision. Instagram evidence needs Creator-confirmed account
+target and mobile/desktop device walkthrough; it still cannot prove DM delivery.
+
+## Delivery slices and ticket effects
+
+| Ticket | Cohesive outcome from this packet | Gate / shared impact |
+| --- | --- | --- |
+| GK-015 | Compare warm cream/chrome and graphite/chrome using the same authentic cake; obtain exact-version foundation approval | Blocked on actual logo/photo rights. Editable mobile/desktop source, contrast/focus and Creator approval required; current v01 is only exploration. |
+| GK-016 | Iterate gallery/detail/schedule/custom/account/reorder screens from the approved foundation; every button and failure state above visible | Depends on GK-015 and accepted identity/customer policy. Must preserve summary on handoff failure and distinguish buy/request/reorder. |
+| GK-021 | Implement managed identity integration, local authorization, own account APIs and safe historical claim | **Astra integration assessment required through GK-019**. Blocked on chosen-provider sandbox and approved guest/claim policy; K02A is the shared customer representation. |
+| GK-027 | Save custom request/revision with pinned inspiration image provenance, preserve it through user-controlled Instagram handoff and catalog replacement/archive, then convert only an exact agreed quote; reorders revalidate | Run the r4 replacement/archive plus pin-vs-cleanup regression above with GK-022's shared image-reference row/tombstone. Depends on GK-005 retention/deletion policy, customer policy/design and commerce/scheduling/payment prerequisites. No auto-DM, guessed customer or duplicate conversion. |
+| GK-028 | Deliver public gallery/detail/schedule with authentic responsive images, GBP/servings/allergens and unavailable recovery | Depends on catalog/schedule contracts and GK-016 approval. Public payload privacy and measured image/LCP evidence required. |
+| GK-029 | Deliver sign-in/out shell, own history/timeline, explicit favourite merge, archived state, private profile handle and reorder review UI | Depends on accepted GK-021 routes and GK-016 revision. Private-cache/session-expiry and non-enumerating ownership checks required. |
+
+GK-022 catalog publication and GK-023 scheduling policy are adjacent prerequisites
+already referenced by GK-028; GK-025/commerce owns the new quote/payment boundary.
+The master should reconcile this packet's remaining gates with those owners before
+marking any customer implementation ticket Ready. Backend catalog/constraint work
+may proceed before visual approval only where contracts are accepted and it does
+not assume unapproved screen behavior.
+
+No release implication differs from DELIVERY.md: additive API first, then UI after
+capability detection, independently released and reviewed. Planning completion,
+implementation acceptance, merge and deployment remain separate.
+
+## Open decisions and blockers
+
+| Decision owner | Missing fact | Exact effect |
+| --- | --- | --- |
+| Creator | Actual logo files, usage rights and authentic cake photographs/alt facts | GK-015 cannot compare or approve a brand-faithful direction; GK-016/GK-028 visual and image-performance evidence blocked |
+| Creator | Custom contact scope, exact claim proof and guest save/recovery details (guest purchase/fields supplied in intake) | Custom validation, signed-out recovery and claim UI cannot become implementation-ready |
+| Creator/chef | Approved ingredient, allergen and cross-contact wording per recipe/variant | Buy path must remain disabled where disclosure is incomplete; no inferred “free from” claim |
+| Creator/scheduling | Capacity units, lead times, ready-stock date semantics and public `limited` meaning | Schedule flags and reorder availability are advisory proposals only |
+| Creator/privacy | Retention/deletion for drafts, profile handles, attachments and local favourite/auth storage | Cleanup jobs, account deletion and consent/storage copy blocked |
+| Creator via GK-005 | Retention duration and explicit deletion policy for custom requests and pinned inspiration images | Technical pins prevent incidental cleanup, but release timing and dependent quote handling cannot become implementation-ready without this policy |
+| Creator | Verify control of owner-supplied @gk.cake.london and preferred mobile/desktop handoff | Open action and handle syntax cannot be validated; no API messaging promised |
+| Master + Astra reviewer | Embed the chosen-provider session and historical-claim contract from GK-019 into GK-021 | K02A supplies the non-enumerating boundary, but claim delivery/expiry/revocation and provider evidence still block GK-021 and private UI readiness |
+| Creator | Exact visual direction and typography after seeing both rendered directions with real assets | No screen or token set is approved; UX01 remains open until iterative session evidence exists |
+
+Creator business values and real assets stay blocked rather than receiving sample
+content disguised as fact. A focused independent Astra re-review must now check the
+r4 C12 correction alongside requirement coverage, auth/claim safety, failure states
+and executable planned evidence. Only then may the master decide whether this
+Sol/high pilot supports further bounded feature authorship.
+
+## Master r5 selected-image boundary correction
+
+The focused independent r4 reviewer found that post-freeze retention was sound
+but the selected revision did not cross the API boundary. The master applied the
+qualified reviewer’s explicit boundary recommendation below; earlier r4 hashes
+remain author-input history. This is a shared contract integration correction,
+not evidence of model unsuitability; Sol pilot qualification remains pending
+independent re-review of this exact successor.
+
+Selected-image wire contract (C12): each ready public catalog image returns
+`{image_revision_id:UUID,url,alt,width,height}`. The UI retains the exact revision
+ID it displayed/selected; it does not infer the source from the latest gallery URL.
+`POST /custom-requests` carries `{inspiration_id:UUID,image_revision_id:UUID,...}`
+for an inspiration-based request. Generic requests omit both or send both null;
+the server stores both null. Supplying only one returns422 INVALID_REFERENCE_PAIR.
+The draft and GET response retain both IDs. PATCH changes or clears the pair
+atomically with expected_version; omitted pair means unchanged. Never accept a
+client object key or arbitrary image URL as proof of the selected catalog image.
+
+`POST /custom-requests/{id}/summary` requires key plus
+`{expected_version:7,image_revision_id:UUID|null}` matching the stored draft. A
+mismatch returns409 STALE_VERSION and requires refreshing the selected source;
+no-inspiration drafts require null and freeze a summary with no image/reference pin.
+Resolve object key/version server-side by the supplied image revision, verify it
+belongs to the supplied inspiration and is a published ready image accessible via
+that active public inspiration (or an already-authorized retained request revision).
+Replacement does not silently switch A to B: a superseded published A may be pinned
+while its inspiration remains active and bytes remain retainable. Wrong association,
+non-visible/private, archived-before-initial-freeze, missing or cleanup-tombstoned
+selection returns409 REFERENCE_UNAVAILABLE without an existence detail or substitute.
+Retained summary retrieval after catalog archival follows the owner/manager rule.
+
+Regression: customer displays/selects A, then catalog replaces A with B before
+creating the draft or freezing its summary. The explicit A ID yields the exact A
+pin/bytes if still permitted, otherwise REFERENCE_UNAVAILABLE and an explicit
+reselection path. Never return/pin B without a new customer selection. Generic
+no-inspiration request freezes without an image; half-pairs and foreign-image
+associations fail without a request image pin.
+

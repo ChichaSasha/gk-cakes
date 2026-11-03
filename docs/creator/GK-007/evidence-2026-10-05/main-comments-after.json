@@ -1,0 +1,41 @@
+[
+  {
+    "id": "6ac3dedaa03015ebc3c986bb",
+    "type": "commentCard",
+    "date": "2026-10-05T17:31:06.717Z",
+    "memberCreator": {
+      "id": "6ab07430e77c7ae74e433bb8",
+      "username": "sashachicha13",
+      "fullName": "sashachicha13"
+    },
+    "data": {
+      "text": "GK-007 accepted policy / scope-split-r1 — part 3/3 — closure evidence\n\nApproved example: vanilla-raspberry, 6-inch Small, 7–10 servings. Planned components: baked sponge 300 g; milk 45 g (40–50 range); cream-cheese filling 550 g; compote 200 g; buttercream coating/decor 600 g (500–700 range). Sum 1695 g is planned component weight, not measured finished cake weight.\n\nDeferred to GK-038 https://trello.com/c/tVlu0Wkg: all measured finished component yields; ingredient-specific unit conversions; banana purchase/edible-quantity data; Oreo pack weight/price; vanilla product, recipe quantity and purchasing details. Missing flavour/size/source inconsistencies remain visible wherever used. Unknown quantities/costs are not zero; no lossless-yield assumption is validated.\n\nGK-038 gates affected validated recipe/ingredient and grocery-cost acceptance in GK-022/GK-032. Coding, sketches, sandbox setup and GK-019 policy reconciliation can continue; other prerequisites remain. GK-019 must reconcile zero-payment orders, separate delivery codes, automatic status versus physical stock, component batches, mandatory expiry, rounding and whole-pack budgets before affected implementation.\n\nAmended stage acceptance: approved discount/free-order examples; approved recipe/stock rules and supplied fixture; exact source/answer revision with explicit gaps; Sasha's approval and linked deferred-data ticket. These are complete for the policy stage. Original full-data AC2 is transferred, not reported passed. No application tests or independent review claimed. Same-session checks passed: seven Decimal arithmetic examples, answer/source hashes and local links; existing owner-intake validation also passed.\n\nSource packet: docs/creator/GK-007/{README.md,interview-2026-10-05.md,interview-2026-10-05.json,closure-scope-2026-10-05.md}. Workbook preserved unchanged; SHA256 1898cdff50c151081c21e9690350dce2af1b4015c2c4c1bb4ce2a7e97fae30f2. Files remain local/unpushed; transfer this exact packet to future workers. Actual Trello read-back and Done transitions are recorded in closure-publication-2026-10-05.json. User authorized publication and both Done transitions by selecting option B after reviewing the consolidated summary.\n"
+    }
+  },
+  {
+    "id": "6ac3dedae8ca609df319bece",
+    "type": "commentCard",
+    "date": "2026-10-05T17:31:06.232Z",
+    "memberCreator": {
+      "id": "6ab07430e77c7ae74e433bb8",
+      "username": "sashachicha13",
+      "fullName": "sashachicha13"
+    },
+    "data": {
+      "text": "GK-007 accepted policy / scope-split-r1 — part 2/3\n\nRecipes/costs: separate entered recipe per cake size; component batches may scale proportionally. Plan midpoint quantities for ranges. Quantities use 0.01 g/ml, nearest rounding with exact halves upward. Whole-item quantities stay whole: 2.5 eggs needs another multiplier or a separate approved recipe. Keep mass/volume/count separate until ingredient-specific conversions are measured; workbook 1 g/ml and 50 g/egg assumptions are not approved measured facts.\n\nShopping estimates use latest recorded purchase prices; workbook prices have provisional as-of 5 October 2026, not a claimed purchase date. Buy whole packs and budget full pack cost; recipe cost uses consumed quantity. Example: need 500 g butter, pack 1000 g at £6.78 -> buy one pack for £6.78; consumed ingredient estimate £3.39. Agreed customer prices do not automatically change.\n\nBatch workflow: components are prepared/stored for multiple cakes. At chef-confirmed component production start deduct planned raw ingredients from chef-selected lots. At completion record actual finished output and chef-entered expiry. At cake assembly start deduct selected finished-component quantities plus direct ingredients; never deduct their raw inputs again. Record actual-use differences as traceable corrections. Chef chooses each lot; no automatic lot selection.\n\nAllow negative stock with warning and required reason; keep the discrepancy visible. Every ingredient/component batch needs an expiry date. Entered date is last usable day; block at next midnight Europe/London. Expired stock is excluded from usable supply but stays physically recorded until disposal or a reasoned date correction. No automatic waste assumption.\n\nCancellation after start requires chef review of used/wasted/returned quantities; deductions stay unchanged until review. Remove cancelled outstanding demand, never auto-restock on refund. Before actual start, release demand without inventing consumption. Confirmed orders keep original recipe snapshots; changes need explicit amendment and required ingredient/allergen agreement. Already-made/resold cakes add no duplicate ingredient demand or consumption.\n\nWalkthrough: 1000 g stock /800 g plan -> chef start leaves 200 g stock and zero remaining demand for the deducted amount. If only 750 g was actually used, record an eligible physical return/correction of 50 g ->250 g. With 300 g stock and 500 g use ->-200 g plus reason/warning.\n"
+    }
+  },
+  {
+    "id": "6ac3ded976e43d7a6b6b9c46",
+    "type": "commentCard",
+    "date": "2026-10-05T17:31:05.651Z",
+    "memberCreator": {
+      "id": "6ab07430e77c7ae74e433bb8",
+      "username": "sashachicha13",
+      "fullName": "sashachicha13"
+    },
+    "data": {
+      "text": "GK-007 accepted policy / scope-split-r1 — 5 October 2026 — part 1/3\n\nSasha approved interview-r1 and explicitly chose to split deferred data into GK-038: https://trello.com/c/tVlu0Wkg. GK-007 and BO-GK-007 now complete the policy/current-input stage. Original broader criteria remain historical; this dated amendment transfers missing measurements and data, rather than declaring them validated. No implementation or launch completion is claimed. Approval is Sasha's, not a fabricated direct Elina statement.\n\nDiscounts: percentage or free-delivery codes; one code per order. Percentage applies to all cakes, including custom/reduced/resale cakes and decoration in the agreed cake price, but not delivery. Each code can have optional expiry, total and per-customer usage limits. Per-customer limits require sign-in; other guest checkout remains available. Accepted paid/free orders consume usage; cancellation never restores it, regardless of refund. Confirmed-unpaid abandoned checkout releases a reservation; pending payment is not proof of failure.\n\nFree-delivery codes waive the entire GK delivery charge inside a per-code maximum driving distance from the kitchen, within ordinary delivery eligibility. No third-party courier waiver or actual radius is approved. Preserve separate GK delivery payment and chef-admin refund handling.\n\nPercentage discount: eligible subtotal, nearest penny with halves upward, proportional line allocation summing exactly (K03 largest remainder, stable ID tie-break). £10.01 + £10.00 at 10% -> £2 discount split £1/£1, net £18.01. £10.05 at 10% -> £1.01 discount, net £9.04. £50 already-reduced cake at 10% -> £45. Refunds use actual post-discount payments and existing GK-003 rules; a 50% target on £18.01 is £9.01, not separately rounded line payouts.\n\nAllow £0 orders without payment or fake capture. Confirmation reserves capacity and consumes usage. Confirmation anchors their 48-hour preparation clock. Keep automatic preparation status, but stock deductions require the chef to confirm actual production and select batches. Any separately payable delivery is still payable; an unpaid cake creates no cash refund.\n"
+    }
+  }
+]

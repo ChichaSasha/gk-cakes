@@ -1,0 +1,110 @@
+## Context
+
+Owner: Creator; Kind: Decision; Priority: P0 — production acceptance gate.
+Order: 335; Wave: 12; no parallel implementation dependency.
+Creator arranges qualified review and accepts final content; Sasha/Agent prepares
+the actual implementation inventory, evidence and required corrections.
+Agent execution policy: not applicable to the Creator decision. Any delegated
+technical work applies the repository model/context check at execution.
+
+User-authorised split from [GK-005](https://trello.com/c/OWHhKPBT) and
+[BO-GK-005](https://trello.com/c/PSsIz3tI), 2026-10-05. Those cards complete the
+business-input stage. This card retains the deferred verification; their closure
+does not assert that these checks passed.
+
+Depends on: GK-005 approved decision packet and
+[GK-035](https://trello.com/c/qtUe3uom) completed sandbox acceptance on the implemented
+UI/API/schema/provider configuration. This card does not block coding, sandbox
+setup, contract reconciliation or GK-035 sandbox acceptance. Final first production
+release authorisation [GK-036](https://trello.com/c/Dtl6mdxP) requires this card Done.
+No circular dependency: GK-035 -> GK-037 -> GK-036.
+Readiness: Backlog; actual implementation and qualified review are not available yet.
+
+Required input: current GK-005 interview-r1 source/evidence manifest and published
+closure summary; current GK-001/GK-003 handovers; actual implemented provider/config,
+product/recipe/decoration revisions and exact candidate release artifacts.
+Local packet: docs/creator/GK-005/interview-2026-10-05.md and linked JSON evidence.
+These local, unpushed files must be transferred/read in the executing context.
+
+## To dos
+
+T1. After implementation, prepare final Terms, cancellation/refund rules and
+Privacy/Cookie content for qualified review. Record findings and apply corrections
+through versioned administration, preserving accepted order commitments (AC1).
+T2. Inventory actual providers, cookies/browser storage, analytics, data flows,
+sharing/transfers, access, retention and deletion/backup behaviour. Compare with
+approved policy; resolve differences and verify the actual site (AC2).
+T3. Check the eight flavours, every supported size, coatings and edible decorations
+against actual products/supplier declarations. Verify before-purchase information
+and a matching order-specific handover label; test substitutions (AC3).
+T4. Recheck the exact corrected candidate and record reviewer/Creator acceptance
+and evidence links; pass the completed gate to GK-036 (AC4).
+
+## Acceptance Criteria
+
+AC1. Qualified legal review records reviewer, date, exact content revision and
+findings/disposition for the current 120-hour whole-order 100%/50% policy,
+statutory rights, seller/contact particulars and privacy obligations. No unresolved
+launch-blocking finding. VAT status/treatment is rechecked as applicable; no
+exemption or tax rate is guessed. Revised policies are versioned and existing
+orders retain their accepted commitments.
+
+AC2. Actual technology inventory records purpose, provider, retention, sharing,
+transfers, necessary/optional classification and applicable consent/objection
+controls. Evidence verifies data minimisation, scoped staff access, deletion,
+withdrawal and backup expiry/reapplication. Policies match: orders two years;
+unconverted enquiries six months from last substantive customer conversation;
+personal photos 30 days or specifically permitted use three months from handover,
+earlier withdrawal/removal and necessary private dispute evidence; inactive account
+24 months then warning plus 30 days; device favourites one year; non-sensitive drafts
+30 days; separate financial retention; service email only; prior-consent public-page/basic-checkout-step/repeat-browser statistics; no account/admin browsing, names/emails/order details, identity linking or replay, ads tracking or recordings.
+Exact provider behaviour and controls are checked, not inferred from marketing.
+
+AC3. Owner verifies actual ingredients and allergen declarations, including bought-in
+components and decorations. Confirmed matrix: all flavours EGGS/MILK/SOYA/WHEAT;
+Snickers adds PEANUTS, Chocolate Oreo adds SULPHITES; shared-kitchen notice separate.
+All sizes use Swiss meringue buttercream; sugar pearls/fruit/berries and any other
+chef-agreed decoration are included in the actual-order check. Approved composition
+changes require customer agreement; otherwise original cake if feasible or full
+refund. Purchase content and final box label match the exact order and applicable
+labelling requirements. Record sample label/version and before-purchase evidence.
+
+AC4. Safe evidence, source dates, actual UI/API/config/content/product hashes,
+qualified findings and explicit Creator acceptance are recorded on this card.
+Required corrections have relevant tests/review and verified delivery evidence.
+GK-036 links this completed gate and rechecks it against the intended release.
+No production release, public launch, real sales or final legal approval is inferred
+from completing GK-005/BO-GK-005 or from merely creating this card.
+
+## Boundaries and verification
+
+Keep this in Backlog while implementation evidence is unavailable. No deployment,
+legal filing, purchase of professional services or external messages are authorised
+by the card alone. Do not expose private addresses, customer records or credentials
+in evidence. Required legal/public content uses the authorised business details
+through the appropriate content workflow. Review documents and actual controlled
+site behaviour; do not invent a software red/green cycle for human signoff.
+
+## GK-019 proposed contract amendment — r6.4 / UNPUBLISHED
+
+Owner, title, unrelated scope/labels and list remain unchanged. This dated amendment
+replaces contradictory historical policy/provider examples and adds the acceptance
+evidence below; it does not assert implementation readiness or completed tests.
+
+Contract inputs: K01/K05/K09/K10; docs/design/contracts.md r6.4, owner-data-contract.md
+gk019-owner-r6, gk019/schema.json r1.4 and output-manifest.json exact hashes.
+Required current evidence: GK-035; before GK-036. Refresh live prerequisites and comments before
+execution; a Done setup card proves only its accepted scope.
+
+Behavior: Retain deferred final legal review/actual provider-storage-cookie-retention/deletion and actual recipe/supplier/handover-label verification. Current policy120h100/50/free/individual delivery and current sender; do not review old3/4day defaults. Q3 scope accepted; verify actual consent/storage/deletion inventory and truthful wording. Q5 verified alternative owed-refund payout accepted; verify recipient/evidence/privacy and truthful status wording.
+
+Acceptance extension: Verify qualified legal findings and accepted amendments, actual implementation technology inventory, photo permission/removal/restore tombstones, actual allergen/label compositions, current public identity/address sourced privately. No invented compliance.
+
+Execution: apply model/context check; then smallest failing meaningful behavior
+case, coherent implementation, focused green checks, required wider checks and
+fresh independent review. Design tickets instead produce/review exact artifacts.
+No application test, UI approval, release or deployment is supplied by this amendment.
+Remaining Q4 qualification gates apply only where named; unresolved branches stay blocked.
+
+Full brief requirements and nonconflicting safety/verification criteria remain.
+Repository packet is local/unpushed; obtain exact files, not merely a path string.

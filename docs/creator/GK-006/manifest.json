@@ -1,0 +1,29 @@
+{
+  "revision": "interview-r1-published",
+  "date": "2026-10-05",
+  "git_head": "bb96a89681bcf2fa1c663a02eacbe039e20e6363",
+  "checkout_note": "Existing staged/untracked planning and asset work preserved; HEAD does not identify these local unpushed artifacts. Use content hashes.",
+  "review": "same-session document self-check; not independent review",
+  "checks": [
+    "planning checker self-test passed",
+    "planning kit checks passed",
+    "existing owner intake check passed (3 existing owner packets; does not validate new GK-006 schema)",
+    "GK-006 six decision answer hashes, input hashes, and local links verified",
+    "Published comment text and Done list verified by Trello rereads; original card description preserved; planning kit check passed after publication notes."
+  ],
+  "sha256": {
+    "docs/creator/GK-006/README.md": "c19eab32c6258ffa61a9ed45dab9f2f4e9c149aa58fc09b8957abe6a3ee34f5e",
+    "docs/creator/GK-006/closure-publication-2026-10-05.json": "7dde0512d2894f1f5d5300600b072f65a6ef8c75409308bf39f6f3ed5e865edc",
+    "docs/creator/GK-006/interview-2026-10-05.json": "e363cade1950379c41f9f5d7df10606d902fe9155cae6a9438c6c891fe26283d",
+    "docs/creator/GK-006/manifest-interview-r1.json": "ea68810ef3fc0ac219ef17b2945654b61069d3b4bf9f51124456f73367394df7",
+    "docs/creator/GK-006/publication-comment-response.json": "1c03a5e82b18f96ba43410351fd6190bf1102ec2f9016a9bcbcd675ee25691ab",
+    "docs/creator/GK-006/publication-preflight-2026-10-05.json": "b695966a620131e2ed4aadd4468f28050a902c3ba94975027ef1bc5ae8efed73",
+    "docs/creator/GK-006/source-board-instructions-2026-10-05.json": "a3de285a0ae3fff809eabd37cf4ae85b499400ae422f84bcec34f3f3148985ca",
+    "docs/creator/GK-006/source-card-2026-10-05.json": "9329cfcde1516244bd0b67e715d4a6f20512f4a3b209b356c5a4b0e8d36a01c2",
+    "docs/creator/GK-006/source-comments-2026-10-05.json": "87ff4cae1f0acf69d7fe78684fa79059093768fb115a34b89e5e920084848cec",
+    "docs/creator/GK-006/trello-summary.txt": "5e312f421335920682711df395d15d075fdf13b062e2f63f8b32fd964fd19baa",
+    "docs/creator/README.md": "de1f0bfd6fcda3a78b0fb3bd15cba5fe95e3c6a54b35f9cbe4eac9bd4c0ac2b4",
+    "docs/planning/DELIVERY.md": "aebe93310e534fae078cbae48ff6af33b0d236541f575beb1a5503e897e474e4",
+    "SETUP.md": "36b59ca6311259881f26c34f7122d1f7248426f22c892d9bd65305b0387fd473"
+  }
+}

@@ -1,0 +1,196 @@
+{
+  "lists": [
+    {
+      "id": "6ab074adb3c3763832de0077",
+      "name": "📥 Backlog",
+      "closed": false,
+      "idBoard": "6ab074a2b3c3763832ddf623",
+      "pos": 1
+    },
+    {
+      "id": "6ab074adb3c3763832de0087",
+      "name": "✅ Ready",
+      "closed": false,
+      "idBoard": "6ab074a2b3c3763832ddf623",
+      "pos": 2
+    },
+    {
+      "id": "6ab074adb3c3763832de0099",
+      "name": "🚧 In Progress",
+      "closed": false,
+      "idBoard": "6ab074a2b3c3763832ddf623",
+      "pos": 3
+    },
+    {
+      "id": "6ab074aeb3c3763832de00ad",
+      "name": "🔎 Review",
+      "closed": false,
+      "idBoard": "6ab074a2b3c3763832ddf623",
+      "pos": 4
+    },
+    {
+      "id": "6ab074aeb3c3763832de00c3",
+      "name": "🏁 Done",
+      "closed": false,
+      "idBoard": "6ab074a2b3c3763832ddf623",
+      "pos": 5
+    }
+  ],
+  "labels": [
+    {
+      "id": "6ab13b4e6b57e21ccf6af051",
+      "idBoard": "6ab074a2b3c3763832ddf623",
+      "name": "Blocked",
+      "color": "black"
+    },
+    {
+      "id": "6ab13b49ca326398adb14276",
+      "idBoard": "6ab074a2b3c3763832ddf623",
+      "name": "P0",
+      "color": "red"
+    },
+    {
+      "id": "6ab13b485c72537c246ac153",
+      "idBoard": "6ab074a2b3c3763832ddf623",
+      "name": "Owner: Agent",
+      "color": "green"
+    },
+    {
+      "id": "6ab13b4a254935a8d08d6511",
+      "idBoard": "6ab074a2b3c3763832ddf623",
+      "name": "Kind: Implementation",
+      "color": "purple"
+    },
+    {
+      "id": "6ab13b4718d7ee3a1324ce9d",
+      "idBoard": "6ab074a2b3c3763832ddf623",
+      "name": "Owner: Creator",
+      "color": "blue"
+    },
+    {
+      "id": "6ab13b49935266ef0e933747",
+      "idBoard": "6ab074a2b3c3763832ddf623",
+      "name": "P1",
+      "color": "yellow"
+    },
+    {
+      "id": "6ab13b4c85502939e5d0ce5d",
+      "idBoard": "6ab074a2b3c3763832ddf623",
+      "name": "Kind: Decision",
+      "color": "orange"
+    },
+    {
+      "id": "6ab13b4b1060268a48ce9e7e",
+      "idBoard": "6ab074a2b3c3763832ddf623",
+      "name": "Kind: Setup",
+      "color": "sky"
+    },
+    {
+      "id": "6ab13b4d2ee776442638043a",
+      "idBoard": "6ab074a2b3c3763832ddf623",
+      "name": "Kind: Design",
+      "color": "pink"
+    },
+    {
+      "id": "6ab074b1b3c3763832de0655",
+      "idBoard": "6ab074a2b3c3763832ddf623",
+      "name": "Template",
+      "color": "blue"
+    },
+    {
+      "id": "6ab074bab3c3763832de156d",
+      "idBoard": "6ab074a2b3c3763832ddf623",
+      "name": "Milestone",
+      "color": "purple"
+    },
+    {
+      "id": "6ab074b3b3c3763832de0a78",
+      "idBoard": "6ab074a2b3c3763832ddf623",
+      "name": "Example",
+      "color": "yellow"
+    }
+  ],
+  "GK-011": {
+    "id": "6ab13b6a33c1143844e6e0d1",
+    "name": "[GK-011][P0][O090][W01] Provision selected payment and email test accounts",
+    "desc": "## Context\n\nOwner: Creator; Kind: Setup\nPriority: P0 — foundational or money/security/fulfillment correctness prerequisite.\nOrder: 90; Wave: 1; Parallel group: scoped Creator setup coordination.\nRequirements: C05, C14, A09, S02; Design/contract revision: planning r5, K04 K05 K08.\nAgent execution policy: not applicable (Creator-owned action).\nDepends on: GK-004, GK-005; deliverable: completed approved policy, setup/contract or tested implementation evidence from each listed prerequisite. All GK-020 dependents require B2 unless explicitly named B1.\nUnblocks: GK-024, GK-025.\nSafe in parallel with: GK-010, GK-012. Distinct prerequisite evidence may be collected concurrently; coordinate shared DNS, account and repository settings.\nConflicts with: shared contracts/schema/ADRs and adjacent modules; implementation owner coordinates shared edits, no same-wave implied safety.\nReadiness at publication: blocked / specified but dependent: Provider, legal and DNS choices pending.\n\nThere is currently no application; this is an ordered planning packet. Creator completes payment legal/bank/MFA details personally. Configure test mode GBP and controlled email domain/recipient. Store PAYMENT_SECRET, PAYMENT_WEBHOOK_SECRET, EMAIL_API_KEY, EMAIL_WEBHOOK_SECRET in backend sandbox store. Register webhook URLs only after endpoint target exists; never real customer sends or money.\n\nApplicable common rules: server owns prices/availability/state; GBP integer pence, UTC instants plus Europe/London display and date semantics; role/ownership checked on every action; Idempotency-Key and expected_version protect repeated/stale mutations; pending external result is not success/failure. No network calls under database locks. Detailed requirements and tests below remain mandatory even if linked files change.\n\nReferences: docs/design/contracts.md K04 K05 K08; docs/design/screens.md; docs/design/coverage.md; relevant docs/design/features/ packet; docs/planning/DELIVERY.md; SETUP.md. These are local unpushed planning artifacts; obtain this checkout's exact fingerprinted packet before execution.\n\n## To dos\n\nT1. Review current prerequisites and the concrete options/rules in Context; collect missing evidence (AC1).\nT2. Perform only the Creator action described, recording settings/decision versions and safe nonsecret evidence (AC1–AC3).\nT3. Check the acceptance examples, record remaining blockers and hand the approved output to dependent Agent tickets (AC3, AC4).\n\n## Not to dos\n\nDo not implement unrelated cleanup, register candidate alternatives, expose credentials, publish releases or deploy without the separate scoped authorization. Planning publication does not authorize application execution now. Do not mark Done without the board's acceptance.\n\n## Acceptance Criteria\n\nAC1. Selected payment test account and event/API version configuration recorded; dependent agent can run GBP capture and full/partial refund sandbox checks.\nAC2. Selected sender domain verified via exact provider DNS; From/Reply-To and controlled recipient recorded.\nAC3. Webhook endpoint reachability waits on deployed sandbox endpoint; account provisioning evidence and later endpoint verification are separate.\nAC4. Required acceptance evidence is tied to exact input/output revision, checked by the appropriate reviewer/Creator and recorded on Trello. For implementation include relevant tests, all related PRs, required review/checks, merge and main CI; authorized release/deployment/smoke only when separately in scope.\n\nVerification: inspect the concrete decision/configuration and nonsecret evidence against AC1–AC3. No forced software red/green cycle for human work. Account creation follows accepted-provider gate; no secret values in Trello.\n\nPublication snapshot of the independently reviewed planning packet. Trello is the live execution record; application work has not started.\n\nVerified prerequisite cards:\n- GK-004: https://trello.com/c/RotJkR9L\n- GK-005: https://trello.com/c/OWHhKPBT\n\nVerified dependent cards:\n- GK-024: https://trello.com/c/J6zlPAc9\n- GK-025: https://trello.com/c/vyFTtISc",
+    "closed": false,
+    "idBoard": "6ab074a2b3c3763832ddf623",
+    "idList": "6ab074adb3c3763832de0077",
+    "due": null,
+    "url": "https://trello.com/c/ZhcwMqTc/24-gk-011p0o090w01-provision-selected-payment-and-email-test-accounts"
+  },
+  "GK-019": {
+    "id": "6ab13b6dfb6d82ab64f2ca14",
+    "name": "[GK-019][P0][O100][W01] Reconcile approved policies into executable contracts",
+    "desc": "## Context\n\nOwner: Agent; Kind: Design\nPriority: P0 — foundational or money/security/fulfillment correctness prerequisite.\nOrder: 100; Wave: 1; Parallel group: none; sequential integration by default.\nRequirements: S06, S07, C05, C06, C07, C10, C17, S01, S02, D01, D02; Design/contract revision: planning r5, K00 K09.\nAgent execution policy: gpt-6-astra / high; fresh scoped worker; no inherited author discussion for independent review.\nRequired input: input-revision.json + creator-decisions.md r2 + approved ADRs, contracts r5 (or re-reviewed successor), relevant feature/screen revisions and prerequisite evidence.\nExecution check: skills/gk-plan/references/execution-check.md; record accepted selection versus effective model, history, fresh hashes and short readback before work/resume. Actual runtime evidence is pending execution.\nDepends on: GK-001, GK-003, GK-004, GK-005, GK-006, GK-007; deliverable: completed approved policy, setup/contract or tested implementation evidence from each listed prerequisite. All GK-020 dependents require B2 unless explicitly named B1.\nUnblocks: GK-020.\nSafe in parallel with: none approved; master can authorize disjoint work after contract/file review.\nConflicts with: shared contracts/schema/ADRs and adjacent modules; implementation owner coordinates shared edits, no same-wave implied safety.\nReadiness at publication: blocked / specified but dependent: Creator decision revisions pending.\n\nThere is currently no application; this is an ordered planning packet. Refresh original requirements, creator-decisions, every ADR and contracts at exact approved revisions. Resolve pending rule values/stack/provider selections and include current primary evidence. This bounded technical-design gate makes policy-dependent backlog executable; do not treat it as another full planning loop.\n\nApplicable common rules: server owns prices/availability/state; GBP integer pence, UTC instants plus Europe/London display and date semantics; role/ownership checked on every action; Idempotency-Key and expected_version protect repeated/stale mutations; pending external result is not success/failure. No network calls under database locks. Detailed requirements and tests below remain mandatory even if linked files change.\n\nReferences: docs/design/contracts.md K00 K09; docs/design/screens.md; docs/design/coverage.md; relevant docs/design/features/ packet; docs/planning/DELIVERY.md; SETUP.md. These are local unpushed planning artifacts; obtain this checkout's exact fingerprinted packet before execution.\n\n## To dos\n\nT1. Load current requirements/decisions/source assets and choose the bounded sketch or contract outcome (AC1).\nT2. Produce/show editable artifacts, collect Creator feedback for visual work, revise and record exact revision; technical contracts use qualified assessment (AC1–AC3).\nT3. Fresh independent integration review; keep affected UI pending until exact-version Creator approval (AC3, AC4).\n\n## Not to dos\n\nDo not implement unrelated cleanup, register candidate alternatives, expose credentials, publish releases or deploy without the separate scoped authorization. Planning publication does not authorize application execution now. Do not mark Done without the board's acceptance.\n\n## Acceptance Criteria\n\nAC1. Qualified Astra assessment settles stack/authorization/payment/capacity decisions and no contradictory field/state/timeout/lock order remains.\nAC2. All 40 requirement rows still map to screens/contracts/tests/tickets; affected self-contained tickets embed approved values and exact prerequisites.\nAC3. Fresh independent reviewer examines revised hashes and all affected dependents; missing decisions stay blocked and no application code is implemented.\nAC4. Required acceptance evidence is tied to exact input/output revision, checked by the appropriate reviewer/Creator and recorded on Trello. For implementation include relevant tests, all related PRs, required review/checks, merge and main CI; authorized release/deployment/smoke only when separately in scope.\n\nVerification: sketch -> show -> feedback -> revise -> exact Creator approval -> fresh integration review for visual work. Contract-only GK-019 checks schema/coverage/decisions and independent review, not a forced visual session. No application tests or completed design session inferred from this ticket.\n\nPublication snapshot of the independently reviewed planning packet. Trello is the live execution record; application work has not started.\n\nVerified prerequisite cards:\n- GK-001: https://trello.com/c/eI8UpD6l\n- GK-003: https://trello.com/c/ftGtoGNB\n- GK-004: https://trello.com/c/RotJkR9L\n- GK-005: https://trello.com/c/OWHhKPBT\n- GK-006: https://trello.com/c/npWFafNi\n- GK-007: https://trello.com/c/iJqMyuN1\n\nVerified dependent cards:\n- GK-020: https://trello.com/c/W8q5svCh",
+    "closed": false,
+    "idBoard": "6ab074a2b3c3763832ddf623",
+    "idList": "6ab074adb3c3763832de0077",
+    "due": null,
+    "url": "https://trello.com/c/lW3wuYq0/25-gk-019p0o100w01-reconcile-approved-policies-into-executable-contracts"
+  },
+  "GK-024": {
+    "id": "6ab13e39f3ed1fe1a887f758",
+    "name": "[GK-024][P0][O200][W05] Deliver durable transactional email and evidence",
+    "desc": "## Context\n\nOwner: Agent; Kind: Implementation\nPriority: P0 — foundational/safety prerequisite.\nOrder: 200; Wave: 5; Parallel group: W05-notifications.\nRequirements: C14, A02, A09, S07; Design/contract revision: planning r5, K08.\nAgent execution policy: gpt-6-astra / high; fresh scoped worker; fresh independent reviewer.\nRequired input: brief, input-revision.json, Creator r2, ADRs/contracts r5 or reviewed successor, feature/screens, prerequisite evidence, SETUP and DELIVERY.\nExecution check: skills/gk-plan/references/execution-check.md at start/resume; record requested/effective model, history, input hashes and checked readback. Pending.\nDepends on: GK-020, GK-011; deliverable: accepted policy/setup or tested implementation outputs; GK-020 means completed B2.\nUnblocks: GK-025, GK-026, GK-027, GK-033.\nSafe in parallel with: GK-021 after all prerequisites and shared schemas/interfaces are accepted. Own proposed internal/notifications and owned notification migrations. Master allocates nonconflicting migration IDs and integrates changes; neither worker edits shared contract/auth/router files concurrently.\nConflicts: shared contracts/schema/router/migrations; master coordinates edits.\nReadiness at publication: blocked / specified but dependent: Email account/domain and provider behavior evidence pending.\n\nCommit unique business notification intent with state transition, then provider transport outside DB transaction. Preserve attempt/evidence states queued/sending/accepted/delivered_to_server/bounced/failed/unknown. Fenced job leases and signed webhook inbox prevent duplicate application; actual inbox receipt never claimed.\n\nRules: server-owned price/capacity/state; GBP pence, UTC/Europe/London; role+ownership; expected_version+Idempotency-Key; unknown stays pending; no network under DB locks.\n\nWire/state (approved GK-019 successor required):\n\nPOST /api/v1/admin/orders/{id}/messages/preview {subject,body,purpose:\"transactional\",expected_version:7} ->{preview_id,recipient,recipient_version,preview_hash}; POST .../messages {preview_id,preview_hash,expected_version,recipient_version} +Idempotency-Key rechecks recipient/content then stores unique notice/audit. queued->sending->accepted; delivered_to_server/bounced/failed/unknown are evidence, not inbox read. Signed provider events persisted before ack; claim lease/fencing prevents stale completion; unknown uses original provider key/reference, not new blind send.\n\nProposed: API10s/DB2s/provider5s; retries1m/5m/15m/1h then manager, alert15m. Validate; retain unknown funds.\n\nMandatory AC1–AC3 rules:\n\nChoose one atomic producer transaction including state+unique intent+job+audit, no postcommit enqueue gap. Job owner/generation/live lease and separate reconciliation generation guard finalization/retries; first_dispatch_at anchors provider key retention. Webhook before response remains pending correlation. Retry admission must honor frozen recipient/contact revocation, not silently follow changed profile email. Past provider retention ->lookup/manager, no new send key.\n\n## To dos\n\nT1. Red: smallest AC1–AC3 fixture assertion; infrastructure failure is not red.\nT2. Implement data/API/UI/recovery with snapshots/auth/idempotency (AC1–AC3).\nT3. Integrate migrations/consumers/audit/notices; verify real DB/provider failures (AC1–AC3).\nT4. Green -> refactor -> rerun affected checks; record revision/results (AC4).\nT5. Complete AC4 review/delivery/acceptance evidence; no implied deployment.\n\n## Not to dos\n\nNo unrelated cleanup, registrations, leaked secrets or releases/deployments without authority. No app execution now; Done needs Creator acceptance.\n\n## Acceptance Criteria\n\nAC1. Red DB rollback test leaves neither business change nor notice; commit+worker restart sends one logical operation with stable provider key.\nAC2. Lost response keeps unknown and reconciles original provider reference; past idempotency retention blocks blind resend, bounce/late accepted preserves truthful evidence.\nAC3. Selected provider sandbox controlled recipient demonstrates accepted/delivery-or-bounce evidence and valid/invalid signature handling; unauthorized access and log PII rejected.\nAC4. Record exact input/tested revision, results, independent review and Creator acceptance on Trello; account for all related PRs, required review/checks, native auto-merges and main CI. Release/deploy/smoke only when separately authorized and in scope.\n\nTest prerequisite: GK-020 B2 verifies pinned runners before this card is Ready. Planned Go: go test ./..., go test -race ./..., go test -tags=integration ./... with disposable PostgreSQL; UI: npm run check, npm test, npm run build + approved browser runner. Provider cases use controlled sandbox accounts/recipients and actual IDs; mocks are not provider proof. No application tests ran during planning.\n\nPublication snapshot of the independently reviewed planning packet. Trello is the live execution record; application work has not started.\n\nVerified prerequisite cards:\n- GK-020: https://trello.com/c/W8q5svCh\n- GK-011: https://trello.com/c/ZhcwMqTc\n\nVerified dependent cards:\n- GK-025: https://trello.com/c/vyFTtISc\n- GK-026: https://trello.com/c/xiEN4jvp\n- GK-027: https://trello.com/c/G8hLmSBU\n- GK-033: https://trello.com/c/3YbFGdmp",
+    "closed": false,
+    "idBoard": "6ab074a2b3c3763832ddf623",
+    "idList": "6ab074adb3c3763832de0077",
+    "due": null,
+    "url": "https://trello.com/c/J6zlPAc9/35-gk-024p0o200w05-deliver-durable-transactional-email-and-evidence"
+  },
+  "GK-025": {
+    "id": "6ab13e450590793ed8940191",
+    "name": "[GK-025][P0][O240][W07] Collect full payment with safe holds and discounts",
+    "desc": "## Context\n\nOwner: Agent; Kind: Implementation\nPriority: P0 — foundational/safety prerequisite.\nOrder: 240; Wave: 7; Parallel group: none.\nRequirements: C02, C05, C10, C15, C16, S01, S06, S07; Design/contract revision: planning r5, K03 K04.\nAgent execution policy: gpt-6-astra / high; fresh scoped worker; fresh independent reviewer.\nRequired input: brief, input-revision.json, Creator r2, ADRs/contracts r5 or reviewed successor, feature/screens, prerequisite evidence, SETUP and DELIVERY.\nExecution check: skills/gk-plan/references/execution-check.md at start/resume; record requested/effective model, history, input hashes and checked readback. Pending.\nDepends on: GK-021, GK-022, GK-023, GK-024, GK-011, GK-003, GK-007; deliverable: accepted policy/setup or tested implementation outputs; GK-020 means completed B2.\nUnblocks: GK-026, GK-027, GK-031, GK-033, GK-030.\nSafe in parallel with: none.\nConflicts: shared contracts/schema/router/migrations; master coordinates edits.\nReadiness at publication: blocked / specified but dependent: Policy/provider/auth/catalog/capacity/notification prerequisites pending.\n\nQuote server-side GBP totals; 100% payment of current accepted quote, immutable configuration/recipe/policy/discount snapshot. Atomically reserve all resources and discount usage, create collection job; hosted Checkout only after commit. Verify signed events and account/currency/amount, reconcile unknown/late outcomes.\n\nRules: server-owned price/capacity/state; GBP pence, UTC/Europe/London; role+ownership; expected_version+Idempotency-Key; unknown stays pending; no network under DB locks.\n\nWire/state (approved GK-019 successor required):\n\nPOST /api/v1/checkout/quotes {lines:[{variant_id,quantity:1}],production_date:\"2026-10-20\",pickup_slot_id,discount_code} ->quote_id/version/expiry, server GBP item/discount/delivery/tax/total snapshots. Percentage proposal basis points, rounded once half-up then largest-remainder line allocation; free delivery affects approved chef delivery only. Wrong currency/negative/overflow ->422, changed amount/version ->409 PRICE_CHANGED. Tax/eligibility/stacking needs approved GK-005/007.\n\nPOST /api/v1/checkouts {quote_id,quote_version,pickup_slot_id,consented_policy_version,contact} +Idempotency-Key ->202 {operation_id,state:\"pending\",poll_after_seconds:3}. Atomic order+all resource/discount holds+collection job. Provider calls outside locks; signed inbox dedup by account/environment/event. Verified captured amount/currency confirms; unknown retains holds. Terminal-unpaid frees; late paid unfulfillable needs durable full refund/manager recovery before checkout exposure.\n\nProposed: API10s/DB2s/provider5s; retries1m/5m/15m/1h then manager, alert15m. Validate; retain unknown funds.\n\nMandatory AC1–AC3 rules:\n\nThis ticket owns the MINIMUM FULL-RETURN CORE: refund_goal, provider dispatch/idempotency/reconciliation and observation quarantine needed for unfulfillable late capture, delivered before enabling any collection. GK-026 adds customer/admin cancellation and partial allocation without a duplicate subsystem. Cancelled/expired lifecycle is never reopened by late capture; default is recorded funds + full-return goal + manager recovery, no fulfillment. Proposed reacquisition/new-order consent path remains blocked on policy. Provider actual session expiry is measured from provider creation; persist returned expiry and dispatch_started_at/key/body before request. Never-dispatched cleanup races admission under order lock; cleanup-wins means zero call, admission-wins unknown retains resources. Check provider minimum payment window fits cutoff. Verify terminal-unpaid excludes unresolved underlying payment. Red tests cover these races plus quarantine fixture capture10000p/local unknown10000p/external succeeded5000p -> allocation10000p, observation5000p, available0, possible15000p exposure; no new admitted dispatch.\n\n## To dos\n\nT1. Red: smallest AC1–AC3 fixture assertion; infrastructure failure is not red.\nT2. Implement data/API/UI/recovery with snapshots/auth/idempotency (AC1–AC3).\nT3. Integrate migrations/consumers/audit/notices; verify real DB/provider failures (AC1–AC3).\nT4. Green -> refactor -> rerun affected checks; record revision/results (AC4).\nT5. Complete AC4 review/delivery/acceptance evidence; no implied deployment.\n\n## Not to dos\n\nNo unrelated cleanup, registrations, leaked secrets or releases/deployments without authority. No app execution now; Done needs Creator acceptance.\n\n## Acceptance Criteria\n\nAC1. Red money fixtures verify 1001+1000p at 10%=200p under approved policy, allocations sum, usage cap concurrent, wrong currency/overflow/client price rejected; changed quote needs explicit reapproval.\nAC2. Last resource and duplicate key tests on real PostgreSQL leave one order/collection and no partial holds. Provider timeout reuses original operation; return URL alone never confirms.\nAC3. Expiry releases only verified terminal-unpaid; late capture preserves terminal lifecycle and creates durable full-return goal/manager resolution without fulfillment; replacement order needs separately approved consent. Provider sandbox duplicate/out-of-order/lost-response cases recorded.\nAC4. Record exact input/tested revision, results, independent review and Creator acceptance on Trello; account for all related PRs, required review/checks, native auto-merges and main CI. Release/deploy/smoke only when separately authorized and in scope.\n\nTest prerequisite: GK-020 B2 verifies pinned runners before this card is Ready. Planned Go: go test ./..., go test -race ./..., go test -tags=integration ./... with disposable PostgreSQL; UI: npm run check, npm test, npm run build + approved browser runner. Provider cases use controlled sandbox accounts/recipients and actual IDs; mocks are not provider proof. No application tests ran during planning.\n\nPublication snapshot of the independently reviewed planning packet. Trello is the live execution record; application work has not started.\n\nVerified prerequisite cards:\n- GK-021: https://trello.com/c/zEfCJtWD\n- GK-022: https://trello.com/c/tcV2Ilpz\n- GK-023: https://trello.com/c/NHHBokl1\n- GK-024: https://trello.com/c/J6zlPAc9\n- GK-011: https://trello.com/c/ZhcwMqTc\n- GK-003: https://trello.com/c/ftGtoGNB\n- GK-007: https://trello.com/c/iJqMyuN1\n\nVerified dependent cards:\n- GK-026: https://trello.com/c/xiEN4jvp\n- GK-027: https://trello.com/c/G8hLmSBU\n- GK-031: https://trello.com/c/6moC1CyN\n- GK-033: https://trello.com/c/3YbFGdmp\n- GK-030: https://trello.com/c/BkYDridR",
+    "closed": false,
+    "idBoard": "6ab074a2b3c3763832ddf623",
+    "idList": "6ab074adb3c3763832de0077",
+    "due": null,
+    "url": "https://trello.com/c/vyFTtISc/39-gk-025p0o240w07-collect-full-payment-with-safe-holds-and-discounts"
+  },
+  "GK-026": {
+    "id": "6ab13e4b6672f4ac56b93269",
+    "name": "[GK-026][P0][O260][W08] Cancel and refund safely across production races",
+    "desc": "## Context\n\nOwner: Agent; Kind: Implementation\nPriority: P0 — foundational/safety prerequisite.\nOrder: 260; Wave: 8; Parallel group: none.\nRequirements: C06, A01, S02, A02, A03, S07; Design/contract revision: planning r5, K05.\nAgent execution policy: gpt-6-astra / high; fresh scoped worker; fresh independent reviewer.\nRequired input: brief, input-revision.json, Creator r2, ADRs/contracts r5 or reviewed successor, feature/screens, prerequisite evidence, SETUP and DELIVERY.\nExecution check: skills/gk-plan/references/execution-check.md at start/resume; record requested/effective model, history, input hashes and checked readback. Pending.\nDepends on: GK-025, GK-024, GK-001, GK-003; deliverable: accepted policy/setup or tested implementation outputs; GK-020 means completed B2.\nUnblocks: GK-031, GK-033, GK-030.\nSafe in parallel with: none.\nConflicts: shared contracts/schema/router/migrations; master coordinates edits.\nReadiness at publication: blocked / specified but dependent: Approved cancellation/refund allocation and provider fault evidence pending.\n\nUse financial-pilot.md reconciled rules: order-first lock, effective manual/timed cutoff check, durable full-return goal and per-capture active+succeeded sum <=captured. Admin partial allocation uses purchased components; provider unknown keeps reservation. Full return counts prior refunds and retains shortfall obligation if earlier partial fails.\n\nRules: server-owned price/capacity/state; GBP pence, UTC/Europe/London; role+ownership; expected_version+Idempotency-Key; unknown stays pending; no network under DB locks.\n\nWire/state (approved GK-019 successor required):\n\nPOST /api/v1/orders/{id}/cancel {expected_version:7}; POST /api/v1/admin/orders/{id}/start-production {expected_version:7}; POST /api/v1/admin/orders/{id}/refunds {expected_version:7,amount_minor:2500,currency:\"GBP\",allocations:[{component_id,amount_minor:2500}],reason:\"Agreed adjustment\"}. Same order lock checks wall-clock cutoff and state. confirmed->cancelled OR in_production, completed never customer-eligible. 202 operation pending; 409 CANCELLATION_NOT_ELIGIBLE/REFUND_LIMIT/RECONCILIATION_REQUIRED. Capture C minus succeeded and active/unknown reservations bounds admission; external conflicting observations quarantine, available=0 until evidence reconciliation.\n\nProposed: API10s/DB2s/provider5s; retries1m/5m/15m/1h then manager, alert15m. Validate; retain unknown funds.\n\nMandatory AC1–AC3 rules:\n\nUse GK-025 full-return core. At exact cutoff sample DB wall clock after order lock, materialize timed start once and COMMIT it before returning cancellation rejected; do not throw an exception that rolls back that legitimate transition. Manual/timer duplicates share transition key. Full-return goal remains open when earlier partial fails. Quarantined external observations are outside controlled allocation cap; verified real excess returns remain visible and do not cause ledger deletion or blind new refund.\n\n## To dos\n\nT1. Red: smallest AC1–AC3 fixture assertion; infrastructure failure is not red.\nT2. Implement data/API/UI/recovery with snapshots/auth/idempotency (AC1–AC3).\nT3. Integrate migrations/consumers/audit/notices; verify real DB/provider failures (AC1–AC3).\nT4. Green -> refactor -> rerun affected checks; record revision/results (AC4).\nT5. Complete AC4 review/delivery/acceptance evidence; no implied deployment.\n\n## Not to dos\n\nNo unrelated cleanup, registrations, leaked secrets or releases/deployments without authority. No app execution now; Done needs Creator acceptance.\n\n## Acceptance Criteria\n\nAC1. Real PostgreSQL red interleavings: cancel-first cancels with goal/intent, start-first rejects with zero refund; exact cutoff rejects even when job delayed; pickup race cannot reopen saved eligibility.\nAC2. Capture10000p, succeeded2000p, unknown3000p and simultaneous4000p requests accepts only one; full return reserves remaining1000p. Pending partial4000 fails after6000 refund: full-return goal remains short4000 and visible.\nAC3. Provider timeout/lease overlap/retention expiry does not pay twice; external refund/dispute/restore freezes dispatch for complete reconciliation; offline payments use separate evidence-based return path. Unknown/failed money and cancelled lifecycle never conflated.\nAC4. Record exact input/tested revision, results, independent review and Creator acceptance on Trello; account for all related PRs, required review/checks, native auto-merges and main CI. Release/deploy/smoke only when separately authorized and in scope.\n\nTest prerequisite: GK-020 B2 verifies pinned runners before this card is Ready. Planned Go: go test ./..., go test -race ./..., go test -tags=integration ./... with disposable PostgreSQL; UI: npm run check, npm test, npm run build + approved browser runner. Provider cases use controlled sandbox accounts/recipients and actual IDs; mocks are not provider proof. No application tests ran during planning.\n\nPublication snapshot of the independently reviewed planning packet. Trello is the live execution record; application work has not started.\n\nVerified prerequisite cards:\n- GK-025: https://trello.com/c/vyFTtISc\n- GK-024: https://trello.com/c/J6zlPAc9\n- GK-001: https://trello.com/c/eI8UpD6l\n- GK-003: https://trello.com/c/ftGtoGNB\n\nVerified dependent cards:\n- GK-031: https://trello.com/c/6moC1CyN\n- GK-033: https://trello.com/c/3YbFGdmp\n- GK-030: https://trello.com/c/BkYDridR",
+    "closed": false,
+    "idBoard": "6ab074a2b3c3763832ddf623",
+    "idList": "6ab074adb3c3763832de0077",
+    "due": null,
+    "url": "https://trello.com/c/xiEN4jvp/41-gk-026p0o260w08-cancel-and-refund-safely-across-production-races"
+  },
+  "GK-011 comments": [
+    {
+      "id": "6ac2f7d71e7599180d76c844",
+      "type": "commentCard",
+      "date": "2026-10-05T01:05:27.505Z",
+      "memberCreator": {
+        "id": "6ab07430e77c7ae74e433bb8",
+        "username": "sashachicha13",
+        "fullName": "sashachicha13"
+      },
+      "data": {
+        "text": "GK-005 scope split / 2026-10-05: business input accepted; see closure decisions at https://trello.com/c/OWHhKPBT . Deferred legal, actual privacy/provider and label verification transferred to https://trello.com/c/Zarzv2Qo (GK-037), after GK-035 and before GK-036. This transfer does not block implementation. Other prerequisites remain; no Ready transition is implied. Read docs/creator/GK-005/interview-2026-10-05.md and source/evidence manifests; older decision JSON alone is incomplete."
+      }
+    }
+  ],
+  "GK-019 comments": [
+    {
+      "id": "6ac2f7d8d13f6ea2629043e6",
+      "type": "commentCard",
+      "date": "2026-10-05T01:05:28.894Z",
+      "memberCreator": {
+        "id": "6ab07430e77c7ae74e433bb8",
+        "username": "sashachicha13",
+        "fullName": "sashachicha13"
+      },
+      "data": {
+        "text": "GK-005 scope split / 2026-10-05: business input accepted; see closure decisions at https://trello.com/c/OWHhKPBT . Deferred legal, actual privacy/provider and label verification transferred to https://trello.com/c/Zarzv2Qo (GK-037), after GK-035 and before GK-036. This transfer does not block implementation. Other prerequisites remain; no Ready transition is implied. Read docs/creator/GK-005/interview-2026-10-05.md and source/evidence manifests; older decision JSON alone is incomplete. GK-019 owns canonical owner-data JSON/SQL/admin/contract reconciliation of interview-r1 before affected implementation. Preserve source/comment hashes and superseded evidence."
+      }
+    }
+  ],
+  "GK-024 comments": [],
+  "GK-025 comments": [],
+  "GK-026 comments": []
+}

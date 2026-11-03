@@ -1,0 +1,1158 @@
+{
+  "revision": "roles-r4-owner-publication",
+  "date": "2026-09-27",
+  "publication_status": "published",
+  "source_board_id": "6ab074a2b3c3763832ddf623",
+  "source_board_url": "https://trello.com/b/QEjqyM9i",
+  "source_verification": "2026-09-27 publication preflight: all 34 live descriptions matched saved publication; comments and attachments read on all 34, none present; no new owner approval inferred.",
+  "target_board_id": "6ab846cadeac31eff3e42507",
+  "target_board_url": "https://trello.com/b/cAQFJIOQ/gk-business-owner-board",
+  "status_sync": "none; no automatic parent completion",
+  "records": [
+    {
+      "source_key": "GK-001",
+      "source_card_id": "6ab13b4fa34d3a2205f61353",
+      "source_card_url": "https://trello.com/c/eI8UpD6l/16-gk-001p0o010w00-set-production-pickup-and-london-delivery-policy",
+      "source_path": "docs/design/tickets/GK-001.md",
+      "source_sha256": "f577d353e145d5f3948552705f10a5f01b7e4e71c809e9eb6ea9a958404bb061",
+      "live_description_sha256": "bfb92c13e7e0eebf3a0bbf8ddc56501e660cc21a71d079427524d2ab49939b4f",
+      "order": 10,
+      "priority": "P0",
+      "source_wave": 0,
+      "source_dependencies": [],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-001",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-001",
+        "title": "[BO-GK-001][O010] Погодити правила виготовлення, видачі та доставки",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-001",
+        "language": "uk",
+        "future_card_id": "6ab8580af5fcdd5860d21234",
+        "future_card_url": "https://trello.com/c/rVHbBffB/2-bo-gk-001o010-%D0%BF%D0%BE%D0%B3%D0%BE%D0%B4%D0%B8%D1%82%D0%B8-%D0%BF%D1%80%D0%B0%D0%B2%D0%B8%D0%BB%D0%B0-%D0%B2%D0%B8%D0%B3%D0%BE%D1%82%D0%BE%D0%B2%D0%BB%D0%B5%D0%BD%D0%BD%D1%8F-%D0%B2%D0%B8%D0%B4%D0%B0%D1%87%D1%96-%D1%82%D0%B0-%D0%B4%D0%BE%D1%81%D1%82%D0%B0%D0%B2%D0%BA%D0%B8",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте зараз із вашого звичайного робочого тижня. Складні випадки розберіть із розробником після цього.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "8fb5c19fdc74790cbcbe2ea2dff9386c401d0def1ead4bc5f9056ad82314c823",
+        "published_description_sha256": "54b594d2e69751ac3233a05cc89abc18bf53daa6328f577105c97f34808c3bf9"
+      }
+    },
+    {
+      "source_key": "GK-003",
+      "source_card_id": "6ab13b539c0ea3a1a49176e9",
+      "source_card_url": "https://trello.com/c/ftGtoGNB/17-gk-003p0o020w00-approve-customer-agreement-accounts-and-refund-policy",
+      "source_path": "docs/design/tickets/GK-003.md",
+      "source_sha256": "6e549d27c8d1730d3e987c6d4cf884103121e26c25f34a9ca9e5987fd8c8e5a7",
+      "live_description_sha256": "d2a129ed22de5a107a405f6b3a4d25ca079857a7aab8cb51a747c87c75b2cec4",
+      "order": 20,
+      "priority": "P0",
+      "source_wave": 0,
+      "source_dependencies": [],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-003",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-003",
+        "title": "[BO-GK-003][O020] Погодити індивідуальні замовлення, оплату й повернення",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-003",
+        "language": "uk",
+        "future_card_id": "6ab8590615d32993baafa183",
+        "future_card_url": "https://trello.com/c/5FbrZxfc/3-bo-gk-003o020-%D0%BF%D0%BE%D0%B3%D0%BE%D0%B4%D0%B8%D1%82%D0%B8-%D1%96%D0%BD%D0%B4%D0%B8%D0%B2%D1%96%D0%B4%D1%83%D0%B0%D0%BB%D1%8C%D0%BD%D1%96-%D0%B7%D0%B0%D0%BC%D0%BE%D0%B2%D0%BB%D0%B5%D0%BD%D0%BD%D1%8F-%D0%BE%D0%BF%D0%BB%D0%B0%D1%82%D1%83-%D0%B9-%D0%BF%D0%BE%D0%B2%D0%B5%D1%80%D0%BD%D0%B5%D0%BD%D0%BD%D1%8F",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Можна описувати свою звичайну роботу зараз. Остаточні приклади скасування узгодьте з правилами початку виготовлення.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "3a6778dd124e9dedc07095f1276c99e3b25e42f8a0600c2d92b0a98b38503bd8",
+        "published_description_sha256": "bd5e5d03946c479c117cfd2e890b9fd51dfcd8cb6d2e16d6fe6c7a65c8e709cf"
+      }
+    },
+    {
+      "source_key": "GK-004",
+      "source_card_id": "6ab13b55ae5ee4104632307d",
+      "source_card_url": "https://trello.com/c/RotJkR9L/18-gk-004p0o030w00-select-provider-package-and-recovery-budget",
+      "source_path": "docs/design/tickets/GK-004.md",
+      "source_sha256": "22b53df92cf0bbb7dd85a9a7d72ca1e8f9ffd73ca6c3218f08cac3ae544b10e3",
+      "live_description_sha256": "b1c1d0863b20836c7943a45fdaf26f51ef79f7e184af96b6404559b2d3a2a11c",
+      "order": 30,
+      "priority": "P0",
+      "source_wave": 0,
+      "source_dependencies": [],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-004",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-004",
+        "title": "[BO-GK-004][O030] Погодити витрати на сервіси та відновлення після збою",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-004",
+        "language": "uk",
+        "future_card_id": "6ab8590763ca68e80874f900",
+        "future_card_url": "https://trello.com/c/ixJiQtHm/4-bo-gk-004o030-%D0%BF%D0%BE%D0%B3%D0%BE%D0%B4%D0%B8%D1%82%D0%B8-%D0%B2%D0%B8%D1%82%D1%80%D0%B0%D1%82%D0%B8-%D0%BD%D0%B0-%D1%81%D0%B5%D1%80%D0%B2%D1%96%D1%81%D0%B8-%D1%82%D0%B0-%D0%B2%D1%96%D0%B4%D0%BD%D0%BE%D0%B2%D0%BB%D0%B5%D0%BD%D0%BD%D1%8F-%D0%BF%D1%96%D1%81%D0%BB%D1%8F-%D0%B7%D0%B1%D0%BE%D1%8E",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте вибір, коли розробник надішле датовану таблицю варіантів із повною ціною. Поки її немає, достатньо уточнити свої побажання щодо бюджету.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "c1c732fbb61ebfa41a4da8cdc3405003fd3c07ffa1474f86b5e2704983247641",
+        "published_description_sha256": "d6e225287408451041325db6d7375d705940c72a5bf7bafabf11225500adcd56"
+      }
+    },
+    {
+      "source_key": "GK-005",
+      "source_card_id": "6ab13b5a78ce79e5d2b0e208",
+      "source_card_url": "https://trello.com/c/OWHhKPBT/19-gk-005p0o040w00-verify-uk-business-allergen-tax-and-privacy-content",
+      "source_path": "docs/design/tickets/GK-005.md",
+      "source_sha256": "71ab09502dc519b7b555c51296c783baf8c460ca07acdd1868c86a29dd1a1753",
+      "live_description_sha256": "939261f208bb1ae343a8fc3be0442eccada98f867aa26ab30c83aaaca335a8f4",
+      "order": 40,
+      "priority": "P0",
+      "source_wave": 0,
+      "source_dependencies": [],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-005",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-005",
+        "title": "[BO-GK-005][O040] Надати дані бізнесу, алергени та правила для клієнтів",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-005",
+        "language": "uk",
+        "future_card_id": "6ab85908163fa9bc11351373",
+        "future_card_url": "https://trello.com/c/PSsIz3tI/5-bo-gk-005o040-%D0%BD%D0%B0%D0%B4%D0%B0%D1%82%D0%B8-%D0%B4%D0%B0%D0%BD%D1%96-%D0%B1%D1%96%D0%B7%D0%BD%D0%B5%D1%81%D1%83-%D0%B0%D0%BB%D0%B5%D1%80%D0%B3%D0%B5%D0%BD%D0%B8-%D1%82%D0%B0-%D0%BF%D1%80%D0%B0%D0%B2%D0%B8%D0%BB%D0%B0-%D0%B4%D0%BB%D1%8F-%D0%BA%D0%BB%D1%96%D1%94%D0%BD%D1%82%D1%96%D0%B2",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте з наявних даних бізнесу й рецептів. Для незрозумілих юридичних/податкових пунктів попросіть розробника підготувати конкретне запитання та джерело.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "64904da8d515e9c4591e93482856cd98ca79c30a43927a0f75e696936145d341",
+        "published_description_sha256": "0d31bb97f850a7e211a825bcfe427d637e4456c08d467f5ceaa492951cf23349"
+      }
+    },
+    {
+      "source_key": "GK-006",
+      "source_card_id": "6ab13b5db14b1d1f68be1aee",
+      "source_card_url": "https://trello.com/c/npWFafNi/20-gk-006p0o050w00-confirm-release-only-deployment-and-repository-access-policy",
+      "source_path": "docs/design/tickets/GK-006.md",
+      "source_sha256": "6234142aac5295e2287ee5960590dc34f43737668316bbec5a80f56c9e59f174",
+      "live_description_sha256": "a565f18c1f6799d2a95983c1c1a9e0f4b9e4bdac3837406c1d8025e4839a1c29",
+      "order": 50,
+      "priority": "P0",
+      "source_wave": 0,
+      "source_dependencies": [],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-006",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-006",
+        "title": "[BO-GK-006][O050] Визначити, хто погоджує запуск і має доступ до сервісів",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-006",
+        "language": "uk",
+        "future_card_id": "6ab85909af0facb6c3cb2c8d",
+        "future_card_url": "https://trello.com/c/N7MqH3vs/6-bo-gk-006o050-%D0%B2%D0%B8%D0%B7%D0%BD%D0%B0%D1%87%D0%B8%D1%82%D0%B8-%D1%85%D1%82%D0%BE-%D0%BF%D0%BE%D0%B3%D0%BE%D0%B4%D0%B6%D1%83%D1%94-%D0%B7%D0%B0%D0%BF%D1%83%D1%81%D0%BA-%D1%96-%D0%BC%D0%B0%D1%94-%D0%B4%D0%BE%D1%81%D1%82%D1%83%D0%BF-%D0%B4%D0%BE-%D1%81%D0%B5%D1%80%D0%B2%D1%96%D1%81%D1%96%D0%B2",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте після короткої пропозиції розробника: хто перевіряє програму, хто приймає бізнес-результат і хто запускає її для клієнтів.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "ecd6bbc523011d1c320061c90ce1fbc4490d397f4e8c797b4923db5a57b8ca3b",
+        "published_description_sha256": "1e23986be489a78c22357bf89ba2b293372a79119c046b763e7eab2b40cf9a78"
+      }
+    },
+    {
+      "source_key": "GK-007",
+      "source_card_id": "6ab13b60b3c3763832398591",
+      "source_card_url": "https://trello.com/c/iJqMyuN1/21-gk-007p0o060w00-set-discounts-recipe-scaling-and-ingredient-accounting-rules",
+      "source_path": "docs/design/tickets/GK-007.md",
+      "source_sha256": "dfae5e955d313e80871e6a4301b3222fa5212784a32ffa5f6f8da9cb641b12e1",
+      "live_description_sha256": "54a9ca5438548f20d07406337a50effed3f002f4339210f9192575c62211ce07",
+      "order": 60,
+      "priority": "P0",
+      "source_wave": 0,
+      "source_dependencies": [],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-007",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-007",
+        "title": "[BO-GK-007][O060] Погодити знижки, рецепти та облік інгредієнтів",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-007",
+        "language": "uk",
+        "future_card_id": "6ab8590a8875c790cb8ee334",
+        "future_card_url": "https://trello.com/c/ES15alvX/7-bo-gk-007o060-%D0%BF%D0%BE%D0%B3%D0%BE%D0%B4%D0%B8%D1%82%D0%B8-%D0%B7%D0%BD%D0%B8%D0%B6%D0%BA%D0%B8-%D1%80%D0%B5%D1%86%D0%B5%D0%BF%D1%82%D0%B8-%D1%82%D0%B0-%D0%BE%D0%B1%D0%BB%D1%96%D0%BA-%D1%96%D0%BD%D0%B3%D1%80%D0%B5%D0%B4%D1%96%D1%94%D0%BD%D1%82%D1%96%D0%B2",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте зі своїх чинних рецептів, цін інгредієнтів і прикладів акцій. Незрозумілі розрахунки підготує розробник.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "a9744e249cf2634b95d868c161483516d6723194796d3cdfb0bc128eddc69ab1",
+        "published_description_sha256": "7fe4986263735a618dfedd03f60929fef6ad860450c74ed956c8fef5486dc8cb"
+      }
+    },
+    {
+      "source_key": "GK-002",
+      "source_card_id": "6ab13b631596908322f9a7d3",
+      "source_card_url": "https://trello.com/c/JsXtAhB2/22-gk-002p1o070w00-supply-brand-and-cake-content-for-chrome-visual-exploration",
+      "source_path": "docs/design/tickets/GK-002.md",
+      "source_sha256": "297b796f9b44cbbae2d8ae5f2689b986a3080d2e5191f4d0972921636e4c78ec",
+      "live_description_sha256": "021b52b9aa36f153d9cab7e6b07f393191ec7310ba8de76b40674c23eb00b4fd",
+      "order": 70,
+      "priority": "P1",
+      "source_wave": 0,
+      "source_dependencies": [],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-002",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-002",
+        "title": "[BO-GK-002][O070] Надати логотип, фото та інформацію про торти",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-002",
+        "language": "uk",
+        "future_card_id": "6ab8590b33bd0173303847de",
+        "future_card_url": "https://trello.com/c/lNT8aDIh/8-bo-gk-002o070-%D0%BD%D0%B0%D0%B4%D0%B0%D1%82%D0%B8-%D0%BB%D0%BE%D0%B3%D0%BE%D1%82%D0%B8%D0%BF-%D1%84%D0%BE%D1%82%D0%BE-%D1%82%D0%B0-%D1%96%D0%BD%D1%84%D0%BE%D1%80%D0%BC%D0%B0%D1%86%D1%96%D1%8E-%D0%BF%D1%80%D0%BE-%D1%82%D0%BE%D1%80%D1%82%D0%B8",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте зараз із матеріалів, які вже маєте. Відсутні файли можна додати пізніше, позначивши, чого бракує.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "b79422a9f1c06ddcb5606ccd45f5163e81e97e8bb1e42d2752d12538091df8f3",
+        "published_description_sha256": "95cfa834e0dd7b29dc05bf2ce4150fc4a8d3fabbf6c69e8b5fc4d25bab8219e7"
+      }
+    },
+    {
+      "source_key": "GK-010",
+      "source_card_id": "6ab13b67cd0d697ce5898954",
+      "source_card_url": "https://trello.com/c/5AdmfDVH/23-gk-010p0o080w01-provision-selected-data-identity-and-storage-sandbox",
+      "source_path": "docs/design/tickets/GK-010.md",
+      "source_sha256": "f9ec80f18f983b371366a4e199dbe6765acc62f9408454fb25bb0bc0c57111c0",
+      "live_description_sha256": "2f8801021aebea370317821ce5351a779f95da092d86b5fa7e829bccb461bae0",
+      "order": 80,
+      "priority": "P0",
+      "source_wave": 1,
+      "source_dependencies": [
+        "GK-004"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-010",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-010",
+        "title": "[BO-GK-010][O080] Підтвердити власника акаунтів і першого менеджера",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-010",
+        "language": "uk",
+        "future_card_id": "6ab8590c27f25bf6b6f87489",
+        "future_card_url": "https://trello.com/c/Ou3KIkVl/9-bo-gk-010o080-%D0%BF%D1%96%D0%B4%D1%82%D0%B2%D0%B5%D1%80%D0%B4%D0%B8%D1%82%D0%B8-%D0%B2%D0%BB%D0%B0%D1%81%D0%BD%D0%B8%D0%BA%D0%B0-%D0%B0%D0%BA%D0%B0%D1%83%D0%BD%D1%82%D1%96%D0%B2-%D1%96-%D0%BF%D0%B5%D1%80%D1%88%D0%BE%D0%B3%D0%BE-%D0%BC%D0%B5%D0%BD%D0%B5%D0%B4%D0%B6%D0%B5%D1%80%D0%B0",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли розробник надішле назву вже вибраного сервісу, безпечне офіційне посилання, погоджену вартість і конкретні дії для вас.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "7fd8c70b9462f7411163b081b482f3965033ca1ff6e20477f56651bc41b1e2a1",
+        "published_description_sha256": "d05e2cbd7b55e777e3c62e29fdc9db16736de46fc51fc74068ca82278a33d044"
+      }
+    },
+    {
+      "source_key": "GK-011",
+      "source_card_id": "6ab13b6a33c1143844e6e0d1",
+      "source_card_url": "https://trello.com/c/ZhcwMqTc/24-gk-011p0o090w01-provision-selected-payment-and-email-test-accounts",
+      "source_path": "docs/design/tickets/GK-011.md",
+      "source_sha256": "9d9d996c9c044abc95da9058a7b19ea3034185f45fe737747600f08eab2d6bd9",
+      "live_description_sha256": "58ab2e7beabb61517a7cb50a5d1eaaaed843c11ad0d470aa1efe38674fb4d0a4",
+      "order": 90,
+      "priority": "P0",
+      "source_wave": 1,
+      "source_dependencies": [
+        "GK-004",
+        "GK-005"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-011",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-011",
+        "title": "[BO-GK-011][O090] Підтвердити платіжний акаунт і адресу для листів",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-011",
+        "language": "uk",
+        "future_card_id": "6ab8590cece3756aff518008",
+        "future_card_url": "https://trello.com/c/aIc1f9jy/10-bo-gk-011o090-%D0%BF%D1%96%D0%B4%D1%82%D0%B2%D0%B5%D1%80%D0%B4%D0%B8%D1%82%D0%B8-%D0%BF%D0%BB%D0%B0%D1%82%D1%96%D0%B6%D0%BD%D0%B8%D0%B9-%D0%B0%D0%BA%D0%B0%D1%83%D0%BD%D1%82-%D1%96-%D0%B0%D0%B4%D1%80%D0%B5%D1%81%D1%83-%D0%B4%D0%BB%D1%8F-%D0%BB%D0%B8%D1%81%D1%82%D1%96%D0%B2",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте після вибору сервісів і перевірки бізнес-даних. Розробник має дати офіційні посилання та пояснити, які особисті кроки потрібні саме вам.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "720b01156223929efdbfca8f2798b41c739084fb09c2091832e1081bc339a176",
+        "published_description_sha256": "6b90ce618c8d5699d107527e66909e33fed03445c8d7dfd47d15f895759096bb"
+      }
+    },
+    {
+      "source_key": "GK-019",
+      "source_card_id": "6ab13b6dfb6d82ab64f2ca14",
+      "source_card_url": "https://trello.com/c/lW3wuYq0/25-gk-019p0o100w01-reconcile-approved-policies-into-executable-contracts",
+      "source_path": "docs/design/tickets/GK-019.md",
+      "source_sha256": "b5a646b6991b104b99b1bf605530c2b4b47854f1777a49c98bd59ccc30605aa9",
+      "live_description_sha256": "a4b78f60647f33961844889b112c7f414b2f194ca83e3e187c81d5f0d24393f1",
+      "order": 100,
+      "priority": "P0",
+      "source_wave": 1,
+      "source_dependencies": [
+        "GK-001",
+        "GK-003",
+        "GK-004",
+        "GK-005",
+        "GK-006",
+        "GK-007"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-019",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": null
+    },
+    {
+      "source_key": "GK-012",
+      "source_card_id": "6ab13b7169adf9df4b5d6177",
+      "source_card_url": "https://trello.com/c/nveiC5IF/26-gk-012p1o110w01-verify-domain-instagram-ownership-and-approved-origins",
+      "source_path": "docs/design/tickets/GK-012.md",
+      "source_sha256": "7121484a837a91bb3fd0a895388516f8e50210fb8b5c293a3f2fbdba5eee77ef",
+      "live_description_sha256": "73ffa270a54aebeee56743f4917d19a40f72b8cac2d072a1bbfe6c2fc711f763",
+      "order": 110,
+      "priority": "P1",
+      "source_wave": 1,
+      "source_dependencies": [
+        "GK-002",
+        "GK-004"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-012",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-012",
+        "title": "[BO-GK-012][O110] Підтвердити домен та Instagram магазину",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-012",
+        "language": "uk",
+        "future_card_id": "6ab8590daf6b7fd3af9a49ab",
+        "future_card_url": "https://trello.com/c/xaVN5VOR/11-bo-gk-012o110-%D0%BF%D1%96%D0%B4%D1%82%D0%B2%D0%B5%D1%80%D0%B4%D0%B8%D1%82%D0%B8-%D0%B4%D0%BE%D0%BC%D0%B5%D0%BD-%D1%82%D0%B0-instagram-%D0%BC%D0%B0%D0%B3%D0%B0%D0%B7%D0%B8%D0%BD%D1%83",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Можна зараз повідомити, чим ви вже володієте. Перевірку переходів починайте, коли розробник дасть конкретне посилання й безпечний текст для проби.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "8babe20aa60073d1ad2d94cf1ee4033c3517b91dbd8dff0fe9096137c83e4f1e",
+        "published_description_sha256": "78815ae9a84c0c1ff22342ffa5f68a24d2f04f61e7081d6057a72b79fecc0677"
+      }
+    },
+    {
+      "source_key": "GK-015",
+      "source_card_id": "6ab13b744675c2d1ae30ce9f",
+      "source_card_url": "https://trello.com/c/POD3I6sM/27-gk-015p1o120w01-approve-chrome-led-visual-foundation-with-the-creator",
+      "source_path": "docs/design/tickets/GK-015.md",
+      "source_sha256": "83e293f33645d41e3fea132cc15b7227166673c46c4bdb2a9121a1d33a818870",
+      "live_description_sha256": "d0b16dc19465a4e9c132ff42823ad6602812902bdc59317dca9da3d376bacd32",
+      "order": 120,
+      "priority": "P1",
+      "source_wave": 1,
+      "source_dependencies": [
+        "GK-002"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-015",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-015",
+        "title": "[BO-GK-015][O120] Обрати вигляд сайту й хромованого логотипа",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-015",
+        "language": "uk",
+        "future_card_id": "6ab8590e5ac52b84d6233c43",
+        "future_card_url": "https://trello.com/c/jvGwkEZj/12-bo-gk-015o120-%D0%BE%D0%B1%D1%80%D0%B0%D1%82%D0%B8-%D0%B2%D0%B8%D0%B3%D0%BB%D1%8F%D0%B4-%D1%81%D0%B0%D0%B9%D1%82%D1%83-%D0%B9-%D1%85%D1%80%D0%BE%D0%BC%D0%BE%D0%B2%D0%B0%D0%BD%D0%BE%D0%B3%D0%BE-%D0%BB%D0%BE%D0%B3%D0%BE%D1%82%D0%B8%D0%BF%D0%B0",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли розробник прикріпить кольорові макети для телефона й комп’ютера, позначить їхню версію та покаже, як їх переглядати.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "bec4b0713d5970500a1b76df16c0f1b9ecb02caf2808d650e6b69ba2d80ee210",
+        "published_description_sha256": "7f952c45994396887ad79ba5ad3e110c160fa767693c888d5bbf7f1b06ab5ac0"
+      }
+    },
+    {
+      "source_key": "GK-017",
+      "source_card_id": "6ab13b7850fd072d46a640f5",
+      "source_card_url": "https://trello.com/c/1YGOcOHR/28-gk-017p0o130w02-review-checkout-and-order-recovery-sketches",
+      "source_path": "docs/design/tickets/GK-017.md",
+      "source_sha256": "87f80873e4cc595541e93148d5eaee3a3f49bef0b947caec56f757f69937626e",
+      "live_description_sha256": "06cb33c4c170ee9af87f90ab032209aeebece98b9776e9423815c24d5e551fae",
+      "order": 130,
+      "priority": "P0",
+      "source_wave": 2,
+      "source_dependencies": [
+        "GK-015",
+        "GK-001",
+        "GK-003",
+        "GK-007"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-017",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-017",
+        "title": "[BO-GK-017][O130] Перевірити макети оплати, скасування та зміни видачі",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-017",
+        "language": "uk",
+        "future_card_id": "6ab8590f69d8bad34ca4a96e",
+        "future_card_url": "https://trello.com/c/gKm3d2AI/13-bo-gk-017o130-%D0%BF%D0%B5%D1%80%D0%B5%D0%B2%D1%96%D1%80%D0%B8%D1%82%D0%B8-%D0%BC%D0%B0%D0%BA%D0%B5%D1%82%D0%B8-%D0%BE%D0%BF%D0%BB%D0%B0%D1%82%D0%B8-%D1%81%D0%BA%D0%B0%D1%81%D1%83%D0%B2%D0%B0%D0%BD%D0%BD%D1%8F-%D1%82%D0%B0-%D0%B7%D0%BC%D1%96%D0%BD%D0%B8-%D0%B2%D0%B8%D0%B4%D0%B0%D1%87%D1%96",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли розробник прикріпить кольорові макети для телефона й комп’ютера, позначить їхню версію та покаже, як їх переглядати.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "e823cf30eaf8fd820233c177addd65fe55ebfbf0a1c706f8cb90de1d688a96fe",
+        "published_description_sha256": "efe0c84072b0e25f9601eecf20fb2e0263e79901e3e2c147ed406724580e66e0"
+      }
+    },
+    {
+      "source_key": "GK-020",
+      "source_card_id": "6ab13e2622a2dc1eaa9c2c83",
+      "source_card_url": "https://trello.com/c/W8q5svCh/29-gk-020p0o140w02-bootstrap-separately-buildable-ui-and-transactional-api",
+      "source_path": "docs/design/tickets/GK-020.md",
+      "source_sha256": "f50195a7444276016f2dfa3d65ea49c60ceae5f3524cdefaee239f34b5bd6b45",
+      "live_description_sha256": "892490fe4180412cfee3c40344c158fa7dad028243503ea585c7897377443c88",
+      "order": 140,
+      "priority": "P0",
+      "source_wave": 2,
+      "source_dependencies": [
+        "GK-019"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-020",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": null
+    },
+    {
+      "source_key": "GK-016",
+      "source_card_id": "6ab13e29c16be9c793c3ef47",
+      "source_card_url": "https://trello.com/c/oapKvUNJ/30-gk-016p1o150w02-review-discovery-bespoke-and-account-flow-sketches",
+      "source_path": "docs/design/tickets/GK-016.md",
+      "source_sha256": "a8bc265cfefaa767e90062cf5ca79558c0f2e1d7acc6d846f380e0b31432aecc",
+      "live_description_sha256": "3b8649f92b28c490cc7ebbfd97ccf97d7f92b97980be56008fc1a7b6ac87239f",
+      "order": 150,
+      "priority": "P1",
+      "source_wave": 2,
+      "source_dependencies": [
+        "GK-015",
+        "GK-003"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-016",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-016",
+        "title": "[BO-GK-016][O150] Перевірити пошук торта, запит в Instagram та кабінет",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-016",
+        "language": "uk",
+        "future_card_id": "6ab859107151c109408b973a",
+        "future_card_url": "https://trello.com/c/sW6P8Ijg/14-bo-gk-016o150-%D0%BF%D0%B5%D1%80%D0%B5%D0%B2%D1%96%D1%80%D0%B8%D1%82%D0%B8-%D0%BF%D0%BE%D1%88%D1%83%D0%BA-%D1%82%D0%BE%D1%80%D1%82%D0%B0-%D0%B7%D0%B0%D0%BF%D0%B8%D1%82-%D0%B2-instagram-%D1%82%D0%B0-%D0%BA%D0%B0%D0%B1%D1%96%D0%BD%D0%B5%D1%82",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли розробник прикріпить кольорові макети для телефона й комп’ютера, позначить їхню версію та покаже, як їх переглядати.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "063c3dd723dbab5ddc56965fe4d7f26b5125dff7b685ca0f6a5fdbef6fbe57a3",
+        "published_description_sha256": "8f1c9ff31de8275bde09867a8b3e7686b045b8c3a9c1b73aedc4f8f0415b7d0b"
+      }
+    },
+    {
+      "source_key": "GK-018",
+      "source_card_id": "6ab13e2ceef8ba864aa92ef9",
+      "source_card_url": "https://trello.com/c/jjP7btz9/31-gk-018p1o160w02-review-daily-chef-operations-sketches",
+      "source_path": "docs/design/tickets/GK-018.md",
+      "source_sha256": "c4f502de6bda8a2e00b0cc209fb86f79790c167f97a93509743eab0215e1afe0",
+      "live_description_sha256": "e6cfc1cd2c52303abfbf7b7b50f37bd00e0c9b71f4beaf2eeb4fc1cfb436d907",
+      "order": 160,
+      "priority": "P1",
+      "source_wave": 2,
+      "source_dependencies": [
+        "GK-015",
+        "GK-001",
+        "GK-003",
+        "GK-007"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-018",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-018",
+        "title": "[BO-GK-018][O160] Перевірити макети щоденної роботи кондитера",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-018",
+        "language": "uk",
+        "future_card_id": "6ab859112e6415cd703968fd",
+        "future_card_url": "https://trello.com/c/em9YmgTX/15-bo-gk-018o160-%D0%BF%D0%B5%D1%80%D0%B5%D0%B2%D1%96%D1%80%D0%B8%D1%82%D0%B8-%D0%BC%D0%B0%D0%BA%D0%B5%D1%82%D0%B8-%D1%89%D0%BE%D0%B4%D0%B5%D0%BD%D0%BD%D0%BE%D1%97-%D1%80%D0%BE%D0%B1%D0%BE%D1%82%D0%B8-%D0%BA%D0%BE%D0%BD%D0%B4%D0%B8%D1%82%D0%B5%D1%80%D0%B0",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли розробник прикріпить кольорові макети для телефона й комп’ютера, позначить їхню версію та покаже, як їх переглядати.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "bd44b2658330e7775b6bf632060a467e5425e360748566d304034b502f1304ac",
+        "published_description_sha256": "dc68ceaf0f5269d0fdbbd4f78c7b6effc58a251965473e6f3ef6d968ecfe7595"
+      }
+    },
+    {
+      "source_key": "GK-013",
+      "source_card_id": "6ab13e2fa902ed62bd58010c",
+      "source_card_url": "https://trello.com/c/KpxlodVh/32-gk-013p0o170w03-configure-required-ci-review-and-native-auto-merge-gates",
+      "source_path": "docs/design/tickets/GK-013.md",
+      "source_sha256": "2454bb4aa819f6fe49f4ccaaefc3ab9412c4c6dfb161e92e52608a7170a0b799",
+      "live_description_sha256": "629824041bb2601d5b17eb4bcc40d8259e20910427c4f97169ab0aa793f8c936",
+      "order": 170,
+      "priority": "P0",
+      "source_wave": 3,
+      "source_dependencies": [
+        "GK-006",
+        "GK-020"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-013",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": null
+    },
+    {
+      "source_key": "GK-014",
+      "source_card_id": "6ab13e3211f96dcac900c1c8",
+      "source_card_url": "https://trello.com/c/47tZfEoI/33-gk-014p0o180w05-configure-monitoring-and-verify-restore-ownership",
+      "source_path": "docs/design/tickets/GK-014.md",
+      "source_sha256": "d3e5c0ce7d04000e3e7cdb77300f12b00de4d3e546bfd2f95f065f5166a3af3f",
+      "live_description_sha256": "c22b1cf51caf7ee961a254689fd3e361545630dc359c0a8f81979899880418d5",
+      "order": 180,
+      "priority": "P0",
+      "source_wave": 5,
+      "source_dependencies": [
+        "GK-004",
+        "GK-020"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-014",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-014",
+        "title": "[BO-GK-014][O180] Погодити повідомлення про збої та відновлення магазину",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-014",
+        "language": "uk",
+        "future_card_id": "6ab8591275f4e9e9ffa5da78",
+        "future_card_url": "https://trello.com/c/Oathzemo/16-bo-gk-014o180-%D0%BF%D0%BE%D0%B3%D0%BE%D0%B4%D0%B8%D1%82%D0%B8-%D0%BF%D0%BE%D0%B2%D1%96%D0%B4%D0%BE%D0%BC%D0%BB%D0%B5%D0%BD%D0%BD%D1%8F-%D0%BF%D1%80%D0%BE-%D0%B7%D0%B1%D0%BE%D1%97-%D1%82%D0%B0-%D0%B2%D1%96%D0%B4%D0%BD%D0%BE%D0%B2%D0%BB%D0%B5%D0%BD%D0%BD%D1%8F-%D0%BC%D0%B0%D0%B3%D0%B0%D0%B7%D0%B8%D0%BD%D1%83",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли розробник підготує контрольне повідомлення й пояснення резервних копій для вже вибраних сервісів.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "0e73cfee1ede1c60ab74c5e3c89c6d7197e648fada1e186dc35deb838ee60ca8",
+        "published_description_sha256": "613792ea23b238a4f886c95dd9554ee39363ac3dda173c99929cd1a364b1cbc7"
+      }
+    },
+    {
+      "source_key": "GK-021",
+      "source_card_id": "6ab13e362b6b95aa6d7c516b",
+      "source_card_url": "https://trello.com/c/zEfCJtWD/34-gk-021p0o190w05-authorize-customers-staff-and-safe-historical-claims",
+      "source_path": "docs/design/tickets/GK-021.md",
+      "source_sha256": "848207e98cbf15ed01e22b3896a58def9307d8b4ea5b150f1066cf4e451f169e",
+      "live_description_sha256": "210bf486ed0e92091aa206c913c2fac83dcdb1ae4ea0b2f89f0a5384654793f1",
+      "order": 190,
+      "priority": "P0",
+      "source_wave": 5,
+      "source_dependencies": [
+        "GK-020",
+        "GK-010",
+        "GK-003"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-021",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-021",
+        "title": "[BO-GK-021][O190] Перевірити доступ менеджера та приватність замовлень",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-021",
+        "language": "uk",
+        "future_card_id": "6ab85913415d1073ee5578a9",
+        "future_card_url": "https://trello.com/c/EYGAvcWY/17-bo-gk-021o190-%D0%BF%D0%B5%D1%80%D0%B5%D0%B2%D1%96%D1%80%D0%B8%D1%82%D0%B8-%D0%B4%D0%BE%D1%81%D1%82%D1%83%D0%BF-%D0%BC%D0%B5%D0%BD%D0%B5%D0%B4%D0%B6%D0%B5%D1%80%D0%B0-%D1%82%D0%B0-%D0%BF%D1%80%D0%B8%D0%B2%D0%B0%D1%82%D0%BD%D1%96%D1%81%D1%82%D1%8C-%D0%B7%D0%B0%D0%BC%D0%BE%D0%B2%D0%BB%D0%B5%D0%BD%D1%8C",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли розробник дасть посилання на безпечну тестову систему або покаже підготовлений приклад, назве версію та надасть потрібні контрольні дані.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "72c1cb4b0f5b21f0c7ab1e053530c403e0e62b77562db0f13f1ce98ff74364bc",
+        "published_description_sha256": "b103cfa2065b23d0e7d2b92a5cba9360987a8856c4d0b7f6013fd593e9941187"
+      }
+    },
+    {
+      "source_key": "GK-024",
+      "source_card_id": "6ab13e39f3ed1fe1a887f758",
+      "source_card_url": "https://trello.com/c/J6zlPAc9/35-gk-024p0o200w05-deliver-durable-transactional-email-and-evidence",
+      "source_path": "docs/design/tickets/GK-024.md",
+      "source_sha256": "842c3a3c5b6392b7219bf8f20800a244656d3d69f594a6d4ad534b5481e13928",
+      "live_description_sha256": "449507f26723b5b5d1f02a296fccd77d112dc64afd4e51ef08a12a9e48505e2d",
+      "order": 200,
+      "priority": "P0",
+      "source_wave": 5,
+      "source_dependencies": [
+        "GK-020",
+        "GK-011"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-024",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-024",
+        "title": "[BO-GK-024][O200] Перевірити тестові листи про замовлення",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-024",
+        "language": "uk",
+        "future_card_id": "6ab85914e6cf3454a8fa5ddd",
+        "future_card_url": "https://trello.com/c/bFwMIoZp/18-bo-gk-024o200-%D0%BF%D0%B5%D1%80%D0%B5%D0%B2%D1%96%D1%80%D0%B8%D1%82%D0%B8-%D1%82%D0%B5%D1%81%D1%82%D0%BE%D0%B2%D1%96-%D0%BB%D0%B8%D1%81%D1%82%D0%B8-%D0%BF%D1%80%D0%BE-%D0%B7%D0%B0%D0%BC%D0%BE%D0%B2%D0%BB%D0%B5%D0%BD%D0%BD%D1%8F",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли розробник дасть посилання на безпечну тестову систему або покаже підготовлений приклад, назве версію та надасть потрібні контрольні дані.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "45a451b7c417cc360d5067c03b8f27959f1e3a9a13ba26c97374ef2883602924",
+        "published_description_sha256": "a31db381493080a04a9e088d08b2cf4dd8092d468411a9d171b0c14030236161"
+      }
+    },
+    {
+      "source_key": "GK-022",
+      "source_card_id": "6ab13e3ce8616d4513f8e0aa",
+      "source_card_url": "https://trello.com/c/tcV2Ilpz/36-gk-022p0o210w06-publish-cake-catalog-variants-and-recipe-history",
+      "source_path": "docs/design/tickets/GK-022.md",
+      "source_sha256": "477529c63902b53b02460ba0a2881027b0c3351ee89f686b070bf34025c09958",
+      "live_description_sha256": "e8197eca1e3dd056aa8adacc00411c3f1f4f959deb7e0ac51e39e3c5f034db76",
+      "order": 210,
+      "priority": "P0",
+      "source_wave": 6,
+      "source_dependencies": [
+        "GK-020",
+        "GK-010",
+        "GK-007",
+        "GK-016",
+        "GK-018",
+        "GK-021"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-022",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-022",
+        "title": "[BO-GK-022][O210] Перевірити каталог, фото та рецепти в тестовій системі",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-022",
+        "language": "uk",
+        "future_card_id": "6ab85915b548bb639880f95d",
+        "future_card_url": "https://trello.com/c/MdKoen6g/19-bo-gk-022o210-%D0%BF%D0%B5%D1%80%D0%B5%D0%B2%D1%96%D1%80%D0%B8%D1%82%D0%B8-%D0%BA%D0%B0%D1%82%D0%B0%D0%BB%D0%BE%D0%B3-%D1%84%D0%BE%D1%82%D0%BE-%D1%82%D0%B0-%D1%80%D0%B5%D1%86%D0%B5%D0%BF%D1%82%D0%B8-%D0%B2-%D1%82%D0%B5%D1%81%D1%82%D0%BE%D0%B2%D1%96%D0%B9-%D1%81%D0%B8%D1%81%D1%82%D0%B5%D0%BC%D1%96",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли розробник дасть посилання на безпечну тестову систему або покаже підготовлений приклад, назве версію та надасть потрібні контрольні дані.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "ed144a2397a2c43009740cf69a6b70929b6d1a68ce8b14ffcd6fa7ffd1026e3e",
+        "published_description_sha256": "42b1b5c506619202c010451aacaaa7a4f33ee807e1f6fd242a26ed65f6e94206"
+      }
+    },
+    {
+      "source_key": "GK-023",
+      "source_card_id": "6ab13e3f2be23f68f044e2f0",
+      "source_card_url": "https://trello.com/c/NHHBokl1/37-gk-023p0o220w06-reserve-production-ready-stock-and-pickup-independently",
+      "source_path": "docs/design/tickets/GK-023.md",
+      "source_sha256": "4d2a972b9fcef65e909024db23837f17d5b48bdb6cdeb7378668f1adc3301468",
+      "live_description_sha256": "66c31f3c832a3ac03b041a5f4ba96ec27713cb1f7ad773ee498dfbd223abb848",
+      "order": 220,
+      "priority": "P0",
+      "source_wave": 6,
+      "source_dependencies": [
+        "GK-020",
+        "GK-001",
+        "GK-007",
+        "GK-018",
+        "GK-021"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-023",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-023",
+        "title": "[BO-GK-023][O220] Перевірити календар виробництва й час видачі",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-023",
+        "language": "uk",
+        "future_card_id": "6ab85916cb7309290e8f02ff",
+        "future_card_url": "https://trello.com/c/MOB7lHi1/20-bo-gk-023o220-%D0%BF%D0%B5%D1%80%D0%B5%D0%B2%D1%96%D1%80%D0%B8%D1%82%D0%B8-%D0%BA%D0%B0%D0%BB%D0%B5%D0%BD%D0%B4%D0%B0%D1%80-%D0%B2%D0%B8%D1%80%D0%BE%D0%B1%D0%BD%D0%B8%D1%86%D1%82%D0%B2%D0%B0-%D0%B9-%D1%87%D0%B0%D1%81-%D0%B2%D0%B8%D0%B4%D0%B0%D1%87%D1%96",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли розробник дасть посилання на безпечну тестову систему або покаже підготовлений приклад, назве версію та надасть потрібні контрольні дані.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "7b7a093cb2ff85378a4d7232635de9ec01459614fab971d8094dc3633714fd1d",
+        "published_description_sha256": "d41e2968231577e75ae604b12a4e961eaf7c9653fbaf9bac39e2c4538cd47a5f"
+      }
+    },
+    {
+      "source_key": "GK-034",
+      "source_card_id": "6ab13e426d8154ac8538905f",
+      "source_card_url": "https://trello.com/c/L9d2rl39/38-gk-034p0o230w06-build-verified-independent-component-release-pipelines",
+      "source_path": "docs/design/tickets/GK-034.md",
+      "source_sha256": "480e15e492e392a5f225f3180523156c7d1079b220f49b2fbb220c69a118ef82",
+      "live_description_sha256": "ad8b204674527b483df4382f488a778a94250a837ef75faf93a85ff4ce540ba9",
+      "order": 230,
+      "priority": "P0",
+      "source_wave": 6,
+      "source_dependencies": [
+        "GK-020",
+        "GK-013",
+        "GK-014",
+        "GK-006"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-034",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": null
+    },
+    {
+      "source_key": "GK-025",
+      "source_card_id": "6ab13e450590793ed8940191",
+      "source_card_url": "https://trello.com/c/vyFTtISc/39-gk-025p0o240w07-collect-full-payment-with-safe-holds-and-discounts",
+      "source_path": "docs/design/tickets/GK-025.md",
+      "source_sha256": "da38718664106b8adee08cf830ce566cad438d372a65271e9b795f2febb3ce3d",
+      "live_description_sha256": "51c82cdc8da7c8e34f9f60b60c3da41e52628ae8ba229d9422d3925d25a5cfde",
+      "order": 240,
+      "priority": "P0",
+      "source_wave": 7,
+      "source_dependencies": [
+        "GK-021",
+        "GK-022",
+        "GK-023",
+        "GK-024",
+        "GK-011",
+        "GK-003",
+        "GK-007"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-025",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-025",
+        "title": "[BO-GK-025][O240] Перевірити суму покупки, знижки й затриману оплату",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-025",
+        "language": "uk",
+        "future_card_id": "6ab859178fc2a847757d546a",
+        "future_card_url": "https://trello.com/c/8uvUO82N/21-bo-gk-025o240-%D0%BF%D0%B5%D1%80%D0%B5%D0%B2%D1%96%D1%80%D0%B8%D1%82%D0%B8-%D1%81%D1%83%D0%BC%D1%83-%D0%BF%D0%BE%D0%BA%D1%83%D0%BF%D0%BA%D0%B8-%D0%B7%D0%BD%D0%B8%D0%B6%D0%BA%D0%B8-%D0%B9-%D0%B7%D0%B0%D1%82%D1%80%D0%B8%D0%BC%D0%B0%D0%BD%D1%83-%D0%BE%D0%BF%D0%BB%D0%B0%D1%82%D1%83",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли розробник дасть посилання на безпечну тестову систему або покаже підготовлений приклад, назве версію та надасть потрібні контрольні дані.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "858edf6e134a7ec803779ab05cb272387741b8fde71ea18cd79d446bad4e07cb",
+        "published_description_sha256": "bb59988b56741de0e823cea50f972a81b1ce51ab6fc9f0d4263f6afb4af630d8"
+      }
+    },
+    {
+      "source_key": "GK-028",
+      "source_card_id": "6ab13e484e5c4419d3324a8c",
+      "source_card_url": "https://trello.com/c/t4HD6N0Z/40-gk-028p1o250w07-deliver-appetising-discovery-and-public-availability",
+      "source_path": "docs/design/tickets/GK-028.md",
+      "source_sha256": "636d3457d5febe2492c6091d7c800f7afbd6bc5e31152871b01be38b19396928",
+      "live_description_sha256": "ef3a76a7d05873ab962139b9b47a661726204b5e1549b32c71f1ede618d006b1",
+      "order": 250,
+      "priority": "P1",
+      "source_wave": 7,
+      "source_dependencies": [
+        "GK-022",
+        "GK-023",
+        "GK-016"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-028",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-028",
+        "title": "[BO-GK-028][O250] Перевірити, як клієнт знаходить і обирає торт",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-028",
+        "language": "uk",
+        "future_card_id": "6ab8591861783f16ef081885",
+        "future_card_url": "https://trello.com/c/8AMzCjAx/22-bo-gk-028o250-%D0%BF%D0%B5%D1%80%D0%B5%D0%B2%D1%96%D1%80%D0%B8%D1%82%D0%B8-%D1%8F%D0%BA-%D0%BA%D0%BB%D1%96%D1%94%D0%BD%D1%82-%D0%B7%D0%BD%D0%B0%D1%85%D0%BE%D0%B4%D0%B8%D1%82%D1%8C-%D1%96-%D0%BE%D0%B1%D0%B8%D1%80%D0%B0%D1%94-%D1%82%D0%BE%D1%80%D1%82",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли розробник дасть посилання на безпечну тестову систему або покаже підготовлений приклад, назве версію та надасть потрібні контрольні дані.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "0c2ab485adb3a3e48c49a5acd257634c9edff2befd7589cf209c0057aa08fd8e",
+        "published_description_sha256": "0d052e517b062a0507ece0bb5e267793401bf077c09205b09b16662cf1b36bdf"
+      }
+    },
+    {
+      "source_key": "GK-026",
+      "source_card_id": "6ab13e4b6672f4ac56b93269",
+      "source_card_url": "https://trello.com/c/xiEN4jvp/41-gk-026p0o260w08-cancel-and-refund-safely-across-production-races",
+      "source_path": "docs/design/tickets/GK-026.md",
+      "source_sha256": "4e41e33248ced0fce184765dee42233d0a3641a2abb47d75a3bcf4bbf4857f1d",
+      "live_description_sha256": "e6546f2212daaa753c2f7212df02194e99697e173b615b274fe8ce185b19c319",
+      "order": 260,
+      "priority": "P0",
+      "source_wave": 8,
+      "source_dependencies": [
+        "GK-025",
+        "GK-024",
+        "GK-001",
+        "GK-003"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-026",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-026",
+        "title": "[BO-GK-026][O260] Перевірити скасування та повне/часткове повернення",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-026",
+        "language": "uk",
+        "future_card_id": "6ab85919415d1073ee557c49",
+        "future_card_url": "https://trello.com/c/ME4MBN9S/23-bo-gk-026o260-%D0%BF%D0%B5%D1%80%D0%B5%D0%B2%D1%96%D1%80%D0%B8%D1%82%D0%B8-%D1%81%D0%BA%D0%B0%D1%81%D1%83%D0%B2%D0%B0%D0%BD%D0%BD%D1%8F-%D1%82%D0%B0-%D0%BF%D0%BE%D0%B2%D0%BD%D0%B5-%D1%87%D0%B0%D1%81%D1%82%D0%BA%D0%BE%D0%B2%D0%B5-%D0%BF%D0%BE%D0%B2%D0%B5%D1%80%D0%BD%D0%B5%D0%BD%D0%BD%D1%8F",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли розробник дасть посилання на безпечну тестову систему або покаже підготовлений приклад, назве версію та надасть потрібні контрольні дані.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "4bdc06b6dff8ce44a0092c495912338a15c8e0bdf932477961d776b2c29a9d83",
+        "published_description_sha256": "a89b941abae8b7f7233b7753b5207d79337b65393fbfc9121057445f43b5a91a"
+      }
+    },
+    {
+      "source_key": "GK-027",
+      "source_card_id": "6ab13e4fa9d6fa905f1796c7",
+      "source_card_url": "https://trello.com/c/G8hLmSBU/42-gk-027p1o270w08-convert-bespoke-agreements-and-manual-orders-to-payment",
+      "source_path": "docs/design/tickets/GK-027.md",
+      "source_sha256": "81548849741a1a204ea9b7a97a7a455104224d5680cdf0d69ebd5642515f6db9",
+      "live_description_sha256": "a58c182887db54979d81fdfcf1d367689f04fe21ab9d5b81abd11335dce90d90",
+      "order": 270,
+      "priority": "P1",
+      "source_wave": 8,
+      "source_dependencies": [
+        "GK-021",
+        "GK-022",
+        "GK-023",
+        "GK-024",
+        "GK-025",
+        "GK-016",
+        "GK-018",
+        "GK-012",
+        "GK-005"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-027",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-027",
+        "title": "[BO-GK-027][O270] Перевірити шлях від Instagram до погодженого замовлення",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-027",
+        "language": "uk",
+        "future_card_id": "6ab8591a7eef866cbc52a3b8",
+        "future_card_url": "https://trello.com/c/zbjnvfed/24-bo-gk-027o270-%D0%BF%D0%B5%D1%80%D0%B5%D0%B2%D1%96%D1%80%D0%B8%D1%82%D0%B8-%D1%88%D0%BB%D1%8F%D1%85-%D0%B2%D1%96%D0%B4-instagram-%D0%B4%D0%BE-%D0%BF%D0%BE%D0%B3%D0%BE%D0%B4%D0%B6%D0%B5%D0%BD%D0%BE%D0%B3%D0%BE-%D0%B7%D0%B0%D0%BC%D0%BE%D0%B2%D0%BB%D0%B5%D0%BD%D0%BD%D1%8F",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли розробник дасть посилання на безпечну тестову систему або покаже підготовлений приклад, назве версію та надасть потрібні контрольні дані.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "86a44ea019f6dcca4e092a5f1468d2fc74eaf0fb3fce4b1b24b0dee5feac74bb",
+        "published_description_sha256": "147ffb761c14855b4d04fc8b6d6ee7779d34e559e84902895a10165b7152dc7e"
+      }
+    },
+    {
+      "source_key": "GK-031",
+      "source_card_id": "6ab13e52b93f09a423469e92",
+      "source_card_url": "https://trello.com/c/6moC1CyN/43-gk-031p0o280w09-run-chef-fulfillment-and-atomic-pickup-changes",
+      "source_path": "docs/design/tickets/GK-031.md",
+      "source_sha256": "f065e80d736a0608711b5eba338a4f461b3ad7f5b2e2438a1494bcf21facbc64",
+      "live_description_sha256": "f728188b006dcbd5fd4e921fee2f88c5640c77b1a29cac3466b05bc444a64349",
+      "order": 280,
+      "priority": "P0",
+      "source_wave": 9,
+      "source_dependencies": [
+        "GK-025",
+        "GK-026",
+        "GK-018",
+        "GK-001"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-031",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-031",
+        "title": "[BO-GK-031][O280] Перевірити щоденну видачу та зміни замовлення",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-031",
+        "language": "uk",
+        "future_card_id": "6ab8591b3abe76a6c86c509a",
+        "future_card_url": "https://trello.com/c/JAVQonMO/25-bo-gk-031o280-%D0%BF%D0%B5%D1%80%D0%B5%D0%B2%D1%96%D1%80%D0%B8%D1%82%D0%B8-%D1%89%D0%BE%D0%B4%D0%B5%D0%BD%D0%BD%D1%83-%D0%B2%D0%B8%D0%B4%D0%B0%D1%87%D1%83-%D1%82%D0%B0-%D0%B7%D0%BC%D1%96%D0%BD%D0%B8-%D0%B7%D0%B0%D0%BC%D0%BE%D0%B2%D0%BB%D0%B5%D0%BD%D0%BD%D1%8F",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли розробник дасть посилання на безпечну тестову систему або покаже підготовлений приклад, назве версію та надасть потрібні контрольні дані.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "d64959bac18073786a3b5de33f68e5b029a13836d0019b5fab91bfd7ffdff070",
+        "published_description_sha256": "31ef91b9fbdfe23672b4bcf0953a186f615f7e7b444961788e7c9648f882301f"
+      }
+    },
+    {
+      "source_key": "GK-029",
+      "source_card_id": "6ab13e55216643f412e17216",
+      "source_card_url": "https://trello.com/c/VLFYxaee/44-gk-029p1o290w09-deliver-account-history-favourites-and-profile-ui",
+      "source_path": "docs/design/tickets/GK-029.md",
+      "source_sha256": "08c52c55d8d5db4cdb5f4f7c2c33db8d00c6725500a0f47a396163bd97186013",
+      "live_description_sha256": "b58cb05347f577b6ab7d539696d26ccc16a41eb2b4c129fd7857e92c5dd2d1eb",
+      "order": 290,
+      "priority": "P1",
+      "source_wave": 9,
+      "source_dependencies": [
+        "GK-021",
+        "GK-016",
+        "GK-027"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-029",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-029",
+        "title": "[BO-GK-029][O290] Перевірити кабінет, обране й історію клієнта",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-029",
+        "language": "uk",
+        "future_card_id": "6ab8591cd61a4ad3a96f5069",
+        "future_card_url": "https://trello.com/c/KvrQdRUV/26-bo-gk-029o290-%D0%BF%D0%B5%D1%80%D0%B5%D0%B2%D1%96%D1%80%D0%B8%D1%82%D0%B8-%D0%BA%D0%B0%D0%B1%D1%96%D0%BD%D0%B5%D1%82-%D0%BE%D0%B1%D1%80%D0%B0%D0%BD%D0%B5-%D0%B9-%D1%96%D1%81%D1%82%D0%BE%D1%80%D1%96%D1%8E-%D0%BA%D0%BB%D1%96%D1%94%D0%BD%D1%82%D0%B0",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли розробник дасть посилання на безпечну тестову систему або покаже підготовлений приклад, назве версію та надасть потрібні контрольні дані.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "88bf4868b4c7af7048b625f3eada080c5804a331e35fd3839b757155278249ff",
+        "published_description_sha256": "bb86e8f45338c85d9ddbea001f396c45ac3e1cf470b14cefffd7ea19a90ac421"
+      }
+    },
+    {
+      "source_key": "GK-033",
+      "source_card_id": "6ab13e592de8d928dfad7175",
+      "source_card_url": "https://trello.com/c/3YbFGdmp/45-gk-033p1o300w09-expose-email-recovery-audit-and-business-metrics-to-chef",
+      "source_path": "docs/design/tickets/GK-033.md",
+      "source_sha256": "b88c8694a8b266664713b21fbf0e6b65d95311a9ffe4411513588feb0c21f2de",
+      "live_description_sha256": "35a11cfc4cd6b51a839aeaf162b62e7f2c0007ef2b6b49b26e6fef1b4a22ad58",
+      "order": 300,
+      "priority": "P1",
+      "source_wave": 9,
+      "source_dependencies": [
+        "GK-024",
+        "GK-025",
+        "GK-026",
+        "GK-018",
+        "GK-014",
+        "GK-005"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-033",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-033",
+        "title": "[BO-GK-033][O300] Перевірити листи клієнтам і звіти магазину",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-033",
+        "language": "uk",
+        "future_card_id": "6ab8591df5a0722ade20a75b",
+        "future_card_url": "https://trello.com/c/cDRD76OZ/27-bo-gk-033o300-%D0%BF%D0%B5%D1%80%D0%B5%D0%B2%D1%96%D1%80%D0%B8%D1%82%D0%B8-%D0%BB%D0%B8%D1%81%D1%82%D0%B8-%D0%BA%D0%BB%D1%96%D1%94%D0%BD%D1%82%D0%B0%D0%BC-%D1%96-%D0%B7%D0%B2%D1%96%D1%82%D0%B8-%D0%BC%D0%B0%D0%B3%D0%B0%D0%B7%D0%B8%D0%BD%D1%83",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли розробник дасть посилання на безпечну тестову систему або покаже підготовлений приклад, назве версію та надасть потрібні контрольні дані.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "9cb5cce7e659368db4e5e3b6899e33334c7a80798687a0e70e4d1db3b6373f7f",
+        "published_description_sha256": "89356caa19d2994671048102eda4e4ddd07950830d18c3e219420fe9bc48dad6"
+      }
+    },
+    {
+      "source_key": "GK-030",
+      "source_card_id": "6ab13e5c8ac3332a1e54f435",
+      "source_card_url": "https://trello.com/c/BkYDridR/46-gk-030p0o310w10-deliver-checkout-order-timeline-and-refund-recovery-ui",
+      "source_path": "docs/design/tickets/GK-030.md",
+      "source_sha256": "9aeb97e1dfbf315aafc3a32aff853b848ef991b699215cf0f93d959b12f802dc",
+      "live_description_sha256": "cd603843fe853df8a7d6c8936786cd5aa6f1892b2bd21eb093e29e332e5dcf85",
+      "order": 310,
+      "priority": "P0",
+      "source_wave": 10,
+      "source_dependencies": [
+        "GK-025",
+        "GK-026",
+        "GK-027",
+        "GK-031",
+        "GK-017"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-030",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-030",
+        "title": "[BO-GK-030][O310] Перевірити готові екрани оплати та статусу замовлення",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-030",
+        "language": "uk",
+        "future_card_id": "6ab8591e28c5cf67a331b8b8",
+        "future_card_url": "https://trello.com/c/KXnKj0xo/28-bo-gk-030o310-%D0%BF%D0%B5%D1%80%D0%B5%D0%B2%D1%96%D1%80%D0%B8%D1%82%D0%B8-%D0%B3%D0%BE%D1%82%D0%BE%D0%B2%D1%96-%D0%B5%D0%BA%D1%80%D0%B0%D0%BD%D0%B8-%D0%BE%D0%BF%D0%BB%D0%B0%D1%82%D0%B8-%D1%82%D0%B0-%D1%81%D1%82%D0%B0%D1%82%D1%83%D1%81%D1%83-%D0%B7%D0%B0%D0%BC%D0%BE%D0%B2%D0%BB%D0%B5%D0%BD%D0%BD%D1%8F",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли розробник дасть посилання на безпечну тестову систему або покаже підготовлений приклад, назве версію та надасть потрібні контрольні дані.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "6c203584617335db76b5e3484a3932b95ca9687ed8d305c44c3316f2284a89db",
+        "published_description_sha256": "08beec4afc6ed3a18bdb7e24f7a0b9a3d8839e21348356a82c65a1166bc6cedf"
+      }
+    },
+    {
+      "source_key": "GK-032",
+      "source_card_id": "6ab13e603f02e6506c90bfbb",
+      "source_card_url": "https://trello.com/c/lRzYGTEM/47-gk-032p1o320w10-track-fridge-ingredients-and-grocery-budget-by-date",
+      "source_path": "docs/design/tickets/GK-032.md",
+      "source_sha256": "ef759fcfa79b28beebedd51bdda14daa907b3397d72559a8ee3003e8ff85faba",
+      "live_description_sha256": "1bfdac24c9b2826f65c41d62271877c96d1f5542e55e108ee12ae4e65ebb4803",
+      "order": 320,
+      "priority": "P1",
+      "source_wave": 10,
+      "source_dependencies": [
+        "GK-022",
+        "GK-023",
+        "GK-031",
+        "GK-007",
+        "GK-018"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-032",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-032",
+        "title": "[BO-GK-032][O320] Перевірити залишки й список закупівель",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-032",
+        "language": "uk",
+        "future_card_id": "6ab8591f1bf45f693d97b944",
+        "future_card_url": "https://trello.com/c/JK5H6Dul/29-bo-gk-032o320-%D0%BF%D0%B5%D1%80%D0%B5%D0%B2%D1%96%D1%80%D0%B8%D1%82%D0%B8-%D0%B7%D0%B0%D0%BB%D0%B8%D1%88%D0%BA%D0%B8-%D0%B9-%D1%81%D0%BF%D0%B8%D1%81%D0%BE%D0%BA-%D0%B7%D0%B0%D0%BA%D1%83%D0%BF%D1%96%D0%B2%D0%B5%D0%BB%D1%8C",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли розробник дасть посилання на безпечну тестову систему або покаже підготовлений приклад, назве версію та надасть потрібні контрольні дані.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "c054cb2e4230a1978a6195c2cb07126ec4f06298e88d60c87b5a8f6b0af57ff0",
+        "published_description_sha256": "3197bb1c3f6b278263496b2cbe94882150d248d07579ee07fc7919c351f419a5"
+      }
+    },
+    {
+      "source_key": "GK-035",
+      "source_card_id": "6ab13e64505e88e9ce813909",
+      "source_card_url": "https://trello.com/c/qtUe3uom/48-gk-035p0o330w11-verify-complete-customer-and-chef-launch-scenarios",
+      "source_path": "docs/design/tickets/GK-035.md",
+      "source_sha256": "edf1bf0c09e129bf99ac95d61326e84b17dfe5c7ab9c85d90b9bb6ca06ef3105",
+      "live_description_sha256": "54e5ce4e39f75526833123d00126e2328a6f7d1e75a03011c87df0b88fa8dfba",
+      "order": 330,
+      "priority": "P0",
+      "source_wave": 11,
+      "source_dependencies": [
+        "GK-028",
+        "GK-029",
+        "GK-030",
+        "GK-032",
+        "GK-033",
+        "GK-034"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-035",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-035",
+        "title": "[BO-GK-035][O330] Перевірити весь магазин перед запуском",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-035",
+        "language": "uk",
+        "future_card_id": "6ab85920995fd6166a410bec",
+        "future_card_url": "https://trello.com/c/1xcTUnQ5/30-bo-gk-035o330-%D0%BF%D0%B5%D1%80%D0%B5%D0%B2%D1%96%D1%80%D0%B8%D1%82%D0%B8-%D0%B2%D0%B5%D1%81%D1%8C-%D0%BC%D0%B0%D0%B3%D0%B0%D0%B7%D0%B8%D0%BD-%D0%BF%D0%B5%D1%80%D0%B5%D0%B4-%D0%B7%D0%B0%D0%BF%D1%83%D1%81%D0%BA%D0%BE%D0%BC",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли розробник дасть посилання на безпечну тестову систему або покаже підготовлений приклад, назве версію та надасть потрібні контрольні дані.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "723bc3a641cd1be427e82280e973c110db22bbddfe743584b99b13d23e212d11",
+        "published_description_sha256": "34210cf2b270b278904c84972034d901c37b48bcbdcdfd58e42c61b193d1391d"
+      }
+    },
+    {
+      "source_key": "GK-036",
+      "source_card_id": "6ab13e6779f809315e481d84",
+      "source_card_url": "https://trello.com/c/Dtl6mdxP/49-gk-036p0o340w12-authorize-the-first-production-component-release",
+      "source_path": "docs/design/tickets/GK-036.md",
+      "source_sha256": "b31973feb07a837939df1f256150b96f49239d12408c349371f1efae3eb8d7cb",
+      "live_description_sha256": "0b03afc95416530dac3ad7e31a3c123b7e1e3fabb5275669334722c69c854792",
+      "order": 340,
+      "priority": "P0",
+      "source_wave": 12,
+      "source_dependencies": [
+        "GK-035",
+        "GK-005"
+      ],
+      "developer_packet": {
+        "path": "docs/roles/developer.en.md",
+        "section_key": "DEV-GK-036",
+        "packet_format": "developer-guided-r3"
+      },
+      "business_owner_packet": {
+        "local_key": "BO-GK-036",
+        "title": "[BO-GK-036][O340] Погодити або відхилити перший реальний запуск",
+        "path": "docs/roles/business-owner.uk.md",
+        "section_key": "BO-GK-036",
+        "language": "uk",
+        "future_card_id": "6ab85921361aab7d2b90a433",
+        "future_card_url": "https://trello.com/c/RBNShWW3/31-bo-gk-036o340-%D0%BF%D0%BE%D0%B3%D0%BE%D0%B4%D0%B8%D1%82%D0%B8-%D0%B0%D0%B1%D0%BE-%D0%B2%D1%96%D0%B4%D1%85%D0%B8%D0%BB%D0%B8%D1%82%D0%B8-%D0%BF%D0%B5%D1%80%D1%88%D0%B8%D0%B9-%D1%80%D0%B5%D0%B0%D0%BB%D1%8C%D0%BD%D0%B8%D0%B9-%D0%B7%D0%B0%D0%BF%D1%83%D1%81%D0%BA",
+        "parent_completion_policy": "partial_contribution_only",
+        "entry_condition": "Починайте, коли завершені перевірка магазину та перевірка бізнес-даних, визначено, хто має право погоджувати запуск, а розробник надав конкретну пропозицію запуску.",
+        "packet_format": "owner-guided-r2",
+        "published_source_body_sha256": "7895aa8f85f9766fa21a76915021f88a3011188c4675bd64c2ad003399397423",
+        "published_description_sha256": "65db6abffed192ddee041f8cf9b8894291b4d45066f74fef549876a533e466bc"
+      }
+    }
+  ],
+  "owner_guidance": "Self-contained Ukrainian tasks with developer preparation, actionable steps, task-specific reply forms, labelled examples and explicit completion rules; original business choices remain unresolved until approved.",
+  "developer_guidance": "Concrete outcomes, start conditions, expected artifacts, worked examples and role-specific verification/handoff; source acceptance criteria preserved; examples are not execution or approval evidence.",
+  "publication": {
+    "verified_at": "2026-09-26T23:52:33+00:00",
+    "task_count": 30,
+    "instruction_card_id": "6ab85809de96523300af0cdc",
+    "instruction_card_url": "https://trello.com/c/oRYKmiyZ/1-%D0%BF%D0%BE%D1%87%D0%BD%D1%96%D1%82%D1%8C-%D1%82%D1%83%D1%82-%D1%8F%D0%BA-%D0%B2%D0%B8%D0%BA%D0%BE%D0%BD%D1%83%D0%B2%D0%B0%D1%82%D0%B8-%D0%B7%D0%B0%D0%B2%D0%B4%D0%B0%D0%BD%D0%BD%D1%8F-%D0%B2%D0%BB%D0%B0%D1%81%D0%BD%D0%B8%D1%86%D1%96",
+    "instruction_description_sha256": "d5e75ad66f92c21f09052de96c8f7e6ac7e3c92a9576fed651f72a729ed46044",
+    "board_privacy": "private",
+    "membership_changes": false,
+    "source_board_changes": false,
+    "transport": "Installed Trello CLI created short identified cards; authenticated browser editor pasted full Markdown; CLI read-back verified all content, with only blank-line/empty-link-title normalization and one displayed-domain autolink.",
+    "initial_placement": "Publication snapshot: 5 initial-information tasks in existing Ready (001/003/005/007/002), 25 awaiting developer preparation in existing Backlog; permanent instruction card first in Ready. Subsequent live status belongs to Trello.",
+    "display_order_verification": "UI board read-back confirmed guide first and ascending O within each populated list."
+  }
+}

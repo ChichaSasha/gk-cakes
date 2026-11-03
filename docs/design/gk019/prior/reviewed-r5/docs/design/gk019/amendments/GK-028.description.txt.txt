@@ -1,0 +1,85 @@
+## Context
+
+Owner: Agent; Kind: Implementation
+Priority: P1 — required launch outcome.
+Order: 250; Wave: 7; Parallel group: W07-customer-discovery.
+Requirements: C01, C02, C09, C10, C11, C12; Design/contract revision: GK-019 r6.4, K01 K02.
+Agent execution policy: gpt-6-astra / high; fresh scoped worker; fresh independent reviewer.
+Required input: brief, input-revision.json, gk019-owner-r6, ADRs/contracts r6.4 and exact GK-019 manifest, feature/screens, prerequisite evidence, SETUP and DELIVERY.
+Execution check: skills/gk-plan/references/execution-check.md at start/resume; record requested/effective model, history, input hashes and checked readback. Pending.
+Depends on: GK-022, GK-023, GK-016; deliverable: accepted policy/setup or tested implementation outputs; GK-020 means completed B2.
+Unblocks: GK-035.
+Safe in parallel with: GK-034 after all prerequisites and shared schemas/interfaces are accepted. Own proposed customer discovery routes/components only. Master allocates nonconflicting migration IDs and integrates changes; neither worker edits shared contract/auth/router files concurrently.
+Conflicts: shared contracts/schema/router/migrations; master coordinates edits.
+Readiness at publication: blocked / specified but dependent: Approved discovery sketch/catalog/availability pending.
+
+Build approved gallery/detail/current availability/public schedule surfaces with authentic photo assets, clear GBP price/servings/allergens and separate buy/request-changes paths. Current catalog updates reach public pages via API, not only a new UI release.
+
+Rules: server-owned price/capacity/state; GBP pence, UTC/Europe/London; role+ownership; expected_version+Idempotency-Key; unknown stays pending; no network under DB locks.
+
+Wire/state (approved GK-019 successor required):
+
+GET /api/v1/cakes/{id} returns active product/inspiration, images with immutable image_revision_id and url/alt/width/height, variants with servings, price_minor:6000,currency:"GBP", recipe_version/allergens and advisory dates. Manager POST /api/v1/admin/recipes/versions creates immutable recipe, not historical overwrite; expected_version rejects stale edit. Image state pending->ready after validated object upload; failed upload stays recoverable.
+
+POST /api/v1/custom-requests accepts paired inspiration_id/image_revision_id (both omitted/null for generic requests), servings, desired_date, requested_changes and approved contact fields; returns request_id/version/inspiration_id/image_revision_id/summary/handoff_state:"not_sent". POST /api/v1/reorders {source_order_id} returns current choices, never pays. GET /api/v1/me/orders owner-only; PUT/DELETE /api/v1/me/favourites/{cake_id} is idempotent set membership. POST /api/v1/admin/orders links one agreed quote version, revalidates resources and uses normal collection path.
+
+Proposed: API10s/DB2s/provider5s; retries1m/5m/15m/1h then manager, alert15m. Validate; retain unknown funds.
+
+Customer boundary: public archived detail404; own history/favourites retain safe snapshots. Missing approved allergen disclosure disables buying. Identity/session/claim design requires GK-019/provider; sign-out does not revoke issued JWTs. K02A carries explicit selected image_revision_id and no persisted sent claim.
+
+C12 navigation carries the exact displayed image_revision_id together with inspiration_id into the custom draft, never the latest catalog image or an arbitrary URL. Generic request carries neither. Catalog images expose immutable ID/url/alt/dimensions. GK-027 validates the pair and freezes the selected revision. View A, replace catalog with B before draft/summary: retain A or show REFERENCE_UNAVAILABLE/reselection; never silently substitute B. Preserve loading/entered choices/error recovery; no copy/open event means Instagram sent.
+
+## To dos
+
+T1. Red: smallest AC1–AC3 fixture assertion; infrastructure failure is not red.
+T2. Implement data/API/UI/recovery with snapshots/auth/idempotency (AC1–AC3).
+T3. Integrate migrations/consumers/audit/notices; verify real DB/provider failures (AC1–AC3).
+T4. Green -> refactor -> rerun affected checks; record revision/results (AC4).
+T5. Complete AC4 review/delivery/acceptance evidence; no implied deployment.
+
+## Not to dos
+
+No unrelated cleanup, registrations, leaked secrets or releases/deployments without authority. No app execution now; Done needs Creator acceptance.
+
+## Acceptance Criteria
+
+AC1. New customer can find a cake, inspect servings/allergens and choose date early on mobile/desktop; instrument observed walkthrough, no invented conversion metric.
+AC2. Unavailable/archived option and failed API have visible recovery; loading/focus/error states and reduced-motion/contrast checks match approved revision.
+AC3. Anonymous schedule/catalog payloads leak no order/customer data; responsive image/LCP proposal measured with recorded device/network fixture.
+AC4. Record exact input/tested revision, results, independent review and Creator acceptance on Trello; account for all related PRs, required review/checks, native auto-merges and main CI. Release/deploy/smoke only when separately authorized and in scope.
+
+Test prerequisite: GK-020 B2 verifies pinned runners before this card is Ready. Planned Go: go test ./..., go test -race ./..., go test -tags=integration ./... with disposable PostgreSQL; UI: npm run check, npm test, npm run build + approved browser runner. Provider cases use controlled sandbox accounts/recipients and actual IDs; mocks are not provider proof. No application tests ran during planning.
+
+Proposed current specification; prior publication text preserved in GK-019 evidence/cards.json. Independent review and approval apply only to the exact current revision. Trello is the live execution record; application work has not started.
+
+Verified prerequisite cards:
+- GK-022: https://trello.com/c/tcV2Ilpz
+- GK-023: https://trello.com/c/NHHBokl1
+- GK-016: https://trello.com/c/oapKvUNJ
+
+Verified dependent cards:
+- GK-035: https://trello.com/c/qtUe3uom
+
+## GK-019 proposed contract amendment — r6.4 / UNPUBLISHED
+
+Owner, title, unrelated scope/labels and list remain unchanged. This dated amendment
+replaces contradictory historical policy/provider examples and adds the acceptance
+evidence below; it does not assert implementation readiness or completed tests.
+
+Contract inputs: K01/K02/K03/K06; docs/design/contracts.md r6.4, owner-data-contract.md
+gk019-owner-r6, gk019/schema.json r1.4 and output-manifest.json exact hashes.
+Required current evidence: Existing GK-016/017/022/023/025/027 prerequisites plus GK-019. Refresh live prerequisites and comments before
+execution; a Done setup card proves only its accepted scope.
+
+Behavior: Customer purchase experience uses approved GK-002 content, current allergens, actual remaining cakes, paid/free/delivery totals and explicit policy revisions. Individual delivery quote; no tariff zones. Reorder current terms, exact selected image,6h same-day move.
+
+Acceptance extension: Mobile/keyboard loading/unavailable/price-changed/unknown/free states against exact Creator-approved designs; no fake scarcity or all-method-on-all-device claim. Show accepted Q1 scoped exception and Q2 paid/date-awaiting-agreement, full-return route and no repeat-payment while unknown.
+
+Execution: apply model/context check; then smallest failing meaningful behavior
+case, coherent implementation, focused green checks, required wider checks and
+fresh independent review. Design tickets instead produce/review exact artifacts.
+No application test, UI approval, release or deployment is supplied by this amendment.
+Remaining Q4 qualification gates apply only where named; unresolved branches stay blocked.
+
+Full brief requirements and nonconflicting safety/verification criteria remain.
+Repository packet is local/unpushed; obtain exact files, not merely a path string.

@@ -1,0 +1,42 @@
+{
+ "measured_at": "2026-11-02T23:13:51.560412+00:00",
+ "method": "tools/measure-hover.cjs: real-time screenshots of Shop tile 2 (Silver sculpture) during a 1.5s hover at 1440x950 in Chrome; each frame aligned to the resting frame by the best vertical shift (undoes the lift), then the remaining change is measured over the tile interior. Spotlight test: cursor moved across the hovered tile, background band compared.",
+ "r10_served_from": "gk-015-r10/poc on 127.0.0.1:8774 (unchanged, manifest verified)",
+ "r11_served_from": "gk-015-r11/poc on 127.0.0.1:8775",
+ "results": {
+  "r10": {
+   "frames": 19,
+   "bandMaxBrightening": 82.4,
+   "bandShareBrightenedOver12": "0.1%",
+   "tileP99Change": 159.7,
+   "spotlightBandChangeOnCursorMove": 7.2,
+   "alignedResidualMeanMax": 25.03,
+   "alignedBrighteningShareMax": "27.8%",
+   "cutout": "matrix(1.04477, -0.0218848, 0.0218848, 1.04477, 0, 0)",
+   "tile": "matrix(1, 0, 0, 1, 0, -6)",
+   "before": "\"\"",
+   "mx": "85.0%",
+   "lift_px": 6
+  },
+  "r11": {
+   "frames": 22,
+   "bandMaxBrightening": 36.4,
+   "bandShareBrightenedOver12": "0.1%",
+   "tileP99Change": 119.4,
+   "spotlightBandChangeOnCursorMove": 0,
+   "alignedResidualMeanMax": 1.46,
+   "alignedBrighteningShareMax": "0.2%",
+   "cutout": "none",
+   "tile": "matrix(1, 0, 0, 1, 0, -3)",
+   "before": "none",
+   "mx": "",
+   "lift_px": 3
+  }
+ },
+ "reading": {
+  "alignedBrighteningShareMax": "share of tile pixels >25 levels brighter than rest after undoing the lift \u2014 glint/sparkle signature",
+  "alignedResidualMeanMax": "mean change left after undoing the lift \u2014 zoom/rotation/shimmer",
+  "spotlightBandChangeOnCursorMove": "background change while the cursor moves \u2014 cursor spotlight"
+ },
+ "limits": "Frame timing depends on machine load; one browser (Chrome) and one tile measured here. verify.cjs repeats the aligned-frame check on every run with thresholds (<2% brightened, residual <4)."
+}

@@ -1,0 +1,238 @@
+{
+  "source_sha256": "3b82ab5bb58b4040971a753d36c9bde14e50929680361fa053ec478ef61368e0",
+  "performed_at": "2026-10-05T21:35:01.637Z",
+  "checks": [
+    {
+      "theme": "warm",
+      "viewport": "desktop",
+      "result": "pass",
+      "checks": [
+        "images loaded",
+        "no horizontal overflow",
+        "empty-date validation",
+        "loading disabled",
+        "date success",
+        "date-change invalidation",
+        "unavailable date",
+        "unavailable cake",
+        "exact product switch/peanuts",
+        "buy/custom simulation with generic and reference routes",
+        "keyboard Tab focus including inverse toolbar",
+        "no JS errors"
+      ]
+    },
+    {
+      "theme": "warm",
+      "viewport": "mobile",
+      "result": "pass",
+      "checks": [
+        "images loaded",
+        "no horizontal overflow",
+        "empty-date validation",
+        "loading disabled",
+        "date success",
+        "date-change invalidation",
+        "unavailable date",
+        "unavailable cake",
+        "exact product switch/peanuts",
+        "buy/custom simulation with generic and reference routes",
+        "keyboard Tab focus including inverse toolbar",
+        "no JS errors"
+      ]
+    },
+    {
+      "theme": "dark",
+      "viewport": "desktop",
+      "result": "pass",
+      "checks": [
+        "images loaded",
+        "no horizontal overflow",
+        "empty-date validation",
+        "loading disabled",
+        "date success",
+        "date-change invalidation",
+        "unavailable date",
+        "unavailable cake",
+        "exact product switch/peanuts",
+        "buy/custom simulation with generic and reference routes",
+        "keyboard Tab focus including inverse toolbar",
+        "no JS errors"
+      ]
+    },
+    {
+      "theme": "dark",
+      "viewport": "mobile",
+      "result": "pass",
+      "checks": [
+        "images loaded",
+        "no horizontal overflow",
+        "empty-date validation",
+        "loading disabled",
+        "date success",
+        "date-change invalidation",
+        "unavailable date",
+        "unavailable cake",
+        "exact product switch/peanuts",
+        "buy/custom simulation with generic and reference routes",
+        "keyboard Tab focus including inverse toolbar",
+        "no JS errors"
+      ]
+    }
+  ],
+  "contrast": [
+    {
+      "theme": "warm",
+      "pair": "paper/ink",
+      "ratio": 13.93,
+      "minimum": 3,
+      "result": "pass"
+    },
+    {
+      "theme": "warm",
+      "pair": "ink/paper",
+      "ratio": 13.93,
+      "minimum": 4.5,
+      "result": "pass"
+    },
+    {
+      "theme": "warm",
+      "pair": "ink/panel",
+      "ratio": 15.25,
+      "minimum": 4.5,
+      "result": "pass"
+    },
+    {
+      "theme": "warm",
+      "pair": "muted/paper",
+      "ratio": 6.02,
+      "minimum": 4.5,
+      "result": "pass"
+    },
+    {
+      "theme": "warm",
+      "pair": "muted/panel",
+      "ratio": 6.59,
+      "minimum": 4.5,
+      "result": "pass"
+    },
+    {
+      "theme": "warm",
+      "pair": "accent/paper",
+      "ratio": 7.75,
+      "minimum": 4.5,
+      "result": "pass"
+    },
+    {
+      "theme": "warm",
+      "pair": "on/accent",
+      "ratio": 8.62,
+      "minimum": 4.5,
+      "result": "pass"
+    },
+    {
+      "theme": "warm",
+      "pair": "focus/paper",
+      "ratio": 6.39,
+      "minimum": 3,
+      "result": "pass"
+    },
+    {
+      "theme": "warm",
+      "pair": "focus/panel",
+      "ratio": 7,
+      "minimum": 3,
+      "result": "pass"
+    },
+    {
+      "theme": "warm",
+      "pair": "line/paper",
+      "ratio": 3.8,
+      "minimum": 3,
+      "result": "pass"
+    },
+    {
+      "theme": "warm",
+      "pair": "line/panel",
+      "ratio": 4.16,
+      "minimum": 3,
+      "result": "pass"
+    },
+    {
+      "theme": "dark",
+      "pair": "paper/ink",
+      "ratio": 15.34,
+      "minimum": 3,
+      "result": "pass"
+    },
+    {
+      "theme": "dark",
+      "pair": "ink/paper",
+      "ratio": 15.34,
+      "minimum": 4.5,
+      "result": "pass"
+    },
+    {
+      "theme": "dark",
+      "pair": "ink/panel",
+      "ratio": 13.12,
+      "minimum": 4.5,
+      "result": "pass"
+    },
+    {
+      "theme": "dark",
+      "pair": "muted/paper",
+      "ratio": 10.07,
+      "minimum": 4.5,
+      "result": "pass"
+    },
+    {
+      "theme": "dark",
+      "pair": "muted/panel",
+      "ratio": 8.61,
+      "minimum": 4.5,
+      "result": "pass"
+    },
+    {
+      "theme": "dark",
+      "pair": "accent/paper",
+      "ratio": 11.63,
+      "minimum": 4.5,
+      "result": "pass"
+    },
+    {
+      "theme": "dark",
+      "pair": "on/accent",
+      "ratio": 11.63,
+      "minimum": 4.5,
+      "result": "pass"
+    },
+    {
+      "theme": "dark",
+      "pair": "focus/paper",
+      "ratio": 10.72,
+      "minimum": 3,
+      "result": "pass"
+    },
+    {
+      "theme": "dark",
+      "pair": "focus/panel",
+      "ratio": 9.17,
+      "minimum": 3,
+      "result": "pass"
+    },
+    {
+      "theme": "dark",
+      "pair": "line/paper",
+      "ratio": 5.31,
+      "minimum": 3,
+      "result": "pass"
+    },
+    {
+      "theme": "dark",
+      "pair": "line/panel",
+      "ratio": 4.54,
+      "minimum": 3,
+      "result": "pass"
+    }
+  ]
+}

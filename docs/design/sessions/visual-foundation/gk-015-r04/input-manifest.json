@@ -1,0 +1,30 @@
+{
+  "checked_at": "2026-10-06T00:00:55.111686+00:00",
+  "files": {
+    "AGENTS.md": "e790741c946e392867b509b2d478c3bb39598295e2425688eeeb26053d569047",
+    "docs/design/contracts.md": "b34b0926f371683afbfbd3453de9191efc1df2a625c595ad5c1d5f2b83723512",
+    "docs/design/owner-data-contract.md": "e71792978a198263aeae6e28ae1520acc4598e1f699235e14aa049664f593a21",
+    "docs/design/gk019/GK-015-handoff.md": "51924ba362be6508836450eee2273e684bbdcba52f5e99d4c412e68609de5677",
+    "docs/design/gk019/review.md": "2229cd6f79b57b989acb82e613c7f4915482679013b0ff7e8ffa5105360621b3",
+    "docs/design/gk019/questions.md": "2646cd8b1bc5606890c1f8687b72bdb29257de6af812dee9fb09bd33c5aa82e7",
+    "docs/creator/README.md": "67b15691fdd19f053550874b3d5fc5003250eb4521280689de13d3c9da29efe1",
+    "docs/creator/GK-002/README.md": "b5327c013772a75316a582d2132823a81ed61da804794f73877a65482512c068",
+    "docs/creator/GK-002/interview-2026-10-05.json": "4d153e8b597ade2c196f19609bc1674b09a2ff515a3bbaf8d33764e9113c5f29",
+    "docs/creator/GK-001/README.md": "a8f249a4fa238e1353cef08674edafce21c1b8294a1c3f5aa6e8b2adaaa316b6",
+    "docs/creator/GK-001/source-comments.json": "e25a2fd90d76d9db6526b72ea7e09c8902865d37047737ad12bbad1b8fd8035f",
+    "docs/creator/GK-001/decisions.json": "6d3112d8349305049377d5b3dd834f78e85d96b95ac357704c7af7daa1f807e9",
+    "docs/creator/GK-003/README.md": "010eaa7f057b358b383a4bc1aeab564ff51301d349113e31337a937711ba5322",
+    "docs/creator/GK-003/source-comments.json": "74838e92dc4368b64f426443dd3f91e27b5e141afba76cf744f0289e49acb05a",
+    "docs/creator/GK-003/decisions.json": "41d7792baa5be64eeaa1e91b5d4fe06154511771b764074e529cf71c3062c27c",
+    "docs/creator/GK-005/README.md": "a96c07ef063d12277b6af851fe8ea66ca41b2c8a80757517af9f045d439d5d34",
+    "docs/creator/GK-005/source-comments.json": "a27945eb42272189c1b9c8c6083c2a92620fa18ebcb8cce2713b329edd543be7",
+    "docs/creator/GK-005/decisions.json": "d6593cfc91948c3294e22fcf112226b4df2838d241abb016a5597c4c88ff6542",
+    "docs/creator/GK-005/interview-2026-10-05.md": "5c687921384a7fac328ae862118a024e5e901d68a50aae2ca059129e6b4d1d6d",
+    "docs/design/gk019/q4-currency-acceptance.json": "f03ad56443f282fdf3db9d7872ad44cb7b90f25b152b63b9aece31f02369660c",
+    "docs/design/gk019/q5-acceptance.json": "e9192dba7c5627479012da4a49d21e5f25971cb6bf3fac22359b0838627a9081",
+    "docs/design/gk019/output-manifest.json": "547e37d4d1126fb4abb477a6f467381617ee3393ab1fa100d2515e9349bb2db8",
+    "docs/design/gk019/q4-bundle-slots-acceptance.json": "235e2b8225957e76c0087ada1782a4e63f620c47d31c040939b97ee2cddea77f",
+    "docs/design/gk019/evidence/reviewed-design-manifest-r6.json": "0b294af7c7888e7c2acb598ea548870e9a6ebfa9121148c6a751e8a008f34f94",
+    "photo_assets/logo/composite.png": "2b79f2f9f21e44fe6f4a6f377b3694ec87fd2896eaacb9f63e0003190e51fd9c"
+  }
+}

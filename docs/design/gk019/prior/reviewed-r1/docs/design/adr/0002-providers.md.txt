@@ -1,0 +1,54 @@
+# ADR-0002: Hosting, persistence, identity and email providers
+
+Status: package accepted; technical verification gates remain open
+Date: 2026-10-05; revision: r11 / GK-019
+Decision owner: Sasha for technical operation; business owner for spending. Sasha selected the package and reported business-owner approval on 2026-10-05. This is relayed acceptance, not independent technical review.
+Affected requirements: C05 C07 C14 A05 S06 S07 D02. Consumers: feature packets, shared contracts and mapped tickets.
+
+## Context and options
+
+At 60 orders/month initially and 80/month through year one, prefer managed services within a GBP61/month approved baseline and GBP100 hard ceiling. Original alternatives included separate Postgres/auth/storage, Render, Postmark and Cloudflare analytics. Later discussion selected Railway Pro and Umami Cloud Free instead of Matomo Cloud Business; Sasha has now replaced Umami with PostHog Cloud EU. Historical research remains in the evidence record.
+
+Sasha forecasts 20,000–30,000 visits/month, 300–400 photos initially and 100 additional photos/month. Launch is photos only, with videos planned later. Photo byte sizes and traffic assumptions remain conditional. PostHog Free's 1M-event monthly allowance provides more forecast headroom; measure usage and review it under the existing budget policy. Size video delivery before enabling it.
+
+## Decision
+
+- Railway Pro: separately deployed UI/API/jobs and test runtime, Amsterdam proposed; USD25 total usage allowance includes the USD20 plan minimum.
+- Supabase Pro Micro: production PostgreSQL/Auth/Storage in London; USD25. Separate Free organisation/project for synthetic test data, with free-tier limitations.
+- Backblaze B2 EU Central: independent DB/photo/order recovery copies, GBP1 planning allowance pending sizing.
+- Stripe UK hosted Checkout; payment fees outside the infrastructure ceiling.
+- Resend Free: authentication and transactional messages; existing Gmail for replies.
+- Cloudflare Registrar/DNS: `gkcake.com` purchased via Cloudflare per GK-012; approved address layout is intent until runtime routing is verified.
+- UptimeRobot Solo: availability and backend technical alerts to Sasha's phone. PostHog Cloud EU: opt-in visitor analytics in its separate dashboard; Free initially, GBP0 allowance within 1M analytics events/month. Sasha accepts PostHog's standard retention policy; no new embedded admin charts or metric-alert integration is implicitly approved.
+
+Sasha administers infrastructure accounts; the owner pays and receives emergency recovery access. Merchant identity/payout verification belongs to the owner. Monthly increases greater than GBP10 cumulatively above the last approved baseline require approval; GBP100 is always the ceiling. Alert/request increases in advance; without approval stop test services first, then affected live services, retaining confirmed orders and backups.
+
+## Evidence and consequences
+
+[Evidence and cost breakdown](../provider-research.md), decision r13 dated 2026-10-05, is authoritative for assumptions and limitations. Rounded allowances total GBP60.52/month averaged (approved baseline GBP61); annual domain billing makes the first/domain-payment month approximately GBP69.23. Pricing includes a conservative tax allowance, not an account-specific invoice guarantee. Documentation compatibility is not an integration test.
+
+Sasha explicitly accepts ancillary US processing by the selected email and monitoring providers with documented safeguards and minimal shared data. UK/nearby-Europe primary hosting remains the preference. Keep customer/order data out of monitoring payloads. Analytics lifecycle follows the separate decision below.
+
+Recovery: zero loss of confirmed order details, up to 24 hours of nonessential recent uploads, routine recovery within three support hours. Sasha responds daily 10:00–23:00 Europe/London; the clock pauses overnight. Full provider/region recovery may take longer if every confirmed order remains recoverable. Daily DB backups alone are insufficient: contracts K11 specifies independent durable prepared/outcome order records and essential object copies; GK-034/035 must prove recovery before activation.
+
+Sasha accepted 30 days of independent daily DB restore points and recoverable photo versions. Expiring historical backups must preserve current independent recovery copies of retained confirmed orders and essential attachments. Business-record/customer-data retention remains a separate policy.
+
+Sasha subsequently approved the consolidated GK-004 recovery approach: independent order/change/essential-attachment recovery records, pausing checkout when safeguards are unavailable, and restoring/reconciling payments and pending side effects before reopening. Detailed protocol and restore tests remain downstream work, not completed evidence.
+
+## Verification and change path
+
+Visitor analytics must be ready before launch. Sasha selected PostHog EU and explicitly accepted its standard retention policy, replacing the previous six-month active deletion and fixed 30-day analytics backup tail. Free advertises one-year retention, not guaranteed deletion at one year. Record applicable terms at setup; do not advertise an exact deletion deadline. Review paid-plan lifecycle changes before any upgrade. The shop's separate 30-day recovery window remains unchanged.
+
+Remaining technical gates: verify PostHog EU configuration/consent integration before enabling tracking; size recovery storage/runtime and document processing regions/access recovery; reconcile the zero-order-loss protocol in GK-019. GK-014 verifies recurring phone alerts and support-window handling; later recovery verification must restore DB and object bytes. Recheck actual checkout tax/FX/quotes against approved limits. No account, purchase, release or deployment is authorized by this ADR.
+
+Supersedes: ADR r1 provider candidates and contradictory POC provider proposals; original input remains unchanged. Superseded by: none. Shared contracts and published ticket snapshots may still name historical candidates: reconcile affected consumers before promoting dependent work. [SETUP](../../../SETUP.md) contains the selected-provider instructions; [handoff](../GK-004-handoff.md) records remaining acceptance work. Trello status is unchanged.
+
+Follow-up research, 2026-10-05: [Railway/Vercel assessment](../provider-research.md#railway-versus-vercel--detailed-assessment-2026-10-05) recommends retaining the selected package for architecture fit and budget headroom, with explicit incident-history and unmeasured-cost limitations. It does not assert superior uptime or change the approval. The r3 fingerprints in the published handoff remain historical evidence.
+
+## GK-019 integration
+
+Current contracts r6 include all17 accepted Stripe method labels and the current sender
+`GK Cakes <orders@gkcake.com>` with Reply-To `gk.cake.london@gmail.com`.
+GK-010/011/012 are live-verified Done for their scoped setup handoffs, not application
+integration. Q2/Q3/Q4/Q5 retain payment/analytics/refund compatibility gates.
+Provider package/source prices remain dated accepted planning allowances, not new quotes.

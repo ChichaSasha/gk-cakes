@@ -1,0 +1,256 @@
+{
+  "date": "2026-10-06T00:24:26.566Z",
+  "sources": {
+    "poc/app.js": "fe5c57ed0dac4c4fad77ddf68030813d0d2be59111caed1ba4ac98a6f31598cb",
+    "poc/styles.css": "44ad8c63f8391dac03c068e1935cc887eb2aceb8d229becae2d3467ee565835e"
+  },
+  "checks": [
+    {
+      "view": 320,
+      "pages": 16,
+      "result": "pass",
+      "covers": [
+        "no horizontal overflow",
+        "internal page links exist",
+        "page loads and assets",
+        "no JS errors"
+      ]
+    },
+    {
+      "view": 390,
+      "pages": 16,
+      "result": "pass",
+      "covers": [
+        "no horizontal overflow",
+        "internal page links exist",
+        "page loads and assets",
+        "no JS errors"
+      ]
+    },
+    {
+      "view": 768,
+      "pages": 16,
+      "result": "pass",
+      "covers": [
+        "no horizontal overflow",
+        "internal page links exist",
+        "page loads and assets",
+        "no JS errors"
+      ]
+    },
+    {
+      "view": 1440,
+      "pages": 16,
+      "result": "pass",
+      "covers": [
+        "no horizontal overflow",
+        "internal page links exist",
+        "page loads and assets",
+        "no JS errors"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "filters",
+        "empty results/recovery",
+        "sort",
+        "favourites across page navigation"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "empty/available/unavailable/loading date",
+        "disabled unavailable cake",
+        "PEANUTS before purchase",
+        "exact bag total and remove"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "generic custom has no product",
+        "referenced custom exact cake",
+        "edit retains input",
+        "selectable copy-failure recovery",
+        "user text not HTML",
+        "selected Email success/failure handoff"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome success",
+        "GK delivery cannot falsely confirm"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome pending",
+        "GK delivery cannot falsely confirm",
+        "replacement checkout blocked"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome late",
+        "GK delivery cannot falsely confirm",
+        "replacement checkout blocked"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome changed",
+        "GK delivery cannot falsely confirm"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome failed",
+        "GK delivery cannot falsely confirm"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome expired",
+        "GK delivery cannot falsely confirm"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "outcome recovery",
+        "GK delivery cannot falsely confirm"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "calendar month-boundary arrows/PageDown/End",
+        "Escape returns focus",
+        "missing request date validation",
+        "automatic slots on date/mode changes",
+        "old time cleared on mode change",
+        "stale response discarded",
+        "slot empty/error states",
+        "offscreen selected date remains explicit"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "all unavailable days truly disabled",
+        "keyboard skips 23 October",
+        "synthetic clicks cannot select disabled dates",
+        "empty month focus fallback"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "confirmed serving ranges",
+        "Other required and whitespace validation",
+        "preset excludes stale Other value",
+        "local browse and drop",
+        "unsupported file error",
+        "remove focus",
+        "file count and retention on edit",
+        "native channel keyboard selection and visible focus",
+        "full custom request still subject to chef agreement"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "decorative horizontal section borders removed across all routes"
+      ]
+    },
+    {
+      "result": "pass",
+      "covers": [
+        "cancellation exact amounts",
+        "six-hour time change copy",
+        "unknown cake",
+        "corrupt demo storage",
+        "mobile navigation",
+        "keyboard focus",
+        "focus preserved on favourite toggle/removal and bag removal",
+        "disabled button visual state"
+      ]
+    }
+  ],
+  "contrast": [
+    {
+      "fg": "#171919",
+      "bg": "#ffffff",
+      "ratio": 17.65,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#242626",
+      "bg": "#8c8c8c",
+      "ratio": 4.52,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#242626",
+      "bg": "#dddddd",
+      "ratio": 11.2,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#ffffff",
+      "bg": "#151818",
+      "ratio": 17.86,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#003354",
+      "bg": "#ffffff",
+      "ratio": 13.11,
+      "minimum": 3
+    },
+    {
+      "fg": "#003354",
+      "bg": "#8c8c8c",
+      "ratio": 3.9,
+      "minimum": 3
+    },
+    {
+      "fg": "#858b8c",
+      "bg": "#ffffff",
+      "ratio": 3.46,
+      "minimum": 3
+    },
+    {
+      "fg": "#4a0808",
+      "bg": "#8c8c8c",
+      "ratio": 4.7,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#363838",
+      "bg": "#b1b1b1",
+      "ratio": 5.5,
+      "minimum": 3
+    },
+    {
+      "fg": "#171919",
+      "bg": "#dedede",
+      "ratio": 13.12,
+      "minimum": 4.5
+    },
+    {
+      "fg": "#ffffff",
+      "bg": "#171919",
+      "ratio": 17.65,
+      "minimum": 4.5
+    }
+  ]
+}

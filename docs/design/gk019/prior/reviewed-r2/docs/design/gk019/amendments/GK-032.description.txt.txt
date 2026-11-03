@@ -1,0 +1,85 @@
+## Context
+
+Owner: Agent; Kind: Implementation
+Priority: P1 — required launch outcome.
+Order: 320; Wave: 10; Parallel group: none.
+Requirements: A06, S03, S04, S05; Design/contract revision: GK-019 r6.1, K07.
+Agent execution policy: gpt-6-astra / high; fresh scoped worker; fresh independent reviewer.
+Required input: brief, input-revision.json, gk019-owner-r3, ADRs/contracts r6.1 and exact GK-019 manifest, feature/screens, prerequisite evidence, SETUP and DELIVERY.
+Execution check: skills/gk-plan/references/execution-check.md at start/resume; record requested/effective model, history, input hashes and checked readback. Pending.
+Depends on: GK-022, GK-023, GK-031, GK-007, GK-018; deliverable: accepted policy/setup or tested implementation outputs; GK-020 means completed B2.
+Unblocks: GK-035.
+Safe in parallel with: none.
+Conflicts: shared contracts/schema/router/migrations; master coordinates edits.
+Readiness at publication: blocked / specified but dependent: Inventory policy and chef design prerequisites pending.
+
+Ingredient ledger records receipts/use/waste/adjustment/reversal once with canonical units/reason. Snapshot recipe demand and explicit actual consumption prevent double count; grocery timeline separates unpaid holds/draft quotes from commitments and ready stock. Costs are as-of assumptions, not accounting profit.
+
+Rules: server-owned price/capacity/state; GBP pence, UTC/Europe/London; role+ownership; expected_version+Idempotency-Key; unknown stays pending; no network under DB locks.
+
+Wire/state (approved GK-019 successor required):
+
+POST /api/v1/admin/inventory/movements {ingredient_id,kind:"receipt",quantity:"1000",unit:"g",new_lot:{expiry_date:"2026-10-31"},reason:"Delivery",expected_version} +Idempotency-Key; invalid unit/amount ->422, duplicate same command returns original movement. GET /api/v1/admin/groceries?from=2026-10-01&to=2026-10-31 shows demand/on_hand/shortage/cost_as_of; pending/draft separated. GET /api/v1/admin/metrics same bounded range; net_receipts=captured-successful_refunds, known_fees separate.
+
+Proposed: API10s/DB2s/provider5s; retries1m/5m/15m/1h then manager, alert15m. Validate; retain unknown funds.
+
+Mandatory AC1–AC3 rules:
+
+Wire quantities are exact decimal strings, e.g. "1000", not JSON floats. New receipt requires last usable local expiry date (null rejected), and atomically accepts new_lot:{expiry_date:"2026-10-31"} instead of lot_id; existing movements require lot_id; use may require order_item_id; reversals require reverses_id and cannot over-reverse. Red fixture1000g lot/800g plan/300g actual use ->on_hand700g/outstanding500g; replay unchanged; cancellation leaves700g actual stock. Forecast includes earlier unconsumed commitments before range, lot expiry and missing costs; ready/completed with missing usage shows warning. Cost500g at240p/1000g=120p; no double planned demand.
+
+## To dos
+
+T1. Red: smallest AC1–AC3 fixture assertion; infrastructure failure is not red.
+T2. Implement data/API/UI/recovery with snapshots/auth/idempotency (AC1–AC3).
+T3. Integrate migrations/consumers/audit/notices; verify real DB/provider failures (AC1–AC3).
+T4. Green -> refactor -> rerun affected checks; record revision/results (AC4).
+T5. Complete AC4 review/delivery/acceptance evidence; no implied deployment.
+
+## Not to dos
+
+No unrelated cleanup, registrations, leaked secrets or releases/deployments without authority. No app execution now; Done needs Creator acceptance.
+
+## Acceptance Criteria
+
+AC1. Red fixture recipe v1 order survives v2 edit; future demand uses v1, ready stock adds no future recipe demand and cancellation releases plan without restocking actual consumed goods.
+AC2. Duplicate consumption/movement key applies once; simultaneous stock adjustments and unit-incompatible input rejected or explicit audited discrepancy per policy.
+AC3. Chef can compare usable on-hand, committed demand, shortage and estimated cost by date with units/as-of/cost assumptions and expiry/waste; no negative quantities silently clipped.
+AC4. Record exact input/tested revision, results, independent review and Creator acceptance on Trello; account for all related PRs, required review/checks, native auto-merges and main CI. Release/deploy/smoke only when separately authorized and in scope.
+
+Test prerequisite: GK-020 B2 verifies pinned runners before this card is Ready. Planned Go: go test ./..., go test -race ./..., go test -tags=integration ./... with disposable PostgreSQL; UI: npm run check, npm test, npm run build + approved browser runner. Provider cases use controlled sandbox accounts/recipients and actual IDs; mocks are not provider proof. No application tests ran during planning.
+
+Proposed current specification; prior publication text preserved in GK-019 evidence/cards.json. Independent review and approval apply only to the exact current revision. Trello is the live execution record; application work has not started.
+
+Verified prerequisite cards:
+- GK-022: https://trello.com/c/tcV2Ilpz
+- GK-023: https://trello.com/c/NHHBokl1
+- GK-031: https://trello.com/c/6moC1CyN
+- GK-007: https://trello.com/c/iJqMyuN1
+- GK-018: https://trello.com/c/jjP7btz9
+
+Verified dependent cards:
+- GK-035: https://trello.com/c/qtUe3uom
+
+## GK-019 proposed contract amendment — r6.1 / UNPUBLISHED
+
+Owner, title, unrelated scope/labels and list remain unchanged. This dated amendment
+replaces contradictory historical policy/provider examples and adds the acceptance
+evidence below; it does not assert implementation readiness or completed tests.
+
+Contract inputs: K07/K09; docs/design/contracts.md r6.1, owner-data-contract.md
+gk019-owner-r3, gk019/schema.json r1.1 and output-manifest.json exact hashes.
+Required current evidence: Existing bootstrap/auth/orders/design dependencies; GK-019/GK-007/GK-038. Refresh live prerequisites and comments before
+execution; a Done setup card proves only its accepted scope.
+
+Behavior: Component batches/raw inputs and cake assembly/direct ingredients distinct; chef selects lots,0.01g/ml half-up, whole counts exact. Negative stock allowed reason/warning; expiry last usable London day. No auto restock or auto actual use. Whole packs budget; missing yield/conversion/cost incomplete.
+
+Acceptance extension: Test1000−800=200 then physical50 return=250;300−500=-200 visible; component200g use no second raw deduction; expired stock retained but unusable;500g need/1000g pack678p ->678p shopping. GK-038 gates validated costing; no inferred1g/ml/50g egg.
+
+Execution: apply model/context check; then smallest failing meaningful behavior
+case, coherent implementation, focused green checks, required wider checks and
+fresh independent review. Design tickets instead produce/review exact artifacts.
+No application test, UI approval, release or deployment is supplied by this amendment.
+Questions Q2–Q5 apply only where named; unresolved branches stay blocked.
+
+Full brief requirements and nonconflicting safety/verification criteria remain.
+Repository packet is local/unpushed; obtain exact files, not merely a path string.

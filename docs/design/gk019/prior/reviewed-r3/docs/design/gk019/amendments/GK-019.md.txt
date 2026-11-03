@@ -1,0 +1,23 @@
+## GK-019 proposed contract amendment — r6.2 / UNPUBLISHED
+
+Owner, title, unrelated scope/labels and list remain unchanged. This dated amendment
+replaces contradictory historical policy/provider examples and adds the acceptance
+evidence below; it does not assert implementation readiness or completed tests.
+
+Contract inputs: K00–K11; ADRs at exact output-manifest revisions; docs/design/contracts.md r6.2, owner-data-contract.md
+gk019-owner-r4, gk019/schema.json r1.2 and output-manifest.json exact hashes.
+Required current evidence: Live Done scoped GK-001/003/004/005/006/007 plus setup GK-010/011/012; GK-002 approved content. Refresh live prerequisites and comments before
+execution; a Done setup card proves only its accepted scope.
+
+Behavior: Reconciled policy/setup evidence is gk019-owner-r4 and contracts r6.2, not historical planning r5. All17 methods and current sender preserved. Exact input/output hashes, canonical source history, schema, coverage, independent review and disjoint GK-015 handoff required. Q3–Q5 remain explicit.
+
+Acceptance extension: AC1 remains conditional on named consequential decisions; AC2 retain40 requirement mappings and exact affected amendments; AC3 fresh qualified independent review of exact hashes; AC4 current acceptance evidence recorded only after amendment review/publication approval. No application/release/deployment.
+
+Execution: apply model/context check; then smallest failing meaningful behavior
+case, coherent implementation, focused green checks, required wider checks and
+fresh independent review. Design tickets instead produce/review exact artifacts.
+No application test, UI approval, release or deployment is supplied by this amendment.
+Questions Q3–Q5 apply only where named; unresolved branches stay blocked.
+
+Full brief requirements and nonconflicting safety/verification criteria remain.
+Repository packet is local/unpushed; obtain exact files, not merely a path string.

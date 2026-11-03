@@ -1,0 +1,47 @@
+# GK-019 independent review and acceptance evidence
+
+Verdict: ready for scoped ticket publication with Q1–Q5 explicitly blocked. No remaining blocker or major technical finding in this revision. **GK-019 is not Done.** Publication still requires Sasha's review/authorization of the exact drafts.
+
+Reviewed output-manifest SHA-256: `463aaacb680b1e628b23b15c8d93eeb5aa85d61bbbc75d60c2af5539e958cda0`. Reviewer verified all 88 output hashes before and after final checks. This report supersedes the candidate's frozen “review pending” labels; it changes no unresolved business choice and confers no implementation/release/deployment authority.
+
+[Exact outputs](output-manifest.json) · [Check evidence](checks.json) · [Trello drafts](amendments/README.md) · [GK-015 handoff](GK-015-handoff.md).
+
+## Reviewer and isolation
+
+Fresh `review_gk019` context, originally `fork_turns=none`, subsequently continued and compacted/resumed. Accepted Astra/xhigh selection is requested-only; effective reviewer identity was unavailable and is not claimed as verified. Reviewer authored no output, made no file/external writes and delegated nothing. It read original ticket criteria, current evidence, canonical intake, contracts/ADRs/schema, coverage, setup/delivery guide and all25 full proposed descriptions. GK-015 visual content was neither reviewed nor altered.
+
+## Findings fixed and independently rechecked
+
+- Authorization: distinct guests/customers/staff, pre-order guest proof, atomic independent order grant, revocation and replay tests.
+- Recovery: GK-024 supplies minimum K11 coordinator/journal before dispatch; payment consumers depend on it; GK-034 recovery integration follows024. Current dependency overlay checked separately from frozen history.
+- Refunds: one unresolved operation per collection; cumulative whole-order target nets successes/reservations, including skewed prior refunds. Separate delivery failure raises one explicit obligation, never duplicate payout.
+- Ticket contradictions: current descriptions replace old capacity/pickup/expiry/cancellation clauses. Remaining GK-026 after-lock rejection paragraph corrected in final freeze.
+
+## Original acceptance criteria
+
+| Criterion | Evidence and disposition |
+| --- | --- |
+| AC1 — settled decisions/coherent contracts | Technical contradictions resolved. Not fully accepted: Q1/Q2/Q4/Q5 gate payment/capacity/refund branches; Q3 gates analytics. |
+| AC2 —40 requirements/self-contained tickets | All40 rows mapped;25 exact proposed descriptions incorporate current values/prerequisites. Review passed coverage/specifications; live publication outstanding. |
+| AC3 — fresh independent exact-revision review | Completed for manifest above; missing decisions blocked; no application implementation. |
+| AC4 — acceptance recorded on Trello | Local evidence ready; authorized publication and applicable Creator acceptance outstanding. No Trello writes. |
+
+Independently rerun on final candidate: `python3 -B scripts/check_gk019.py`, `python3 -B scripts/check_owner_intake.py`, `python3 -B scripts/check_planning_kit.py`. All passed:40 requirements/current DAG,32 typed relations,17 methods,11 arithmetic fixtures,34 planned state cases,25 amendments,six protected visuals,three owner packets/82 decisions. Master additionally ran both self-tests, role checks, whitespace checks and negative controls.
+
+These are design/document/arithmetic checks, not application/PostgreSQL/provider/recovery/UI/deployment tests. Frozen copied evidence READMEs under GK-002/GK-005 retain original relative links; known broken archive links are excluded from maintained-document checks and were not edited.
+
+## Next decision and publication boundary
+
+[Q1](questions.md) is the only question asked: allow chef-approved cake-specific shorter lead times for ready/resale cakes? It remains unanswered. Ask subsequent questions one at a time; do not reconfirm accepted choices. Q4 requires actual method qualification first.
+
+Before authorized Trello writes, reread descriptions/comments/prerequisites and compare recorded hashes. Reconcile drift and re-review affected text. Preserve unresolved gates. No Done transition implied.
+
+## Subsequent shared-workspace change
+
+After the successful independent exact-hash review, a final master rerun failed
+because `photo_assets/logo/3000px-03.png` is now missing; the existing GK-002 README
+link therefore fails. This task did not edit/remove assets. All88 reviewed GK-019
+output hashes remain unchanged. The separate GK-015 context was notified. Resolve
+the intended asset change and rerun the link check before claiming a currently
+green whole-workspace document check. Prior pass evidence remains tied to its
+earlier observed workspace, not the changed asset state.

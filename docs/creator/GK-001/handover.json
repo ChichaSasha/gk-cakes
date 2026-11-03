@@ -1,0 +1,237 @@
+{
+  "schema_version": 1,
+  "ticket": "GK-001",
+  "revision": "manual-handover-r2",
+  "status": "done_verified",
+  "recorded_at": "2026-10-04T23:42:21.541171+00:00",
+  "authorization": {
+    "source": "Current user message in this Codex task",
+    "scope": "Reconcile pasted answers and chef sources, prepare manual handover using START-HERE and subagents, mark main GK-001 Done.",
+    "done_authorized": true,
+    "other_ticket_status_changes_authorized": false,
+    "application_implementation": false,
+    "commit_push_release_deploy": false
+  },
+  "execution_check": {
+    "root_model_status": "unknown; effective model/effort not exposed",
+    "history": "continued after prior tasks/compaction; authoritative sources reloaded",
+    "inputs": "Current sources and explicit follow-up answers resolve GK-001 policy questions; sufficient for handover/Done review, not dependent implementation.",
+    "head": "bb96a89681bcf2fa1c663a02eacbe039e20e6363",
+    "independence": "gk001_r2_audit fresh read-only fork_none; no artifact authorship",
+    "worker": "gk001_r2_cases: accepted explicit astra/high request; effective model not exposed, requested-only",
+    "reviewer_model": "gpt-6-astra/xhigh requested and accepted; effective identity unavailable, requested-only",
+    "working_tree": "Original staged POC/photo assets and untracked planning preserved. Concurrent user GK-003 task owns GK003 files; shared-file ownership coordinated. No staging/commit/push.",
+    "pilot_review": "Bounded payment/capacity worked-case author astra/high and independent astra/xhigh review passed; user business choices remain separately sourced."
+  },
+  "input_files_before_changes_sha256": {
+    "docs/creator/GK-001/README.md": "ca6f1c8e077d526aaaa3243e32728b0b7e6288517fcdf99e3591703c00c029ea",
+    "docs/creator/GK-001/source-comments.json": "19abdd86d87fc26986a4c868b1be099bb7f4443b67f97a8b0dbf08b4e835a54d",
+    "docs/creator/GK-001/decisions.json": "baa52584641835bb96c53cefeedf834256bf6b1f7b0a59745e032a83b7015902",
+    "docs/creator/GK-001/submission-2026-10-04.uk.txt": "137833f269f89cac0a2e64ce6781b9cbdb23f8c605370c10818e61c99532e2ba",
+    "docs/creator/GK-001/handover.md": "a3642937976539b6ea62575e4d658ccc9de22cdb5a04875c189201e5087690d3",
+    "docs/creator/GK-001/acceptance-cases.md": "53a11161fb09cfb9807441a0c01e90fb10678af4ef527318e726c86df3af82e1",
+    "docs/creator/README.md": "72c408d56d3f61e1d9ffe64761998ef81f4343b2c644156a0d5f2c75fb498698",
+    "docs/creator/GK-003/README.md": "e7bbb03e6915cd2c6a7d070ebc8e59bdf96c9a6d1cceae6577016c3fdb324aa1",
+    "docs/creator/GK-005/README.md": "ff518b569c1b207826562cc1f635d7802f6c34faede30d63bf80c49795f79624",
+    "docs/design/owner-data-contract.md": "6b2884521f785588a3427e68333809c935c5cbd9a27f83c98661a77f7f8730ab",
+    "docs/design/creator-decisions.md": "d2745576906b912670d92c22b072b43dce51af9640f7801065965c11dc63e5af",
+    "docs/design/contracts.md": "4cb568129a111f34d5684e9b1793caba97e40b856d881377f42bb5518bbc5ad9",
+    "docs/design/PLAN.md": "33ffddcd22bdd5b81cbed9b86404cd68267d03ef5a34f367382ecf69dc64f408",
+    "scripts/check_owner_intake.py": "65770a5c235db2a8995a1a2ac5e473ec8510c55f2ab837034a3c068d6e680014",
+    "docs/design/features/commerce.md": "a8cdb38b7c03cfddd13a4bb7d6fbc37620bf14c8d3516d874021433f85e440c4",
+    "SETUP.md": "3c377121e5798471a57fc40e1d3db7d55392ad3505e9a2b3ff8ae84c9c947a3f",
+    "docs/design/adr/0004-scheduling.md": "524eed042d05df65dd1618b95e9a7d5bd35a31b2551a7299c261f1e3cd9d7d83",
+    "docs/creator/GK-001/handover.json": "b994419cc0c427cc41c79f10bd736f8a965146564724ead68958d9630637bd79"
+  },
+  "source_ids": [
+    {
+      "id": "6abab66bbf2b0e811db912b7",
+      "kind": "commentCard",
+      "revision_sha256": "cdb7805b1e1d6a3d1bff62a1ea5a615c776dcdb1b58a967707902ad971d67855",
+      "permalink": "https://trello.com/c/rVHbBffB#comment-6abab66bbf2b0e811db912b7"
+    },
+    {
+      "id": "6ac2d95174a456d0b2b9ba6a",
+      "kind": "commentCard",
+      "revision_sha256": "612835cca5d1566d859bf32a69f2d1ce50e660390ebadc775b991103f499ce69",
+      "permalink": "https://trello.com/c/eI8UpD6l#comment-6ac2d95174a456d0b2b9ba6a"
+    },
+    {
+      "id": "chat:GK-001:2026-10-05:clarification-1",
+      "kind": "userChatMessage",
+      "revision_sha256": "a51fd7c0287d7c55163b3ac4d55c6f938152cb6f31b96762c2327ad1909b8923",
+      "permalink": null
+    },
+    {
+      "id": "chat:GK-001:2026-10-05:refund-deadline",
+      "kind": "userClarificationReply",
+      "revision_sha256": "e60097641c674bf1d1fa0d55c5d9ffd000ee15a8656419d95f3d186fe267aa28",
+      "permalink": null
+    },
+    {
+      "id": "chat:GK-001:2026-10-05:refund-scope",
+      "kind": "userClarificationReply",
+      "revision_sha256": "eb7d5d38c3852fc8fbe42c7fd2aca79e157af24b51c473027d225cd957dc3095",
+      "permalink": null
+    }
+  ],
+  "current_decision_input_revision": "3797d072858934237ee243bf3e3272fd3b964c6d36588b40db943db443e721c0",
+  "related_policy_inputs": {
+    "docs/creator/GK-003/decisions.json": "324248cf5f3de58ff58c5719f02aa67bc4a53e350596d1b7db5ae77f1621147e",
+    "docs/creator/GK-003/source-comments.json": "72aeedd3f42eebada3e0185580706658b027d9a282d6c85a87b37213c2621d4c"
+  },
+  "main_card_observation": {
+    "id": "6ab13b4fa34d3a2205f61353",
+    "board_id": "6ab074a2b3c3763832ddf623",
+    "url": "https://trello.com/c/eI8UpD6l/16-gk-001p0o010w00-set-production-pickup-and-london-delivery-policy",
+    "list_id": "6ab074adb3c3763832de0087",
+    "closed": false,
+    "retrieved_at": "2026-10-04T23:27:59.448546+00:00",
+    "description_sha256": "bfb92c13e7e0eebf3a0bbf8ddc56501e660cc21a71d079427524d2ab49939b4f"
+  },
+  "completion": {
+    "policy_questions_resolved": true,
+    "criteria_met": true,
+    "pending_groups": [],
+    "status_transition_performed": true,
+    "reason": "Actual user choices, independent review and checks cover AC1–AC3; exact handover published and authorized main Done state read back for AC4.",
+    "downstream_only": [
+      "legal review",
+      "real courier operational content",
+      "SQL/admin implementation",
+      "provider/application tests",
+      "other tickets prerequisite readiness"
+    ]
+  },
+  "final_review": {
+    "status": "pass",
+    "reviewer": "gk001_r2_audit",
+    "context": "Fresh independent fork_turns=none; read-only; no artifact authorship",
+    "model": "gpt-6-astra/xhigh requested via accepted spawn; effective identity unexposed, requested-only",
+    "verdict": "Ready for authorized GK001 publication and Done. No remaining blocker/major finding. AC1–AC3 and scoped user acceptance evidenced; AC4 requires actual publication/Done readback. No GK003 completion/dependent readiness/application approval.",
+    "recorded_at": "2026-10-04T23:51:04.826883+00:00",
+    "reviewed_handover_sha256": "c50f6f6fe19f7714a258a5fd78ea4ff7a74a333dae0af0755e9757c9418fff77",
+    "reviewed_decisions_sha256": "32ed103b78d03190d778f4d9b763cce04e48ac3ea6b37083ee6ff62241917842",
+    "reviewed_cases_sha256": "fd86f1aad638aa74765ea6aa457d36851ffa720a2e71044ce54e6d8063fdc364",
+    "reviewed_publication_sha256": "858b6e308cf4999751913baa3a77e327d25a7c79268d262a0dc5189831bd2186",
+    "verified": [
+      "Original AC1–AC3, Ukrainian/English fidelity,113GK001numeric occurrences, retainedr1 and50cases",
+      "UTC/London DST, deadline equality, rescheduling, money allocation",
+      "All four document checks",
+      "19outputhashes,2relatedinputhashes,14currentcrossrefs"
+    ]
+  },
+  "validation": {
+    "status": "pass",
+    "commands": [
+      "python3 scripts/check_planning_kit.py",
+      "python3 scripts/check_role_packets.py",
+      "python3 scripts/check_owner_intake.py",
+      "python3 scripts/check_owner_intake.py --self-test"
+    ],
+    "scope": "Planning kit, role packets,74decisions/221numeric occurrences across current3packets, intake selftest.50 worked GK001 document cases; no application/provider/legal/route tests.",
+    "additional_checks": [
+      "19outputhashes and2relatedinputhashes",
+      "currentcrossrefs",
+      "local links and whitespace",
+      "retained r1 source/publication hashes",
+      "protected address exclusion"
+    ],
+    "recorded_at": "2026-10-04T23:51:04.826883+00:00"
+  },
+  "output_sha256": {
+    "docs/creator/GK-001/README.md": "d91d6f9a29260c77b3ac3ab7f2d15fca651c009e83c0e0c5ca282af5b2ed8714",
+    "docs/creator/GK-001/source-comments.json": "178af3568fade9f2597361a157be3c2ea6e63a83ef7f46c26baddd80d20ab632",
+    "docs/creator/GK-001/decisions.json": "32ed103b78d03190d778f4d9b763cce04e48ac3ea6b37083ee6ff62241917842",
+    "docs/creator/GK-001/submission-2026-10-04.uk.txt": "137833f269f89cac0a2e64ce6781b9cbdb23f8c605370c10818e61c99532e2ba",
+    "docs/creator/GK-001/handover.md": "c50f6f6fe19f7714a258a5fd78ea4ff7a74a333dae0af0755e9757c9418fff77",
+    "docs/creator/GK-001/acceptance-cases.md": "fd86f1aad638aa74765ea6aa457d36851ffa720a2e71044ce54e6d8063fdc364",
+    "docs/creator/README.md": "915247107286e7711457c909ec93e4dff3b48ac79eeb7b4891acf459639734e1",
+    "docs/creator/GK-005/README.md": "db48a1db84c712338693f8ce3b002ccbf74e5d84f54eeb3cbd9b33cac8eb6a39",
+    "docs/design/owner-data-contract.md": "30bd0355f991bf0d0e564a115e3179a7f4f42e7006d0fb53191223468a1556db",
+    "docs/design/creator-decisions.md": "a70863d46e51294e5d316779470943f0996578b3937be01839e3cf61a3f7ff4b",
+    "docs/design/contracts.md": "d058cffd4c7da51a39c201b376db350b62717eb8cfa2e83f0ff757f4a4fb7290",
+    "docs/design/PLAN.md": "7e426af926223074b0c5f3d1227647e157498cfc7fc3a403b4244ccef0511278",
+    "scripts/check_owner_intake.py": "bdba218112dca522380405e63a7a60ea9d5f92ecb7a7117aaa0b2fe42cce3c7b",
+    "docs/design/features/commerce.md": "4f69cd1266300db45f844c40e19c9500c9933e2f656c756fb1ae5bd44ae13e97",
+    "SETUP.md": "c9449c9745ae0b5d4793d16a1a2224b6c16e173e8851e70b135e1a8b35ca3803",
+    "docs/design/adr/0004-scheduling.md": "8959b634d513f9dfc576a9127b6f34b03a521447b9f67c36c4d211b61e1e4257",
+    "docs/creator/GK-001/submission-2026-10-05.uk.txt": "a51fd7c0287d7c55163b3ac4d55c6f938152cb6f31b96762c2327ad1909b8923",
+    "docs/creator/GK-001/handover-history.json": "d2dffba3e82eaaefc877ca4b978b5522ca6d13e31319d3593028262ec424eb14",
+    "docs/creator/GK-001/handover-comment.md": "858b6e308cf4999751913baa3a77e327d25a7c79268d262a0dc5189831bd2186"
+  },
+  "publication": [
+    {
+      "comment_id": "6ac2e66f3d58ec67c0128d44",
+      "card_id": "6ab13b4fa34d3a2205f61353",
+      "card_url": "https://trello.com/c/eI8UpD6l/16-gk-001p0o010w00-set-production-pickup-and-london-delivery-policy",
+      "permalink": "https://trello.com/c/eI8UpD6l#comment-6ac2e66f3d58ec67c0128d44",
+      "permalink_note": "Verified in authenticated browser timestamp link; same comment/action as byte-exact CLI readback.",
+      "source_timestamp": "2026-10-04T23:51:11.487Z",
+      "retrieved_at": "2026-10-04T23:51:12.367452+00:00",
+      "author_reported_by_trello": {
+        "id": "6ab07430e77c7ae74e433bb8",
+        "username": "sashachicha13",
+        "fullName": "sashachicha13"
+      },
+      "attribution": "Agent-prepared handover posted under existing user authorization using Sasha account; not direct chef approval.",
+      "text": "Creator handoff — GK-001 — manual-handover-r2 — 2026-10-05 Europe/London\nAgent-prepared record of the original chef answer, Sasha's main-card answer 6ac2d95174a456d0b2b9ba6a, and explicit follow-up replies in this task. Sasha is developer/user; no direct chef authorship or legal approval is fabricated.\n\nResolved policy:\n• Both made-to-order and ready-made cakes: 100% of whole paid order including GK delivery when cancellation is MORE than120 elapsed hours before ORIGINAL handover; exactly50% at equality/later, including no-show and after handover. At placement save original handover minus120h; date/time moves never change it. Chef cancellation100%. Explicitly replaces old3/4-day and separate percentage/component rules; prior evidence is history.\n• Minimum lead192 elapsed hours. Uncertain dates/month boundaries are agreed personally with chef/admin; no invented automatic month conversion.\n• Standard7cakes per handover day. Reducing limit7→5 with7accepted preserves all7; only personal chef cancellation removes an accepted order. Two simultaneous last-place orders may both proceed.\n• Full successful payment+48elapsed hours remains automatic production/preparation start; earlier manual confirmation starts it, late processing retains scheduled effect. Pickup windows/60-minute intervals and separate6-hour same-day move rule retained. Delivery individually agreed from GBP100 in pickup windows.\n• Current GK-003 overlap: website payments including chef-template orders,24h payment window; GK delivery separately paid and separately refunded by chef/admin against one aggregate entitlement. Old off-site balance exception is historical. No GK-003/005 status change implied.\n\nDurable local gk-cakes packet: docs/creator/GK-001/handover.md, handover.json, acceptance-cases.md, source-comments.json, decisions.json, submission-2026-10-05.uk.txt; r1 receipt/evidence retained in handover-history.json. Current shared decisions, SQL/admin proposals and loading instructions updated. Files remain local/unpushed; another worker must verify access and hashes.\nHandover SHA256: c50f6f6fe19f7714a258a5fd78ea4ff7a74a333dae0af0755e9757c9418fff77\nDecisions SHA256: 32ed103b78d03190d778f4d9b763cce04e48ac3ea6b37083ee6ff62241917842\nCases SHA256: fd86f1aad638aa74765ea6aa457d36851ffa720a2e71044ce54e6d8063fdc364\n\nAC1: start/equality/both DST/immutable refund deadline; AC2: concurrency/full-target move/capacity reduction; AC3: manual London/outside-London fees/windows; AC4: exact source/review/publication evidence.50 worked document cases; not application/provider tests.\n\nThis exact revision is submitted under the user's existing instruction to finalize GK-001 and mark Done after checks/review. Results and actual transition readback are recorded in handover.json. GK-019 receives this input but still needs its other prerequisites; no dependent Ready transition, implementation, public Terms, commit/push, release or deployment.\n",
+      "sha256_original_utf8": "858b6e308cf4999751913baa3a77e327d25a7c79268d262a0dc5189831bd2186",
+      "exact_readback": true
+    }
+  ],
+  "historical_receipts": "handover-history.json retains exact r1 artifacts/review/publication; prior observations stay historical.",
+  "planned_publication": {
+    "body_file": "handover-comment.md",
+    "body_sha256": "858b6e308cf4999751913baa3a77e327d25a7c79268d262a0dc5189831bd2186",
+    "target_card_id": "6ab13b4fa34d3a2205f61353",
+    "scope": "One reviewed handover comment then authorized move to verified main-board Done; no description/other-card edits."
+  },
+  "review_findings_and_disposition": [
+    {
+      "finding": "Related GK003 metadata changed during concurrent intake",
+      "disposition": "Refreshed to frozen current decision revisions; original source hashes unchanged; older references retained in prior decision versions."
+    },
+    {
+      "finding": "GK001 delivery quote-validity NULL conflicted with current24h payment window",
+      "disposition": "Removed ambiguous current NULL; explicit current-payment-window policy reference and handover readback now point to GK003.quote_validity. Not production+48h."
+    },
+    {
+      "finding": "Stale GK003 registry/current shared statements",
+      "disposition": "GK003 owning task refreshed bounded registry; root synced identity authority, historical partly-paid qualifier, source/payment/quote profiles and loading hooks."
+    },
+    {
+      "finding": "Capacity cancellation scope could obscure customer rights",
+      "disposition": "Clarified that chef-only capacity-driven cancellation does not withdraw separate customer cancellation/refund rights."
+    },
+    {
+      "finding": "SETUP current GK001 row still asked resolved questions",
+      "disposition": "Replaced with consumption of reviewed r2 and downstream reconciliation, including personal date resolution."
+    }
+  ],
+  "status_transition": {
+    "before_list_id": "6ab074adb3c3763832de0087",
+    "after_list_id": "6ab074aeb3c3763832de00c3",
+    "after_list_name": "🏁 Done",
+    "done_list_verified_live": true,
+    "authorization": "User requested GK-001 Done then supplied answers and instructed executing manual handover steps.",
+    "retrieved_at": "2026-10-04T23:51:13.649704+00:00",
+    "closed": false,
+    "description_unchanged": true,
+    "other_cards_changed_by_this_handover": false
+  },
+  "final_live_observation": {
+    "card_id": "6ab13b4fa34d3a2205f61353",
+    "board_id": "6ab074a2b3c3763832ddf623",
+    "list_id": "6ab074aeb3c3763832de00c3",
+    "closed": false,
+    "retrieved_at": "2026-10-04T23:51:13.649704+00:00",
+    "description_sha256": "bfb92c13e7e0eebf3a0bbf8ddc56501e660cc21a71d079427524d2ab49939b4f",
+    "browser_verified": {
+      "observed_at": "2026-10-04T23:52:07.765908+00:00",
+      "card_list_label": "🏁 Done",
+      "comment_permalink": "https://trello.com/c/eI8UpD6l#comment-6ac2e66f3d58ec67c0128d44",
+      "method": "Authenticated browser rendered card list selector and published r2 timestamp link."
+    }
+  }
+}

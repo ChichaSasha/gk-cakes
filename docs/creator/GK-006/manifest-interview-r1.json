@@ -1,0 +1,24 @@
+{
+  "revision": "interview-r1",
+  "date": "2026-10-05",
+  "git_head": "bb96a89681bcf2fa1c663a02eacbe039e20e6363",
+  "checkout_note": "Existing staged/untracked planning and asset work preserved; HEAD does not identify these local unpushed artifacts. Use content hashes.",
+  "review": "same-session document self-check; not independent review",
+  "checks": [
+    "planning checker self-test passed",
+    "planning kit checks passed",
+    "existing owner intake check passed (3 existing owner packets; does not validate new GK-006 schema)",
+    "GK-006 six decision answer hashes, input hashes, and local links verified"
+  ],
+  "sha256": {
+    "docs/creator/GK-006/README.md": "3aecc3447d1550042ffe5f3cdaea61d44701312d1c071a40879d8c91e52c4e02",
+    "docs/creator/GK-006/interview-2026-10-05.json": "e363cade1950379c41f9f5d7df10606d902fe9155cae6a9438c6c891fe26283d",
+    "docs/creator/GK-006/source-board-instructions-2026-10-05.json": "a3de285a0ae3fff809eabd37cf4ae85b499400ae422f84bcec34f3f3148985ca",
+    "docs/creator/GK-006/source-card-2026-10-05.json": "9329cfcde1516244bd0b67e715d4a6f20512f4a3b209b356c5a4b0e8d36a01c2",
+    "docs/creator/GK-006/source-comments-2026-10-05.json": "87ff4cae1f0acf69d7fe78684fa79059093768fb115a34b89e5e920084848cec",
+    "docs/creator/GK-006/trello-summary.txt": "5e312f421335920682711df395d15d075fdf13b062e2f63f8b32fd964fd19baa",
+    "docs/creator/README.md": "5ae031f28e76ed618057221a951ccb0896f3a72fc3ecdebcd30992bdc98c4be2",
+    "docs/planning/DELIVERY.md": "aebe93310e534fae078cbae48ff6af33b0d236541f575beb1a5503e897e474e4",
+    "SETUP.md": "36b59ca6311259881f26c34f7122d1f7248426f22c892d9bd65305b0387fd473"
+  }
+}
