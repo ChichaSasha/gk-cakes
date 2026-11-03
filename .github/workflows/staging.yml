@@ -89,7 +89,9 @@ jobs:
             if out=$(docker buildx imagetools inspect "$tag" --format '{{json .Manifest}}' 2>&1); then
               digest=$(jq -r .digest <<<"$out")
               note=reused
-            elif grep -qiE 'not found|manifest unknown' <<<"$out"; then
+            elif grep -qiE 'not found|manifest unknown|name unknown|denied|403 forbidden' <<<"$out"; then
+              # Missing tag, or a package that does not exist yet (ghcr answers
+              # denied/403 for those); transient errors fall through and fail.
               docker buildx build --platform linux/amd64 --provenance=false --sbom=false --push \
                 --label "org.opencontainers.image.revision=$SHA" --tag "$tag" "$component"
               digest=$(docker buildx imagetools inspect "$tag" --format '{{json .Manifest}}' | jq -r .digest)
@@ -158,8 +160,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
+          # Run the built binary: `go run` would turn exit status 4 into 1.
+          go build -o "$RUNNER_TEMP/gk-release-gate" ./cmd/gk-release-gate
           set +e
-          go run ./cmd/gk-release-gate -verify -component "$IN_COMPONENT" -commit "$IN_SHA" -digest "$IN_DIGEST" \
+          "$RUNNER_TEMP/gk-release-gate" -verify -component "$IN_COMPONENT" -commit "$IN_SHA" -digest "$IN_DIGEST" \
             -environment "staging-$IN_COMPONENT" -version "$IN_VERSION"
           code=$?
           set -e
@@ -185,6 +189,7 @@ jobs:
     needs: [publish, verify]
     if: >-
       !cancelled() && vars.STAGING_API_ENABLED == 'true' &&
+      (needs.publish.result == 'success' || needs.verify.result == 'success') &&
       (needs.publish.outputs.deploy_api == 'true' || needs.verify.outputs.deploy_api == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -240,6 +245,7 @@ jobs:
     needs: [publish, verify, deploy-api]
     if: >-
       !cancelled() &&
+      (needs.publish.result == 'success' || needs.verify.result == 'success') &&
       (needs.publish.outputs.deploy_ui == 'true' || needs.verify.outputs.deploy_ui == 'true') &&
       (needs.deploy-api.result == 'success' || needs.deploy-api.result == 'skipped')
     runs-on: ubuntu-24.04

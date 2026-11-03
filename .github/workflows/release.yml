@@ -61,7 +61,7 @@ jobs:
     needs: gate
     if: needs.gate.outputs.decision == 'deploy' && startsWith(needs.gate.outputs.environment, 'staging-')
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 120
     permissions:
       actions: write
     env:
@@ -74,7 +74,7 @@ jobs:
       - name: Hand the verified artifact to the Staging workflow and wait for it
         run: |
           release="$COMPONENT-v$VERSION"
-          since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          since=$(date -u -d '-60 seconds' +%Y-%m-%dT%H:%M:%SZ) # margin for clock skew
           gh workflow run staging.yml --repo "$GITHUB_REPOSITORY" --ref main \
             -f component="$COMPONENT" -f commit_sha="$SHA" -f digest="$DIGEST" -f version="$release"
           run_id=""

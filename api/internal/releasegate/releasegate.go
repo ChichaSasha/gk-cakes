@@ -444,24 +444,30 @@ type deployment struct {
 // is therefore skipped even after later deploys, while a rollback must use a
 // new release tag and is deployed.
 func (c *Client) AlreadyReleased(ctx context.Context, repo, environment, version, digest string) (bool, error) {
-	var deployments []deployment // newest first
-	q := url.Values{"environment": {environment}, "per_page": {"100"}}
-	if err := c.get(ctx, "/repos/"+repo+"/deployments", q, &deployments); err != nil {
-		return false, err
-	}
-	for _, d := range deployments {
-		if d.Payload.Version != version || d.Payload.ArtifactDigest != digest {
-			continue
-		}
-		var statuses []struct {
-			State string `json:"state"`
-		}
-		if err := c.get(ctx, fmt.Sprintf("/repos/%s/deployments/%d/statuses", repo, d.ID), url.Values{"per_page": {"1"}}, &statuses); err != nil {
+	const perPage, maxPages = 100, 50
+	for page := 1; page <= maxPages; page++ {
+		var deployments []deployment // newest first
+		q := url.Values{"environment": {environment}, "per_page": {fmt.Sprint(perPage)}, "page": {fmt.Sprint(page)}}
+		if err := c.get(ctx, "/repos/"+repo+"/deployments", q, &deployments); err != nil {
 			return false, err
 		}
-		if len(statuses) > 0 && statuses[0].State == "success" {
-			return true, nil
+		for _, d := range deployments {
+			if d.Payload.Version != version || d.Payload.ArtifactDigest != digest {
+				continue
+			}
+			var statuses []struct {
+				State string `json:"state"`
+			}
+			if err := c.get(ctx, fmt.Sprintf("/repos/%s/deployments/%d/statuses", repo, d.ID), url.Values{"per_page": {"1"}}, &statuses); err != nil {
+				return false, err
+			}
+			if len(statuses) > 0 && statuses[0].State == "success" {
+				return true, nil
+			}
+		}
+		if len(deployments) < perPage {
+			return false, nil
 		}
 	}
-	return false, nil
+	return false, fmt.Errorf("environment %s: more than %d pages of deployments", environment, maxPages)
 }
