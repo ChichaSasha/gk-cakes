@@ -546,7 +546,9 @@ func TestConcurrentDispatchOfOneOperationSendsOnce(t *testing.T) {
 	}
 	wg.Wait()
 	for i, err := range errs {
-		if err != nil && !errors.Is(err, recovery.ErrBusy) {
+		// Never busy or stale for its own operation; a worker may still see
+		// an unfinished phase of the other one as a retryable error.
+		if errors.Is(err, recovery.ErrBusy) || errors.Is(err, recovery.ErrStale) {
 			t.Fatalf("worker %d: %v", i, err)
 		}
 	}
@@ -643,6 +645,72 @@ func TestOneOperationPerAggregateVersion(t *testing.T) {
 	_, err := conn.Exec(ctx, insert, uuidAt(51), uuidAt(52), "k51")
 	if got := dbtest.SQLState(err); got != "23505" {
 		t.Fatalf("second operation at the same version: SQLSTATE %q (%v), want 23505", got, err)
+	}
+}
+
+// TestResolveNeverReservesAnUnknownOperation: resolving against a database
+// that does not know the operation leaves no row behind.
+func TestResolveNeverReservesAnUnknownOperation(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	op := h.dispatchOp(60)
+	if _, err := h.coord.Resolve(ctx, h.store(), op, recovery.Outcome{Status: "abandoned"}); err == nil || !strings.Contains(err.Error(), "not recorded") {
+		t.Fatalf("Resolve of an unknown operation: err = %v, want refusal", err)
+	}
+	var n int
+	if err := h.admin.QueryRow(ctx, "SELECT count(*) FROM business.recovery_operation").Scan(&n); err != nil || n != 0 {
+		t.Fatalf("rows after the refused Resolve = %d, %v; want 0", n, err)
+	}
+	if _, err := h.coord.Dispatch(ctx, h.store(), op, h.effect(op, nil)); err != nil {
+		t.Fatalf("Dispatch after the refused Resolve: %v", err)
+	}
+}
+
+// TestPhaseTransitionsAreGuarded: a reserved operation cannot go to
+// reconcile (its effect never ran) and committing requires the right phase.
+func TestPhaseTransitionsAreGuarded(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	store := h.store()
+	op := h.dispatchOp(61)
+	h.journal.Fail = func(op, _ string) error {
+		if op == "put" {
+			return errors.New("b2 unavailable")
+		}
+		return nil
+	}
+	_, _ = h.coord.Dispatch(ctx, store, op, h.effect(op, nil)) // stays reserved
+	h.journal.Fail = nil
+	if _, err := store.MarkReconcile(ctx, op, "test"); err == nil {
+		t.Fatal("a reserved operation went to reconcile")
+	}
+	cs := &crashStore{Store: store, before: map[string]bool{}, after: map[string]bool{"prepared": true}}
+	_, _ = h.coord.Dispatch(ctx, cs, op, h.effect(op, nil)) // now prepared
+	if _, _, err := store.MarkCommitted(ctx, op, recovery.Outcome{Status: "accepted"}, true); err == nil {
+		t.Fatal("a prepared operation was committed as a reconcile resolution")
+	}
+	if _, err := store.MarkReconcile(ctx, op, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.MarkCommitted(ctx, op, recovery.Outcome{Status: "accepted"}, false); err == nil {
+		t.Fatal("a reconciling operation was committed as an effect outcome")
+	}
+}
+
+// TestRecordedOutcomeIsVerifiedOnRead: an outcome changed in the database
+// behind the hash is refused.
+func TestRecordedOutcomeIsVerifiedOnRead(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	op := h.dispatchOp(62)
+	if _, err := h.coord.Dispatch(ctx, h.store(), op, h.effect(op, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.admin.Exec(ctx, `UPDATE business.recovery_operation SET outcome = '{"status":"failed"}' WHERE id = $1::uuid`, op.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.coord.Dispatch(ctx, h.store(), op, h.effect(op, nil)); err == nil || !strings.Contains(err.Error(), "does not match its hash") {
+		t.Fatalf("Dispatch over a changed outcome: err = %v, want hash refusal", err)
 	}
 }
 

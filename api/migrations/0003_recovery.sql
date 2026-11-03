@@ -6,7 +6,8 @@
 --   reserved   -> prepared envelope acknowledged -> prepared
 --   prepared   -> effect outcome recorded locally -> committed
 --   committed  -> outcome envelope acknowledged   -> secured
---   reserved/prepared -> reconcile (manager attention; never a blind retry)
+--   prepared   -> reconcile (outcome unknown past the replay deadline, or
+--                 unrecordable; manager attention, never a blind retry)
 --   reconcile  -> manager-determined outcome      -> committed
 -- One unresolved operation per aggregate; prior versions only increase.
 -- Only outgoing dispatches (email now; payments/refunds later) are protected
@@ -40,10 +41,7 @@ CREATE TABLE business.recovery_operation (
   version          integer NOT NULL DEFAULT 1 CHECK (version >= 1),
   created_at       timestamptz NOT NULL DEFAULT now(),
   updated_at       timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT recovery_prepared_ack CHECK (CASE state
-    WHEN 'reserved' THEN prepared_ack_at IS NULL
-    WHEN 'reconcile' THEN true
-    ELSE prepared_ack_at IS NOT NULL END),
+  CONSTRAINT recovery_prepared_ack CHECK ((state = 'reserved') = (prepared_ack_at IS NULL)),
   CONSTRAINT recovery_outcome CHECK ((state IN ('committed', 'secured')) = (outcome IS NOT NULL AND outcome_hash IS NOT NULL)),
   CONSTRAINT recovery_secured CHECK ((state = 'secured') = (outcome_ack_at IS NOT NULL)),
   CONSTRAINT recovery_reconcile CHECK ((state = 'reconcile') = (reconcile_reason IS NOT NULL)),
@@ -119,6 +117,35 @@ BEGIN
       USING ERRCODE = 'unique_violation';
   END IF;
   RETURN QUERY SELECT 'busy'::text, NULL::text, NULL::json, NULL::text;
+END;
+$$;
+
+-- Read-only lookup with the same identity check as recovery_reserve; result
+-- 'existing' or 'missing'. Used where an operation must already exist.
+CREATE FUNCTION business.recovery_lookup(
+  p_id uuid, p_kind text, p_aggregate_id uuid, p_prior_version integer,
+  p_payload_hash text, p_envelope_key text, p_replay_until timestamptz)
+RETURNS TABLE (result text, op_state text, op_outcome json, op_outcome_hash text)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  r business.recovery_operation;
+BEGIN
+  SELECT * INTO r FROM business.recovery_operation o WHERE o.id = p_id;
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT 'missing'::text, NULL::text, NULL::json, NULL::text;
+    RETURN;
+  END IF;
+  IF r.kind <> p_kind OR r.aggregate_id <> p_aggregate_id OR r.prior_version <> p_prior_version
+     OR r.payload_hash <> p_payload_hash OR r.envelope_key <> p_envelope_key
+     OR r.replay_until IS DISTINCT FROM p_replay_until THEN
+    RAISE EXCEPTION 'recovery operation % exists with a different identity', p_id
+      USING ERRCODE = 'unique_violation';
+  END IF;
+  RETURN QUERY SELECT 'existing'::text, r.state, r.outcome, r.outcome_hash::text;
 END;
 $$;
 
@@ -213,7 +240,8 @@ BEGIN
 END;
 $$;
 
--- reserved/prepared -> reconcile when the outcome cannot be established safely.
+-- prepared -> reconcile when the outcome cannot be established safely. (A
+-- reserved operation never ran its effect; it is simply resumed.)
 CREATE FUNCTION business.recovery_mark_reconcile(p_id uuid, p_reason text)
 RETURNS text
 LANGUAGE plpgsql
@@ -225,7 +253,7 @@ DECLARE
 BEGIN
   UPDATE business.recovery_operation
   SET state = 'reconcile', reconcile_reason = p_reason, version = version + 1, updated_at = pg_catalog.now()
-  WHERE id = p_id AND state IN ('reserved', 'prepared')
+  WHERE id = p_id AND state = 'prepared'
   RETURNING state INTO v_state;
   IF FOUND THEN
     RETURN v_state;
@@ -234,7 +262,7 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'unknown recovery operation %', p_id USING ERRCODE = 'no_data_found';
   ELSIF v_state <> 'reconcile' THEN
-    RAISE EXCEPTION 'recovery operation % is %; its outcome is already recorded', p_id, v_state
+    RAISE EXCEPTION 'recovery operation % is %, not prepared', p_id, v_state
       USING ERRCODE = 'invalid_parameter_value';
   END IF;
   RETURN v_state;
@@ -266,6 +294,7 @@ $$;
 REVOKE ALL ON TABLE business.recovery_operation FROM PUBLIC;
 REVOKE ALL ON TABLE business.recovery_freeze FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.recovery_reserve(uuid, text, uuid, integer, text, text, timestamptz) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.recovery_lookup(uuid, text, uuid, integer, text, text, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.recovery_mark_prepared(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.recovery_mark_committed(uuid, json, text, boolean) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.recovery_mark_secured(uuid) FROM PUBLIC;

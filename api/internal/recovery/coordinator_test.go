@@ -27,6 +27,9 @@ func (n nopStore) fail() error { n.t.Fatal("store reached for an invalid operati
 func (n nopStore) Reserve(context.Context, Operation, string) (Reservation, error) {
 	return Reservation{}, n.fail()
 }
+func (n nopStore) Lookup(context.Context, Operation, string) (Reservation, error) {
+	return Reservation{}, n.fail()
+}
 func (n nopStore) MarkPrepared(context.Context, Operation) (State, error) { return "", n.fail() }
 func (n nopStore) MarkCommitted(context.Context, Operation, Outcome, bool) (State, bool, error) {
 	return "", false, n.fail()
@@ -134,6 +137,13 @@ func TestCopyBlobStoresSealedVerifiedBytesOnceUnderKeyedNames(t *testing.T) {
 	c2 := &Coordinator{Journal: j, Sealer: rotated, Environment: "test"}
 	if got, err := c2.ReadBlob(ctx, ref); err != nil || !bytes.Equal(got, data) {
 		t.Fatalf("ReadBlob after rotation = %q, %v", got, err)
+	}
+
+	// An unreadable copy under the current key falls back to another key's copy.
+	newToken := rotated.blobTokens(sum)[0]
+	_ = j.Put(ctx, "recovery/test/blob/"+newToken, []byte("garbage"))
+	if got, err := c2.ReadBlob(ctx, ref); err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("ReadBlob with an unreadable current-key copy = %q, %v", got, err)
 	}
 
 	if _, err := c.ReadBlob(ctx, "sha256:abc"); err == nil {

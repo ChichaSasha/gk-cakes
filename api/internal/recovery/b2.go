@@ -289,8 +289,12 @@ func (b *B2) Put(ctx context.Context, name string, data []byte) error {
 		_, err = b.do(req, "upload", &resp)
 		if err != nil {
 			// B2 asks for a new upload URL after any upload error; this
-			// target is not returned to the pool.
+			// target is not returned to the pool. An expired token likely
+			// means the idle ones are expired too.
 			if isExpired(err) && attempt == 0 {
+				b.mu.Lock()
+				b.uploads = nil
+				b.mu.Unlock()
 				continue
 			}
 			return err

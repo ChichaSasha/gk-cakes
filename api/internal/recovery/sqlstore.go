@@ -32,6 +32,15 @@ func NewSQLStore(db Querier) (SQLStore, error) {
 
 // Reserve implements Store.
 func (s SQLStore) Reserve(ctx context.Context, op Operation, envelopeKey string) (Reservation, error) {
+	return s.reservation(ctx, "recovery_reserve", op, envelopeKey)
+}
+
+// Lookup implements Store.
+func (s SQLStore) Lookup(ctx context.Context, op Operation, envelopeKey string) (Reservation, error) {
+	return s.reservation(ctx, "recovery_lookup", op, envelopeKey)
+}
+
+func (s SQLStore) reservation(ctx context.Context, fn string, op Operation, envelopeKey string) (Reservation, error) {
 	var (
 		res     Reservation
 		state   *string
@@ -39,7 +48,7 @@ func (s SQLStore) Reserve(ctx context.Context, op Operation, envelopeKey string)
 		hash    *string
 	)
 	err := s.db.QueryRow(ctx,
-		"SELECT result, op_state, op_outcome, op_outcome_hash FROM business.recovery_reserve($1::uuid, $2, $3::uuid, $4, $5, $6, $7)",
+		"SELECT result, op_state, op_outcome, op_outcome_hash FROM business."+fn+"($1::uuid, $2, $3::uuid, $4, $5, $6, $7)",
 		op.ID, string(op.Kind), op.AggregateID, op.PriorVersion, op.PayloadHash(), envelopeKey, op.ReplayUntil,
 	).Scan(&res.Result, &state, &outcome, &hash)
 	if err != nil {

@@ -131,9 +131,9 @@ func sameOutcome(a, b Outcome) bool {
 	return errA == nil && errB == nil && ha == hb
 }
 
-// Reservation is the result of Store.Reserve.
+// Reservation is the result of Store.Reserve or Store.Lookup.
 type Reservation struct {
-	Result  string // "reserved", "existing", "busy" or "stale"
+	Result  string // "reserved", "existing", "busy", "stale" or (Lookup) "missing"
 	State   State
 	Outcome *Outcome
 }
@@ -145,6 +145,9 @@ type Reservation struct {
 // marked prepared).
 type Store interface {
 	Reserve(ctx context.Context, op Operation, envelopeKey string) (Reservation, error)
+	// Lookup reads an existing operation without reserving ("existing" or
+	// "missing"), with the same identity check as Reserve.
+	Lookup(ctx context.Context, op Operation, envelopeKey string) (Reservation, error)
 	MarkPrepared(ctx context.Context, op Operation) (State, error)
 	// MarkCommitted records the outcome (from prepared, or from reconcile when
 	// fromReconcile); changed reports whether this call recorded it.
@@ -402,12 +405,25 @@ func (c *Coordinator) Resolve(ctx context.Context, store Store, op Operation, ou
 	if _, _, err := outcome.encode(); err != nil {
 		return Outcome{}, err
 	}
-	key, res, env, err := c.start(ctx, store, op)
+	if err := op.validate(); err != nil {
+		return Outcome{}, err
+	}
+	key, err := c.EnvelopeKey(op)
 	if err != nil {
 		return Outcome{}, err
 	}
+	// Read-only: resolving must never reserve an operation the database
+	// does not know (for example before a restore replay).
+	res, err := store.Lookup(ctx, op, key)
+	if err != nil {
+		return Outcome{}, fmt.Errorf("recovery: lookup: %w", err)
+	}
 	if res.Result != "existing" {
 		return Outcome{}, fmt.Errorf("recovery: operation %s is not recorded; nothing to resolve", op.ID)
+	}
+	env := envelope{
+		V: 1, Environment: c.Environment, OperationID: op.ID, Kind: op.Kind,
+		AggregateID: op.AggregateID, PriorVersion: op.PriorVersion, PayloadHash: op.PayloadHash(),
 	}
 	state, changed := res.State, false
 	switch state {
@@ -572,6 +588,7 @@ func (c *Coordinator) ReadBlob(ctx context.Context, ref string) ([]byte, error) 
 	if m == nil {
 		return nil, fmt.Errorf("recovery: %q is not a blob reference", ref)
 	}
+	lastErr := ErrNotFound
 	for _, token := range c.Sealer.blobTokens(m[1]) {
 		name := root + "blob/" + token
 		data, err := c.Journal.Get(ctx, name)
@@ -582,13 +599,14 @@ func (c *Coordinator) ReadBlob(ctx context.Context, ref string) ([]byte, error) 
 			return nil, err
 		}
 		plain, err := c.Sealer.Open(name, data)
-		if err != nil {
-			return nil, err
+		if err == nil && hashHex(plain) != m[1] {
+			err = fmt.Errorf("recovery: blob %s does not match its reference", ref)
 		}
-		if hashHex(plain) != m[1] {
-			return nil, fmt.Errorf("recovery: blob %s does not match its reference", ref)
+		if err != nil {
+			lastErr = err // try the copies under other keys
+			continue
 		}
 		return plain, nil
 	}
-	return nil, ErrNotFound
+	return nil, lastErr
 }
