@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -83,7 +84,23 @@ type Worker struct {
 	Env             Env
 	DatabaseURL     Secret
 	ShutdownTimeout time.Duration
+	Email           EmailDispatch
 }
+
+// EmailDispatch configures the worker's email engine: the Resend sending key
+// and the independent recovery journal every dispatch is written to first
+// (a B2 application key restricted to recovery/ and the envelope encryption
+// keys). Required in staging and production; elsewhere all or none are set,
+// and without them the worker dispatches no email.
+type EmailDispatch struct {
+	APIKey         Secret
+	B2KeyID        string
+	B2Key          Secret
+	EncryptionKeys Secret
+}
+
+// Enabled reports whether email dispatch is configured.
+func (e EmailDispatch) Enabled() bool { return e.APIKey.IsSet() }
 
 // Migrate is the configuration of the migration command. It never falls back
 // to the runtime DATABASE_URL.
@@ -122,7 +139,39 @@ func LoadWorker(getenv func(string) string) (Worker, error) {
 		ShutdownTimeout: l.duration("SHUTDOWN_TIMEOUT", defaultShutdownTimeout),
 	}
 	cfg.DatabaseURL = l.databaseURL("DATABASE_URL", cfg.Env)
+	cfg.Email = l.emailDispatch(cfg.Env)
 	return cfg, l.err()
+}
+
+var b2KeyIDPattern = regexp.MustCompile(`^[A-Za-z0-9]{1,64}$`)
+
+func (l *loader) emailDispatch(env Env) EmailDispatch {
+	e := EmailDispatch{
+		APIKey:         l.optionalSecret("EMAIL_API_KEY"),
+		B2KeyID:        l.get("RECOVERY_B2_KEY_ID"),
+		B2Key:          l.optionalSecret("RECOVERY_B2_KEY"),
+		EncryptionKeys: l.optionalSecret("RECOVERY_ENCRYPTION_KEYS"),
+	}
+	set := 0
+	for _, ok := range []bool{e.APIKey.IsSet(), e.B2KeyID != "", e.B2Key.IsSet(), e.EncryptionKeys.IsSet()} {
+		if ok {
+			set++
+		}
+	}
+	const names = "EMAIL_API_KEY, RECOVERY_B2_KEY_ID, RECOVERY_B2_KEY and RECOVERY_ENCRYPTION_KEYS"
+	switch {
+	case set < 4 && env.deployed():
+		l.fail("%s are required in %s", names, env)
+	case set > 0 && set < 4:
+		l.fail("%s must be set together", names)
+	}
+	if e.APIKey.IsSet() && !strings.HasPrefix(e.APIKey.value, "re_") {
+		l.fail("EMAIL_API_KEY must be a Resend API key")
+	}
+	if e.B2KeyID != "" && !b2KeyIDPattern.MatchString(e.B2KeyID) {
+		l.fail("RECOVERY_B2_KEY_ID must be a B2 application key ID")
+	}
+	return e
 }
 
 // LoadMigrate reads migration configuration using getenv.
