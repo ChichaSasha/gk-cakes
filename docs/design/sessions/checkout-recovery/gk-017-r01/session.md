@@ -41,10 +41,13 @@ Continue pinned at its bottom; below the form on tablet and mobile, with a "To p
 Summary promises: place on this date held 15 minutes while paying, and a still-processing payment is
 waited for; order confirmed only when payment is received; unclear result is checked — don't pay twice.
 
-GK delivery mode (current "request first" behaviour, pending the Creator decision below): total shows
-"Cakes · payable after the chef confirms", payment is disabled with the reason, the hold promise is
-hidden, the time is "requested, to be confirmed", refund terms cover everything paid including delivery
-from the confirmed delivery time. Sending a delivery request is designed in r02.
+GK delivery mode (Creator decision 2026-11-03: pay for the cake now, delivery afterwards): a delivery
+address is required; the time is "requested, to be confirmed"; "To pay now · cakes" with "Pay for cakes ·
+£X"; the hold promise applies. After payment the chef confirms address and time and sends the delivery
+quote (from £100), paid separately unless FREEDELIVERY is approved. The refund deadline is set from the
+requested time at payment and does not move if the chef confirms a different time; refunds cover
+everything paid including delivery. If delivery is impossible, the screen only says the chef will contact
+the customer (outcome not yet decided — question 5).
 
 ## Buttons and destinations
 
@@ -56,7 +59,7 @@ from the confirmed delivery time. Sending a delivery request is designed in r02.
 | Full policies | Opens policies in a new tab | Published policies |
 | Show all 17 methods | Expands the list | Qualified list |
 | View order (mobile) | Jumps to the summary | Same |
-| Continue to secure payment | Inline errors + summary if anything is missing; otherwise "Opening secure payment…", then the design-review result page | Hosted secure payment page; result page after the authoritative result |
+| Continue to secure payment (delivery: Pay for cakes) | Inline errors + summary if anything is missing; otherwise "Opening secure payment…", then the design-review result page | Hosted secure payment page; result page after the authoritative result |
 | Design review box | Chooses the simulated result | Not present |
 ## Preview
 
@@ -82,13 +85,18 @@ with the minor items; round 3 on d4ee7f3: payments pass, UX revise — page scro
 variant, free-order (£0) path, "last place taken" when Continue is pressed, and keeping typed details
 across a date change (prototype limitation, specified for the live shop). Record: PR #6 comments.
 
-## Questions for the Creator
+## Creator decisions (2026-11-03)
 
-0. **GK delivery:** should delivery customers send a request and pay after the chef confirms (current
-   behaviour), or pay for the cake now with delivery quoted and paid afterwards? The rules allow both.
-   Note: paying now fixes the handover time and refund deadline at payment, while the delivery time is
-   still only a request; if the chef later confirms a different time, the deadline would not move.
-1. Section order: is details → code → checks → payment right, or should payment methods sit higher?
-2. Is showing 6 payment methods + “11 more” right, or show all 17?
-3. Refund wording — clear enough at the moment of paying?
+Answers, verbatim: “pay for the cake now and pay for delivery afterwards”; “1. RIGHT”; “2. six payment
+methods”; “3. Yes”.
+
+0. GK delivery: pay for the cake now; delivery quoted by the chef and paid afterwards. Applied above.
+1. Section order details → code → checks → payment: kept.
+2. Six payment methods plus “show all 17”: kept.
+3. Refund wording: clear; kept (delivery variant adapted for decision 0).
+
+## Open questions for the Creator
+
 4. Anything to add or remove before I design the problem states (r02)?
+5. If the chef can’t deliver to an address after the cake is paid, what should the customer get: switch to
+   collection or own courier, or a full refund if they prefer? The rules don’t cover this case yet.
