@@ -24,30 +24,35 @@ import (
 var errCrash = errors.New("injected crash")
 
 // fakeProvider models a provider with Resend-style idempotency keys: a repeat
-// of the same key within the window returns the original message without a
-// second send.
+// of the same key with the same body within the window returns the original
+// message without a second send; the same key with a different body is
+// rejected (Resend: 409 invalid_idempotent_request).
 type fakeProvider struct {
 	mu     sync.Mutex
 	window time.Duration
 	byKey  map[string]string
+	body   map[string]string
 	first  map[string]time.Time
 	sends  int
 }
 
 func newProvider() *fakeProvider {
-	return &fakeProvider{window: 24 * time.Hour, byKey: map[string]string{}, first: map[string]time.Time{}}
+	return &fakeProvider{window: 24 * time.Hour, byKey: map[string]string{}, body: map[string]string{}, first: map[string]time.Time{}}
 }
 
-func (p *fakeProvider) send(key string, now time.Time) string {
+func (p *fakeProvider) send(key, body string, now time.Time) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if id, ok := p.byKey[key]; ok && now.Before(p.first[key].Add(p.window)) {
-		return id
+		if p.body[key] != body {
+			return "", errors.New("409 invalid_idempotent_request")
+		}
+		return id, nil
 	}
 	p.sends++
 	id := fmt.Sprintf("msg-%d", p.sends)
-	p.byKey[key], p.first[key] = id, now
-	return id
+	p.byKey[key], p.body[key], p.first[key] = id, body, now
+	return id, nil
 }
 
 func (p *fakeProvider) count() int {
@@ -82,15 +87,15 @@ func (c *crashStore) MarkPrepared(ctx context.Context, op recovery.Operation) (r
 	return s, err
 }
 
-func (c *crashStore) MarkCommitted(ctx context.Context, op recovery.Operation, o recovery.Outcome) (recovery.State, error) {
+func (c *crashStore) MarkCommitted(ctx context.Context, op recovery.Operation, o recovery.Outcome, fromReconcile bool) (recovery.State, bool, error) {
 	if c.hit(c.before, "committed") {
-		return "", errCrash
+		return "", false, errCrash
 	}
-	s, err := c.Store.MarkCommitted(ctx, op, o)
+	s, changed, err := c.Store.MarkCommitted(ctx, op, o, fromReconcile)
 	if err == nil && c.hit(c.after, "committed") {
-		return "", errCrash
+		return "", false, errCrash
 	}
-	return s, err
+	return s, changed, err
 }
 
 func (c *crashStore) MarkSecured(ctx context.Context, op recovery.Operation) (recovery.State, error) {
@@ -135,26 +140,57 @@ func newHarness(t *testing.T) *harness {
 	return h
 }
 
-func (h *harness) store() recovery.SQLStore { return recovery.SQLStore{DB: h.owner} }
+func mustStore(t *testing.T, conn *pgx.Conn) recovery.SQLStore {
+	t.Helper()
+	s, err := recovery.NewSQLStore(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func (h *harness) store() recovery.SQLStore { return mustStore(h.t, h.owner) }
 
 func uuidAt(n int) string { return fmt.Sprintf("00000000-0000-4000-8000-%012d", n) }
 
 const secretMarker = "Ms Example, 1 Private Road"
 
+// dispatchPayload is the exact provider request, as a real email payload is.
+type dispatchPayload struct {
+	Provider       string `json:"provider"`
+	Environment    string `json:"environment"`
+	IdempotencyKey string `json:"idempotency_key"`
+	Request        struct {
+		From    string `json:"from"`
+		To      string `json:"to"`
+		Subject string `json:"subject"`
+		Text    string `json:"text"`
+	} `json:"request"`
+}
+
 func (h *harness) dispatchOp(n int) recovery.Operation {
-	payload, _ := json.Marshal(map[string]string{
-		"provider": "resend", "environment": "test", "idempotency_key": uuidAt(n), "body_hash": strings.Repeat("a", 64),
-		"recipient": secretMarker,
-	})
+	var p dispatchPayload
+	p.Provider, p.Environment, p.IdempotencyKey = "resend", "test", uuidAt(n)
+	p.Request.From, p.Request.To = "GK Cakes <orders@gkcake.com>", secretMarker
+	p.Request.Subject, p.Request.Text = "Your order", fmt.Sprintf("Order details %d", n)
+	payload, _ := json.Marshal(p)
 	return recovery.Operation{ID: uuidAt(n), Kind: recovery.KindDispatch, AggregateID: uuidAt(1000 + n), Payload: payload,
 		ReplayUntil: h.now.Add(23 * time.Hour)}
 }
 
-// effect sends through the fake provider with the operation ID as the
-// idempotency key; loseResponse makes it send and then report a timeout.
+// effect rebuilds the provider request from the operation payload alone and
+// sends it; loseResponse makes it send and then report a timeout.
 func (h *harness) effect(op recovery.Operation, loseResponse *bool) recovery.Effect {
 	return func(context.Context) (recovery.Outcome, error) {
-		id := h.provider.send(op.ID, h.now)
+		var p dispatchPayload
+		if err := json.Unmarshal(op.Payload, &p); err != nil {
+			return recovery.Outcome{}, err
+		}
+		body, _ := json.Marshal(p.Request)
+		id, err := h.provider.send(p.IdempotencyKey, string(body), h.now)
+		if err != nil {
+			return recovery.Outcome{}, err
+		}
 		if loseResponse != nil && *loseResponse {
 			*loseResponse = false
 			return recovery.Outcome{}, errors.New("timeout waiting for provider response")
@@ -327,9 +363,299 @@ func TestExpiredReplayWindowGoesToReconciliation(t *testing.T) {
 	}
 	// The aggregate stays blocked until a manager resolves it.
 	next := h.dispatchOp(5)
-	next.AggregateID = op.AggregateID
+	next.AggregateID, next.PriorVersion = op.AggregateID, 1
 	if _, err := h.coord.Dispatch(ctx, h.store(), next, h.effect(next, nil)); !errors.Is(err, recovery.ErrBusy) {
 		t.Fatalf("second operation on a reconciling aggregate: err = %v, want ErrBusy", err)
+	}
+}
+
+// TestReplayAfterLossUsesOnlyTheJournalledRequest: a replay built from a
+// payload whose body differs from the original is refused by the provider and
+// sends nothing; the operation stays unknown.
+func TestChangedBodyUnderTheSameKeyIsNeverSent(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	op := h.dispatchOp(20)
+	lose := true
+	if _, err := h.coord.Dispatch(ctx, h.store(), op, h.effect(op, &lose)); err == nil {
+		t.Fatal("expected unknown outcome")
+	}
+	// An effect that would send a different body under the same key.
+	var p dispatchPayload
+	_ = json.Unmarshal(op.Payload, &p)
+	p.Request.Text = "tampered"
+	tampered := op
+	tampered.Payload, _ = json.Marshal(p)
+	if _, err := h.coord.Dispatch(ctx, h.store(), op, h.effect(tampered, nil)); err == nil || !strings.Contains(err.Error(), "invalid_idempotent_request") {
+		t.Fatalf("different body under the same key: err = %v, want the provider refusal", err)
+	}
+	if h.provider.count() != 1 || h.state(op.ID) != "prepared" {
+		t.Fatalf("sends %d, state %s; want the single original send, still prepared", h.provider.count(), h.state(op.ID))
+	}
+}
+
+func TestStalePriorVersionIsRefused(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	first := h.dispatchOp(21)
+	first.PriorVersion = 3
+	if _, err := h.coord.Dispatch(ctx, h.store(), first, h.effect(first, nil)); err != nil {
+		t.Fatal(err)
+	}
+	for _, version := range []int{3, 2} {
+		stale := h.dispatchOp(22 + version)
+		stale.AggregateID, stale.PriorVersion = first.AggregateID, version
+		if _, err := h.coord.Dispatch(ctx, h.store(), stale, h.effect(stale, nil)); !errors.Is(err, recovery.ErrStale) {
+			t.Fatalf("prior version %d after 3: err = %v, want ErrStale", version, err)
+		}
+	}
+	next := h.dispatchOp(26)
+	next.AggregateID, next.PriorVersion = first.AggregateID, 4
+	if _, err := h.coord.Dispatch(ctx, h.store(), next, h.effect(next, nil)); err != nil {
+		t.Fatalf("next version: %v", err)
+	}
+	if h.provider.count() != 2 {
+		t.Fatalf("sends = %d, want 2", h.provider.count())
+	}
+}
+
+// TestManagerResolvesReconciliation: a reconciling dispatch is resolved with
+// a manager-determined outcome, journalled, and the aggregate is freed.
+func TestManagerResolvesReconciliation(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	op := h.dispatchOp(27)
+	lose := true
+	_, _ = h.coord.Dispatch(ctx, h.store(), op, h.effect(op, &lose))
+	h.now = op.ReplayUntil // the deadline itself is already too late
+	if _, err := h.coord.Dispatch(ctx, h.store(), op, h.effect(op, nil)); !errors.Is(err, recovery.ErrNeedsReconcile) {
+		t.Fatalf("at the deadline: err = %v, want ErrNeedsReconcile", err)
+	}
+	resolved := recovery.Outcome{Status: "sent_confirmed_by_manager", Evidence: json.RawMessage(`{"provider_id":"msg-1"}`)}
+	if _, err := h.coord.Resolve(ctx, h.store(), op, resolved); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if h.state(op.ID) != "secured" {
+		t.Fatalf("state after Resolve = %s, want secured", h.state(op.ID))
+	}
+	key, _ := h.coord.EnvelopeKey(op)
+	if h.journal.Puts(key+".outcome") != 1 {
+		t.Fatalf("outcome envelope written %d times, want 1", h.journal.Puts(key+".outcome"))
+	}
+	if _, err := h.coord.Resolve(ctx, h.store(), op, resolved); err != nil {
+		t.Fatalf("repeated Resolve with the same outcome: %v", err)
+	}
+	if _, err := h.coord.Resolve(ctx, h.store(), op, recovery.Outcome{Status: "abandoned"}); err == nil {
+		t.Fatal("Resolve accepted a different outcome for a secured operation")
+	}
+	successor := h.dispatchOp(28)
+	successor.AggregateID, successor.PriorVersion = op.AggregateID, 1
+	successor.ReplayUntil = h.now.Add(23 * time.Hour)
+	if _, err := h.coord.Dispatch(ctx, h.store(), successor, h.effect(successor, nil)); err != nil {
+		t.Fatalf("successor after resolution: %v", err)
+	}
+	if h.provider.count() != 2 {
+		t.Fatalf("sends = %d, want the original and the successor", h.provider.count())
+	}
+}
+
+// TestUnrecordableOutcomeGoesToReconciliationWithoutRepeating: an effect that
+// returns an outcome the record cannot hold is never run again.
+func TestUnrecordableOutcomeGoesToReconciliationWithoutRepeating(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	op := h.dispatchOp(29)
+	calls := 0
+	huge := func(context.Context) (recovery.Outcome, error) {
+		calls++
+		big, _ := json.Marshal(map[string]string{"x": strings.Repeat("y", recovery.MaxOutcomeBytes)})
+		return recovery.Outcome{Status: "accepted", Evidence: big}, nil
+	}
+	for i := 0; i < 3; i++ {
+		if _, err := h.coord.Dispatch(ctx, h.store(), op, huge); !errors.Is(err, recovery.ErrNeedsReconcile) {
+			t.Fatalf("attempt %d: err = %v, want ErrNeedsReconcile", i, err)
+		}
+	}
+	if calls != 1 || h.state(op.ID) != "reconcile" {
+		t.Fatalf("effect ran %d times, state %s; want once and reconcile", calls, h.state(op.ID))
+	}
+}
+
+// TestTamperedJournalCopyStopsTheResume: an existing prepared envelope that
+// does not match the operation is an error, not silently replaced.
+func TestTamperedJournalCopyStopsTheResume(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	op := h.dispatchOp(30)
+	cs := &crashStore{Store: h.store(), before: map[string]bool{"prepared": true}, after: map[string]bool{}}
+	if _, err := h.coord.Dispatch(ctx, cs, op, h.effect(op, nil)); err == nil {
+		t.Fatal("expected the injected crash")
+	}
+	key, _ := h.coord.EnvelopeKey(op)
+	other := h.dispatchOp(31)
+	otherKey, _ := h.coord.EnvelopeKey(other)
+	if _, err := h.coord.Dispatch(ctx, h.store(), other, h.effect(other, nil)); err != nil {
+		t.Fatal(err)
+	}
+	// Put the other operation's (validly sealed) envelope under op's name.
+	data, _ := h.journal.Get(ctx, otherKey+".prepared")
+	plain, err := h.coord.Sealer.Open(otherKey+".prepared", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resealed, _ := h.coord.Sealer.Seal(key+".prepared", plain)
+	_ = h.journal.Put(ctx, key+".prepared", resealed)
+	if _, err := h.coord.Dispatch(ctx, h.store(), op, h.effect(op, nil)); err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("resume over a mismatching envelope: err = %v, want refusal", err)
+	}
+	if h.provider.count() != 1 {
+		t.Fatalf("sends = %d, want only the other operation's", h.provider.count())
+	}
+}
+
+func TestRecordedOutcomeCannotChange(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	op := h.dispatchOp(32)
+	store := h.store()
+	cs := &crashStore{Store: store, before: map[string]bool{"secured": true}, after: map[string]bool{}}
+	if _, err := h.coord.Dispatch(ctx, cs, op, h.effect(op, nil)); err == nil {
+		t.Fatal("expected the injected crash")
+	}
+	if _, changed, err := store.MarkCommitted(ctx, op, recovery.Outcome{Status: "failed"}, false); err == nil || changed {
+		t.Fatalf("different outcome over a recorded one: changed %v, err %v; want refusal", changed, err)
+	}
+}
+
+// TestConcurrentDispatchOfOneOperationSendsOnce: two workers on the same
+// operation (no lease) end secured with one send.
+func TestConcurrentDispatchOfOneOperationSendsOnce(t *testing.T) {
+	ctx := context.Background()
+	db := dbtest.New(t)
+	h := newHarness(t)
+	conns := []*pgx.Conn{ownerConn(t, db), ownerConn(t, db)}
+	op := h.dispatchOp(33)
+	var wg sync.WaitGroup
+	errs := make([]error, len(conns))
+	for i, conn := range conns {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, errs[i] = h.coord.Dispatch(ctx, mustStore(t, conn), op, h.effect(op, nil))
+		}()
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil && !errors.Is(err, recovery.ErrBusy) {
+			t.Fatalf("worker %d: %v", i, err)
+		}
+	}
+	if _, err := h.coord.Dispatch(ctx, mustStore(t, conns[0]), op, h.effect(op, nil)); err != nil {
+		t.Fatalf("final resume: %v", err)
+	}
+	var state string
+	if err := conns[0].QueryRow(ctx, "SELECT state FROM business.recovery_operation WHERE id = $1::uuid", op.ID).Scan(&state); err != nil || state != "secured" {
+		t.Fatalf("state = %s, %v; want secured", state, err)
+	}
+	if h.provider.count() != 1 {
+		t.Fatalf("sends = %d, want 1", h.provider.count())
+	}
+}
+
+// TestConcurrentReserveOfTheSameNewOperationIsExisting: a reserve that waits
+// on another session's uncommitted insert of the same operation reports it
+// as existing, never as busy.
+func TestConcurrentReserveOfTheSameNewOperationIsExisting(t *testing.T) {
+	ctx := context.Background()
+	db := dbtest.New(t)
+	a, b := ownerConn(t, db), ownerConn(t, db)
+	const reserve = "SELECT result FROM business.recovery_reserve($1::uuid, 'dispatch', $2::uuid, 0, repeat('a', 64), 'recovery/test/op/x', '2026-11-04T00:00:00Z')"
+	id, agg := uuidAt(40), uuidAt(41)
+	tx, err := a.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var first string
+	if err := tx.QueryRow(ctx, reserve, id, agg).Scan(&first); err != nil || first != "reserved" {
+		t.Fatalf("first reserve = %q, %v", first, err)
+	}
+	done := make(chan string, 1)
+	go func() {
+		var second string
+		if err := b.QueryRow(ctx, reserve, id, agg).Scan(&second); err != nil {
+			second = "error: " + err.Error()
+		}
+		done <- second
+	}()
+	time.Sleep(200 * time.Millisecond) // let the second reserve block on the first insert
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if second := <-done; second != "existing" {
+		t.Fatalf("concurrent reserve of the same operation = %q, want existing", second)
+	}
+}
+
+// TestMismatchingOutcomeCopyStopsTheResume: an outcome envelope already in
+// the journal must carry the recorded outcome.
+func TestMismatchingOutcomeCopyStopsTheResume(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	op := h.dispatchOp(42)
+	cs := &crashStore{Store: h.store(), before: map[string]bool{"secured": true}, after: map[string]bool{}}
+	if _, err := h.coord.Dispatch(ctx, cs, op, h.effect(op, nil)); err == nil {
+		t.Fatal("expected the injected crash")
+	}
+	key, _ := h.coord.EnvelopeKey(op)
+	name := key + ".outcome"
+	data, _ := h.journal.Get(ctx, name)
+	plain, err := h.coord.Sealer.Open(name, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forged := strings.Replace(string(plain), `"status":"accepted"`, `"status":"failed"`, 1)
+	if forged == string(plain) {
+		t.Fatal("test setup: outcome status not found in the envelope")
+	}
+	sealed, _ := h.coord.Sealer.Seal(name, []byte(forged))
+	_ = h.journal.Put(ctx, name, sealed)
+	if _, err := h.coord.Dispatch(ctx, h.store(), op, h.effect(op, nil)); err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("resume over a mismatching outcome envelope: err = %v, want refusal", err)
+	}
+}
+
+// TestOneOperationPerAggregateVersion: the schema itself refuses a second
+// operation at the same prior version (schema r1.5), behind the stale check.
+func TestOneOperationPerAggregateVersion(t *testing.T) {
+	ctx := context.Background()
+	conn := ownerConn(t, dbtest.New(t))
+	const insert = `INSERT INTO business.recovery_operation
+		(id, kind, aggregate_id, prior_version, payload_hash, envelope_key, replay_until)
+		VALUES ($1::uuid, 'dispatch', $2::uuid, 0, repeat('a', 64), $3, now())`
+	if _, err := conn.Exec(ctx, insert, uuidAt(50), uuidAt(52), "k50"); err != nil {
+		t.Fatal(err)
+	}
+	// Secured, so the open-operation index no longer applies.
+	if _, err := conn.Exec(ctx, `UPDATE business.recovery_operation SET state = 'secured', prepared_ack_at = now(),
+		outcome = '{}', outcome_hash = repeat('b', 64), outcome_ack_at = now() WHERE id = $1::uuid`, uuidAt(50)); err != nil {
+		t.Fatal(err)
+	}
+	_, err := conn.Exec(ctx, insert, uuidAt(51), uuidAt(52), "k51")
+	if got := dbtest.SQLState(err); got != "23505" {
+		t.Fatalf("second operation at the same version: SQLSTATE %q (%v), want 23505", got, err)
+	}
+}
+
+func TestSQLStoreRefusesATransaction(t *testing.T) {
+	ctx := context.Background()
+	conn := ownerConn(t, dbtest.New(t))
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := recovery.NewSQLStore(tx); err == nil {
+		t.Fatal("NewSQLStore accepted a transaction")
 	}
 }
 
@@ -460,7 +786,7 @@ func TestPrimaryLossReplaysFromIndependentJournal(t *testing.T) {
 
 	// Primary loss: a new, empty database; the journal survives.
 	restored := ownerConn(t, dbtest.New(t))
-	store := recovery.SQLStore{DB: restored}
+	store := mustStore(t, restored)
 	h.now = h.now.Add(2 * time.Hour)
 	pending, err := h.coord.Pending(ctx)
 	if err != nil {
@@ -485,6 +811,10 @@ func TestPrimaryLossReplaysFromIndependentJournal(t *testing.T) {
 	if again, _ := h.coord.Pending(ctx); len(again) != 1 || again[0].ID != late.ID {
 		t.Fatalf("pending after replay = %+v, want only the reconciling dispatch", again)
 	}
+	sentKey, _ := h.coord.EnvelopeKey(sent)
+	if h.journal.Puts(sentKey+".prepared") != 1 {
+		t.Fatalf("replay rewrote the prepared envelope (%d writes), want the original reused", h.journal.Puts(sentKey+".prepared"))
+	}
 }
 
 // TestRuntimeRolesCannotUseRecoveryInternals: the coordinator functions are
@@ -496,10 +826,13 @@ func TestRuntimeRolesCannotUseRecoveryInternals(t *testing.T) {
 	ownerConn(t, db)
 	reads := []string{"SELECT * FROM business.recovery_operation", "SELECT * FROM business.recovery_freeze"}
 	calls := []string{
+		"SELECT * FROM business.recovery_reserve(gen_random_uuid(), 'dispatch', gen_random_uuid(), 0, repeat('a', 64), 'k', now())",
+		"SELECT business.recovery_mark_prepared(gen_random_uuid())",
+		"SELECT * FROM business.recovery_mark_committed(gen_random_uuid(), '{}'::json, repeat('a', 64), false)",
+		"SELECT business.recovery_mark_secured(gen_random_uuid())",
+		"SELECT business.recovery_mark_reconcile(gen_random_uuid(), 'r')",
 		"SELECT business.recovery_frozen()",
 		"SELECT business.recovery_set_freeze(false, NULL)",
-		"SELECT business.recovery_mark_secured(gen_random_uuid())",
-		"SELECT * FROM business.recovery_reserve(gen_random_uuid(), 'command', gen_random_uuid(), 0, repeat('a', 64), 'k', NULL)",
 	}
 	for _, group := range []string{"gk_api", "gk_worker", "gk_backup"} {
 		conn := db.LoginConn(t, group)

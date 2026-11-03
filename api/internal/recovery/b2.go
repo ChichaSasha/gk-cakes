@@ -31,16 +31,18 @@ type B2Config struct {
 }
 
 // B2 is a Journal on Backblaze B2. It requires an application key restricted
-// to exactly one bucket and a name prefix, with list/read/write capabilities
-// and without deleteFiles, as the approved recovery plan specifies; any other
-// key is refused before use.
+// to exactly one bucket and the name prefix "recovery/" (or exactly its
+// root), with listFiles, readFiles and writeFiles and otherwise only
+// read-only capabilities, as the approved recovery plan specifies (no delete,
+// no bucket or retention changes); any other key is refused before use.
 type B2 struct {
 	cfg          B2Config
 	listPageSize int
+	authSem      chan struct{} // serializes authorization; acquiring honors ctx
 
-	mu     sync.Mutex
-	auth   *b2Auth
-	upload *b2Upload
+	mu      sync.Mutex
+	auth    *b2Auth
+	uploads []b2Upload // idle upload targets; B2 allows one upload at a time per target
 }
 
 type b2Auth struct {
@@ -48,7 +50,10 @@ type b2Auth struct {
 	bucketID, bucketName       string
 }
 
-type b2Upload struct{ url, token string }
+type b2Upload struct {
+	url, token string
+	auth       *b2Auth // authorization the target was obtained under
+}
 
 // b2Error is a B2 error response; Code is B2's stable error code.
 type b2Error struct {
@@ -78,10 +83,18 @@ func NewB2(cfg B2Config) (*B2, error) {
 		cfg.AuthURL = "https://api.backblazeb2.com"
 	}
 	if cfg.HTTP == nil {
-		cfg.HTTP = &http.Client{Timeout: 30 * time.Second}
+		cfg.HTTP = &http.Client{Timeout: 2 * time.Minute}
 	}
-	return &B2{cfg: cfg, listPageSize: 1000}, nil
+	return &B2{cfg: cfg, listPageSize: 1000, authSem: make(chan struct{}, 1)}, nil
 }
+
+var (
+	requiredCaps = []string{"listFiles", "readFiles", "writeFiles"}
+	// Read-only capabilities a restricted key may also carry.
+	readOnlyCaps = []string{"listBuckets", "listAllBucketNames", "readBuckets", "readBucketEncryption",
+		"readBucketRetentions", "readFileRetentions", "readFileLegalHolds", "readBucketNotifications",
+		"readBucketReplications", "readBucketLogging"}
+)
 
 func (b *B2) checkName(name string) error {
 	if !strings.HasPrefix(name, b.cfg.Root) || !objectName.MatchString(name) || strings.Contains(name, "..") {
@@ -124,13 +137,29 @@ func (b *B2) do(req *http.Request, op string, out any) ([]byte, error) {
 	return body, nil
 }
 
-// authorize returns a cached authorization, verifying the key's scope.
+// authorize returns a cached authorization, verifying the key's scope. A
+// fresh authorization also discards idle upload targets.
 func (b *B2) authorize(ctx context.Context, fresh bool) (*b2Auth, error) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.auth != nil && !fresh {
-		return b.auth, nil
+	cached := b.auth
+	b.mu.Unlock()
+	if cached != nil && !fresh {
+		return cached, nil
 	}
+	select {
+	case b.authSem <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	defer func() { <-b.authSem }()
+	b.mu.Lock()
+	if b.auth != nil && b.auth != cached {
+		// Another caller authorized while this one waited.
+		auth := b.auth
+		b.mu.Unlock()
+		return auth, nil
+	}
+	b.mu.Unlock()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(b.cfg.AuthURL, "/")+"/b2api/v4/b2_authorize_account", nil)
 	if err != nil {
 		return nil, err
@@ -157,25 +186,45 @@ func (b *B2) authorize(ctx context.Context, fresh bool) (*b2Auth, error) {
 		return nil, err
 	}
 	s := resp.APIInfo.StorageAPI
-	caps := s.Allowed.Capabilities
+	if err := b.checkScope(s.Allowed.Capabilities, s.Allowed.NamePrefix); err != nil {
+		return nil, err
+	}
 	switch {
 	case len(s.Allowed.Buckets) != 1 || s.Allowed.Buckets[0].Name == nil || s.Allowed.Buckets[0].ID == "":
 		return nil, errors.New("recovery: B2 key must be restricted to one bucket")
-	case slices.Contains(caps, "deleteFiles"):
-		return nil, errors.New("recovery: B2 key can delete files; the recovery journal requires a key without delete")
-	case !slices.Contains(caps, "writeFiles") || !slices.Contains(caps, "readFiles") || !slices.Contains(caps, "listFiles"):
-		return nil, errors.New("recovery: B2 key needs listFiles, readFiles and writeFiles")
-	case s.Allowed.NamePrefix == nil || *s.Allowed.NamePrefix == "" || !strings.HasPrefix(b.cfg.Root, *s.Allowed.NamePrefix):
-		return nil, fmt.Errorf("recovery: B2 key must be restricted to a name prefix containing %q", b.cfg.Root)
 	case resp.AuthorizationToken == "" || s.APIURL == "" || s.DownloadURL == "":
 		return nil, errors.New("recovery: B2 authorization response is incomplete")
 	}
-	b.auth = &b2Auth{
+	auth := &b2Auth{
 		token: resp.AuthorizationToken, apiURL: strings.TrimRight(s.APIURL, "/"), downloadURL: strings.TrimRight(s.DownloadURL, "/"),
 		bucketID: s.Allowed.Buckets[0].ID, bucketName: *s.Allowed.Buckets[0].Name,
 	}
-	b.upload = nil
-	return b.auth, nil
+	b.mu.Lock()
+	b.auth, b.uploads = auth, nil
+	b.mu.Unlock()
+	return auth, nil
+}
+
+// checkScope enforces the approved key: the three journal capabilities plus
+// read-only ones, and the "recovery/" prefix (or exactly the journal root).
+func (b *B2) checkScope(caps []string, prefix *string) error {
+	for _, c := range requiredCaps {
+		if !slices.Contains(caps, c) {
+			return errors.New("recovery: B2 key needs listFiles, readFiles and writeFiles")
+		}
+	}
+	for _, c := range caps {
+		switch {
+		case c == "deleteFiles":
+			return errors.New("recovery: B2 key can delete files; the recovery journal requires a key without delete")
+		case !slices.Contains(requiredCaps, c) && !slices.Contains(readOnlyCaps, c):
+			return fmt.Errorf("recovery: B2 key has capability %q; only list/read/write files and read-only capabilities are allowed", c)
+		}
+	}
+	if prefix == nil || (*prefix != "recovery/" && *prefix != b.cfg.Root) {
+		return fmt.Errorf(`recovery: B2 key must be restricted to the name prefix "recovery/" or %q`, b.cfg.Root)
+	}
+	return nil
 }
 
 // api calls a JSON API operation, re-authorizing once on an expired token.
@@ -211,7 +260,8 @@ func (b *B2) Ping(ctx context.Context) error {
 }
 
 // Put implements Journal. It returns only after B2 acknowledges the upload
-// with the SHA-1 of exactly these bytes.
+// with the SHA-1 of exactly these bytes. Each upload holds its own upload
+// target exclusively; a target that failed is discarded.
 func (b *B2) Put(ctx context.Context, name string, data []byte) error {
 	if err := b.checkName(name); err != nil {
 		return err
@@ -219,7 +269,7 @@ func (b *B2) Put(ctx context.Context, name string, data []byte) error {
 	sum := sha1.Sum(data)
 	want := hex.EncodeToString(sum[:])
 	for attempt := 0; ; attempt++ {
-		up, err := b.uploadTarget(ctx)
+		up, err := b.takeUpload(ctx)
 		if err != nil {
 			return err
 		}
@@ -238,15 +288,14 @@ func (b *B2) Put(ctx context.Context, name string, data []byte) error {
 		}
 		_, err = b.do(req, "upload", &resp)
 		if err != nil {
-			// Upload URLs are single-use after an error; fetch a new one.
-			b.mu.Lock()
-			b.upload = nil
-			b.mu.Unlock()
+			// B2 asks for a new upload URL after any upload error; this
+			// target is not returned to the pool.
 			if isExpired(err) && attempt == 0 {
 				continue
 			}
 			return err
 		}
+		b.returnUpload(up)
 		if resp.FileName != name || resp.ContentSha1 != want {
 			return fmt.Errorf("b2 upload %s: acknowledgment checksum or name does not match the sent bytes", name)
 		}
@@ -254,10 +303,12 @@ func (b *B2) Put(ctx context.Context, name string, data []byte) error {
 	}
 }
 
-func (b *B2) uploadTarget(ctx context.Context) (b2Upload, error) {
+// takeUpload removes an idle upload target from the pool or gets a new one.
+func (b *B2) takeUpload(ctx context.Context) (b2Upload, error) {
 	b.mu.Lock()
-	if b.upload != nil {
-		up := *b.upload
+	if n := len(b.uploads); n > 0 {
+		up := b.uploads[n-1]
+		b.uploads = b.uploads[:n-1]
 		b.mu.Unlock()
 		return up, nil
 	}
@@ -273,11 +324,16 @@ func (b *B2) uploadTarget(ctx context.Context) (b2Upload, error) {
 	if err := b.api(ctx, "b2_get_upload_url", map[string]string{"bucketId": auth.bucketID}, &resp); err != nil {
 		return b2Upload{}, err
 	}
-	up := b2Upload{url: resp.UploadURL, token: resp.AuthorizationToken}
+	return b2Upload{url: resp.UploadURL, token: resp.AuthorizationToken, auth: auth}, nil
+}
+
+// returnUpload puts a target back unless a newer authorization replaced it.
+func (b *B2) returnUpload(up b2Upload) {
 	b.mu.Lock()
-	b.upload = &up
-	b.mu.Unlock()
-	return up, nil
+	defer b.mu.Unlock()
+	if up.auth == b.auth && len(b.uploads) < 8 {
+		b.uploads = append(b.uploads, up)
+	}
 }
 
 // Get implements Journal.

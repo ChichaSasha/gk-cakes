@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 const (
@@ -33,6 +35,8 @@ type fakeB2 struct {
 	buckets      []map[string]any
 	authCalls    int
 	uploadURLs   int
+	inUse        map[string]bool // upload tokens with an upload in progress
+	maxParallel  int             // most uploads in progress at once
 	// Failure injection, consumed once each.
 	expireAPIToken    bool
 	expireUploadToken bool
@@ -47,6 +51,7 @@ func newFakeB2(t *testing.T) *fakeB2 {
 		capabilities: []string{"listFiles", "readFiles", "writeFiles"},
 		namePrefix:   "recovery/",
 		buckets:      []map[string]any{{"id": "bucket-1", "name": fakeBucket}},
+		inUse:        map[string]bool{},
 	}
 	f.srv = httptest.NewServer(f)
 	t.Cleanup(f.srv.Close)
@@ -105,12 +110,31 @@ func (f *fakeB2) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.uploadURLs++
-		_ = json.NewEncoder(w).Encode(map[string]any{"uploadUrl": f.srv.URL + "/upload/bucket-1", "authorizationToken": "upload-token"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"uploadUrl": f.srv.URL + "/upload/bucket-1",
+			"authorizationToken": fmt.Sprintf("upload-token-%d", f.uploadURLs)})
 	case r.URL.Path == "/upload/bucket-1":
-		if r.Header.Get("Authorization") != "upload-token" {
+		token := r.Header.Get("Authorization")
+		if !strings.HasPrefix(token, "upload-token-") {
 			writeB2Error(w, 401, "bad_auth_token")
 			return
 		}
+		// B2: an upload URL/token serves one upload at a time.
+		if f.inUse[token] {
+			writeB2Error(w, 400, "auth_token_limit")
+			return
+		}
+		f.inUse[token] = true
+		inFlight := 0
+		for _, busy := range f.inUse {
+			if busy {
+				inFlight++
+			}
+		}
+		f.maxParallel = max(f.maxParallel, inFlight)
+		f.mu.Unlock()
+		time.Sleep(5 * time.Millisecond) // let concurrent uploads overlap
+		f.mu.Lock()
+		delete(f.inUse, token)
 		if f.expireUploadToken {
 			f.expireUploadToken = false
 			writeB2Error(w, 401, "expired_auth_token")
@@ -227,9 +251,14 @@ func TestB2KeyMustBeNarrowlyScoped(t *testing.T) {
 		want   string
 	}{
 		{"delete capability", func(f *fakeB2) { f.capabilities = append(f.capabilities, "deleteFiles") }, "delete"},
+		{"bucket settings (lifecycle can delete versions)", func(f *fakeB2) { f.capabilities = append(f.capabilities, "writeBuckets") }, "writeBuckets"},
+		{"retention changes", func(f *fakeB2) { f.capabilities = append(f.capabilities, "writeFileRetentions") }, "writeFileRetentions"},
+		{"governance bypass", func(f *fakeB2) { f.capabilities = append(f.capabilities, "bypassGovernance") }, "bypassGovernance"},
+		{"public sharing", func(f *fakeB2) { f.capabilities = append(f.capabilities, "shareFiles") }, "shareFiles"},
 		{"no write capability", func(f *fakeB2) { f.capabilities = []string{"listFiles", "readFiles"} }, "writeFiles"},
 		{"no prefix restriction", func(f *fakeB2) { f.namePrefix = nil }, "prefix"},
 		{"other prefix", func(f *fakeB2) { f.namePrefix = "database/" }, "prefix"},
+		{"broader prefix", func(f *fakeB2) { f.namePrefix = "r" }, "prefix"},
 		{"all buckets", func(f *fakeB2) { f.buckets = nil }, "one bucket"},
 		{"two buckets", func(f *fakeB2) {
 			f.buckets = append(f.buckets, map[string]any{"id": "bucket-2", "name": "other"})
@@ -247,6 +276,57 @@ func TestB2KeyMustBeNarrowlyScoped(t *testing.T) {
 				t.Fatalf("error echoes the application key: %v", err)
 			}
 		})
+	}
+}
+
+// TestB2AcceptsReadOnlyExtrasAndExactRootPrefix: a key scoped exactly to the
+// environment root, with read-only extras, is valid.
+func TestB2AcceptsReadOnlyExtrasAndExactRootPrefix(t *testing.T) {
+	f := newFakeB2(t)
+	f.namePrefix = "recovery/test/"
+	f.capabilities = append(f.capabilities, "listBuckets", "readBucketEncryption")
+	if err := f.journal(t).Ping(context.Background()); err != nil {
+		t.Fatalf("Ping: %v", err)
+	}
+}
+
+// TestB2ConcurrentPutsUseSeparateUploadTargets: B2 allows one upload at a
+// time per upload URL/token, so concurrent puts must not share one.
+func TestB2ConcurrentPutsUseSeparateUploadTargets(t *testing.T) {
+	f := newFakeB2(t)
+	j := f.journal(t)
+	// Warm the pool so concurrent puts would find an idle target to share.
+	if err := j.Put(context.Background(), "recovery/test/warm", []byte("v")); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- j.Put(context.Background(), fmt.Sprintf("recovery/test/c/%d", i), []byte("v"))
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent Put: %v", err)
+		}
+	}
+	if f.maxParallel < 2 {
+		t.Fatalf("uploads never overlapped (max %d); the test did not exercise concurrency", f.maxParallel)
+	}
+	// Targets are reused afterwards: sequential puts fetch no new URL.
+	before := f.uploadURLs
+	for i := 0; i < 3; i++ {
+		if err := j.Put(context.Background(), fmt.Sprintf("recovery/test/s/%d", i), []byte("v")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if f.uploadURLs != before {
+		t.Fatalf("sequential puts fetched %d new upload URLs, want 0 (pooled)", f.uploadURLs-before)
 	}
 }
 

@@ -3,8 +3,11 @@ package recovery
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,8 +19,10 @@ import (
 // process (app-side encryption on top of B2's SSE-B2). The object name is the
 // associated data, so an envelope only opens under the name it was sealed for.
 type Sealer struct {
-	current string
-	keys    map[string]cipher.AEAD
+	current  string
+	order    []string // key IDs in configuration order (current first)
+	keys     map[string]cipher.AEAD
+	nameKeys map[string][]byte // per key: derived key for blob object names
 }
 
 var kidPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
@@ -29,7 +34,7 @@ func NewSealer(spec string) (*Sealer, error) {
 	if strings.TrimSpace(spec) == "" {
 		return nil, errors.New("recovery: no encryption key configured")
 	}
-	s := &Sealer{keys: map[string]cipher.AEAD{}}
+	s := &Sealer{keys: map[string]cipher.AEAD{}, nameKeys: map[string][]byte{}}
 	for i, entry := range strings.Split(spec, ",") {
 		kid, encoded, ok := strings.Cut(strings.TrimSpace(entry), ":")
 		if !ok || !kidPattern.MatchString(kid) {
@@ -51,6 +56,10 @@ func NewSealer(spec string) (*Sealer, error) {
 			return nil, fmt.Errorf("recovery: encryption key %q: %w", kid, err)
 		}
 		s.keys[kid] = aead
+		names := hmac.New(sha256.New, raw)
+		names.Write([]byte("gk-recovery blob name v1"))
+		s.nameKeys[kid] = names.Sum(nil)
+		s.order = append(s.order, kid)
 		if i == 0 {
 			s.current = kid
 		}
@@ -80,6 +89,19 @@ func (s *Sealer) Seal(name string, plaintext []byte) ([]byte, error) {
 		Nonce: base64.StdEncoding.EncodeToString(nonce),
 		CT:    base64.StdEncoding.EncodeToString(aead.Seal(nil, nonce, plaintext, []byte(name))),
 	})
+}
+
+// blobTokens returns the object-name tokens for a content hash, one per key
+// (current first): "<kid>-<hex HMAC>". Keyed names stop anyone who can list
+// the bucket from confirming that a known file is stored.
+func (s *Sealer) blobTokens(sum string) []string {
+	tokens := make([]string, 0, len(s.order))
+	for _, kid := range s.order {
+		mac := hmac.New(sha256.New, s.nameKeys[kid])
+		mac.Write([]byte(sum))
+		tokens = append(tokens, kid+"-"+hex.EncodeToString(mac.Sum(nil)))
+	}
+	return tokens
 }
 
 // ErrUnreadable means an envelope could not be authenticated and decrypted.

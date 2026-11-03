@@ -1,32 +1,38 @@
 -- GK-024: minimal K11 recovery coordinator state (contracts r6.5 K11, schema
 -- r1.5 recovery_operation). The application writes the independent encrypted
 -- prepared/outcome envelopes to B2; this table records each protected
--- operation's phase so that a crash at any point resumes without repeating
--- or losing an external effect:
+-- dispatch's phase so that a crash at any point resumes without repeating or
+-- losing an external effect:
 --   reserved   -> prepared envelope acknowledged -> prepared
 --   prepared   -> effect outcome recorded locally -> committed
 --   committed  -> outcome envelope acknowledged   -> secured
 --   reserved/prepared -> reconcile (manager attention; never a blind retry)
--- One unresolved operation per aggregate serializes revisions.
+--   reconcile  -> manager-determined outcome      -> committed
+-- One unresolved operation per aggregate; prior versions only increase.
+-- Only outgoing dispatches (email now; payments/refunds later) are protected
+-- here. Accepted-command protection (order confirmation/changes) is designed
+-- with GK-025 and will extend kind.
 --
 -- Owner-internal: domain gateway functions call these inside their own
 -- transactions so a domain state change and its recovery phase commit
--- together. No runtime role reads the table or executes these directly.
+-- together. No runtime role executes these directly.
 
 SET LOCAL ROLE gk_owner;
 
 CREATE TABLE business.recovery_operation (
   id               uuid PRIMARY KEY,
-  kind             text NOT NULL CHECK (kind IN ('dispatch', 'command')),
+  kind             text NOT NULL CHECK (kind = 'dispatch'),
   aggregate_id     uuid NOT NULL,
   prior_version    integer NOT NULL CHECK (prior_version >= 0),
   payload_hash     char(64) NOT NULL CHECK (payload_hash ~ '^[0-9a-f]{64}$'),
   envelope_key     text NOT NULL UNIQUE CHECK (length(envelope_key) BETWEEN 1 AND 512),
-  -- Dispatch only: last instant an identical replay is provider-idempotent.
-  replay_until     timestamptz NULL,
+  -- Last instant an identical replay is provider-idempotent; fixed at the
+  -- first reservation, never extended.
+  replay_until     timestamptz NOT NULL,
   state            text NOT NULL DEFAULT 'reserved'
                    CHECK (state IN ('reserved', 'prepared', 'committed', 'secured', 'reconcile')),
-  outcome          jsonb NULL CHECK (outcome IS NULL OR octet_length(outcome::text) <= 4096),
+  -- json (not jsonb) keeps the exact bytes that outcome_hash covers.
+  outcome          json NULL CHECK (outcome IS NULL OR octet_length(outcome::text) <= 4096),
   outcome_hash     char(64) NULL CHECK (outcome_hash ~ '^[0-9a-f]{64}$'),
   reconcile_reason text NULL CHECK (length(reconcile_reason) BETWEEN 1 AND 200),
   prepared_ack_at  timestamptz NULL,
@@ -34,11 +40,14 @@ CREATE TABLE business.recovery_operation (
   version          integer NOT NULL DEFAULT 1 CHECK (version >= 1),
   created_at       timestamptz NOT NULL DEFAULT now(),
   updated_at       timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT recovery_dispatch_replay CHECK ((kind = 'dispatch') = (replay_until IS NOT NULL)),
-  CONSTRAINT recovery_prepared_ack CHECK (state IN ('reserved', 'reconcile') OR prepared_ack_at IS NOT NULL),
+  CONSTRAINT recovery_prepared_ack CHECK (CASE state
+    WHEN 'reserved' THEN prepared_ack_at IS NULL
+    WHEN 'reconcile' THEN true
+    ELSE prepared_ack_at IS NOT NULL END),
   CONSTRAINT recovery_outcome CHECK ((state IN ('committed', 'secured')) = (outcome IS NOT NULL AND outcome_hash IS NOT NULL)),
   CONSTRAINT recovery_secured CHECK ((state = 'secured') = (outcome_ack_at IS NOT NULL)),
-  CONSTRAINT recovery_reconcile CHECK ((state = 'reconcile') = (reconcile_reason IS NOT NULL))
+  CONSTRAINT recovery_reconcile CHECK ((state = 'reconcile') = (reconcile_reason IS NOT NULL)),
+  CONSTRAINT recovery_aggregate_version UNIQUE (aggregate_id, prior_version)
 );
 
 CREATE UNIQUE INDEX recovery_operation_open_aggregate
@@ -55,12 +64,15 @@ CREATE TABLE business.recovery_freeze (
 INSERT INTO business.recovery_freeze DEFAULT VALUES;
 
 -- Returns result 'reserved' (new), 'existing' (same operation, with its
--- current state/outcome) or 'busy' (another unresolved operation holds the
--- aggregate). A different operation reusing p_id is an error.
+-- current state/outcome), 'busy' (another unresolved operation holds the
+-- aggregate) or 'stale' (the aggregate already has another operation at this
+-- or a later prior version). A different operation reusing p_id is an error.
+-- Safe under concurrency: a reserve that loses an insert race re-reads before
+-- classifying the conflict.
 CREATE FUNCTION business.recovery_reserve(
   p_id uuid, p_kind text, p_aggregate_id uuid, p_prior_version integer,
   p_payload_hash text, p_envelope_key text, p_replay_until timestamptz)
-RETURNS TABLE (result text, op_state text, op_outcome jsonb, op_outcome_hash text)
+RETURNS TABLE (result text, op_state text, op_outcome json, op_outcome_hash text)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
@@ -68,26 +80,45 @@ AS $$
 DECLARE
   r business.recovery_operation;
 BEGIN
-  SELECT * INTO r FROM business.recovery_operation o WHERE o.id = p_id FOR UPDATE;
-  IF FOUND THEN
-    IF r.kind <> p_kind OR r.aggregate_id <> p_aggregate_id OR r.prior_version <> p_prior_version
-       OR r.payload_hash <> p_payload_hash OR r.envelope_key <> p_envelope_key
-       OR r.replay_until IS DISTINCT FROM p_replay_until THEN
-      RAISE EXCEPTION 'recovery operation % already exists with a different identity', p_id
-        USING ERRCODE = 'unique_violation';
+  FOR attempt IN 1..2 LOOP
+    SELECT * INTO r FROM business.recovery_operation o WHERE o.id = p_id FOR UPDATE;
+    IF FOUND THEN
+      IF r.kind <> p_kind OR r.aggregate_id <> p_aggregate_id OR r.prior_version <> p_prior_version
+         OR r.payload_hash <> p_payload_hash OR r.envelope_key <> p_envelope_key
+         OR r.replay_until IS DISTINCT FROM p_replay_until THEN
+        RAISE EXCEPTION 'recovery operation % already exists with a different identity', p_id
+          USING ERRCODE = 'unique_violation';
+      END IF;
+      RETURN QUERY SELECT 'existing'::text, r.state, r.outcome, r.outcome_hash::text;
+      RETURN;
     END IF;
-    RETURN QUERY SELECT 'existing'::text, r.state, r.outcome, r.outcome_hash::text;
+    EXIT WHEN attempt = 2;
+    IF EXISTS (SELECT 1 FROM business.recovery_operation o
+               WHERE o.aggregate_id = p_aggregate_id AND o.prior_version >= p_prior_version AND o.id <> p_id) THEN
+      RETURN QUERY SELECT 'stale'::text, NULL::text, NULL::json, NULL::text;
+      RETURN;
+    END IF;
+    INSERT INTO business.recovery_operation
+      (id, kind, aggregate_id, prior_version, payload_hash, envelope_key, replay_until)
+    VALUES (p_id, p_kind, p_aggregate_id, p_prior_version, p_payload_hash, p_envelope_key, p_replay_until)
+    ON CONFLICT DO NOTHING;
+    IF FOUND THEN
+      RETURN QUERY SELECT 'reserved'::text, 'reserved'::text, NULL::json, NULL::text;
+      RETURN;
+    END IF;
+    -- A unique conflict: possibly this same operation inserted concurrently.
+    -- Look again (new snapshot) before classifying it.
+  END LOOP;
+  IF EXISTS (SELECT 1 FROM business.recovery_operation o
+             WHERE o.aggregate_id = p_aggregate_id AND o.prior_version >= p_prior_version AND o.id <> p_id) THEN
+    RETURN QUERY SELECT 'stale'::text, NULL::text, NULL::json, NULL::text;
     RETURN;
   END IF;
-  INSERT INTO business.recovery_operation AS o
-    (id, kind, aggregate_id, prior_version, payload_hash, envelope_key, replay_until)
-  VALUES (p_id, p_kind, p_aggregate_id, p_prior_version, p_payload_hash, p_envelope_key, p_replay_until)
-  ON CONFLICT (aggregate_id) WHERE state <> 'secured' DO NOTHING;
-  IF NOT FOUND THEN
-    RETURN QUERY SELECT 'busy'::text, NULL::text, NULL::jsonb, NULL::text;
-    RETURN;
+  IF EXISTS (SELECT 1 FROM business.recovery_operation o WHERE o.envelope_key = p_envelope_key AND o.id <> p_id) THEN
+    RAISE EXCEPTION 'envelope key % belongs to another recovery operation', p_envelope_key
+      USING ERRCODE = 'unique_violation';
   END IF;
-  RETURN QUERY SELECT 'reserved'::text, 'reserved'::text, NULL::jsonb, NULL::text;
+  RETURN QUERY SELECT 'busy'::text, NULL::text, NULL::json, NULL::text;
 END;
 $$;
 
@@ -116,16 +147,19 @@ BEGIN
 END;
 $$;
 
--- prepared -> committed with the effect's outcome. Repeating with the same
--- outcome is a no-op; a different outcome for a recorded one is an error.
-CREATE FUNCTION business.recovery_mark_committed(p_id uuid, p_outcome jsonb, p_outcome_hash text)
-RETURNS text
+-- prepared -> committed with the effect's outcome (changed = true), or
+-- reconcile -> committed with a manager-determined outcome when
+-- p_from_reconcile. Repeating with the same outcome is a no-op (changed =
+-- false); a different outcome for a recorded one is an error.
+CREATE FUNCTION business.recovery_mark_committed(p_id uuid, p_outcome json, p_outcome_hash text, p_from_reconcile boolean)
+RETURNS TABLE (op_state text, changed boolean)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   r business.recovery_operation;
+  v_expected text := CASE WHEN p_from_reconcile THEN 'reconcile' ELSE 'prepared' END;
 BEGIN
   SELECT * INTO r FROM business.recovery_operation WHERE id = p_id FOR UPDATE;
   IF NOT FOUND THEN
@@ -136,17 +170,18 @@ BEGIN
       RAISE EXCEPTION 'recovery operation % already has a different outcome', p_id
         USING ERRCODE = 'unique_violation';
     END IF;
-    RETURN r.state;
+    RETURN QUERY SELECT r.state, false;
+    RETURN;
   END IF;
-  IF r.state <> 'prepared' THEN
-    RAISE EXCEPTION 'recovery operation % is %, not prepared', p_id, r.state
+  IF r.state <> v_expected OR r.prepared_ack_at IS NULL THEN
+    RAISE EXCEPTION 'recovery operation % is % (prepared acknowledgment %)', p_id, r.state, r.prepared_ack_at
       USING ERRCODE = 'invalid_parameter_value';
   END IF;
   UPDATE business.recovery_operation
-  SET state = 'committed', outcome = p_outcome, outcome_hash = p_outcome_hash,
+  SET state = 'committed', outcome = p_outcome, outcome_hash = p_outcome_hash, reconcile_reason = NULL,
       version = version + 1, updated_at = pg_catalog.now()
   WHERE id = p_id;
-  RETURN 'committed';
+  RETURN QUERY SELECT 'committed'::text, true;
 END;
 $$;
 
@@ -232,7 +267,7 @@ REVOKE ALL ON TABLE business.recovery_operation FROM PUBLIC;
 REVOKE ALL ON TABLE business.recovery_freeze FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.recovery_reserve(uuid, text, uuid, integer, text, text, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.recovery_mark_prepared(uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION business.recovery_mark_committed(uuid, jsonb, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.recovery_mark_committed(uuid, json, text, boolean) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.recovery_mark_secured(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.recovery_mark_reconcile(uuid, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.recovery_frozen() FROM PUBLIC;
