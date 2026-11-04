@@ -130,6 +130,19 @@ jobs:
           curl -fsS http://127.0.0.1:3000/healthz | grep -q '"status":"ok"'
           kill -TERM "$server"
           wait "$server"
+      - name: Check security headers with sign-in configured
+        run: |
+          PORT=3001 ORIGIN=http://127.0.0.1:3001 \
+            PUBLIC_API_URL=https://api.example.com PUBLIC_AUTH_URL=https://auth.example.com \
+            PUBLIC_AUTH_PUBLISHABLE_KEY=sb_publishable_0123456789abcdefXYZ node build &
+          server=$!
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:3001/healthz >/dev/null 2>&1 && break
+            sleep 1
+          done
+          scripts/check-headers.sh http://127.0.0.1:3001 https://api.example.com https://auth.example.com
+          kill -TERM "$server"
+          wait "$server"
 
   compat:
     name: compat
