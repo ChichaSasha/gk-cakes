@@ -16,13 +16,15 @@ import (
 	"github.com/ChichaSasha/gk-cakes/api/internal/schedule"
 )
 
-// GK-003 refund policy fixture (labelled test data): the owner decision ID
-// and the decisions.json revision this session read.
+// Policy fixture (labelled test data): GK-003 decision
+// BO-GK-003.cancellation_early and its revision_sha256 in decisions.json
+// (gk019-owner-r6); the summary is illustrative, not the approved wording.
 func (h *harness) policy(t *testing.T, key string) string {
 	t.Helper()
-	in := checkout.PolicyInput{SourceDecisionID: "BO-GK-003.refund_policy", SourceRevisionSHA256: strings.Repeat("ab", 32),
-		Summary:     "Cancel more than 120 hours before handover: full refund. Later: 50% of the amount paid.",
-		EffectiveAt: time.Now().UTC().Add(-time.Second).Format(time.RFC3339)}
+	in := checkout.PolicyInput{SourceDecisionID: "BO-GK-003.cancellation_early",
+		SourceRevisionSHA256: "92751b1e4b59d9ec750e05776846849bf56679e5ef4e92c787b8296f3f487b70",
+		Summary:              "Cancel more than 120 hours before handover: full refund. Later: 50% of the amount paid.",
+		EffectiveAt:          time.Now().UTC().Add(-time.Second).Format(time.RFC3339), ApproverEvidence: "test fixture"}
 	if err := in.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -328,5 +330,176 @@ func TestSignedInCheckout(t *testing.T) {
 	}
 	if h.count(t, "SELECT count(*) FROM business.order_guest_capability") != 0 {
 		t.Fatal("a signed-in order got a guest capability")
+	}
+}
+
+// Concurrent checkouts of the same ready cakes never deadlock: exactly the
+// stock is sold and every other attempt is ITEM_UNAVAILABLE (K00 lock
+// order: day, lots, code; rows referencing them only afterwards).
+func TestConcurrentReadyCakeCheckouts(t *testing.T) {
+	h := newHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	const n = 8
+	quotes := make([]string, n)
+	proofs := make([][]byte, n)
+	for i := range n {
+		quotes[i], proofs[i] = h.guestQuote(t, "c"+string(rune('a'+i)), checkout.QuoteInput{Date: "2026-11-14", SlotID: f.slot,
+			FulfillmentMode: schedule.Collection, Lines: []checkout.QuoteLine{{VariantID: f.v1000, Quantity: 1}, {LotID: f.readyLot, Quantity: 1}}})
+	}
+	for round := range 3 {
+		errs := make([]error, n)
+		var wg sync.WaitGroup
+		for i := range n {
+			wg.Add(1)
+			go func() { defer wg.Done(); _, errs[i] = h.checkout("", proofs[i], "k", quotes[i], pol) }()
+		}
+		wg.Wait()
+		ok, gone := 0, 0
+		for _, err := range errs {
+			switch {
+			case err == nil:
+				ok++
+			case conflict(err) == "item_unavailable":
+				gone++
+			default:
+				t.Fatalf("round %d: %v", round, err)
+			}
+		}
+		if ok != 2 || gone != n-2 {
+			t.Fatalf("round %d: %d ok, %d unavailable; want 2 and %d", round, ok, gone, n-2)
+		}
+	}
+}
+
+func TestCheckoutRechecksAndGuards(t *testing.T) {
+	h := newHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	line := []checkout.QuoteLine{{VariantID: f.v1000, Quantity: 1}}
+	quote := func(key, code string) (string, []byte) {
+		return h.guestQuote(t, key, checkout.QuoteInput{Date: "2026-11-14", SlotID: f.slot, FulfillmentMode: schedule.Collection,
+			Lines: line, DiscountCode: code})
+	}
+
+	// Archived and expired codes are refused at checkout.
+	arch := h.code(t, "a", checkout.CodeInput{Code: "ARCH", CodeTerms: checkout.CodeTerms{Kind: checkout.KindPercentage, BasisPoints: ptr(500)}})
+	q, d := quote("arch", "ARCH")
+	must[catalog.Result](t)(h.co.ArchiveCode(h.ctx, chef, "arch", arch, catalog.VersionInput{ExpectedVersion: 1}))
+	if _, err := h.checkout("", d, "k", q, pol); conflict(err) != "price_changed" {
+		t.Fatalf("archived code: %v", err)
+	}
+	exp := h.code(t, "e", checkout.CodeInput{Code: "EXPIRING", CodeTerms: checkout.CodeTerms{Kind: checkout.KindPercentage, BasisPoints: ptr(500)}})
+	_ = exp
+	h.owner(t, `INSERT INTO business.discount_code_version (id, code_id, revision, kind, basis_points, expires_at, created_by)
+		SELECT gen_random_uuid(), id, 2, 'percentage', 500, '2026-11-05T11:00:00Z', created_by FROM business.discount_code WHERE code = 'EXPIRING'`)
+	q, d = quote("exp", "EXPIRING")
+	h.now = h.now.Add(time.Hour)
+	if _, err := h.checkout("", d, "k", q, pol); conflict(err) != "price_changed" {
+		t.Fatalf("code expired at checkout: %v", err)
+	}
+	h.now = h.now.Add(-time.Hour)
+
+	// The appointment is rechecked: a new schedule version changes slot IDs.
+	q, d = quote("slot", "")
+	must[catalog.Result](t)(h.sch.PublishVersion(h.ctx, chef, "sched2", schedule.VersionInput{ExpectedRevision: ptr(1), StandardLimit: ptr(7),
+		BookableUntil: "2027-01-31", Weekdays: []schedule.WeekdayInput{
+			{Weekday: "saturday", Opens: "12:30", Closes: "15:00", Starts: []string{"12:30", "13:00", "13:30", "14:00"}}}}))
+	if _, err := h.checkout("", d, "k", q, pol); conflict(err) != "slot_unavailable" {
+		t.Fatalf("slot of an old schedule version: %v", err)
+	}
+	sat := must[schedule.Choices](t)(h.sch.Choices(h.ctx, dayOf("2026-11-14"), schedule.Collection, 1))
+	slot := sat.Slots[0].ID
+
+	// Admission decides on committed cakes: a quote given while places
+	// remained is refused (SLOT_UNAVAILABLE) once the day is committed full.
+	qd, dd := h.guestQuote(t, "full", checkout.QuoteInput{Date: "2026-11-14", SlotID: slot, FulfillmentMode: schedule.Collection, Lines: line})
+	h.owner(t, "SELECT business.capacity_day_lock('2026-11-14')")
+	h.owner(t, `INSERT INTO business.capacity_allocation (id, order_ref, day, cake_quantity, classification, state)
+		VALUES (gen_random_uuid(), gen_random_uuid(), '2026-11-14', 7, 'standard', 'committed')`)
+	if _, err := h.checkout("", dd, "k", qd, pol); conflict(err) != "slot_unavailable" {
+		t.Fatalf("committed-full day: %v", err)
+	}
+
+	// Future policies are not current.
+	future := checkout.PolicyInput{SourceDecisionID: "BO-GK-003.cancellation_late",
+		SourceRevisionSHA256: "b44d62dccb5defcafed270ced4ff29ad5f8cdd5194873c8c46e2597c2ec28a4b", Summary: "Later terms",
+		EffectiveAt: h.now.Add(time.Hour).Format(time.RFC3339), ApproverEvidence: "test fixture"}
+	must[catalog.Result](t)(h.co.RecordPolicy(h.ctx, chef, "future", future))
+	if p := must[checkout.Policy](t)(h.co.CurrentPolicy(h.ctx)); p.ID != pol {
+		t.Fatalf("current policy = %s, want %s (the later one is not yet effective)", p.ID, pol)
+	}
+
+	// An order on another day; then guards and access.
+	sun := "2026-11-21"
+	s2 := must[schedule.Choices](t)(h.sch.Choices(h.ctx, dayOf(sun), schedule.Collection, 1))
+	qo, do := h.guestQuote(t, "order", checkout.QuoteInput{Date: sun, SlotID: s2.Slots[0].ID, FulfillmentMode: schedule.Collection, Lines: line})
+	order := must[catalog.Result](t)(h.checkout("", do, "k", qo, pol)).ID
+	for _, sql := range []string{
+		"UPDATE business.orders SET policy_version_id = policy_version_id, placed_at = now()",
+		"UPDATE business.orders SET body_sha256 = repeat('c', 64)",
+	} {
+		if _, err := h.admin.Exec(h.ctx, sql); dbtest.SQLState(err) != "GK409" {
+			t.Errorf("%s: %v", sql, err)
+		}
+	}
+	if _, err := h.admin.Exec(h.ctx, "UPDATE business.orders SET lifecycle = 'cancelled' WHERE id = $1", order); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.admin.Exec(h.ctx, "UPDATE business.orders SET lifecycle = 'confirmed' WHERE id = $1", order); dbtest.SQLState(err) != "GK409" {
+		t.Fatalf("reopening a cancelled order: %v", err)
+	}
+	// A revoked capability reads nothing and cannot replay the checkout.
+	if _, err := h.admin.Exec(h.ctx, "UPDATE business.order_guest_capability SET revoked_at = now() WHERE order_id = $1", order); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.co.GetOrder(h.ctx, order, "", do); !errors.Is(err, catalog.ErrNotFound) {
+		t.Fatalf("revoked capability reads: %v", err)
+	}
+	if _, err := h.checkout("", do, "k", qo, pol); !errors.Is(err, catalog.ErrNotFound) {
+		t.Fatalf("revoked capability replays: %v", err)
+	}
+	if _, err := h.admin.Exec(h.ctx, "UPDATE business.order_guest_capability SET revoked_at = NULL WHERE order_id = $1", order); dbtest.SQLState(err) != "GK409" {
+		t.Fatalf("un-revoking: %v", err)
+	}
+	// A disabled owner reads nothing.
+	qa := must[catalog.Result](t)(h.co.CreateQuote(h.ctx, customerA, nil, "own", checkout.QuoteInput{Date: sun, SlotID: s2.Slots[0].ID,
+		FulfillmentMode: schedule.Collection, Lines: line})).ID
+	mine := must[catalog.Result](t)(h.checkout(customerA, nil, "k", qa, pol)).ID
+	h.owner(t, "SELECT business.account_set_disabled($1::uuid, true, 'test')", customerA)
+	if _, err := h.co.GetOrder(h.ctx, mine, customerA, nil); !errors.Is(err, catalog.ErrNotFound) {
+		t.Fatalf("disabled owner reads: %v", err)
+	}
+
+	// A consumed code use never goes back.
+	cu := h.code(t, "cu", checkout.CodeInput{Code: "USE", CodeTerms: checkout.CodeTerms{Kind: checkout.KindPercentage, BasisPoints: ptr(500)}})
+	_ = cu
+	qc, dc := h.guestQuote(t, "use", checkout.QuoteInput{Date: sun, SlotID: s2.Slots[0].ID, FulfillmentMode: schedule.Collection, Lines: line, DiscountCode: "USE"})
+	withCode := must[catalog.Result](t)(h.checkout("", dc, "k", qc, pol)).ID
+	if _, err := h.admin.Exec(h.ctx, "UPDATE business.code_application SET state = 'consumed' WHERE order_id = $1", withCode); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.admin.Exec(h.ctx, "UPDATE business.code_application SET state = 'released' WHERE order_id = $1", withCode); dbtest.SQLState(err) != "GK409" {
+		t.Fatalf("restoring a consumed use: %v", err)
+	}
+
+	// The quote purge keeps quotes that became orders.
+	// Age every quote past the retention by rewriting sent/expiry with the
+	// guard disabled for this transaction (superuser, test only).
+	if _, err := h.admin.Exec(h.ctx, "ALTER TABLE business.checkout_quote DISABLE TRIGGER checkout_quote_immutable"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.admin.Exec(h.ctx, "UPDATE business.checkout_quote SET sent_at = now() - interval '60 days', expires_at = now() - interval '59 days'"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.admin.Exec(h.ctx, "ALTER TABLE business.checkout_quote ENABLE TRIGGER checkout_quote_immutable"); err != nil {
+		t.Fatal(err)
+	}
+	h.owner(t, "SELECT business.quote_purge_expired(now() - interval '31 days')")
+	if n := h.count(t, "SELECT count(*) FROM business.checkout_quote q WHERE EXISTS (SELECT 1 FROM business.orders o WHERE o.quote_id = q.id)"); n != 3 {
+		t.Fatalf("converted quotes after purge = %d, want 3", n)
+	}
+	if n := h.count(t, "SELECT count(*) FROM business.checkout_quote q WHERE NOT EXISTS (SELECT 1 FROM business.orders o WHERE o.quote_id = q.id)"); n != 0 {
+		t.Fatalf("unconverted expired quotes after purge = %d, want 0", n)
 	}
 }

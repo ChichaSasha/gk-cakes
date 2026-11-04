@@ -405,3 +405,15 @@ func TestLoadBackup(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckoutSwitch(t *testing.T) {
+	for value, want := range map[string]bool{"": false, "false": false, "true": true} {
+		cfg, err := LoadAPI(env(merge(validLocalAPI, map[string]string{"CHECKOUT_ENABLED": value})))
+		if err != nil || cfg.CheckoutEnabled != want {
+			t.Errorf("CHECKOUT_ENABLED=%q: %v %v", value, cfg.CheckoutEnabled, err)
+		}
+	}
+	if _, err := LoadAPI(env(merge(validLocalAPI, map[string]string{"CHECKOUT_ENABLED": "yes"}))); err == nil {
+		t.Error("CHECKOUT_ENABLED=yes accepted")
+	}
+}

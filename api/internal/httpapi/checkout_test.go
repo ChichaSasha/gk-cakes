@@ -74,7 +74,7 @@ func (f *fakeCheckout) ArchiveCode(context.Context, string, string, string, cata
 func serveCheckout(t *testing.T, co *fakeCheckout, id Identity, method, path, auth, key, body string, hdr map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
 	var logs bytes.Buffer
-	h := NewHandler(Options{UIOrigin: "https://gkcake.com", DB: fakePinger{}, Identity: id, Checkout: co,
+	h := NewHandler(Options{UIOrigin: "https://gkcake.com", DB: fakePinger{}, Identity: id, Checkout: co, CheckoutEnabled: true,
 		Logger: slog.New(slog.NewJSONHandler(&logs, nil))})
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	if auth != "" {
@@ -214,6 +214,16 @@ func TestCheckoutRoutes(t *testing.T) {
 			t.Errorf("%s: %d (calls %d), want %d", name, rec.Code, co.calls, c.status)
 		}
 	}
+	// Without CHECKOUT_ENABLED the checkout route is not served.
+	var logs bytes.Buffer
+	off := NewHandler(Options{DB: fakePinger{}, Identity: id, Checkout: co, Logger: slog.New(slog.NewJSONHandler(&logs, nil))})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/checkouts", strings.NewReader(body+`}`))
+	req.Header.Set("Idempotency-Key", "k")
+	offRec := httptest.NewRecorder()
+	off.ServeHTTP(offRec, req)
+	if offRec.Code != 404 {
+		t.Fatalf("checkout while disabled: %d", offRec.Code)
+	}
 	// Order reads: the capability header, a bearer, or 404.
 	if rec := serveCheckout(t, co, id, http.MethodGet, "/api/v1/orders/o", "", "", "", map[string]string{OrderCapabilityHeader: testProof}); rec.Code != 200 {
 		t.Fatalf("read with capability: %d", rec.Code)
@@ -226,7 +236,7 @@ func TestCheckoutRoutes(t *testing.T) {
 		t.Fatalf("public policy: %d", rec.Code)
 	}
 	pol := `{"source_decision_id":"BO-GK-003.refund_policy","source_revision_sha256":"` + strings.Repeat("ab", 32) +
-		`","summary":"Terms","effective_at":"2026-11-04T12:00:00Z"}`
+		`","summary":"Terms","effective_at":"2026-11-04T12:00:00Z","approver_evidence":"Trello comment 6aeb3137"}`
 	for name, c := range map[string]struct {
 		auth   string
 		status int

@@ -464,7 +464,7 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.lot_staff_list(uuid, boolean, uuid)",
 		"business.order_get(uuid, uuid, bytea)",
 		"business.policy_current(timestamp with time zone)",
-		"business.policy_record(uuid, text, text, text, text, text, timestamp with time zone)",
+		"business.policy_record(uuid, text, text, text, text, text, timestamp with time zone, text)",
 		"business.quote_create(uuid, bytea, text, text, date, uuid, text, json, text, timestamp with time zone)",
 		"business.quote_get(uuid, uuid, bytea)",
 		"business.schedule_public_days(date, date, timestamp with time zone, integer)",

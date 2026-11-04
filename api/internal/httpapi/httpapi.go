@@ -52,6 +52,9 @@ type Options struct {
 	// Checkout serves storefront quotes when set (signed-in quotes and the
 	// chef's discount codes need Identity too).
 	Checkout Checkout
+	// CheckoutEnabled also serves POST /api/v1/checkouts (config
+	// CHECKOUT_ENABLED; off until payments exist).
+	CheckoutEnabled bool
 }
 
 // NewHandler returns the API handler with its middleware chain.
@@ -83,7 +86,7 @@ func NewHandler(opts Options) http.Handler {
 		}
 	}
 	if opts.Checkout != nil {
-		checkoutRoutes(mux, opts.Checkout, opts.Identity, opts.Logger)
+		checkoutRoutes(mux, opts.Checkout, opts.Identity, opts.CheckoutEnabled, opts.Logger)
 	}
 	if opts.Schedule != nil {
 		schedulePublicRoutes(mux, opts.Schedule, opts.Logger)

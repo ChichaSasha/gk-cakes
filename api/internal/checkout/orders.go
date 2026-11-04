@@ -42,9 +42,9 @@ type CheckoutInput struct {
 
 var emailPattern = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
 
-func name(field, s string) error {
-	if !utf8.ValidString(s) || s != strings.TrimSpace(s) || utf8.RuneCountInString(s) < 1 || utf8.RuneCountInString(s) > 120 {
-		return invalid(field, "must be 1 to 120 characters without surrounding spaces")
+func name(field, s string, max int) error {
+	if !utf8.ValidString(s) || s != strings.TrimSpace(s) || utf8.RuneCountInString(s) < 1 || utf8.RuneCountInString(s) > max {
+		return invalid(field, "must be 1 to %d characters without surrounding spaces", max)
 	}
 	for _, r := range s {
 		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
@@ -65,11 +65,11 @@ func (in CheckoutInput) Validate() error {
 	if !catalog.ValidUUID(in.ConsentedPolicyVersion) {
 		return invalid("consented_policy_version", "must be the current policy version ID")
 	}
-	if err := name("contact.full_name", in.Contact.FullName); err != nil {
+	if err := name("contact.full_name", in.Contact.FullName, 120); err != nil {
 		return err
 	}
 	if in.Contact.PayerName != "" {
-		if err := name("contact.payer_name", in.Contact.PayerName); err != nil {
+		if err := name("contact.payer_name", in.Contact.PayerName, 120); err != nil {
 			return err
 		}
 	}
@@ -176,6 +176,7 @@ type PolicyInput struct {
 	SourceRevisionSHA256 string `json:"source_revision_sha256"`
 	Summary              string `json:"summary"`
 	EffectiveAt          string `json:"effective_at"`
+	ApproverEvidence     string `json:"approver_evidence"`
 }
 
 var (
@@ -203,14 +204,14 @@ func (in PolicyInput) Validate() error {
 	if _, err := time.Parse(time.RFC3339, in.EffectiveAt); err != nil || len(in.EffectiveAt) > 40 {
 		return invalid("effective_at", "must be an RFC3339 instant with an offset")
 	}
-	return nil
+	return name("approver_evidence", in.ApproverEvidence, 500)
 }
 
 // RecordPolicy records a policy version.
 func (s *Store) RecordPolicy(ctx context.Context, subject, key string, in PolicyInput) (catalog.Result, error) {
 	effective, _ := time.Parse(time.RFC3339, in.EffectiveAt)
 	return s.command(ctx, CmdPolicyRecord, `SELECT result_id::text, replayed FROM business.policy_record(
-		$1::uuid, $2, $3, $4, $5, $6, $7)`,
+		$1::uuid, $2, $3, $4, $5, $6, $7, $8)`,
 		subject, key, catalog.BodyHash(CmdPolicyRecord, "", in), in.SourceDecisionID, in.SourceRevisionSHA256,
-		in.Summary, effective)
+		in.Summary, effective, in.ApproverEvidence)
 }

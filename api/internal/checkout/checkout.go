@@ -402,7 +402,7 @@ var invalidFields = map[string]string{
 	"code_not_applicable": "discount_code", "kind_invalid": "kind", "expires_invalid": "expires_at",
 	"limit_invalid": "total_limit", "per_customer_limit_invalid": "per_customer_limit", "code_invalid": "code",
 	"idempotency_key_invalid": "Idempotency-Key", "proof_reused": "guest_proof", "contact_invalid": "contact",
-	"effective_invalid": "effective_at", "policy_invalid": "source_decision_id",
+	"effective_invalid": "effective_at", "policy_invalid": "policy",
 	"expected_version_required": "expected_version",
 }
 

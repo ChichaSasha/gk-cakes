@@ -60,7 +60,7 @@ func optionalCustomer(id Identity, w http.ResponseWriter, r *http.Request, logge
 
 // checkoutRoutes registers the storefront quote routes (guests or signed-in
 // customers) and, with identity, the chef's discount code routes.
-func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, logger *slog.Logger) {
+func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnabled bool, logger *slog.Logger) {
 	mux.HandleFunc("POST /api/v1/checkout/quotes", func(w http.ResponseWriter, r *http.Request) {
 		a, signedIn, ok := optionalCustomer(id, w, r, logger)
 		if !ok {
@@ -111,7 +111,7 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, logger *slog.L
 		p, err := co.CurrentPolicy(r.Context())
 		respond(w, r, logger, http.StatusOK, p, err)
 	})
-	mux.HandleFunc("POST /api/v1/checkouts", func(w http.ResponseWriter, r *http.Request) {
+	postCheckout := func(w http.ResponseWriter, r *http.Request) {
 		a, signedIn, ok := optionalCustomer(id, w, r, logger)
 		if !ok {
 			return
@@ -139,7 +139,10 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, logger *slog.L
 		respondCommand(w, r, logger, http.StatusAccepted, res, err, func() (any, error) {
 			return checkout.Placed{OrderID: res.ID, State: "pending", PollAfterSeconds: checkout.PollAfterSeconds}, nil
 		})
-	})
+	}
+	if checkoutEnabled {
+		mux.HandleFunc("POST /api/v1/checkouts", postCheckout)
+	}
 	mux.HandleFunc("GET /api/v1/orders/{id}", func(w http.ResponseWriter, r *http.Request) {
 		a, signedIn, ok := optionalCustomer(id, w, r, logger)
 		if !ok {

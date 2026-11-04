@@ -20,8 +20,14 @@
 -- days, finished-cake lots by ID, the discount code, then reservations.
 --
 -- The refund deadline is fixed at placement as the original handover (the
--- appointment start) minus 120 elapsed hours and never moves (K05,
--- BO-GK-003.refund_deadline).
+-- appointment start) minus 120 elapsed hours and never moves (K05;
+-- BO-GK-003.cancellation_early and cancellation_late).
+--
+-- Deviations recorded for the next milestone: the 202 answer carries the
+-- order ID (there is no payment operation yet, so no operation ID); a 409
+-- price_changed asks the client to request a new quote with a fresh guest
+-- proof instead of returning one; the appointment is the quote's (no
+-- pickup_slot_id at checkout).
 
 SET LOCAL ROLE gk_owner;
 
@@ -36,6 +42,10 @@ CREATE TABLE business.policy_version (
   predecessor_id         uuid NULL REFERENCES business.policy_version (id),
   summary                text NOT NULL CHECK (summary = btrim(summary) AND char_length(summary) BETWEEN 1 AND 4000
                                               AND summary !~ '[\x01-\x09\x0b-\x1f\x7f]'),
+  -- Where the Creator approved it (for example a Trello comment link).
+  approver_evidence      text NOT NULL CHECK (approver_evidence = btrim(approver_evidence)
+                                              AND char_length(approver_evidence) BETWEEN 1 AND 500
+                                              AND approver_evidence !~ '[[:cntrl:]]'),
   recorded_at            timestamptz NOT NULL DEFAULT now(),
   effective_at           timestamptz NOT NULL,
   recorded_by            uuid NOT NULL REFERENCES business.account (id)
@@ -99,10 +109,10 @@ BEGIN
   IF TG_OP = 'DELETE' THEN
     RAISE EXCEPTION 'orders are never deleted' USING ERRCODE = 'GK409';
   END IF;
-  IF (NEW.id, NEW.quote_id, NEW.original_handover_at, NEW.full_refund_deadline_at, NEW.subtotal_minor,
+  IF (NEW.id, NEW.quote_id, NEW.body_sha256, NEW.original_handover_at, NEW.full_refund_deadline_at, NEW.subtotal_minor,
       NEW.discount_minor, NEW.total_minor, NEW.policy_version_id, NEW.placed_at, NEW.payment_requirement)
      IS DISTINCT FROM
-     (OLD.id, OLD.quote_id, OLD.original_handover_at, OLD.full_refund_deadline_at, OLD.subtotal_minor,
+     (OLD.id, OLD.quote_id, OLD.body_sha256, OLD.original_handover_at, OLD.full_refund_deadline_at, OLD.subtotal_minor,
       OLD.discount_minor, OLD.total_minor, OLD.policy_version_id, OLD.placed_at, OLD.payment_requirement)
      OR (OLD.paid_at IS NOT NULL AND NEW.paid_at IS DISTINCT FROM OLD.paid_at)
      OR (OLD.free_confirmed_at IS NOT NULL AND NEW.free_confirmed_at IS DISTINCT FROM OLD.free_confirmed_at)
@@ -182,6 +192,37 @@ CREATE TABLE business.order_lot_reservation (
   state    text NOT NULL DEFAULT 'reserved' CHECK (state IN ('reserved', 'sold', 'returned')),
   PRIMARY KEY (order_id, lot_id)
 );
+
+-- A code use moves reserved -> consumed or released, never back (K03: a
+-- cancellation never restores it); a revoked capability stays revoked.
+CREATE FUNCTION business.order_rows_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  IF TG_TABLE_NAME = 'code_application' THEN
+    IF (NEW.id, NEW.order_id, NEW.code_id, NEW.code_version_id, NEW.account_id, NEW.discount_minor)
+       IS DISTINCT FROM (OLD.id, OLD.order_id, OLD.code_id, OLD.code_version_id, OLD.account_id, OLD.discount_minor)
+       OR (OLD.state <> 'reserved' AND NEW.state IS DISTINCT FROM OLD.state) THEN
+      RAISE EXCEPTION 'code use history is immutable' USING ERRCODE = 'GK409';
+    END IF;
+  ELSIF TG_TABLE_NAME = 'order_guest_capability' THEN
+    IF (NEW.id, NEW.order_id, NEW.capability_digest, NEW.created_at)
+       IS DISTINCT FROM (OLD.id, OLD.order_id, OLD.capability_digest, OLD.created_at)
+       OR (OLD.revoked_at IS NOT NULL AND NEW.revoked_at IS DISTINCT FROM OLD.revoked_at) THEN
+      RAISE EXCEPTION 'capability history is immutable' USING ERRCODE = 'GK409';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER code_application_guard BEFORE UPDATE ON business.code_application
+  FOR EACH ROW EXECUTE FUNCTION business.order_rows_guard();
+CREATE TRIGGER order_guest_capability_guard BEFORE UPDATE ON business.order_guest_capability
+  FOR EACH ROW EXECUTE FUNCTION business.order_rows_guard();
 
 CREATE TRIGGER policy_version_immutable BEFORE UPDATE OR DELETE ON business.policy_version
   FOR EACH ROW EXECUTE FUNCTION business.catalog_immutable();
@@ -263,7 +304,8 @@ $$;
 -- --------------------------------------------------------------- policies
 
 CREATE FUNCTION business.policy_record(p_actor uuid, p_key text, p_body_sha256 text, p_source_decision_id text,
-                                       p_source_revision_sha256 text, p_summary text, p_effective_at timestamptz)
+                                       p_source_revision_sha256 text, p_summary text, p_effective_at timestamptz,
+                                       p_approver_evidence text)
 RETURNS TABLE (result_id uuid, replayed boolean)
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -286,8 +328,9 @@ BEGIN
   SELECT p.id INTO v_predecessor FROM business.policy_version p ORDER BY p.effective_at DESC, p.recorded_at DESC LIMIT 1;
   BEGIN
     INSERT INTO business.policy_version (id, source_decision_id, source_revision_sha256, predecessor_id, summary,
-                                         effective_at, recorded_by)
-    VALUES (v_id, p_source_decision_id, p_source_revision_sha256, v_predecessor, p_summary, p_effective_at, v_account);
+                                         approver_evidence, effective_at, recorded_by)
+    VALUES (v_id, p_source_decision_id, p_source_revision_sha256, v_predecessor, p_summary, p_approver_evidence,
+            p_effective_at, v_account);
   EXCEPTION WHEN check_violation OR not_null_violation THEN
     RAISE EXCEPTION 'policy_invalid' USING ERRCODE = 'GK422';
   END;
@@ -368,6 +411,13 @@ BEGIN
   PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('checkout|' || p_quote::text, 0));
   SELECT o.id, o.body_sha256 INTO v_prior, v_prior_hash FROM business.orders o WHERE o.quote_id = p_quote;
   IF FOUND THEN
+    -- A guest replays only while the order's capability for this proof is
+    -- active (a revoked or rotated grant answers as if absent).
+    IF v_account IS NULL AND NOT EXISTS (
+         SELECT 1 FROM business.order_guest_capability g
+         WHERE g.order_id = v_prior AND g.capability_digest = p_guest_digest AND g.revoked_at IS NULL) THEN
+      RAISE EXCEPTION 'quote not found' USING ERRCODE = 'GK404';
+    END IF;
     IF v_prior_hash <> p_body_sha256 THEN
       RAISE EXCEPTION 'key_reused' USING ERRCODE = 'GK409';
     END IF;
@@ -443,13 +493,9 @@ BEGIN
   EXCEPTION WHEN check_violation OR not_null_violation THEN
     RAISE EXCEPTION 'contact_invalid' USING ERRCODE = 'GK422';
   END;
-  INSERT INTO business.order_item (id, order_id, line_no, variant_id, recipe_version_id, physical_lot_id, quantity,
-                                   unit_price_minor, discount_minor, net_paid_minor)
-  SELECT pg_catalog.gen_random_uuid(), v_id, l.line_no, l.variant_id, l.recipe_version_id, l.lot_id, l.quantity,
-         l.unit_price_minor, l.discount_minor, l.net_minor
-  FROM business.checkout_quote_line l WHERE l.quote_id = p_quote;
-
-  -- Resources in lock order: the handover day, then lots by ID, then the code.
+  -- Resources in lock order (K00): the handover day, then lots by ID, then
+  -- the code; rows that reference them (items, reservations) only after
+  -- their locks are held, so no foreign-key share lock is taken first.
   IF v_mto > 0 THEN
     PERFORM business.capacity_admit(v_id, v_q.handover_day, v_mto, p_now + interval '15 minutes');
   END IF;
@@ -464,6 +510,16 @@ BEGIN
   END LOOP;
   IF v_code_id IS NOT NULL THEN
     PERFORM 1 FROM business.discount_code c WHERE c.id = v_code_id FOR UPDATE;
+    -- Recheck after the lock (K00): still active, unexpired, the reviewed
+    -- version, with its current limits.
+    SELECT v.id, v.total_limit, v.per_customer_limit INTO v_code_version, v_total_limit, v_per_customer
+    FROM business.discount_code c
+    JOIN LATERAL (SELECT * FROM business.discount_code_version dv WHERE dv.code_id = c.id
+                  ORDER BY dv.revision DESC LIMIT 1) v ON true
+    WHERE c.id = v_code_id AND c.archived_at IS NULL AND (v.expires_at IS NULL OR v.expires_at > p_now);
+    IF NOT FOUND OR v_code_version <> v_q.code_version_id THEN
+      RAISE EXCEPTION 'price_changed' USING ERRCODE = 'GK409';
+    END IF;
     -- Uses count reserved and consumed applications of every version of the
     -- code (K03: reserve atomically; only proven unpaid abandonment releases).
     IF v_total_limit IS NOT NULL THEN
@@ -482,6 +538,11 @@ BEGIN
     INSERT INTO business.code_application (id, order_id, code_id, code_version_id, account_id, discount_minor)
     VALUES (pg_catalog.gen_random_uuid(), v_id, v_code_id, v_code_version, v_account, v_q.discount_minor);
   END IF;
+  INSERT INTO business.order_item (id, order_id, line_no, variant_id, recipe_version_id, physical_lot_id, quantity,
+                                   unit_price_minor, discount_minor, net_paid_minor)
+  SELECT pg_catalog.gen_random_uuid(), v_id, l.line_no, l.variant_id, l.recipe_version_id, l.lot_id, l.quantity,
+         l.unit_price_minor, l.discount_minor, l.net_minor
+  FROM business.checkout_quote_line l WHERE l.quote_id = p_quote;
   IF v_account IS NULL THEN
     INSERT INTO business.order_guest_capability (id, order_id, capability_digest, allowed_commands)
     VALUES (pg_catalog.gen_random_uuid(), v_id, p_guest_digest, ARRAY['read', 'pay', 'cancel', 'move_pickup']);
@@ -543,12 +604,13 @@ REVOKE ALL ON TABLE business.policy_version, business.orders, business.order_ite
 REVOKE ALL ON FUNCTION business.orders_guard() FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.capacity_admissible(date, integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.quote_purge_expired(timestamptz) FROM PUBLIC;
-REVOKE ALL ON FUNCTION business.policy_record(uuid, text, text, text, text, text, timestamptz) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.policy_record(uuid, text, text, text, text, text, timestamptz, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.order_rows_guard() FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.policy_current(timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.checkout_create(uuid, bytea, text, text, uuid, integer, uuid, text, text, text, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.order_get(uuid, uuid, bytea) FROM PUBLIC;
 
-GRANT EXECUTE ON FUNCTION business.policy_record(uuid, text, text, text, text, text, timestamptz) TO gk_api;
+GRANT EXECUTE ON FUNCTION business.policy_record(uuid, text, text, text, text, text, timestamptz, text) TO gk_api;
 GRANT EXECUTE ON FUNCTION business.policy_current(timestamptz) TO gk_api;
 GRANT EXECUTE ON FUNCTION business.checkout_create(uuid, bytea, text, text, uuid, integer, uuid, text, text, text, timestamptz) TO gk_api;
 GRANT EXECUTE ON FUNCTION business.order_get(uuid, uuid, bytea) TO gk_api;

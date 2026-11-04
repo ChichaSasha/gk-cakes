@@ -78,6 +78,10 @@ type API struct {
 	ShutdownTimeout time.Duration
 	Providers       Providers
 	Auth            Auth
+	// CheckoutEnabled serves POST /api/v1/checkouts (CHECKOUT_ENABLED=true).
+	// Off by default until payment and the release of unpaid holds exist
+	// (GK-025 A3): without them a checkout's holds would never be released.
+	CheckoutEnabled bool
 }
 
 // Auth configures verification of the identity provider's access tokens
@@ -145,6 +149,7 @@ func LoadAPI(getenv func(string) string) (API, error) {
 		StorageWriteKey:      l.optionalSecret("STORAGE_WRITE_KEY"),
 	}
 	cfg.Auth = l.auth(cfg.Env)
+	cfg.CheckoutEnabled = l.boolean("CHECKOUT_ENABLED")
 	return cfg, l.err()
 }
 
@@ -437,6 +442,18 @@ func (l *loader) auth(env Env) Auth {
 		return Auth{}
 	}
 	return a
+}
+
+// boolean reads an optional true/false switch (default false).
+func (l *loader) boolean(name string) bool {
+	switch l.get(name) {
+	case "", "false":
+		return false
+	case "true":
+		return true
+	}
+	l.fail("%s must be true or false", name)
+	return false
 }
 
 func (l *loader) optionalSecret(name string) Secret { return Secret{value: l.get(name)} }
