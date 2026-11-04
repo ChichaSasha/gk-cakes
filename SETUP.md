@@ -205,6 +205,16 @@ Creator's authorization; review in the morning).** Supabase sandbox `flbgymxjelz
   allowlisted callback; (3) staging and local development share this sandbox's
   allowlist; (4) auth emails have no Reply-To until a send-email hook exists.
 
+**GK-034 staging database backups (applied by the agent on 2026-11-04 with the Creator's
+authorization; review in the morning).** Supabase login `gk_backup_staging` (member of
+`gk_backup` only, read only); B2 key `gk-backup-staging` (bucket
+`gk-cakes-sandbox-backups-flbgymxjelzexgoxrcss`, prefix `database/`, list/read/write, no
+delete); a backup encryption key; all four as GitHub `staging` environment secrets
+(`STAGING_BACKUP_*`) with copies in the Creator's Keychain for Bitwarden. B2 lifecycle rule on
+`database/` only: hide after 30 days, delete one day later. Turn on with the repository
+variable `STAGING_BACKUP_ENABLED=true` after the backup PR is merged. A restore into
+`gk-cakes-restore-test` (GK-014) still needs the Creator's restore-time credentials.
+
 **GK-024 staging email setup (Owner: Creator; agent guides each step).** Needed
 before the staging worker sends and the webhook records evidence. Secret values
 go only into Bitwarden and sealed Railway variables, never chat, Git or Trello.

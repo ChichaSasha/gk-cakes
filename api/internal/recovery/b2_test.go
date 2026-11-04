@@ -461,3 +461,39 @@ func TestB2TargetFromASupersededAuthorizationIsDropped(t *testing.T) {
 		t.Fatalf("idle targets = %d, want the current authorization's target kept", len(j.uploads))
 	}
 }
+
+// TestB2AreaScopesTheKey: the database backups use the same client with the
+// "database/" area; their key must be restricted to that area or the root,
+// and a recovery key is refused there (and the other way round, above).
+func TestB2AreaScopesTheKey(t *testing.T) {
+	area := func(f *fakeB2, root string) *B2 {
+		t.Helper()
+		j, err := NewB2(B2Config{KeyID: fakeKeyID, Key: fakeKey, Root: root, Area: "database/", AuthURL: f.srv.URL, HTTP: f.srv.Client()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return j
+	}
+	for _, prefix := range []string{"database/", "database/test/"} {
+		f := newFakeB2(t)
+		f.namePrefix = prefix
+		if err := area(f, "database/test/").Ping(context.Background()); err != nil {
+			t.Errorf("database key restricted to %q: %v", prefix, err)
+		}
+	}
+	f := newFakeB2(t) // restricted to recovery/
+	if err := area(f, "database/test/").Ping(context.Background()); err == nil || !strings.Contains(err.Error(), `"database/"`) {
+		t.Fatalf("recovery key in the database area: %v, want refused", err)
+	}
+	for name, cfg := range map[string]B2Config{
+		"root outside the area": {Root: "recovery/test/", Area: "database/"},
+		"nested area":           {Root: "database/test/", Area: "database/test/"},
+		"area without slash":    {Root: "database/test/", Area: "database"},
+		"upper-case area":       {Root: "Database/test/", Area: "Database/"},
+	} {
+		cfg.KeyID, cfg.Key = fakeKeyID, fakeKey
+		if _, err := NewB2(cfg); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

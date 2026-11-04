@@ -214,6 +214,16 @@ func TestGatewayCatalogInvariants(t *testing.T) {
 			WHERE has_schema_privilege(r, s, 'CREATE')`,
 		"PUBLIC usage of private schemas": `
 			SELECT s FROM unnest(ARRAY['business', 'gk_meta']) s WHERE has_schema_privilege('public', s, 'USAGE')`,
+		// GK-034: only the backup login reads the migration history, read only.
+		"runtime access to the migration history": `
+			SELECT r || ' uses gk_meta' FROM unnest(ARRAY['gk_api', 'gk_worker']) r WHERE has_schema_privilege(r, 'gk_meta', 'USAGE')
+			UNION ALL
+			SELECT 'gk_backup writes gk_meta.schema_migration'
+			WHERE has_table_privilege('gk_backup', 'gk_meta.schema_migration', 'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+			   OR has_schema_privilege('gk_backup', 'gk_meta', 'CREATE')
+			UNION ALL
+			SELECT 'gk_backup cannot read gk_meta.schema_migration'
+			WHERE NOT has_table_privilege('gk_backup', 'gk_meta.schema_migration', 'SELECT')`,
 	}
 	for name, query := range violations {
 		rows, err := admin.Query(ctx, query)

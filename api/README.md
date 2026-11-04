@@ -58,6 +58,9 @@ and staging/production reject local hosts and Unix sockets.
 | `EMAIL_API_KEY`          | worker     | Resend sending key (`re_...`), redacted; see email dispatch below                          |
 | `RECOVERY_B2_KEY_ID`, `RECOVERY_B2_KEY` | worker | B2 application key for the recovery journal (key secret redacted); scope enforced at start, see [Recovery journal](#recovery-journal-k11-gk-024) |
 | `RECOVERY_ENCRYPTION_KEYS` | worker   | journal encryption keys `kid:base64(32 bytes)[,...]`, redacted                              |
+| `BACKUP_DATABASE_URL`    | gk-backup dump | the `gk_backup` login (read only), same rules as `DATABASE_URL` |
+| `RESTORE_DATABASE_URL`   | gk-backup restore-check | a disposable database on a loopback address only |
+| `BACKUP_B2_KEY_ID`, `BACKUP_B2_KEY`, `BACKUP_ENCRYPTION_KEYS` | gk-backup | B2 key restricted to `database/` (list/read/write, no delete) and the backup encryption keys `kid:base64(32 bytes)[,...]`; see [Database backups](#database-backups-k11-gk-034) |
 
 Email dispatch: the four worker variables above are required in staging and
 production; in local and test they are set together or not at all, and a worker
@@ -86,6 +89,9 @@ production stores wait for the first authorized production release (GK-036).
 | `RECOVERY_B2_KEY_ID`, `RECOVERY_B2_KEY` | B2 key: one bucket, prefix `recovery/`, list/read/write only (no delete) | worker service variables (sealed); Bitwarden | create a new key with the B2 CLI, update the variables, redeploy, delete the old key | delete the key in B2 |
 | `EMAIL_WEBHOOK_SECRET`   | signing secret of the Resend webhook endpoint for this environment's API | API service variables (sealed) | replace the endpoint's secret in Resend, update the variable and redeploy promptly (deliveries signed with a secret the API does not have are refused and retried by Resend) | delete the webhook endpoint in Resend |
 | `RECOVERY_ENCRYPTION_KEYS` | seals journal envelopes; one list per environment | worker service variables (sealed) **and** Bitwarden (envelopes are unreadable without it) | prepend a new `kid:key`, keep the old ones listed (they still open older envelopes) | never drop a key while envelopes sealed with it are retained |
+| `BACKUP_DATABASE_URL`    | `gk_backup` login, one per environment (staging `gk_backup_staging`) | GitHub environment secret, staging: `STAGING_BACKUP_DATABASE_URL` | `ALTER ROLE <login> PASSWORD`, update the secret | `ALTER ROLE <login> NOLOGIN` or drop it |
+| `BACKUP_B2_KEY_ID`, `BACKUP_B2_KEY` | B2 key: backup bucket, prefix `database/`, list/read/write only (no delete) | GitHub environment secrets `STAGING_BACKUP_B2_KEY_ID`, `STAGING_BACKUP_B2_KEY`; Bitwarden | create a new key with the B2 CLI, update the secrets, delete the old key | delete the key in B2 |
+| `BACKUP_ENCRYPTION_KEYS` | seals database backups; one list per environment | GitHub environment secret `STAGING_BACKUP_ENCRYPTION_KEYS` **and** Bitwarden (backups are unreadable without it) | prepend a new `kid:key`, keep the old ones for 30 days | never drop a key while backups sealed with it are retained |
 | `MIGRATION_DATABASE_URL` | migration credential (used by `gk-migrate` in deploys and by the manual Email proof and Identity admin workflows) | GitHub environment secret, staging: `STAGING_MIGRATION_DATABASE_URL` | rotate the password of the same role (see below)                | rotate; runtime services never hold it       |
 | `RAILWAY_STAGING_TOKEN`  | Railway project token, staging environment only | GitHub environment `staging` secret (deployable from `main` only) | regenerate in Railway, update the secret                  | delete the token in Railway                  |
 | Provider secrets         | per provider account and environment | API service variables                            | provider dashboard, update the variable, redeploy               | revoke the key in the provider dashboard     |
@@ -105,7 +111,7 @@ are provisioned per environment outside Git and granted exactly one group:
 | `gk_owner`  | owns business objects         | never granted to runtime; migration credential may `SET ROLE` |
 | `gk_api`    | API runtime                   | schema `USAGE`; `EXECUTE` on `email_event_record` (webhook evidence), `identity_resolve` and `identity_staff_list` (identity); more gateway functions as features add them |
 | `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions (`job_claim`, `job_heartbeat`, `job_complete`, `job_release`, `job_fail`, `job_attention`) and the lease-fenced notification gateway (`notification_dispatch_begin`, `notification_attempt_record`, `notification_recovery_*`) |
-| `gk_backup` | backup reader                 | `SELECT` on business tables                                 |
+| `gk_backup` | backup reader                 | `SELECT` on business tables and on `gk_meta.schema_migration` (migration 0008) |
 
 The migration credential needs `CREATEROLE` and `CREATE` on the database.
 Runtime roles cannot write protected tables, run DDL, `TRUNCATE` or `SET ROLE gk_owner`;
@@ -527,6 +533,39 @@ managers about adverse evidence beyond the audit trail (GK-024 Milestone B,
 after GK-021 and GK-023/025); after a restore, re-correlating `unmatched`
 events and applying `matched` events that arrived while their intent was
 still `queued` (GK-034 Milestone B).
+
+## Database backups (K11, GK-034)
+
+Independent daily restore points, kept 30 days, separate from current order
+records (K11). `gk-backup dump` (workflow **Database backup**, daily 02:30 UTC
+and on demand) uses the read-only backup login to open one database snapshot,
+read the migration history and the row count of every business table, and
+`pg_dump` the `business` schema and `gk_meta` in that same snapshot. The
+archive and its manifest (environment, time, schema version, migrations, row
+counts, SHA-256 and size, `pg_dump` and server versions; no business data) are
+sealed with AES-256-GCM, bound to their object names, and stored in the B2
+backup bucket as `database/<environment>/<yyyymmdd-hhmmss>z/dump.sealed` and
+`manifest.sealed`. The manifest is written last: a backup without one is
+incomplete and ignored. The process never deletes; a B2 lifecycle rule on
+`database/` hides files after 30 days and deletes them a day later (set
+2026-11-04; the `recovery/` journal has no lifecycle rule). Dumps are held in
+memory for sealing, up to 256 MiB.
+
+`gk-backup restore-check` (workflow **Backup restore check**, after every
+successful backup, weekly, and on demand) opens the newest complete backup,
+refuses one older than 26 hours (backups have stopped), checks the dump against
+its manifest, restores it with `pg_restore --no-owner --no-privileges
+--single-transaction` into a disposable PostgreSQL (loopback only; in CI a
+service container of the pinned image), and compares the migrations and every
+business table's row count. A failure fails the workflow, which GitHub
+reports by email.
+
+Restoring to the isolated restore project (`gk-cakes-restore-test`, Frankfurt,
+synthetic data only) uses credentials the Creator issues at restore time
+(GK-014): bring the fresh database to the backup's schema version with
+`gk-migrate`, then restore the business data, freeze outgoing jobs and replay
+the recovery journal as K11 describes. Object backups (Supabase Storage)
+start when the first essential files exist (catalog images, GK-022).
 
 ## Identity (K00, GK-021)
 
