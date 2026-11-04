@@ -34,9 +34,40 @@ both write `build/`.
 public site origin. Liveness: `GET /healthz`.
 
 Environment variables must be declared in `src/env.ts` (SvelteKit 3) before code
-can import them; only deliberately public values may be declared `public`. None
-are declared yet: the public API origin and public auth settings arrive with the
-first features that use them (GK-021/GK-028).
+can import them; only deliberately public values may be declared `public`.
+
+| Variable                      | Rule                                                                                   |
+| ----------------------------- | -------------------------------------------------------------------------------------- |
+| `PUBLIC_API_URL`              | exact API origin, e.g. `https://staging-api.gkcake.com` (https; http only on loopback) |
+| `PUBLIC_AUTH_URL`             | identity provider project URL, e.g. `https://<project>.supabase.co`                    |
+| `PUBLIC_AUTH_PUBLISHABLE_KEY` | the provider's publishable key (`sb_publishable_...`); a secret key is refused         |
+
+All three are public by design and read at start (one build serves every
+environment). They are optional: without them the server still starts and
+sign-in says it is not configured.
+
+## Sign-in (GK-021)
+
+`/sign-in` (email and password, or an emailed one-time link), `/auth/callback`,
+`/account` and `/admin` (staff). These pages render only a shell on the server
+(`ssr = false`); the browser loads data from the API with the signed-in user's
+access token as `Authorization: Bearer` (never cookies or URLs).
+
+- The provider SDK (`@supabase/supabase-js`, PKCE flow) keeps the session in
+  memory and persists it in this origin's `localStorage` under `gk-auth`, the
+  provider-supported store. Email links return a one-time code to the exact,
+  allowlisted `/auth/callback`; the page removes it from the URL and history
+  before any other request and exchanges it with the verifier only this
+  browser holds. Where to go next is kept in `sessionStorage`, limited to
+  `/account` and `/admin`, never taken from the URL after the link.
+- Sign-out ends the provider session (the API refuses that session at once on
+  staff routes) and clears the stored session.
+- Messages never reveal whether an email has an account.
+- Content Security Policy: script and style only from this site plus
+  SvelteKit's nonce'd inline code, `frame-ancestors 'none'`, `object-src
+'none'`; `connect-src` adds `PUBLIC_API_URL` and `PUBLIC_AUTH_URL` at runtime
+  (`src/hooks.server.ts`). Private pages are `no-store` and `no-referrer`.
+- Styling is functional only until the account designs (GK-016) are approved.
 
 No browser test runner is configured yet; one is added when a runner is approved
 for the first interactive screens. CI starts the built server and checks

@@ -176,6 +176,28 @@ The steps below are the integration runbook, not evidence those tests have run.
    sender/API/webhook keys by environment; revoke unused grants. No marketing
    campaign or real customer message is authorized by this setup task.
 
+**GK-021 staging identity configuration (applied by the agent on 2026-11-04 with the
+Creator's authorization; review in the morning).** Supabase sandbox `flbgymxjelzexgoxrcss`
+(staging and local development) → Authentication:
+
+- Site URL `https://staging.gkcake.com`; redirect allowlist exactly
+  `https://staging.gkcake.com/auth/callback` and `http://localhost:5173/auth/callback`
+  (no wildcard). Verified: foreign, lookalike, plain-http and production hosts fall back
+  to the site URL; Supabase also accepts any path on the site URL's own host.
+- Self sign-up off on staging until the account designs (GK-016) are approved; accounts
+  are created by invitation. Minimum password length 10; email links expire after 30
+  minutes.
+- Auth emails through Resend SMTP as `GK Cakes <orders@gkcake.com>` (send-only key
+  `gk-supabase-auth-staging`, Keychain `gk-staging-supabase-SMTP_PASSWORD`; copy it to
+  Bitwarden), at most 10 per hour. Supabase SMTP cannot set Reply-To
+  (`gk.cake.london@gmail.com`); a send-email hook through the API would.
+- Railway: `AUTH_ISSUER`, `AUTH_PUBLISHABLE_KEY` on gk-api-staging and `PUBLIC_API_URL`,
+  `PUBLIC_AUTH_URL`, `PUBLIC_AUTH_PUBLISHABLE_KEY` on gk-ui-staging (public values).
+- First sandbox manager `22ac712e-...` holds `chef` (Identity admin run 41767465184);
+  the sandbox test account `gk-test-staff@gkcake.com` holds `fulfillment`.
+- Production: a separate production identity project and its exact callbacks
+  (`https://gkcake.com/auth/callback`) come with the first production release (GK-036).
+
 **GK-024 staging email setup (Owner: Creator; agent guides each step).** Needed
 before the staging worker sends and the webhook records evidence. Secret values
 go only into Bitwarden and sealed Railway variables, never chat, Git or Trello.

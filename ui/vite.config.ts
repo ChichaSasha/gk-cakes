@@ -10,7 +10,28 @@ export default defineConfig({
 				runes: ({ filename }) =>
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
-			adapter: adapter()
+			adapter: adapter(),
+			// GK-021: script and style only from this site, plus SvelteKit's
+			// own inline code by nonce. The API and identity provider origins
+			// are added to connect-src at runtime (src/hooks.server.ts).
+			csp: {
+				mode: 'nonce',
+				directives: {
+					'default-src': ['self'],
+					'script-src': ['self'],
+					'style-src': ['self'],
+					// Inline style attributes only (SvelteKit's route announcer is
+					// visually hidden by one); <style> elements and scripts stay strict.
+					'style-src-attr': ['unsafe-inline'],
+					'img-src': ['self', 'data:'],
+					'font-src': ['self'],
+					'connect-src': ['self'],
+					'object-src': ['none'],
+					'base-uri': ['self'],
+					'form-action': ['self'],
+					'frame-ancestors': ['none']
+				}
+			}
 		})
 	],
 	test: {
