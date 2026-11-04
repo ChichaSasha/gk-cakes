@@ -70,7 +70,7 @@ Minor fixes: “Refund result not confirmed” wording (K05 unknown ≠ pending)
 delivery”; the chef-cancel reasons no longer include “Agreed with the customer”; collection/delivery
 details emails added for today's orders; the bounced banner distinguishes a typo from a mailbox that
 received earlier emails; “updated” times in London time with the date; 320 px overflow; the brand link
-has an accessible name and says “GK Cakes”; the start toast no longer promises one-tap ingredient use;
+has an accessible name (wordmark kept as the approved r12 “GK Cake London”; see question 8); the start toast no longer promises one-tap ingredient use;
 the unused 2.7 MB `composite.png` was removed. Not changed: mobile action order, nav contrast and the
 email “sending” state is defined but not shown in an example (nits).
 
@@ -104,6 +104,13 @@ email “sending” state is defined but not shown in an example (nits).
 6. Delivery quote not paid, or GK can't deliver after the cake is paid: collection, own courier, or a
    full refund? (GK-017 question 5.)
 7. Should “Needs you” alert when collection details haven't been sent about 48 hours before?
+8. Workspace name: the approved GK-015 r12 wordmark says “GK Cake London”, while emails are sent as
+   “GK Cakes” (GK-012). Which should the chef workspace show?
+
+Review round 2 on 9c4195d: **pass** (all majors and minors fixed). Its remaining minor and nits were
+fixed afterwards: the hidden “Hand over” button (CSS `[hidden]`) and focus after “Not yet”; a
+cancellation email in the refund-unknown state; the extra-cake text for non-chef roles; “including
+delivery” only on delivery orders; the wordmark question (8).
 
 ## Checks (r01b)
 

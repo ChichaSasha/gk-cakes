@@ -124,3 +124,4 @@ h1{margin:0;font-size:clamp(26px,3vw,34px);line-height:1.15;letter-spacing:-.02e
 .handover-main{overflow-wrap:anywhere}
 .review-group{flex-wrap:wrap}
 @media (max-width:860px){.pill{white-space:normal;max-width:100%}}
+[hidden]{display:none!important}
