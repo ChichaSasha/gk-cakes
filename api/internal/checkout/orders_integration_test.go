@@ -436,7 +436,8 @@ func TestCheckoutRechecksAndGuards(t *testing.T) {
 	qo, do := h.guestQuote(t, "order", checkout.QuoteInput{Date: sun, SlotID: s2.Slots[0].ID, FulfillmentMode: schedule.Collection, Lines: line})
 	order := must[catalog.Result](t)(h.checkout("", do, "k", qo, pol)).ID
 	for _, sql := range []string{
-		"UPDATE business.orders SET policy_version_id = policy_version_id, placed_at = now()",
+		"UPDATE business.orders SET placed_at = now()",
+		"UPDATE business.orders SET policy_version_id = (SELECT id FROM business.policy_version ORDER BY recorded_at DESC LIMIT 1)",
 		"UPDATE business.orders SET body_sha256 = repeat('c', 64)",
 	} {
 		if _, err := h.admin.Exec(h.ctx, sql); dbtest.SQLState(err) != "GK409" {
@@ -501,5 +502,41 @@ func TestCheckoutRechecksAndGuards(t *testing.T) {
 	}
 	if n := h.count(t, "SELECT count(*) FROM business.checkout_quote q WHERE NOT EXISTS (SELECT 1 FROM business.orders o WHERE o.quote_id = q.id)"); n != 0 {
 		t.Fatalf("unconverted expired quotes after purge = %d, want 0", n)
+	}
+}
+
+// K00 recheck after locks: a code archived while a checkout waits for the
+// code's lock is refused (price_changed), never used.
+func TestCodeArchivedDuringCheckout(t *testing.T) {
+	h := newHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	code := h.code(t, "c", checkout.CodeInput{Code: "TEN", CodeTerms: checkout.CodeTerms{Kind: checkout.KindPercentage, BasisPoints: ptr(1000), TotalLimit: ptr(5)}})
+	q, d := h.guestQuote(t, "q", checkout.QuoteInput{Date: "2026-11-14", SlotID: f.slot, FulfillmentMode: schedule.Collection,
+		Lines: []checkout.QuoteLine{{VariantID: f.v1000, Quantity: 1}}, DiscountCode: "TEN"})
+	tx, err := h.api.Begin(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(h.ctx)
+	if _, err := tx.Exec(h.ctx, "SELECT * FROM business.discount_code_archive($1::uuid, 'arch', $2, $3::uuid, 1)", chef,
+		strings.Repeat("b", 64), code); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { _, err := h.checkout("", d, "k", q, pol); done <- err }()
+	select {
+	case err := <-done:
+		t.Fatalf("checkout finished while the code was locked: %v", err)
+	case <-time.After(500 * time.Millisecond):
+	}
+	if err := tx.Commit(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; conflict(err) != "price_changed" {
+		t.Fatalf("checkout after the archive committed: %v, want price_changed", err)
+	}
+	if n := h.count(t, "SELECT count(*) FROM business.code_application"); n != 0 {
+		t.Fatalf("%d uses of an archived code", n)
 	}
 }
