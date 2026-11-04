@@ -71,9 +71,9 @@ func TestSessionFormIsExactAndDeterministic(t *testing.T) {
 	}
 }
 
-func TestSessionExpiryIsTheInitiationSecondPlusThirtyMinutes(t *testing.T) {
+func TestSessionExpiryIsTheFirstDispatchSecondPlusTwoHours(t *testing.T) {
 	now := time.Date(2026, 11, 5, 10, 0, 7, 999_000_000, time.FixedZone("x", 3600))
-	if got := SessionExpiry(now); !got.Equal(time.Date(2026, 11, 5, 9, 30, 7, 0, time.UTC)) {
+	if got := SessionExpiry(now); !got.Equal(time.Date(2026, 11, 5, 11, 0, 7, 0, time.UTC)) {
 		t.Fatalf("expiry %s", got)
 	}
 }
@@ -86,7 +86,8 @@ func TestPayloadRoundTripsAndRefusesForeignRequests(t *testing.T) {
 	if strings.Contains(string(raw), `\u0026`) {
 		t.Fatalf("payload escapes the form: %s", raw)
 	}
-	exp := Expected{CollectionID: testCollection, OrderID: testOrder, AmountMinor: 8585, Environment: "test", Account: testAccount}
+	exp := Expected{CollectionID: testCollection, OrderID: testOrder, AmountMinor: 8585, Environment: "test", Account: testAccount,
+		UIOrigin: "https://gk.example", ExpiresAt: time.Unix(1793827326, 0)}
 	d, err := CheckPayload(raw, exp, "test")
 	if err != nil {
 		t.Fatal(err)
@@ -102,6 +103,8 @@ func TestPayloadRoundTripsAndRefusesForeignRequests(t *testing.T) {
 		"other account":     func(e Expected) (Expected, string) { e.Account = "acct_other"; return e, "test" },
 		"other environment": func(e Expected) (Expected, string) { return e, "staging" },
 		"live mode":         func(e Expected) (Expected, string) { e.Livemode = true; return e, "test" },
+		"other origin":      func(e Expected) (Expected, string) { e.UIOrigin = "https://other.example"; return e, "test" },
+		"other expiry":      func(e Expected) (Expected, string) { e.ExpiresAt = e.ExpiresAt.Add(time.Second); return e, "test" },
 	}
 	for name, change := range cases {
 		e, env := change(exp)

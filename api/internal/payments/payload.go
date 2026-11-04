@@ -24,11 +24,15 @@ const (
 	// APIVersion pins the Stripe API version every request uses (the
 	// account's dashboard default, verified against the sandbox).
 	APIVersion = "2026-08-26.dahlia"
-	// SessionLifetime is the expiry requested for every Checkout Session:
-	// Stripe's minimum (30 minutes after creation). Stripe allows only a
-	// short tolerance, so a dispatch much later than the initiation is
-	// refused (the collection fails and the customer may start again).
-	SessionLifetime = 30 * time.Minute
+	// SessionLifetime is the expiry requested for every Checkout Session,
+	// counted from the first dispatch (when the request is fixed). Stripe
+	// allows 30 minutes to 24 hours after creation; two hours leaves room
+	// for retries of a call that may never have reached Stripe, while the
+	// 15-minute attempt expiry (A3c) bounds how long a hold really waits.
+	SessionLifetime = 2 * time.Hour
+	// MinSessionLifetime is Stripe's minimum: a first call with less left
+	// is refused before it is made (the database checks 31 minutes).
+	MinSessionLifetime = 30 * time.Minute
 	// ReplayWindow is how long a dispatch may be replayed with the same
 	// idempotency key (Stripe keeps keys 24 hours).
 	ReplayWindow = 23 * time.Hour
@@ -69,8 +73,9 @@ type SessionRequest struct {
 	ExpiresAt    time.Time
 }
 
-// SessionExpiry is the expires_at for a collection initiated at now: the
-// initiation second plus SessionLifetime (the database checks the same).
+// SessionExpiry is the expires_at for a request fixed at now (the database
+// clock of the first dispatch): its second plus SessionLifetime (the
+// database checks the same).
 func SessionExpiry(now time.Time) time.Time {
 	return now.UTC().Truncate(time.Second).Add(SessionLifetime)
 }
@@ -177,6 +182,8 @@ type Expected struct {
 	Environment  string
 	Account      string
 	Livemode     bool
+	UIOrigin     string    // the stored return origin
+	ExpiresAt    time.Time // the stored session expiry
 }
 
 // Dispatch is a validated stored request.
@@ -230,8 +237,11 @@ func CheckPayload(raw []byte, exp Expected, workerEnv string) (Dispatch, error) 
 	}
 	ret := v.Get("success_url")
 	origin, ok := strings.CutSuffix(ret, "/orders/"+exp.OrderID+ReturnQuery)
-	if !ok {
+	if !ok || origin != exp.UIOrigin {
 		return Dispatch{}, errors.New("payments: stored request returns to another page")
+	}
+	if !time.Unix(sec, 0).Equal(exp.ExpiresAt) {
+		return Dispatch{}, errors.New("payments: stored request expiry does not match its collection")
 	}
 	want := SessionRequest{CollectionID: exp.CollectionID, OrderID: exp.OrderID, AmountMinor: exp.AmountMinor,
 		Environment: exp.Environment, UIOrigin: origin, ExpiresAt: time.Unix(sec, 0)}

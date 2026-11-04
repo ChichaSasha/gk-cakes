@@ -194,7 +194,11 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 		}
 		res, err := co.StartPayment(r.Context(), r.PathValue("id"), a.Subject, digest, key, in)
 		if errors.Is(err, checkout.ErrPaymentsUnavailable) {
-			logger.Warn("payment requested but payments are not configured", "request_id", requestID(r.Context()))
+			why := "payments are not configured"
+			if errors.Is(err, checkout.ErrRecoveryFrozen) {
+				why = "a restore freeze is on"
+			}
+			logger.Warn("payment request refused for now", "reason", why, "request_id", requestID(r.Context()))
 			writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Payments are temporarily unavailable", true)
 			return
 		}

@@ -7,10 +7,11 @@
 -- business.payment_initiate: under the order lock it checks the order
 -- (awaiting payment, full payment, prepared, holds intact, expected version),
 -- the quote's 24 h window and the 192 h lead time at the request instant,
--- and that no other collection of the order may still succeed; then it
--- stores the collection with its exact provider payload (environment, Stripe
--- account, idempotency key = collection ID, the form-encoded Checkout
--- Session request), its dispatch job and an audit event in one transaction.
+-- that no restore freeze is on, and that no other collection of the order
+-- may still succeed; then it stores the collection (amount, environment,
+-- Stripe account and mode, idempotency key = collection ID, the UI origin
+-- the customer returns to), its dispatch job and an audit event in one
+-- transaction.
 -- The same actor (account or guest capability) and key replays the same
 -- collection (K00); another key while one may succeed is
 -- payment_in_progress; after a definitive failure, expiry or cancellation a
@@ -18,16 +19,24 @@
 --
 -- Dispatch (worker). The dispatch is a K11 recovery operation of kind
 -- 'dispatch' with aggregate = collection, prior version 0 and operation ID =
--- collection ID, reserved by the worker at the first dispatch, which fixes
--- first_dispatch_at and replay_until = first dispatch + 23 hours (Stripe
--- keeps idempotency keys 24 hours), exactly as for notifications. Right
--- before each call payment_dispatch_admit re-checks the freeze and the
--- window on the database clock and records dispatch_started_at. Every call
--- is appended to payment_attempt. Outcomes: 'created' (session ID, URL,
--- provider expiry, livemode) makes the collection pending and schedules a
--- reconcile 15 minutes later (a lost webhook is covered); 'rejected' (a
--- definitive Stripe refusal, for example a dispatch too late for the stored
--- expires_at) makes it failed; an idempotency conflict goes to
+-- collection ID. The exact Checkout Session request is fixed at the first
+-- dispatch, once the worker has its Stripe key and journal:
+-- payment_dispatch_fix stores the payload (environment, account, key, the
+-- form-encoded request with expires_at = the first dispatch second + 2 hours
+-- on the database clock; Stripe allows 30 minutes to 24 hours) and only then
+-- fixes first_dispatch_at and replay_until = first dispatch + 23 hours
+-- (Stripe keeps idempotency keys 24 hours). The worker then reserves the
+-- recovery operation with that payload's hash and writes the prepared
+-- envelope, so the body is persisted before the external create (K04) and
+-- never rebuilt. Right before each call payment_dispatch_admit re-checks the
+-- freeze and the window on the database clock and records
+-- dispatch_started_at; a first call with less than 31 minutes of session
+-- lifetime left is refused and recorded as a definitive failure without
+-- calling Stripe. Every call is appended to payment_attempt. Outcomes:
+-- 'created' (session ID, URL, provider expiry, livemode) makes the
+-- collection pending and schedules a reconcile 15 minutes later (a lost
+-- webhook is covered); 'rejected' (a definitive Stripe refusal, or expired
+-- before any call) makes it failed; an idempotency conflict goes to
 -- reconciliation and the collection is unknown.
 --
 -- Webhook (API). business.payment_event_record stores each verified event
@@ -95,13 +104,16 @@ CREATE TABLE business.payment_collection (
   guest_capability_id uuid NULL REFERENCES business.order_guest_capability (id),
   request_key         text NOT NULL CHECK (request_key ~ '^[\x21-\x7e]{1,128}$'),
   request_sha256      char(64) NOT NULL CHECK (request_sha256 ~ '^[0-9a-f]{64}$'),
+  -- The exact UI origin the customer returns to (its order page).
+  return_origin       text NOT NULL CHECK (return_origin ~ '^https?://[^/?#[:space:]]+$' AND octet_length(return_origin) <= 200),
   -- The exact dispatch payload (JSON text, including the form-encoded
-  -- request): never rebuilt; its hash is the recovery payload hash.
-  payload             text NOT NULL CHECK (octet_length(payload) BETWEEN 2 AND 16384),
-  payload_sha256      char(64) NOT NULL CHECK (payload_sha256 ~ '^[0-9a-f]{64}$'),
+  -- request), fixed at the first dispatch and never rebuilt; its hash is the
+  -- recovery payload hash.
+  payload             text NULL CHECK (octet_length(payload) BETWEEN 2 AND 16384),
+  payload_sha256      char(64) NULL CHECK (payload_sha256 ~ '^[0-9a-f]{64}$'),
   initiated_at        timestamptz NOT NULL,
-  -- The expires_at sent to Stripe: the initiation second + 30 minutes.
-  session_expires_at  timestamptz NOT NULL,
+  -- The expires_at sent to Stripe: the first dispatch second + 2 hours.
+  session_expires_at  timestamptz NULL,
   first_dispatch_at   timestamptz NULL,
   replay_until        timestamptz NULL,
   dispatch_started_at timestamptz NULL,
@@ -127,7 +139,11 @@ CREATE TABLE business.payment_collection (
                                              AND (actor_kind = 'guest') = (guest_capability_id IS NOT NULL)),
   CONSTRAINT payment_collection_window CHECK ((first_dispatch_at IS NULL) = (replay_until IS NULL)
                                               AND (replay_until IS NULL OR replay_until = first_dispatch_at + interval '23 hours')),
-  CONSTRAINT payment_collection_expiry CHECK (session_expires_at = date_trunc('second', initiated_at) + interval '30 minutes'),
+  CONSTRAINT payment_collection_body CHECK ((first_dispatch_at IS NULL) = (payload IS NULL)
+                                            AND (payload IS NULL) = (payload_sha256 IS NULL)
+                                            AND (payload IS NULL) = (session_expires_at IS NULL)),
+  CONSTRAINT payment_collection_expiry CHECK (session_expires_at IS NULL
+                                              OR session_expires_at = date_trunc('second', first_dispatch_at) + interval '2 hours'),
   CONSTRAINT payment_collection_succeeded CHECK ((state = 'succeeded') = (succeeded_at IS NOT NULL AND observed_at IS NOT NULL)),
   CONSTRAINT payment_collection_session CHECK (state NOT IN ('pending', 'cancelled') OR provider_session_id IS NOT NULL)
 );
@@ -246,14 +262,13 @@ BEGIN
 END;
 $$;
 
--- API: start collecting a full-payment order (see the header). p_payload is
--- the dispatch payload the application built for p_collection (the Stripe
--- request includes this order, collection, amount, environment and expiry;
--- the worker validates the whole request again before any call). Returns
--- the collection and whether it already existed (a replay).
+-- API: start collecting a full-payment order (see the header). p_return_origin
+-- is the exact UI origin the Stripe return URLs point at. Returns the
+-- collection and whether it already existed (a replay). A restore freeze
+-- refuses new collections (GK503 recovery_frozen: retry later).
 CREATE FUNCTION business.payment_initiate(
   p_owner uuid, p_guest_digest bytea, p_order uuid, p_key text, p_body_sha256 text, p_expected_version integer,
-  p_collection uuid, p_payload text, p_env text, p_account text, p_now timestamptz)
+  p_collection uuid, p_return_origin text, p_env text, p_account text, p_now timestamptz)
 RETURNS TABLE (result_id uuid, replayed boolean)
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -266,10 +281,7 @@ DECLARE
   v_prior business.payment_collection%ROWTYPE;
   v_capability uuid;
   v_quote_expires timestamptz;
-  v_session_expires timestamptz;
-  v_livemode boolean;
-  v_p json;
-  v_request text;
+  v_frozen boolean;
   v_job uuid;
 BEGIN
   IF (p_owner IS NULL) = (p_guest_digest IS NULL) OR p_now IS NULL OR p_order IS NULL THEN
@@ -282,8 +294,8 @@ BEGIN
     RAISE EXCEPTION 'expected_version_required' USING ERRCODE = 'GK422';
   END IF;
   IF p_env IS NULL OR p_env !~ '^[a-z0-9][a-z0-9-]{0,31}$' OR p_account IS NULL OR p_account !~ '^acct_[A-Za-z0-9]{1,64}$'
-     OR p_collection IS NULL OR p_payload IS NULL THEN
-    RAISE EXCEPTION 'payment environment, account, collection and payload are required';
+     OR p_collection IS NULL OR p_return_origin IS NULL OR p_return_origin !~ '^https?://[^/?#[:space:]]+$' THEN
+    RAISE EXCEPTION 'payment environment, account, collection and return origin are required';
   END IF;
   IF p_owner IS NOT NULL THEN
     SELECT r.account_id, r.account_disabled INTO v_account, v_disabled FROM business.identity_resolve(p_owner) r;
@@ -320,6 +332,12 @@ BEGIN
     RETURN QUERY SELECT v_prior.id, true;
     RETURN;
   END IF;
+  -- K11: a restore freezes new collections (share lock: a concurrent freeze
+  -- waits for this request, or this request sees it).
+  SELECT f.frozen INTO v_frozen FROM business.recovery_freeze f WHERE f.singleton FOR SHARE;
+  IF v_frozen THEN
+    RAISE EXCEPTION 'recovery_frozen' USING ERRCODE = 'GK503';
+  END IF;
   -- K04: no second collection while an earlier one may still succeed.
   IF EXISTS (SELECT 1 FROM business.payment_collection c
              WHERE c.order_id = p_order AND c.state IN ('created', 'pending', 'unknown')) THEN
@@ -347,43 +365,14 @@ BEGIN
     RAISE EXCEPTION 'lead_time' USING ERRCODE = 'GK409';
   END IF;
 
-  -- The payload belongs to this collection, order, amount and environment.
-  v_session_expires := pg_catalog.date_trunc('second', p_now) + interval '30 minutes';
-  v_livemode := p_env = 'production';
-  BEGIN
-    v_p := p_payload::json;
-  EXCEPTION WHEN others THEN
-    v_p := NULL;
-  END;
-  v_request := v_p ->> 'request';
-  IF v_p IS NULL OR pg_catalog.json_typeof(v_p) <> 'object' OR v_request IS NULL
-     OR (v_p ->> 'v') IS DISTINCT FROM '1' OR (v_p ->> 'provider') IS DISTINCT FROM 'stripe'
-     OR (v_p ->> 'environment') IS DISTINCT FROM p_env OR (v_p ->> 'account') IS DISTINCT FROM p_account
-     OR (v_p ->> 'livemode') IS DISTINCT FROM v_livemode::text
-     OR (v_p ->> 'idempotency_key') IS DISTINCT FROM p_collection::text
-     OR (v_p ->> 'order_id') IS DISTINCT FROM p_order::text
-     OR (v_p ->> 'amount_minor') IS DISTINCT FROM v_o.total_minor::text
-     OR NOT business.payment_form_has(v_request, 'client_reference_id', p_order::text)
-     OR NOT business.payment_form_has(v_request, 'metadata%5Bcollection_id%5D', p_collection::text)
-     OR NOT business.payment_form_has(v_request, 'metadata%5Border_id%5D', p_order::text)
-     OR NOT business.payment_form_has(v_request, 'metadata%5Benvironment%5D', p_env)
-     OR NOT business.payment_form_has(v_request, 'line_items%5B0%5D%5Bprice_data%5D%5Bunit_amount%5D', v_o.total_minor::text)
-     OR NOT business.payment_form_has(v_request, 'line_items%5B0%5D%5Bprice_data%5D%5Bcurrency%5D', 'gbp')
-     OR NOT business.payment_form_has(v_request, 'expires_at',
-                                      pg_catalog.date_part('epoch', v_session_expires)::bigint::text) THEN
-    RAISE EXCEPTION 'payment payload does not belong to collection % of order %', p_collection, p_order
-      USING ERRCODE = 'invalid_parameter_value';
-  END IF;
-
   -- Due at once by the database clock (p_now may be a test clock).
   v_job := business.job_enqueue(p_collection, NULL);
   INSERT INTO business.payment_collection
     (id, order_id, amount_minor, environment, provider_account_id, livemode, actor_kind, actor_account_id,
-     guest_capability_id, request_key, request_sha256, payload, payload_sha256, initiated_at, session_expires_at)
-  VALUES (p_collection, p_order, v_o.total_minor, p_env, p_account, v_livemode,
+     guest_capability_id, request_key, request_sha256, return_origin, initiated_at)
+  VALUES (p_collection, p_order, v_o.total_minor, p_env, p_account, p_env = 'production',
           CASE WHEN v_account IS NULL THEN 'guest' ELSE 'customer' END, v_account, v_capability, p_key, p_body_sha256,
-          p_payload, pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(p_payload, 'UTF8')), 'hex'), p_now,
-          v_session_expires);
+          p_return_origin, p_now);
   INSERT INTO business.payment_job (job_id, collection_id, purpose) VALUES (v_job, p_collection, 'dispatch');
   PERFORM business.audit_record(CASE WHEN v_account IS NULL THEN 'system' ELSE 'customer' END, v_account,
                                 'payment.collection_requested', 'order', p_order, NULL,
@@ -482,15 +471,17 @@ END;
 $$;
 
 -- Worker: start (or resume) the leased payment job. status 'ready' returns
--- what the purpose needs (a dispatch fixes first_dispatch_at/replay_until
--- on first use); 'frozen' (restore), 'settled' (a reconcile for a
--- collection that is already decided) and 'no_session' (a reconcile before
--- any session is known; the dispatch schedules its own) return no work;
--- 'not_payment' means another handler owns the job.
+-- what the purpose needs (a dispatch whose body is not fixed yet returns no
+-- payload: the worker builds it with db_now and calls payment_dispatch_fix;
+-- nothing is fixed here, so a job that waits for a key or journal starts no
+-- window); 'frozen' (restore), 'settled' (a reconcile for a collection that
+-- is already decided) and 'no_session' (a reconcile before any session is
+-- known; the dispatch schedules its own) return no work; 'not_payment'
+-- means another handler owns the job.
 CREATE FUNCTION business.payment_job_begin(p_job_id uuid, p_worker uuid, p_generation bigint)
 RETURNS TABLE (status text, purpose text, collection_id uuid, order_id uuid, collection_state text, payload text,
-               replay_until timestamptz, session_id text, amount_minor bigint, environment text, account text,
-               livemode boolean)
+               replay_until timestamptz, session_expires_at timestamptz, return_origin text, db_now timestamptz,
+               session_id text, amount_minor bigint, environment text, account text, livemode boolean)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
@@ -502,30 +493,27 @@ DECLARE
 BEGIN
   IF v.job_id IS NULL THEN
     RETURN QUERY SELECT 'not_payment'::text, NULL::text, NULL::uuid, NULL::uuid, NULL::text, NULL::text,
-      NULL::timestamptz, NULL::text, NULL::bigint, NULL::text, NULL::text, NULL::boolean;
+      NULL::timestamptz, NULL::timestamptz, NULL::text, NULL::timestamptz, NULL::text, NULL::bigint, NULL::text,
+      NULL::text, NULL::boolean;
     RETURN;
   END IF;
   IF business.recovery_frozen() THEN
     RETURN QUERY SELECT 'frozen'::text, v.purpose, v.collection_id, NULL::uuid, NULL::text, NULL::text,
-      NULL::timestamptz, NULL::text, NULL::bigint, NULL::text, NULL::text, NULL::boolean;
+      NULL::timestamptz, NULL::timestamptz, NULL::text, NULL::timestamptz, NULL::text, NULL::bigint, NULL::text,
+      NULL::text, NULL::boolean;
     RETURN;
   END IF;
-  SELECT * INTO c FROM business.payment_collection pc WHERE pc.id = v.collection_id FOR UPDATE;
+  SELECT * INTO c FROM business.payment_collection pc WHERE pc.id = v.collection_id;
   IF v.purpose = 'dispatch' THEN
-    IF c.first_dispatch_at IS NULL THEN
-      UPDATE business.payment_collection pc
-      SET first_dispatch_at = pg_catalog.now(), replay_until = pg_catalog.now() + interval '23 hours',
-          version = pc.version + 1, updated_at = pg_catalog.now()
-      WHERE pc.id = c.id
-      RETURNING pc.replay_until INTO c.replay_until;
-    END IF;
     RETURN QUERY SELECT 'ready'::text, v.purpose, c.id, c.order_id, c.state, c.payload, c.replay_until,
-      c.provider_session_id, c.amount_minor, c.environment, c.provider_account_id, c.livemode;
+      c.session_expires_at, c.return_origin, pg_catalog.now(), c.provider_session_id, c.amount_minor, c.environment,
+      c.provider_account_id, c.livemode;
     RETURN;
   END IF;
   IF c.state IN ('succeeded', 'failed', 'cancelled') THEN
     RETURN QUERY SELECT 'settled'::text, v.purpose, c.id, c.order_id, c.state, NULL::text, NULL::timestamptz,
-      c.provider_session_id, c.amount_minor, c.environment, c.provider_account_id, c.livemode;
+      NULL::timestamptz, NULL::text, pg_catalog.now(), c.provider_session_id, c.amount_minor, c.environment,
+      c.provider_account_id, c.livemode;
     RETURN;
   END IF;
   -- The created session, or one a verified event named for this collection
@@ -537,11 +525,82 @@ BEGIN
      ORDER BY e.received_at DESC, e.id DESC LIMIT 1));
   IF v_session IS NULL THEN
     RETURN QUERY SELECT 'no_session'::text, v.purpose, c.id, c.order_id, c.state, NULL::text, NULL::timestamptz,
-      NULL::text, c.amount_minor, c.environment, c.provider_account_id, c.livemode;
+      NULL::timestamptz, NULL::text, pg_catalog.now(), NULL::text, c.amount_minor, c.environment,
+      c.provider_account_id, c.livemode;
     RETURN;
   END IF;
   RETURN QUERY SELECT 'ready'::text, v.purpose, c.id, c.order_id, c.state, NULL::text, NULL::timestamptz,
-    v_session, c.amount_minor, c.environment, c.provider_account_id, c.livemode;
+    NULL::timestamptz, NULL::text, pg_catalog.now(), v_session, c.amount_minor, c.environment, c.provider_account_id,
+    c.livemode;
+END;
+$$;
+
+-- Worker: fix the leased dispatch's exact request at its first dispatch
+-- (see the header). p_at is the database instant the worker built it from
+-- (payment_job_begin's db_now, at most a minute old); the request's
+-- expires_at must be its second + 2 hours, and the payload must belong to
+-- this collection, order, amount, environment, account and mode (the worker
+-- validates the whole request again before every call). Status 'ready'
+-- returns the fixed payload, window and expiry (unchanged when already
+-- fixed: p_payload is then ignored); 'frozen' fixes nothing.
+CREATE FUNCTION business.payment_dispatch_fix(
+  p_job_id uuid, p_worker uuid, p_generation bigint, p_operation_id uuid, p_payload text, p_at timestamptz)
+RETURNS TABLE (status text, payload text, replay_until timestamptz, session_expires_at timestamptz)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v business.payment_job := business.payment_leased_dispatch(p_job_id, p_worker, p_generation, p_operation_id);
+  c business.payment_collection%ROWTYPE;
+  v_expires timestamptz;
+  v_p json;
+  v_request text;
+BEGIN
+  SELECT * INTO c FROM business.payment_collection pc WHERE pc.id = v.collection_id FOR UPDATE;
+  IF c.first_dispatch_at IS NOT NULL THEN
+    RETURN QUERY SELECT 'ready'::text, c.payload, c.replay_until, c.session_expires_at;
+    RETURN;
+  END IF;
+  IF business.recovery_frozen() THEN
+    RETURN QUERY SELECT 'frozen'::text, NULL::text, NULL::timestamptz, NULL::timestamptz;
+    RETURN;
+  END IF;
+  IF p_at IS NULL OR p_at > pg_catalog.now() OR p_at <= pg_catalog.now() - interval '1 minute' THEN
+    RAISE EXCEPTION 'dispatch instant must be the database clock of the last minute' USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+  v_expires := pg_catalog.date_trunc('second', p_at) + interval '2 hours';
+  BEGIN
+    v_p := p_payload::json;
+  EXCEPTION WHEN others THEN
+    v_p := NULL;
+  END;
+  v_request := v_p ->> 'request';
+  IF v_p IS NULL OR pg_catalog.json_typeof(v_p) <> 'object' OR v_request IS NULL OR octet_length(p_payload) > 16384
+     OR (v_p ->> 'v') IS DISTINCT FROM '1' OR (v_p ->> 'provider') IS DISTINCT FROM 'stripe'
+     OR (v_p ->> 'environment') IS DISTINCT FROM c.environment
+     OR (v_p ->> 'account') IS DISTINCT FROM c.provider_account_id
+     OR (v_p ->> 'livemode') IS DISTINCT FROM c.livemode::text
+     OR (v_p ->> 'idempotency_key') IS DISTINCT FROM c.id::text
+     OR (v_p ->> 'order_id') IS DISTINCT FROM c.order_id::text
+     OR (v_p ->> 'amount_minor') IS DISTINCT FROM c.amount_minor::text
+     OR NOT business.payment_form_has(v_request, 'client_reference_id', c.order_id::text)
+     OR NOT business.payment_form_has(v_request, 'metadata%5Bcollection_id%5D', c.id::text)
+     OR NOT business.payment_form_has(v_request, 'metadata%5Border_id%5D', c.order_id::text)
+     OR NOT business.payment_form_has(v_request, 'metadata%5Benvironment%5D', c.environment)
+     OR NOT business.payment_form_has(v_request, 'line_items%5B0%5D%5Bprice_data%5D%5Bunit_amount%5D', c.amount_minor::text)
+     OR NOT business.payment_form_has(v_request, 'line_items%5B0%5D%5Bprice_data%5D%5Bcurrency%5D', 'gbp')
+     OR NOT business.payment_form_has(v_request, 'expires_at', pg_catalog.date_part('epoch', v_expires)::bigint::text) THEN
+    RAISE EXCEPTION 'payment payload does not belong to collection %', c.id USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+  UPDATE business.payment_collection pc
+  SET payload = p_payload,
+      payload_sha256 = pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(p_payload, 'UTF8')), 'hex'),
+      session_expires_at = v_expires, first_dispatch_at = p_at, replay_until = p_at + interval '23 hours',
+      version = pc.version + 1, updated_at = pg_catalog.now()
+  WHERE pc.id = c.id
+  RETURNING pc.payload, pc.replay_until, pc.session_expires_at INTO c.payload, c.replay_until, c.session_expires_at;
+  RETURN QUERY SELECT 'ready'::text, c.payload, c.replay_until, c.session_expires_at;
 END;
 $$;
 
@@ -561,7 +620,7 @@ DECLARE
 BEGIN
   SELECT * INTO c FROM business.payment_collection pc WHERE pc.id = v.collection_id;
   IF p_kind IS DISTINCT FROM 'dispatch' OR p_aggregate_id IS DISTINCT FROM c.id OR p_prior_version IS DISTINCT FROM 0
-     OR p_payload_hash IS DISTINCT FROM c.payload_sha256::text OR c.replay_until IS NULL
+     OR c.payload_sha256 IS NULL OR p_payload_hash IS DISTINCT FROM c.payload_sha256::text OR c.replay_until IS NULL
      OR p_replay_until IS DISTINCT FROM c.replay_until
      OR p_envelope_key IS DISTINCT FROM ('recovery/' || c.environment || '/op/' || c.id::text || '/0000000000-' || c.id::text) THEN
     RAISE EXCEPTION 'recovery operation % does not match the dispatch of collection %', p_operation_id, c.id
@@ -586,9 +645,11 @@ END;
 $$;
 
 -- Worker: admission right before the Stripe call, on the database clock:
--- 'ok' (dispatch_started_at recorded), 'frozen' or 'expired' (the
--- idempotency window has ended). Only 'ok' may call Stripe, after this
--- transaction commits.
+-- 'ok' (dispatch_started_at recorded), 'frozen', 'expired' (the idempotency
+-- window has ended) or 'too_late' (no call was ever admitted and fewer than
+-- 31 minutes of session lifetime are left: Stripe would refuse it, so the
+-- worker records a definitive failure without calling). Only 'ok' may call
+-- Stripe, after this transaction commits.
 CREATE FUNCTION business.payment_dispatch_admit(p_job_id uuid, p_worker uuid, p_generation bigint, p_operation_id uuid)
 RETURNS text
 LANGUAGE plpgsql
@@ -604,6 +665,8 @@ BEGIN
     RETURN 'frozen';
   ELSIF c.replay_until IS NULL OR pg_catalog.now() >= c.replay_until THEN
     RETURN 'expired';
+  ELSIF c.dispatch_started_at IS NULL AND c.session_expires_at - pg_catalog.now() < interval '31 minutes' THEN
+    RETURN 'too_late';
   END IF;
   IF c.dispatch_started_at IS NULL THEN
     UPDATE business.payment_collection pc
@@ -700,6 +763,10 @@ BEGIN
     UPDATE business.payment_collection pc
     SET state = 'failed', version = pc.version + 1, updated_at = pg_catalog.now()
     WHERE pc.id = v.collection_id AND pc.state IN ('created', 'unknown') AND pc.mismatch_reason IS NULL;
+    IF v_changed THEN
+      PERFORM business.audit_record('system', NULL, 'payment.failed', 'payment_collection', v.collection_id, NULL,
+                                    pg_catalog.json_build_object('reason', coalesce(v_ev ->> 'reason', 'rejected_by_stripe')));
+    END IF;
   END IF;
   RETURN QUERY SELECT v_state, v_changed;
 END;
@@ -1103,6 +1170,7 @@ REVOKE ALL ON FUNCTION business.payment_event_record(text, text, boolean, text, 
 REVOKE ALL ON FUNCTION business.payment_leased(uuid, uuid, bigint) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.payment_leased_dispatch(uuid, uuid, bigint, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.payment_job_begin(uuid, uuid, bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.payment_dispatch_fix(uuid, uuid, bigint, uuid, text, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.payment_recovery_reserve(uuid, uuid, bigint, uuid, text, uuid, integer, text, text, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.payment_recovery_prepared(uuid, uuid, bigint, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.payment_dispatch_admit(uuid, uuid, bigint, uuid) FROM PUBLIC;
@@ -1116,6 +1184,7 @@ REVOKE ALL ON FUNCTION business.payment_reconcile_record(uuid, uuid, bigint, uui
 GRANT EXECUTE ON FUNCTION business.payment_initiate(uuid, bytea, uuid, text, text, integer, uuid, text, text, text, timestamptz) TO gk_api;
 GRANT EXECUTE ON FUNCTION business.payment_event_record(text, text, boolean, text, text, timestamptz, text, text, uuid, text, text) TO gk_api;
 GRANT EXECUTE ON FUNCTION business.payment_job_begin(uuid, uuid, bigint) TO gk_worker;
+GRANT EXECUTE ON FUNCTION business.payment_dispatch_fix(uuid, uuid, bigint, uuid, text, timestamptz) TO gk_worker;
 GRANT EXECUTE ON FUNCTION business.payment_recovery_reserve(uuid, uuid, bigint, uuid, text, uuid, integer, text, text, timestamptz) TO gk_worker;
 GRANT EXECUTE ON FUNCTION business.payment_recovery_prepared(uuid, uuid, bigint, uuid) TO gk_worker;
 GRANT EXECUTE ON FUNCTION business.payment_dispatch_admit(uuid, uuid, bigint, uuid) TO gk_worker;

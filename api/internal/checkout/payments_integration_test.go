@@ -50,6 +50,7 @@ type fakeStripe struct {
 	status   int               // answer creates with this status (error body)
 	errType  string
 	livemode bool
+	skew     time.Duration // Stripe's clock ahead of ours (a later retry)
 }
 
 type fakeSession struct {
@@ -100,9 +101,15 @@ func (f *fakeStripe) serve(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			amount, _ := strconv.ParseInt(v.Get("line_items[0][price_data][unit_amount]"), 10, 64)
-			// The provider's expiry on the real clock (the test clock is
-			// fixed), so an open session's URL stays visible in the test.
-			exp := time.Now().Add(30 * time.Minute).Unix()
+			// Stripe: expires_at at least 30 minutes after creation (about
+			// a minute of tolerance), at most 24 hours.
+			exp, _ := strconv.ParseInt(v.Get("expires_at"), 10, 64)
+			now := time.Now().Add(f.skew)
+			if exp < now.Add(29*time.Minute).Unix() || exp > now.Add(24*time.Hour).Unix() {
+				w.WriteHeader(400)
+				_, _ = io.WriteString(w, `{"error":{"type":"invalid_request_error","message":"The expires_at timestamp must be at least 30 minutes from Checkout Session creation."}}`)
+				return
+			}
 			id = fmt.Sprintf("cs_test_fake%d", len(f.sessions)+1)
 			f.sessions[id] = &fakeSession{id: id, status: "open", paymentStatus: "unpaid", currency: "gbp", amount: amount,
 				expiresAt: exp, clientRef: v.Get("client_reference_id"),
@@ -451,14 +458,10 @@ func TestPaymentInitiationIsIdempotentAndSerialized(t *testing.T) {
 		o.Payment.AmountMinor != 9501 || o.Payment.CheckoutURL != nil {
 		t.Fatalf("order after the request %+v", o)
 	}
-	var payload, request string
-	var expires time.Time
-	if err := h.admin.QueryRow(h.ctx, `SELECT payload, payload::json ->> 'request', session_expires_at
-		FROM business.payment_collection WHERE id = $1::uuid`, first.ID).Scan(&payload, &request, &expires); err != nil {
-		t.Fatal(err)
-	}
-	if !expires.Equal(h.now.Add(30*time.Minute)) || strings.Contains(payload, "example.com") || strings.Contains(payload, "Test Customer") {
-		t.Fatalf("stored payload %s (expires %s)", payload, expires)
+	// Nothing is fixed before the first dispatch: no body, no window.
+	if got := h.count(t, `SELECT count(*) FROM business.payment_collection WHERE id = $1::uuid AND payload IS NULL
+		AND first_dispatch_at IS NULL AND replay_until IS NULL AND session_expires_at IS NULL AND return_origin = $2`, first.ID, uiOrigin); got != 1 {
+		t.Fatal("the request was fixed at initiation")
 	}
 
 	// Stripe definitively refuses it (for example a dispatch too late for
@@ -484,6 +487,17 @@ func TestPaymentInitiationIsIdempotentAndSerialized(t *testing.T) {
 	}
 	if errs := h.drain(t); len(errs) != 0 {
 		t.Fatalf("second dispatch: %v", errs)
+	}
+	var payload string
+	var fixed, expires time.Time
+	if err := h.admin.QueryRow(h.ctx, `SELECT payload, first_dispatch_at, session_expires_at
+		FROM business.payment_collection WHERE id = $1::uuid`, second.ID).Scan(&payload, &fixed, &expires); err != nil {
+		t.Fatal(err)
+	}
+	if !expires.Equal(fixed.Truncate(time.Second).Add(2*time.Hour)) || time.Since(fixed) > time.Minute ||
+		!strings.Contains(payload, "expires_at="+strconv.FormatInt(expires.Unix(), 10)) ||
+		strings.Contains(payload, "example.com") || strings.Contains(payload, "Test Customer") {
+		t.Fatalf("stored payload %s (fixed %s, expires %s)", payload, fixed, expires)
 	}
 	o = h.paidOrderView(t, order, d)
 	if o.Payment == nil || o.Payment.ID != second.ID || o.Payment.State != "pending" || o.Payment.CheckoutURL == nil ||
@@ -975,4 +989,125 @@ func TestStripeWebhookInbox(t *testing.T) {
 		}
 	}
 	h.noPersonalDataInLogs(t)
+}
+
+// The request is fixed at the first dispatch, not at the initiation: a
+// collection whose first dispatch waits (no Stripe key, a freeze, a backlog)
+// for hours still gets a session; a worker without a key fixes nothing.
+func TestDelayedFirstDispatchStillCreatesTheSession(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d := h.paidOrder(t, f, pol)
+	res, err := h.start(order, d, "pay-1", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyless := *h.pay
+	keyless.Provider = nil
+	h.handler = jobs.Chain(h.cmds.Handle, keyless.Handle)
+	errs := h.drain(t)
+	var de *jobs.DeferError
+	if len(errs) != 1 || !errors.As(errs[0], &de) {
+		t.Fatalf("without a key: %v, want a deferral", errs)
+	}
+	if got := h.count(t, "SELECT count(*) FROM business.payment_collection WHERE id = $1::uuid AND first_dispatch_at IS NULL AND payload IS NULL", res.ID); got != 1 {
+		t.Fatal("a worker without a key started the window")
+	}
+	// Three hours later (the initiation instant is far behind).
+	h.owner(t, "UPDATE business.payment_collection SET initiated_at = initiated_at - interval '3 hours' WHERE id = $1::uuid", res.ID)
+	h.handler = jobs.Chain(h.cmds.Handle, h.pay.Handle)
+	h.due(t)
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("delayed first dispatch: %v", errs)
+	}
+	if c := h.collection(t, res.ID); c.State != "pending" || len(h.stripe.sessions) != 1 {
+		t.Fatalf("collection %+v", c)
+	}
+}
+
+// A first call that never reached Stripe (connection refused) is retried
+// with the same key and body an hour later, and Stripe still accepts it.
+func TestRetryAfterARefusedConnectionAnHourLater(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d := h.paidOrder(t, f, pol)
+	res, err := h.start(order, d, "pay-1", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	down, err := payments.NewClient(payments.ClientConfig{Key: "sk_test_fake", BaseURL: "http://127.0.0.1:1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unreachable := *h.pay
+	unreachable.Provider = down
+	h.handler = jobs.Chain(h.cmds.Handle, unreachable.Handle)
+	errs := h.drain(t)
+	if len(errs) != 1 || len(attention(errs)) != 0 || h.collection(t, res.ID).State != "unknown" || len(h.stripe.creates) != 0 {
+		t.Fatalf("refused connection: %v %+v", errs, h.collection(t, res.ID))
+	}
+	h.handler = jobs.Chain(h.cmds.Handle, h.pay.Handle)
+	h.stripe.skew = 61 * time.Minute
+	h.due(t)
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("retry an hour later: %v", errs)
+	}
+	if c := h.collection(t, res.ID); c.State != "pending" || len(h.stripe.creates) != 1 || h.stripe.creates[0] != res.ID {
+		t.Fatalf("collection %+v, creates %v", c, h.stripe.creates)
+	}
+}
+
+// A first call that would come too late for its session (the prepared
+// envelope kept failing for over 1.5 hours) is refused before it is made:
+// the collection fails without a Stripe call.
+func TestFirstCallTooLateFailsWithoutCallingStripe(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d := h.paidOrder(t, f, pol)
+	res, err := h.start(order, d, "pay-1", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.journal.Fail = func(op, name string) error {
+		if op == "put" && strings.HasSuffix(name, ".prepared") {
+			return errors.New("b2 unavailable")
+		}
+		return nil
+	}
+	if errs := h.drain(t); len(errs) != 1 || h.recoveryState(t, res.ID) != "reserved" {
+		t.Fatalf("journal down: %v (%s)", errs, h.recoveryState(t, res.ID))
+	}
+	// 100 minutes pass while the journal is down: move the fixed request
+	// (and its operation, never journalled) back in time.
+	var fixed time.Time
+	if err := h.admin.QueryRow(h.ctx, "SELECT first_dispatch_at FROM business.payment_collection WHERE id = $1::uuid", res.ID).Scan(&fixed); err != nil {
+		t.Fatal(err)
+	}
+	earlier := fixed.Add(-100 * time.Minute)
+	payload, err := payments.NewPayload(payments.SessionRequest{CollectionID: res.ID, OrderID: order, AmountMinor: 9501,
+		Environment: "test", UIOrigin: uiOrigin, ExpiresAt: payments.SessionExpiry(earlier)}, stripeAccount)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.owner(t, `UPDATE business.payment_collection SET first_dispatch_at = $2::timestamptz, replay_until = $2::timestamptz + interval '23 hours',
+		session_expires_at = $3, payload = $4::text, payload_sha256 = encode(sha256(convert_to($4::text, 'UTF8')), 'hex')
+		WHERE id = $1::uuid`, res.ID, earlier, payments.SessionExpiry(earlier), string(payload))
+	h.owner(t, `UPDATE business.recovery_operation SET replay_until = $2::timestamptz + interval '23 hours',
+		payload_hash = encode(sha256(convert_to($3::text, 'UTF8')), 'hex') WHERE id = $1::uuid`, res.ID, earlier, string(payload))
+	h.journal.Fail = nil
+	h.due(t)
+	errs := h.drain(t)
+	if got := attention(errs); len(got) != 1 || !strings.Contains(got[0], "without a Stripe call") {
+		t.Fatalf("too late: %v", errs)
+	}
+	if c := h.collection(t, res.ID); c.State != "failed" || len(h.stripe.creates) != 0 || h.recoveryState(t, res.ID) != "secured" ||
+		h.count(t, "SELECT count(*) FROM business.payment_attempt WHERE collection_id = $1::uuid", res.ID) != 0 {
+		t.Fatalf("collection %+v, creates %v", c, h.stripe.creates)
+	}
+	if _, err := h.start(order, d, "pay-2", 1); err != nil {
+		t.Fatalf("new collection after the failure: %v", err)
+	}
 }

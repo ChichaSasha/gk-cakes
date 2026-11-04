@@ -851,7 +851,9 @@ func TestRuntimeRolesUseOnlyTheNotificationGateway(t *testing.T) {
 		"business.order_command_secured(uuid, uuid, bigint, uuid)",
 		// GK-025 A3b lease-fenced payment gateway.
 		"business.payment_attempt_record(uuid, uuid, bigint, uuid, text, integer, text)",
-		"business.payment_dispatch_admit(uuid, uuid, bigint, uuid)", "business.payment_job_begin(uuid, uuid, bigint)",
+		"business.payment_dispatch_admit(uuid, uuid, bigint, uuid)",
+		"business.payment_dispatch_fix(uuid, uuid, bigint, uuid, text, timestamp with time zone)",
+		"business.payment_job_begin(uuid, uuid, bigint)",
 		"business.payment_reconcile_record(uuid, uuid, bigint, uuid, text, text, text, text, text, json, timestamp with time zone, text)",
 		"business.payment_recovery_committed(uuid, uuid, bigint, uuid, json, text)",
 		"business.payment_recovery_frozen(uuid, uuid, bigint)", "business.payment_recovery_prepared(uuid, uuid, bigint, uuid)",

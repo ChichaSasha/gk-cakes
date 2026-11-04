@@ -36,6 +36,7 @@ const (
 	reasonRecovery  = "recovery operation conflict for this payment collection"
 	reasonRefused   = "Stripe refused the request (credentials or permissions): fix the key, then requeue"
 	reasonRejected  = "Stripe rejected the Checkout Session request: the collection failed and the customer may start a new one"
+	reasonTooLate   = "payment never dispatched before its session would expire (worker delay): the collection failed without a Stripe call; the customer may start a new one"
 	reasonMode      = "Checkout Session created in the wrong Stripe mode: collection unknown, never confirmed"
 	reasonMismatch  = "Stripe evidence does not match the collection (amount, currency, account, mode or metadata): never confirmed; manager reconciliation"
 	reasonRetrieve  = "Stripe refused reading the Checkout Session: check the key, then requeue"
@@ -99,8 +100,27 @@ func (w *Worker) dispatch(ctx context.Context, log *slog.Logger, store leaseStor
 	if w.Coordinator.Environment != w.Environment {
 		return errors.New("payments: worker and recovery journal must use the same environment")
 	}
+	if len(b.Payload) == 0 {
+		// First dispatch: fix the exact request now, on the database clock.
+		payload, err := NewPayload(SessionRequest{CollectionID: b.CollectionID, OrderID: b.OrderID, AmountMinor: b.AmountMinor,
+			Environment: b.Environment, UIOrigin: b.ReturnOrigin, ExpiresAt: SessionExpiry(b.DBNow)}, b.Account)
+		if err != nil {
+			return jobs.Attention(reasonPayload, err)
+		}
+		status, err := store.fix(ctx, b.CollectionID, payload, b.DBNow, &b)
+		switch {
+		case err != nil:
+			return err
+		case status == "frozen":
+			return jobs.Defer(FreezeRecheck, recovery.ErrFrozen)
+		case status != "ready":
+			return fmt.Errorf("payments: unexpected fix status %q", status)
+		}
+		log.Info("payment request fixed", "session_expires_at", b.SessionExpiresAt.UTC().Format(time.RFC3339))
+	}
 	d, err := CheckPayload(b.Payload, Expected{CollectionID: b.CollectionID, OrderID: b.OrderID, AmountMinor: b.AmountMinor,
-		Environment: b.Environment, Account: b.Account, Livemode: b.Livemode}, w.Environment)
+		Environment: b.Environment, Account: b.Account, Livemode: b.Livemode, UIOrigin: b.ReturnOrigin,
+		ExpiresAt: b.SessionExpiresAt}, w.Environment)
 	if err != nil {
 		return jobs.Attention(reasonPayload, err)
 	}
@@ -113,6 +133,12 @@ func (w *Worker) dispatch(ctx context.Context, log *slog.Logger, store leaseStor
 	)
 	switch {
 	case err == nil && outcome.Status == string(Rejected):
+		var ev struct {
+			Reason string `json:"reason"`
+		}
+		if json.Unmarshal(outcome.Evidence, &ev) == nil && ev.Reason == reasonExpiredBeforeDispatch {
+			return jobs.Attention(reasonTooLate, nil)
+		}
 		return jobs.Attention(reasonRejected, nil)
 	case err == nil:
 		var ev createdEvidence
@@ -167,6 +193,12 @@ func (w *Worker) effect(log *slog.Logger, store leaseStore, opID string, d Dispa
 		switch status, err := store.admit(ctx, opID); {
 		case err != nil:
 			return recovery.Outcome{}, fmt.Errorf("payments: admission: %w", err)
+		case status == "too_late":
+			// No call was ever admitted and Stripe would refuse this one: a
+			// definitive failure without a call (nothing can exist at Stripe).
+			log.Warn("payment session would expire before dispatch; failed without a Stripe call")
+			b, err := json.Marshal(map[string]string{"reason": reasonExpiredBeforeDispatch})
+			return recovery.Outcome{Status: string(Rejected), Evidence: b}, err
 		case status != "ok":
 			return recovery.Outcome{}, &admitError{status: status}
 		}
@@ -203,6 +235,10 @@ func (w *Worker) effect(log *slog.Logger, store leaseStore, opID string, d Dispa
 		}
 	}
 }
+
+// reasonExpiredBeforeDispatch is the outcome evidence of a dispatch refused
+// before any call because its session would expire too soon.
+const reasonExpiredBeforeDispatch = "expired_before_dispatch"
 
 // admitError means Stripe was not called: the dispatch was refused
 // admission right before the call ("frozen" or "expired").
@@ -296,33 +332,36 @@ func (s leaseStore) args(extra ...any) []any {
 }
 
 type begin struct {
-	Status          string
-	Purpose         string
-	CollectionID    string
-	OrderID         string
-	CollectionState string
-	Payload         []byte
-	ReplayUntil     time.Time
-	SessionID       string
-	AmountMinor     int64
-	Environment     string
-	Account         string
-	Livemode        bool
+	Status           string
+	Purpose          string
+	CollectionID     string
+	OrderID          string
+	CollectionState  string
+	Payload          []byte
+	ReplayUntil      time.Time
+	SessionExpiresAt time.Time
+	ReturnOrigin     string
+	DBNow            time.Time
+	SessionID        string
+	AmountMinor      int64
+	Environment      string
+	Account          string
+	Livemode         bool
 }
 
 func (s leaseStore) begin(ctx context.Context) (begin, error) {
 	var (
 		b                                    begin
 		purpose, coll, order, state, payload *string
-		session, env, account                *string
-		until                                *time.Time
+		session, env, account, origin        *string
+		until, expires, now                  *time.Time
 		amount                               *int64
 		live                                 *bool
 	)
 	err := s.db.QueryRow(ctx, `SELECT status, purpose, collection_id::text, order_id::text, collection_state, payload,
-		replay_until, session_id, amount_minor, environment, account, livemode
+		replay_until, session_expires_at, return_origin, db_now, session_id, amount_minor, environment, account, livemode
 		FROM business.payment_job_begin($1::uuid, $2::uuid, $3)`, s.args()...).Scan(&b.Status, &purpose, &coll, &order,
-		&state, &payload, &until, &session, &amount, &env, &account, &live)
+		&state, &payload, &until, &expires, &origin, &now, &session, &amount, &env, &account, &live)
 	if err != nil {
 		return begin{}, gatewayErr(err)
 	}
@@ -333,7 +372,13 @@ func (s leaseStore) begin(ctx context.Context) (begin, error) {
 		return *p
 	}
 	b.Purpose, b.CollectionID, b.OrderID, b.CollectionState = str(purpose), str(coll), str(order), str(state)
-	b.SessionID, b.Environment, b.Account = str(session), str(env), str(account)
+	b.SessionID, b.Environment, b.Account, b.ReturnOrigin = str(session), str(env), str(account), str(origin)
+	if expires != nil {
+		b.SessionExpiresAt = *expires
+	}
+	if now != nil {
+		b.DBNow = *now
+	}
 	if payload != nil {
 		b.Payload = []byte(*payload)
 	}
@@ -347,6 +392,29 @@ func (s leaseStore) begin(ctx context.Context) (begin, error) {
 		b.Livemode = *live
 	}
 	return b, nil
+}
+
+// fix stores the first dispatch's exact request (payment_dispatch_fix) and
+// updates b with the fixed payload, window and expiry.
+func (s leaseStore) fix(ctx context.Context, opID string, payload []byte, at time.Time, b *begin) (string, error) {
+	var (
+		status         string
+		stored         *string
+		until, expires *time.Time
+	)
+	err := s.db.QueryRow(ctx, `SELECT status, payload, replay_until, session_expires_at
+		FROM business.payment_dispatch_fix($1::uuid, $2::uuid, $3, $4::uuid, $5, $6)`,
+		s.args(opID, string(payload), at)...).Scan(&status, &stored, &until, &expires)
+	if err != nil {
+		return "", gatewayErr(err)
+	}
+	if status == "ready" {
+		if stored == nil || until == nil || expires == nil {
+			return "", errors.New("payments: fixed dispatch without its payload")
+		}
+		b.Payload, b.ReplayUntil, b.SessionExpiresAt = []byte(*stored), *until, *expires
+	}
+	return status, nil
 }
 
 func (s leaseStore) Reserve(ctx context.Context, op recovery.Operation, envelopeKey string) (recovery.Reservation, error) {

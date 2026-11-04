@@ -360,6 +360,10 @@ func TestPaymentRoute(t *testing.T) {
 		`{"expected_version":1}`, nil); rec.Code != 503 {
 		t.Fatalf("payments not configured: %d", rec.Code)
 	}
+	if rec := serveCheckout(t, &fakeCheckout{freeErr: checkout.ErrRecoveryFrozen}, id, http.MethodPost, path, secretToken, "k",
+		`{"expected_version":1}`, nil); rec.Code != 503 || !strings.Contains(rec.Body.String(), `"retryable":true`) {
+		t.Fatalf("restore freeze: %d %s", rec.Code, rec.Body.String())
+	}
 	off := NewHandler(Options{UIOrigin: "https://gkcake.com", DB: fakePinger{}, Identity: id, Checkout: &fakeCheckout{},
 		Logger: slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))})
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"expected_version":1}`))
