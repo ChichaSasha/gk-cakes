@@ -79,6 +79,21 @@ jobs:
         with:
           go-version-file: api/go.mod
           cache-dependency-path: api/go.sum
+      - name: PostgreSQL 17 client tools from the pinned service image (backup tests)
+        env:
+          PG_IMAGE: postgres:17.11-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+        run: |
+          mkdir -p "$RUNNER_TEMP/pgbin"
+          for tool in pg_dump pg_restore; do
+            printf '#!/bin/sh\nexec docker run --rm -i --network host -e PGPASSWORD -e PGAPPNAME %s %s "$@"\n' \
+              "$PG_IMAGE" "$tool" > "$RUNNER_TEMP/pgbin/$tool"
+            chmod +x "$RUNNER_TEMP/pgbin/$tool"
+          done
+          "$RUNNER_TEMP/pgbin/pg_dump" --version
+          {
+            echo "GK_TEST_PG_BIN=$RUNNER_TEMP/pgbin"
+            echo "GK_REQUIRE_PG_TOOLS=1"
+          } >> "$GITHUB_ENV"
       - name: Migrations, real-role gateway and worker shutdown tests
         run: go test -race -tags=integration -p 1 -count=1 ./...
       - name: gk-migrate on an empty database, then no-op

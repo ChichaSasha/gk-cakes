@@ -104,6 +104,13 @@ func (d *DB) AdminConn(t *testing.T) *pgx.Conn {
 	return d.connect(t, &u)
 }
 
+// AdminURL is this database's connection URL as the cluster superuser.
+func (d *DB) AdminURL() string {
+	u := *d.adminURL
+	u.Path = "/" + d.Name
+	return u.String()
+}
+
 // UserURL returns this database's connection URL for an existing user, for
 // tests that provision their own roles.
 func (d *DB) UserURL(user, password string) string { return d.urlFor(user, password).String() }

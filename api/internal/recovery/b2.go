@@ -25,16 +25,21 @@ type B2Config struct {
 	Key string
 	// Root is the journal's name prefix, for example "recovery/staging/". It
 	// must end with "/" and lie inside the key's name-prefix restriction.
-	Root    string
+	Root string
+	// Area is the top-level name prefix the key must be restricted to
+	// (default "recovery/"; the database backups use "database/"). Root must
+	// lie inside it.
+	Area    string
 	AuthURL string // default https://api.backblazeb2.com
 	HTTP    *http.Client
 }
 
 // B2 is a Journal on Backblaze B2. It requires an application key restricted
-// to exactly one bucket and the name prefix "recovery/" (or exactly its
-// root), with listFiles, readFiles and writeFiles and otherwise only
-// read-only capabilities, as the approved recovery plan specifies (no delete,
-// no bucket or retention changes); any other key is refused before use.
+// to exactly one bucket and the name prefix of its area, "recovery/" by
+// default (or exactly its root), with listFiles, readFiles and writeFiles and
+// otherwise only read-only capabilities, as the approved recovery plan
+// specifies (no delete, no bucket or retention changes); any other key is
+// refused before use.
 type B2 struct {
 	cfg          B2Config
 	listPageSize int
@@ -69,6 +74,10 @@ func isExpired(err error) bool {
 	return errors.As(err, &be) && be.Status == http.StatusUnauthorized && (be.Code == "expired_auth_token" || be.Code == "bad_auth_token")
 }
 
+// MaxObjectBytes is the largest object this client reads back (64 MiB); a
+// larger response is an error, never a truncated object.
+const MaxObjectBytes = 64 << 20
+
 var objectName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$`)
 
 // NewB2 validates cfg; the key's scope is checked on first use.
@@ -78,6 +87,13 @@ func NewB2(cfg B2Config) (*B2, error) {
 		return nil, errors.New("recovery: B2 key id and application key are required")
 	case !strings.HasSuffix(cfg.Root, "/") || !objectName.MatchString(strings.TrimSuffix(cfg.Root, "/")):
 		return nil, errors.New("recovery: B2 journal root must be a lower-case prefix ending in /")
+	}
+	if cfg.Area == "" {
+		cfg.Area = "recovery/"
+	}
+	if !strings.HasSuffix(cfg.Area, "/") || strings.Count(cfg.Area, "/") != 1 || !objectName.MatchString(strings.TrimSuffix(cfg.Area, "/")) ||
+		!strings.HasPrefix(cfg.Root, cfg.Area) {
+		return nil, errors.New("recovery: B2 area must be one lower-case top-level prefix ending in / that contains the root")
 	}
 	if cfg.AuthURL == "" {
 		cfg.AuthURL = "https://api.backblazeb2.com"
@@ -119,9 +135,13 @@ func (b *B2) do(req *http.Request, op string, out any) ([]byte, error) {
 		return nil, fmt.Errorf("b2 %s: %w", op, err)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxObjectBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("b2 %s: read: %w", op, err)
+	}
+	if len(body) > MaxObjectBytes {
+		// Never return a cut-off object as if it were whole.
+		return nil, fmt.Errorf("b2 %s: response larger than %d bytes", op, MaxObjectBytes)
 	}
 	if resp.StatusCode/100 != 2 {
 		be := &b2Error{Status: resp.StatusCode, Op: op}
@@ -206,7 +226,7 @@ func (b *B2) authorize(ctx context.Context, fresh bool) (*b2Auth, error) {
 }
 
 // checkScope enforces the approved key: the three journal capabilities plus
-// read-only ones, and the "recovery/" prefix (or exactly the journal root).
+// read-only ones, and the area's prefix (or exactly the journal root).
 func (b *B2) checkScope(caps []string, prefix *string) error {
 	for _, c := range requiredCaps {
 		if !slices.Contains(caps, c) {
@@ -221,8 +241,8 @@ func (b *B2) checkScope(caps []string, prefix *string) error {
 			return fmt.Errorf("recovery: B2 key has capability %q; only list/read/write files and read-only capabilities are allowed", c)
 		}
 	}
-	if prefix == nil || (*prefix != "recovery/" && *prefix != b.cfg.Root) {
-		return fmt.Errorf(`recovery: B2 key must be restricted to the name prefix "recovery/" or %q`, b.cfg.Root)
+	if prefix == nil || (*prefix != b.cfg.Area && *prefix != b.cfg.Root) {
+		return fmt.Errorf("recovery: B2 key must be restricted to the name prefix %q or %q", b.cfg.Area, b.cfg.Root)
 	}
 	return nil
 }
@@ -265,6 +285,9 @@ func (b *B2) Ping(ctx context.Context) error {
 func (b *B2) Put(ctx context.Context, name string, data []byte) error {
 	if err := b.checkName(name); err != nil {
 		return err
+	}
+	if len(data) > MaxObjectBytes {
+		return fmt.Errorf("recovery: object %q is larger than %d bytes and could not be read back", name, MaxObjectBytes)
 	}
 	sum := sha1.Sum(data)
 	want := hex.EncodeToString(sum[:])

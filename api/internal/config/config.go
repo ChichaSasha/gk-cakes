@@ -192,6 +192,83 @@ func (l *loader) emailDispatch(env Env) EmailDispatch {
 	return e
 }
 
+// Backup is the configuration of the backup command (GK-034): the backup
+// login for dumps, or a disposable loopback database for restore checks, the
+// B2 key restricted to database/, and the backup encryption keys.
+type Backup struct {
+	Env            Env
+	DatabaseURL    Secret // BACKUP_DATABASE_URL, the gk_backup login (dump)
+	RestoreURL     Secret // RESTORE_DATABASE_URL, disposable and loopback (restore check)
+	B2KeyID        string
+	B2Key          Secret
+	EncryptionKeys Secret
+}
+
+// LoadBackup reads backup configuration; restore selects the restore check,
+// which needs RESTORE_DATABASE_URL instead of BACKUP_DATABASE_URL.
+func LoadBackup(getenv func(string) string, restore bool) (Backup, error) {
+	var l loader
+	l.getenv = getenv
+	cfg := Backup{
+		Env:            l.env(),
+		B2KeyID:        l.get("BACKUP_B2_KEY_ID"),
+		B2Key:          l.optionalSecret("BACKUP_B2_KEY"),
+		EncryptionKeys: l.optionalSecret("BACKUP_ENCRYPTION_KEYS"),
+	}
+	if restore {
+		cfg.RestoreURL = l.restoreURL("RESTORE_DATABASE_URL")
+		l.plainConnection("RESTORE_DATABASE_URL", cfg.RestoreURL)
+	} else {
+		cfg.DatabaseURL = l.databaseURL("BACKUP_DATABASE_URL", cfg.Env)
+		l.plainConnection("BACKUP_DATABASE_URL", cfg.DatabaseURL)
+	}
+	switch {
+	case cfg.B2KeyID == "" || !cfg.B2Key.IsSet() || !cfg.EncryptionKeys.IsSet():
+		l.fail("BACKUP_B2_KEY_ID, BACKUP_B2_KEY and BACKUP_ENCRYPTION_KEYS are required")
+	case !b2KeyIDPattern.MatchString(cfg.B2KeyID):
+		l.fail("BACKUP_B2_KEY_ID must be a B2 application key ID")
+	}
+	return cfg, l.err()
+}
+
+// plainConnection refuses URL parameters that the PostgreSQL client tools
+// honour but this validation does not see (hostaddr, service, passfile), or
+// that would put the password on a command line (password).
+func (l *loader) plainConnection(name string, s Secret) {
+	if !s.IsSet() {
+		return
+	}
+	u, err := url.Parse(s.value)
+	if err != nil {
+		return
+	}
+	for _, p := range []string{"password", "hostaddr", "service", "passfile"} {
+		if u.Query().Has(p) {
+			l.fail("%s must not set %s in its query", name, p)
+		}
+	}
+}
+
+// restoreURL accepts only a loopback PostgreSQL database: restore checks
+// load a backup into a disposable database, never into a shared one.
+func (l *loader) restoreURL(name string) Secret {
+	raw := l.get(name)
+	if raw == "" {
+		l.fail("%s is required", name)
+		return Secret{}
+	}
+	parsed, err := pgconn.ParseConfig(raw)
+	if err != nil || (!strings.HasPrefix(raw, "postgres://") && !strings.HasPrefix(raw, "postgresql://")) {
+		l.fail("%s is not a valid PostgreSQL URL", name)
+		return Secret{}
+	}
+	if !isLoopback(parsed.Host) || strings.HasPrefix(parsed.Host, "/") || len(parsed.Fallbacks) > 0 {
+		l.fail("%s must be a disposable database on a loopback address", name)
+		return Secret{}
+	}
+	return Secret{value: raw}
+}
+
 // LoadMigrate reads migration configuration using getenv.
 func LoadMigrate(getenv func(string) string) (Migrate, error) {
 	var l loader
