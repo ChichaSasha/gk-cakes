@@ -17,6 +17,7 @@ import (
 	"github.com/ChichaSasha/gk-cakes/api/internal/httpapi"
 	"github.com/ChichaSasha/gk-cakes/api/internal/identity"
 	"github.com/ChichaSasha/gk-cakes/api/internal/notifications"
+	"github.com/ChichaSasha/gk-cakes/api/internal/schedule"
 )
 
 func main() {
@@ -63,6 +64,7 @@ func main() {
 		logger.Info("identity not configured; authenticated /api/v1 routes are not served")
 	}
 	opts.Catalog = &catalog.Store{DB: pool}
+	opts.Schedule = &schedule.Store{DB: pool}
 	handler := httpapi.NewHandler(opts)
 	if err := httpapi.Serve(ctx, ln, handler, cfg.ShutdownTimeout); err != nil {
 		logger.Error("serve", "error", err.Error())

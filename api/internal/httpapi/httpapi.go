@@ -46,6 +46,9 @@ type Options struct {
 	// Catalog serves the public catalog when set, and the chef catalog when
 	// Identity is set too.
 	Catalog Catalog
+	// Schedule serves the public schedule and ready cakes when set, and the
+	// staff schedule, day and lot routes when Identity is set too.
+	Schedule Schedule
 }
 
 // NewHandler returns the API handler with its middleware chain.
@@ -74,6 +77,12 @@ func NewHandler(opts Options) http.Handler {
 		catalogPublicRoutes(mux, opts.Catalog, opts.Logger)
 		if opts.Identity != nil {
 			catalogStaffRoutes(mux, opts.Catalog, opts.Identity, opts.Logger)
+		}
+	}
+	if opts.Schedule != nil {
+		schedulePublicRoutes(mux, opts.Schedule, opts.Logger)
+		if opts.Identity != nil {
+			scheduleStaffRoutes(mux, opts.Schedule, opts.Identity, opts.Logger)
 		}
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
