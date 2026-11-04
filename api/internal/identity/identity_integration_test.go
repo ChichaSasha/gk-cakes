@@ -166,6 +166,14 @@ func TestOperatorCommandsGrantRevokeAndDisable(t *testing.T) {
 	if _, err := h.dir.Resolve(h.ctx, claims(chef)); err != nil {
 		t.Fatalf("re-enabled: %v", err)
 	}
+	// Enabling never creates an account (a mistyped subject leaves no row).
+	if h.operator(t, "SELECT business.account_set_disabled($1, false, 'typo')", "dddddddd-0000-4000-8000-000000000004") {
+		t.Fatal("enabling an unknown subject reported a change")
+	}
+	var accounts int
+	if err := h.admin.QueryRow(h.ctx, "SELECT count(*) FROM business.account WHERE provider_subject = 'dddddddd-0000-4000-8000-000000000004'").Scan(&accounts); err != nil || accounts != 0 {
+		t.Fatalf("enabling an unknown subject created %d accounts (%v)", accounts, err)
+	}
 	// A subject can be disabled before its first sign-in.
 	if !h.operator(t, "SELECT business.account_set_disabled($1, true, 'blocked before sign-up')", bob) {
 		t.Fatal("disabling a subject with no account reported no change")

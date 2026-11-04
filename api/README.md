@@ -547,8 +547,10 @@ refresh, so a withdrawn key stops working. Refreshes start at most every 30
 seconds (5 while no set was ever fetched), run one at a time in the background
 with their own 5-second timeout, follow no redirects, and never delay a token
 whose key is cached and fresh; a cancelled request cannot abort one. If a
-refresh fails, the cached set stays usable for up to an hour, then requests
-fail closed (503), as they do when no set was ever fetched. Provider metadata
+refresh fails, the cached set stays usable for up to an hour without waiting
+for the retries (a withdrawn key cannot be detected while the provider is
+unreachable anyway), then requests fail closed (503), as they do when no set
+was ever fetched. Provider metadata
 (`app_metadata`, `user_metadata`, any role claim) is never read for
 authorization.
 

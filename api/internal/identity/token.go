@@ -70,7 +70,9 @@ type Claims struct {
 // once per RefreshInterval (RetryInterval while no key set was ever
 // fetched), run one at a time in the background with their own timeout, and
 // never block a token whose key is cached and fresh. If a refresh fails, the
-// cached set stays usable until HardKeyAge, then tokens fail closed.
+// cached set stays usable until HardKeyAge without waiting for the retries
+// (a withdrawn key cannot be detected while the provider is unreachable
+// anyway), then tokens fail closed.
 type Verifier struct {
 	// Issuer is the exact iss claim, e.g. https://<ref>.supabase.co/auth/v1;
 	// the key set is read from Issuer + "/.well-known/jwks.json".
@@ -90,6 +92,8 @@ type Verifier struct {
 	// HardKeyAge is how long a set that cannot be refreshed stays trusted
 	// (default 1h); after that, tokens fail closed.
 	HardKeyAge time.Duration
+	// FetchTimeout bounds one key-set fetch (default 5s).
+	FetchTimeout time.Duration
 	// Now returns the current time (default time.Now).
 	Now func() time.Time
 
@@ -307,6 +311,12 @@ func (v *Verifier) key(ctx context.Context, kid string) (*ecdsa.PublicKey, error
 			go v.refresh(v.inflight)
 		}
 		wait := v.inflight
+		if known && v.lastErr != nil && now.Sub(v.fetchedAt) <= orDefault(v.HardKeyAge, time.Hour) {
+			// The last refresh failed: serve the stale key while retrying in
+			// the background, instead of making every caller wait for it.
+			v.mu.Unlock()
+			return k, nil
+		}
 		v.mu.Unlock()
 		if waited || wait == nil {
 			break
@@ -343,7 +353,7 @@ func (v *Verifier) due(now time.Time) bool {
 // refresh fetches the key set detached from any request and publishes it;
 // a failed fetch keeps the cached set.
 func (v *Verifier) refresh(done chan struct{}) {
-	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), orDefault(v.FetchTimeout, fetchTimeout))
 	keys, err := v.fetch(ctx)
 	cancel()
 	v.mu.Lock()

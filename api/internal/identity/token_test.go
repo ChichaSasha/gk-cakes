@@ -454,3 +454,49 @@ func TestProviderRedirectsAreNotFollowed(t *testing.T) {
 		t.Fatalf("redirected key set: %v, want refused", err)
 	}
 }
+
+// Once a refresh has failed, a stale cached key is served without waiting
+// for each retry, which runs in the background.
+func TestStaleKeyIsServedWithoutWaitingAfterAFailedRefresh(t *testing.T) {
+	f := newFixture(t)
+	if _, err := f.v.Verify(context.Background(), f.token(t, nil)); err != nil {
+		t.Fatal(err)
+	}
+	f.keys.edit(func(s *keyServer) { s.status, s.delay = http.StatusBadGateway, 300*time.Millisecond })
+	f.clock.Add(11 * time.Minute) // stale: the first request waits for the (failing) refresh
+	if _, err := f.v.Verify(context.Background(), f.token(t, nil)); err != nil {
+		t.Fatalf("stale key after a failed refresh: %v", err)
+	}
+	f.clock.Add(31 * time.Second) // the next retry is due
+	start := time.Now()
+	if _, err := f.v.Verify(context.Background(), f.token(t, nil)); err != nil {
+		t.Fatalf("stale key while retrying: %v", err)
+	}
+	if d := time.Since(start); d > 150*time.Millisecond {
+		t.Fatalf("waited %v for a retry after a failed refresh; want the stale key at once", d)
+	}
+	if n := f.keys.count(); n != 3 {
+		t.Fatalf("fetches = %d, want 3 (the retry still runs)", n)
+	}
+}
+
+// Every fetch has its own timeout, so a hanging provider cannot keep a
+// refresh running forever and block all later ones.
+func TestHangingProviderTimesOut(t *testing.T) {
+	f := newFixture(t)
+	f.keys.edit(func(s *keyServer) { s.delay = 2 * time.Second })
+	f.v.FetchTimeout = 50 * time.Millisecond
+	start := time.Now()
+	if _, err := f.v.Verify(context.Background(), f.token(t, nil)); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("hanging provider: %v, want ErrUnavailable", err)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("waited %v; want the fetch timeout", d)
+	}
+	f.idle()
+	f.keys.edit(func(s *keyServer) { s.delay = 0 })
+	f.clock.Add(6 * time.Second)
+	if _, err := f.v.Verify(context.Background(), f.token(t, nil)); err != nil {
+		t.Fatalf("provider back: %v, want a new refresh to start", err)
+	}
+}

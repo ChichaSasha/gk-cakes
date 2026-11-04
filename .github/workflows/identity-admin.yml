@@ -74,7 +74,7 @@ jobs:
             args+=(-capability "$CAPABILITY")
           fi
           if [[ "$ACTION" != "show" ]]; then
-            if [[ -z "${NOTE// /}" ]]; then
+            if [[ -z "${NOTE//[[:space:]]/}" ]]; then
               echo "::error::a note is required for $ACTION"
               exit 2
             fi

@@ -141,7 +141,7 @@ func apply(ctx context.Context, conn *pgx.Conn, c command) (string, error) {
 		msg = fmt.Sprintf("revoke %s from %s: %s", c.capability, c.subject, pick(changed, "revoked", "not held"))
 	case "disable", "enable":
 		err = tx.QueryRow(ctx, "SELECT business.account_set_disabled($1::uuid, $2, $3)", c.subject, c.action == "disable", c.note).Scan(&changed)
-		msg = fmt.Sprintf("%s account of %s: %s", c.action, c.subject, pick(changed, c.action+"d", "already "+c.action+"d"))
+		msg = fmt.Sprintf("%s account of %s: %s", c.action, c.subject, pick(changed, c.action+"d", "no change"))
 	case "show":
 		msg, err = show(ctx, tx, c.subject)
 	}

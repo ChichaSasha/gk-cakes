@@ -202,8 +202,13 @@ BEGIN
     RAISE EXCEPTION 'a note of 1 to 200 characters is required' USING ERRCODE = 'invalid_parameter_value';
   END IF;
   -- A subject can be disabled before its first sign-in: the account is
-  -- created (audited as an operator action) and disabled.
-  v_account := business.account_ensure(p_subject, true);
+  -- created (audited as an operator action) and disabled. Enabling never
+  -- creates one.
+  IF p_disabled THEN
+    v_account := business.account_ensure(p_subject, true);
+  ELSE
+    SELECT a.id INTO v_account FROM business.account a WHERE a.provider_subject = p_subject;
+  END IF;
   UPDATE business.account a
   SET disabled_at = CASE WHEN p_disabled THEN pg_catalog.now() END, version = a.version + 1
   WHERE a.id = v_account AND (a.disabled_at IS NOT NULL) <> p_disabled;
