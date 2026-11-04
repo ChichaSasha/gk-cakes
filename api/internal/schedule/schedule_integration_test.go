@@ -579,7 +579,26 @@ func TestScheduleOverHTTP(t *testing.T) {
 	if limit["standard_limit"].(float64) != 3 || limit["limit_override"] != true {
 		t.Fatalf("limit = %v", limit)
 	}
-	call("GET", "/api/v1/ready-cakes", "", nil, 200)
+	// Lot commands answer with that lot even when others exist.
+	variant := h.readyVariant(t)
+	expires := time.Now().Add(72 * time.Hour).UTC().Format(time.RFC3339)
+	var ids []string
+	for i := range 3 {
+		l := call("POST", "/api/v1/admin/lots", fmt.Sprintf("lot-%d", i), map[string]any{"variant_id": variant, "kind": "ready",
+			"quantity": 1, "price_minor": 8000 + i, "expires_at": expires}, 201)
+		if l["price_minor"].(float64) != float64(8000+i) {
+			t.Fatalf("lot %d answered with %v", i, l)
+		}
+		ids = append(ids, l["id"].(string))
+	}
+	rel := call("POST", "/api/v1/admin/lots/"+ids[1]+"/state", "rel", map[string]any{"expected_version": 1, "action": "release"}, 200)
+	if rel["id"] != ids[1] || rel["released_at"] == nil {
+		t.Fatalf("release answered with %v", rel)
+	}
+	ready := call("GET", "/api/v1/ready-cakes", "", nil, 200)["cakes"].([]any)
+	if len(ready) != 1 || ready[0].(map[string]any)["id"] != ids[1] {
+		t.Fatalf("ready cakes = %v", ready)
+	}
 }
 
 func TestCapacityEdges(t *testing.T) {
@@ -664,32 +683,41 @@ func TestCapacityEdges(t *testing.T) {
 		t.Fatalf("after clearing: %+v", days[0])
 	}
 
-	// Two first limits on a new day race: one wins, the other is a stale
-	// version (409), never a fault.
-	errs := make([]error, 2)
-	var wg sync.WaitGroup
-	for k := range 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, errs[k] = h.store.SetDayLimit(h.ctx, chef, fmt.Sprintf("race-%d", k), day("2026-11-21"),
-				schedule.DayLimitInput{ExpectedVersion: ptr(0), StandardLimit: ptr(4 + k)})
-		}()
+	// Two first limits on a new day race: the first holds its transaction
+	// open; the second waits, then gets a stale version (409), never a fault.
+	limitTx := func(tx pgx.Tx, key string, limit int) error {
+		var id string
+		var replayed bool
+		return tx.QueryRow(h.ctx, `SELECT result_id::text, replayed FROM business.capacity_day_limit_set(
+			$1::uuid, $2, $3, '2026-11-21', 0, $4)`, chef, key, strings.Repeat("e", 64), limit).Scan(&id, &replayed)
 	}
-	wg.Wait()
-	ok, stale := 0, 0
-	for _, err := range errs {
-		switch {
-		case err == nil:
-			ok++
-		case conflict(err) == "stale_version":
-			stale++
-		default:
-			t.Fatalf("racing first limits: %v", err)
+	apiA, apiB := h.db.LoginConn(t, "gk_api"), h.db.LoginConn(t, "gk_api")
+	txA, err := apiA.Begin(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := limitTx(txA, "race-a", 4); err != nil {
+		t.Fatal(err)
+	}
+	raced := make(chan error, 1)
+	go func() {
+		txB, err := apiB.Begin(h.ctx)
+		if err == nil {
+			err = limitTx(txB, "race-b", 5)
+			_ = txB.Rollback(h.ctx)
 		}
+		raced <- err
+	}()
+	select {
+	case err := <-raced:
+		t.Fatalf("second first-limit finished while the first was open: %v", err)
+	case <-time.After(300 * time.Millisecond):
 	}
-	if ok != 1 || stale != 1 {
-		t.Fatalf("racing first limits: %d ok, %d stale", ok, stale)
+	if err := txA.Commit(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-raced; pgMessageAny(err) != "stale_version" {
+		t.Fatalf("racing first limit: %v, want GK409 stale_version", err)
 	}
 
 	// A replayed publish returns the version it published, not a newer one.
@@ -769,6 +797,11 @@ func TestLotVisibilityAndRules(t *testing.T) {
 	}
 	if public()[resale.ID] || reserve(resale.ID) != "stock_unavailable" {
 		t.Fatal("a resale cake past its original handover is still offered")
+	}
+	past := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	if _, err := h.store.CreateLot(h.ctx, chef, "past", schedule.LotInput{VariantID: variant, Kind: schedule.LotResale, Quantity: 1,
+		ResaleBaseMinor: ptr[int64](9000), OriginalHandoverAt: past, ExpiresAt: expires}); err == nil {
+		t.Fatal("resale with a past original handover was accepted")
 	}
 	late := time.Now().Add(96 * time.Hour).UTC().Format(time.RFC3339)
 	if _, err := h.store.CreateLot(h.ctx, chef, "late", schedule.LotInput{VariantID: variant, Kind: schedule.LotResale, Quantity: 1,
