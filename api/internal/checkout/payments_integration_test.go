@@ -52,6 +52,21 @@ type fakeStripe struct {
 	errType  string
 	livemode bool
 	skew     time.Duration // Stripe's clock ahead of ours (a later retry)
+	// Expire requests: the idempotency key of every one received, the
+	// answer replayed per key, a forced error status (no effect), and how
+	// many answers to drop after expiring.
+	expires      []string
+	expireByKey  map[string]fakeAnswer
+	expireStatus int
+	expireDrop   int
+	// block (with arrived) holds a create request after it reached Stripe
+	// until the test lets it go.
+	block, arrived chan struct{}
+}
+
+type fakeAnswer struct {
+	status int
+	body   []byte
 }
 
 type fakeSession struct {
@@ -64,7 +79,8 @@ type fakeSession struct {
 }
 
 func newFakeStripe(t *testing.T) (*fakeStripe, *httptest.Server) {
-	f := &fakeStripe{t: t, sessions: map[string]*fakeSession{}, byKey: map[string]string{}, forms: map[string]string{}}
+	f := &fakeStripe{t: t, sessions: map[string]*fakeSession{}, byKey: map[string]string{}, forms: map[string]string{},
+		expireByKey: map[string]fakeAnswer{}}
 	srv := httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(srv.Close)
 	return f, srv
@@ -77,8 +93,50 @@ func (f *fakeStripe) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f.mu.Lock()
+	block, arrived := f.block, f.arrived
+	f.mu.Unlock()
+	if block != nil && r.Method == http.MethodPost && r.URL.Path == "/v1/checkout/sessions" {
+		arrived <- struct{}{}
+		<-block
+	}
+	f.mu.Lock()
 	defer f.mu.Unlock()
 	switch {
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/checkout/sessions/") && strings.HasSuffix(r.URL.Path, "/expire"):
+		key := r.Header.Get("Idempotency-Key")
+		f.expires = append(f.expires, key)
+		if f.expireStatus != 0 {
+			w.WriteHeader(f.expireStatus)
+			_, _ = io.WriteString(w, `{"error":{"type":"api_error"}}`)
+			return
+		}
+		a, seen := f.expireByKey[key]
+		if !seen {
+			s, ok := f.sessions[strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/checkout/sessions/"), "/expire")]
+			switch {
+			case !ok:
+				a = fakeAnswer{404, []byte(`{"error":{"type":"invalid_request_error"}}`)}
+			case s.status != "open":
+				// Stripe: only open sessions can be expired.
+				a = fakeAnswer{400, []byte(`{"error":{"type":"invalid_request_error","message":"Only Checkout Sessions with a status in [\"open\"] can be expired."}}`)}
+			default:
+				s.status = "expired"
+				a = fakeAnswer{200, f.sessionJSON(s, false)}
+			}
+			if key != "" {
+				f.expireByKey[key] = a
+			}
+		}
+		if f.expireDrop > 0 {
+			f.expireDrop--
+			hj, _ := w.(http.Hijacker)
+			conn, _, _ := hj.Hijack()
+			_ = conn.Close()
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(a.status)
+		_, _ = w.Write(a.body)
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/checkout/sessions":
 		body, _ := io.ReadAll(r.Body)
 		form := string(body)
@@ -143,6 +201,11 @@ func (f *fakeStripe) serve(w http.ResponseWriter, r *http.Request) {
 }
 
 func (f *fakeStripe) write(w http.ResponseWriter, s *fakeSession, expand bool) {
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(f.sessionJSON(s, expand))
+}
+
+func (f *fakeStripe) sessionJSON(s *fakeSession, expand bool) []byte {
 	out := map[string]any{"id": s.id, "object": "checkout.session", "status": s.status, "payment_status": s.paymentStatus,
 		"amount_total": s.amount, "currency": s.currency, "client_reference_id": s.clientRef, "livemode": f.livemode,
 		"url": "https://checkout.stripe.test/c/pay/" + s.id, "expires_at": s.expiresAt, "metadata": s.metadata,
@@ -154,8 +217,8 @@ func (f *fakeStripe) write(w http.ResponseWriter, s *fakeSession, expand bool) {
 			out["payment_intent"] = s.pi["id"]
 		}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	b, _ := json.Marshal(out)
+	return b
 }
 
 // pay completes session id with a fully captured card payment whose charge
@@ -833,7 +896,7 @@ func TestPaymentExactlyAtTheLeadTimeIsConfirmed(t *testing.T) {
 }
 
 // A paid success after the order lost its holds: refused, the collection
-// stays succeeded and the job goes to attention (full return is A3c).
+// stays succeeded and the job goes to attention (full return is A3c2).
 func TestPaidSuccessAfterTheOrderChangedIsRefused(t *testing.T) {
 	h := newPayHarness(t)
 	f := h.setup(t)
@@ -910,8 +973,9 @@ func TestRestoreFreezeDefersPayments(t *testing.T) {
 	}
 }
 
-// An expired unpaid session cancels the collection (record only: holds stay
-// for A3c) and allows a new one.
+// An expired unpaid session cancels the collection and allows a new one;
+// the holds stay until the order's hold has ended (the hold review, GK-025
+// A3c1: see expiry_integration_test.go).
 func TestExpiredSessionCancelsTheCollection(t *testing.T) {
 	h := newPayHarness(t)
 	f := h.setup(t)

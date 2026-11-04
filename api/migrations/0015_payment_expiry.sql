@@ -22,7 +22,8 @@
 -- Never-dispatched cleanup (worker, inside the order hold review). A
 -- collection still 'created' whose Stripe call was never admitted
 -- (dispatch_started_at null) and whose initiation is at least 15 minutes old
--- is closed under the order and collection locks: state 'cancelled' with
+-- (the later of initiated_at and its insertion instant, as for the hold) is
+-- closed under the order and collection locks: state 'cancelled' with
 -- cancel_reason 'never_dispatched'. payment_dispatch_admit, which records
 -- dispatch_started_at under the same collection lock, then answers 'closed'
 -- (no Stripe call; the dispatch records a 'rejected' outcome with reason
@@ -359,7 +360,7 @@ BEGIN
   -- records dispatch_started_at under the collection lock held here).
   FOR v_id IN SELECT pc.id FROM business.payment_collection pc
               WHERE pc.order_id = v_order AND pc.state = 'created' AND pc.dispatch_started_at IS NULL
-                AND pg_catalog.now() >= pc.initiated_at + interval '15 minutes'
+                AND pg_catalog.now() >= GREATEST(pc.initiated_at, pc.created_at) + interval '15 minutes'
               ORDER BY pc.id LOOP
     UPDATE business.payment_collection pc
     SET state = 'cancelled', cancel_reason = 'never_dispatched', version = pc.version + 1, updated_at = pg_catalog.now()
@@ -374,7 +375,7 @@ BEGIN
   -- cancellation brings the review forward), a young never-admitted one
   -- (until its 15 minutes), an unresolved command on the order.
   SELECT min(CASE WHEN pc.state = 'created' AND pc.dispatch_started_at IS NULL
-                  THEN pc.initiated_at + interval '15 minutes'
+                  THEN GREATEST(pc.initiated_at, pc.created_at) + interval '15 minutes'
                   ELSE pg_catalog.now() + interval '15 minutes' END)
   INTO v_next
   FROM business.payment_collection pc
