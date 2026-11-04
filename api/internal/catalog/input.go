@@ -46,7 +46,8 @@ type Optional[T any] struct {
 
 // UnmarshalJSON records presence and null.
 func (o *Optional[T]) UnmarshalJSON(b []byte) error {
-	o.Set = true
+	var zero T
+	o.Set, o.Null, o.Value = true, false, zero
 	if string(b) == "null" {
 		o.Null = true
 		return nil
@@ -288,9 +289,23 @@ func (in RecipeVersionInput) Validate() error {
 }
 
 // SourceHash is the SHA-256 of the version's canonical content, stored with
-// the version (schema recipe_version.source_hash).
+// the version (schema recipe_version.source_hash). Omitted and empty lists
+// hash the same.
 func (in RecipeVersionInput) SourceHash() string {
-	content := in
+	content := in.normalized()
 	content.ExpectedVersion = 0
 	return BodyHash("catalog.recipe_version", in.VariantID, content)
+}
+
+func (in RecipeVersionInput) normalized() RecipeVersionInput {
+	if in.Lines == nil {
+		in.Lines = []Line{}
+	}
+	if in.Composition == nil {
+		in.Composition = []string{}
+	}
+	if in.Allergens == nil {
+		in.Allergens = []Allergen{}
+	}
+	return in
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -31,7 +32,9 @@ import (
 // the GK-002 base price list (interview-r4-complete): S 6 in, 7-10 servings,
 // 9000p. Recipe lines are the GK-007 VR-6 planned quantities, which GK-038
 // has not yet validated.
-const ownerNotice = "Allergen notice: All cakes are prepared in the same kitchen where EGGS, MILK, CEREALS CONTAINING GLUTEN (WHEAT), SOYBEANS and PEANUTS are handled. While care is taken to minimise cross-contact, we cannot guarantee that products are completely free from traces of other allergens. If you have a severe allergy, please contact us before ordering."
+// ownerNotice is BO-GK-005.cross_contact.notice verbatim, including the
+// curly quotation marks the canonical value carries.
+const ownerNotice = "“Allergen notice: All cakes are prepared in the same kitchen where EGGS, MILK, CEREALS CONTAINING GLUTEN (WHEAT), SOYBEANS and PEANUTS are handled. While care is taken to minimise cross-contact, we cannot guarantee that products are completely free from traces of other allergens. If you have a severe allergy, please contact us before ordering.”"
 
 var commonAllergens = []catalog.Allergen{
 	{Code: "eggs", Label: "EGGS"},
@@ -364,13 +367,16 @@ func TestCatalogAuthorization(t *testing.T) {
 func TestGatewayRefusesInvalidRecipes(t *testing.T) {
 	h := newHarness(t)
 	f := h.seed(t)
-	call := func(key, allergens, lines string, notice string) error {
+	callWith := func(key, allergens, lines, notice, composition string) error {
 		var id string
 		var replayed bool
 		return h.api.QueryRow(h.ctx, `SELECT result_id::text, replayed FROM business.catalog_recipe_version_create(
-			$1::uuid, $2, $3, $4::uuid, 1, 9000, 7, 10, 'Swiss meringue buttercream', ARRAY['Vanilla sponge'],
+			$1::uuid, $2, $3, $4::uuid, 1, 9000, 7, 10, 'Swiss meringue buttercream', $9::text[],
 			$5::uuid, $6::json, $7::json, $8)`, chefSubject, key, strings.Repeat("a", 64), f.variant, notice,
-			allergens, lines, strings.Repeat("b", 64)).Scan(&id, &replayed)
+			allergens, lines, strings.Repeat("b", 64), composition).Scan(&id, &replayed)
+	}
+	call := func(key, allergens, lines string, notice string) error {
+		return callWith(key, allergens, lines, notice, "{Vanilla sponge}")
 	}
 	ok := `[{"code":"eggs","label":"EGGS","prominent":false}]`
 	cases := map[string]error{
@@ -381,6 +387,14 @@ func TestGatewayRefusesInvalidRecipes(t *testing.T) {
 		"zero quantity":    call("k5", ok, `[{"component":"Sponge","quantity":"0.00","unit":"g"}]`, f.notice),
 		"unknown notice":   call("k6", ok, `[]`, "77ac712e-4e38-48bb-a56d-fa7809ccc13f"),
 		"repeated code":    call("k7", `[{"code":"eggs","label":"EGGS"},{"code":"eggs","label":"EGGS"}]`, `[]`, f.notice),
+		"line not object":  call("k8", ok, `[1]`, f.notice),
+		"line array":       call("k9", ok, `[["x"]]`, f.notice),
+		"number quantity":  call("k10", ok, `[{"component":"Sponge","quantity":1.5,"unit":"g"}]`, f.notice),
+		"string prominent": call("k11", `[{"code":"eggs","label":"EGGS","prominent":"true"}]`, `[]`, f.notice),
+		"allergen scalar":  call("k12", `[1]`, `[]`, f.notice),
+		"label newline":    call("k13", `[{"code":"eggs","label":"EGGS\nMILK"}]`, `[]`, f.notice),
+		"2-D composition":  callWith("k14", ok, `[]`, f.notice, "{{a,b},{c,d}}"),
+		"newline item":     callWith("k15", ok, `[]`, f.notice, "{\"a\nb\"}"),
 	}
 	for name, err := range cases {
 		if dbtest.SQLState(err) != "GK422" {
@@ -431,17 +445,43 @@ func TestPublicPagesOn500Products(t *testing.T) {
 	}
 	t.Logf("500-product fixture: 10 pages of 50 in %s", elapsed)
 
-	var plan []byte
-	if err := h.admin.QueryRow(h.ctx, `EXPLAIN (FORMAT JSON) SELECT c.id FROM business.cake c
-		WHERE c.state = 'active' AND (c.published_at, c.id) < (now(), gen_random_uuid())
-		ORDER BY c.published_at DESC, c.id DESC LIMIT 51`).Scan(&plan); err != nil {
+	// The plan of the real function body, generic as a SQL function's plan
+	// is, for a page near the end: it must seek on the index, not filter
+	// every earlier row.
+	var body string
+	if err := h.admin.QueryRow(h.ctx, `SELECT prosrc FROM pg_proc WHERE oid = 'business.catalog_public_cake_page(timestamptz, uuid, integer)'::regprocedure`).Scan(&body); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(plan), "cake_public_page_idx") {
-		t.Fatalf("public page plan does not use cake_public_page_idx: %s", plan)
+	stmt := strings.NewReplacer("p_after_published", "$1", "p_after_id", "$2", "p_limit", "$3").Replace(strings.TrimSuffix(strings.TrimSpace(body), ";"))
+	planConn := h.db.AdminConn(t)
+	for _, sql := range []string{"SET plan_cache_mode = force_generic_plan", "PREPARE page(timestamptz, uuid, integer) AS " + stmt} {
+		if _, err := planConn.Exec(h.ctx, sql); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
 	}
-	var out json.RawMessage = plan
-	t.Logf("plan: %s", out)
+	var lastPublished time.Time
+	var lastID string
+	if err := h.admin.QueryRow(h.ctx, `SELECT published_at, id::text FROM business.cake WHERE state = 'active'
+		ORDER BY published_at DESC, id DESC OFFSET 449 LIMIT 1`).Scan(&lastPublished, &lastID); err != nil {
+		t.Fatal(err)
+	}
+	var plan []byte
+	explain := fmt.Sprintf("EXPLAIN (ANALYZE, FORMAT JSON) EXECUTE page('%s'::timestamptz, '%s'::uuid, 51)",
+		lastPublished.UTC().Format(time.RFC3339Nano), lastID) // values from the database, not input
+	if err := planConn.QueryRow(h.ctx, explain).Scan(&plan); err != nil {
+		t.Fatal(err)
+	}
+	var nodes []struct {
+		Plan planNode `json:"Plan"`
+	}
+	if err := json.Unmarshal(plan, &nodes); err != nil || len(nodes) != 1 {
+		t.Fatalf("plan: %v %s", err, plan)
+	}
+	scan := nodes[0].Plan.find("cake_public_page_idx")
+	if scan == nil || !strings.Contains(scan.IndexCond, "published_at") || scan.RowsRemoved > 5 || scan.ActualRows != 50 {
+		t.Fatalf("page 10 does not seek on cake_public_page_idx: %s", plan)
+	}
+	t.Logf("page 10: index cond %q, %d rows read, %d removed", scan.IndexCond, scan.ActualRows, scan.RowsRemoved)
 
 	if _, err := h.store.PublicPage(h.ctx, "not-a-cursor", 20); !errors.Is(err, catalog.ErrBadCursor) {
 		t.Fatalf("bad cursor: %v", err)
@@ -538,4 +578,200 @@ func TestCatalogOverHTTP(t *testing.T) {
 	}
 	call("GET", "/api/v1/cakes/"+cakeID, "", nil, 200)
 	call("GET", "/api/v1/cakes/not-a-uuid", "", nil, 404)
+}
+
+// The capability check share-locks the account and capability rows: a
+// revocation waits for a command in progress, and a command waits for a
+// revocation in progress, then sees it.
+func TestCommandsSerializeWithRevocation(t *testing.T) {
+	h := newHarness(t)
+	h.grant(t, chefSubject, "chef")
+	api := h.db.LoginConn(t, "gk_api")
+	owner := h.db.MigratorConn(t)
+	create := func(conn interface {
+		QueryRow(context.Context, string, ...any) pgx.Row
+	}, key string) error {
+		var id string
+		var replayed bool
+		return conn.QueryRow(h.ctx, `SELECT result_id::text, replayed FROM business.catalog_cake_create($1::uuid, $2, $3, 'Raced', '')`,
+			chefSubject, key, strings.Repeat("c", 64)).Scan(&id, &replayed)
+	}
+	revoke := func(tx pgx.Tx) error {
+		if _, err := tx.Exec(h.ctx, "SET LOCAL ROLE gk_owner"); err != nil {
+			return err
+		}
+		_, err := tx.Exec(h.ctx, "SELECT business.staff_revoke($1::uuid, 'chef', 'test')", chefSubject)
+		return err
+	}
+
+	// 1. A command in progress holds the revocation back until it commits.
+	cmdTx, err := api.Begin(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := create(cmdTx, "k1"); err != nil {
+		t.Fatal(err)
+	}
+	revoked := make(chan error, 1)
+	go func() {
+		tx, err := owner.Begin(h.ctx)
+		if err == nil {
+			if err = revoke(tx); err == nil {
+				err = tx.Commit(h.ctx)
+			}
+		}
+		revoked <- err
+	}()
+	select {
+	case err := <-revoked:
+		t.Fatalf("revocation finished while a command held the capability: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	if err := cmdTx.Commit(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-revoked; err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. A revocation in progress holds a command back, which then refuses.
+	h.grant(t, chefSubject, "chef")
+	revTx, err := owner.Begin(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := revoke(revTx); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- create(api, "k2") }()
+	select {
+	case err := <-done:
+		t.Fatalf("command finished during an uncommitted revocation: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	if err := revTx.Commit(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; dbtest.SQLState(err) != "GK403" {
+		t.Fatalf("command after revocation: %v, want GK403", err)
+	}
+}
+
+func TestCatalogStateRulesAndFrozenIdentity(t *testing.T) {
+	h := newHarness(t)
+	f := h.seed(t)
+	h.grant(t, fulfilSubject, "fulfillment")
+
+	// The notice is immutable; snapshot tables cannot be truncated.
+	for _, sql := range []string{
+		"UPDATE business.allergen_notice SET body = 'x'",
+		"DELETE FROM business.allergen_notice",
+		"TRUNCATE business.recipe_line",
+		"TRUNCATE business.recipe_version CASCADE",
+		"TRUNCATE business.cake CASCADE",
+		"UPDATE business.variant SET size_code = 'm'",
+		"UPDATE business.variant SET flavour_id = flavour_id, cake_id = gen_random_uuid()",
+		"UPDATE business.flavour SET name = 'Renamed'",
+	} {
+		if _, err := h.admin.Exec(h.ctx, sql); dbtest.SQLState(err) != "GK409" {
+			t.Errorf("%s: %v, want GK409", sql, err)
+		}
+	}
+
+	// The snapshot keeps the flavour and size it was bought with.
+	v1 := h.version(t, f, "k-v1", 1, 9000, commonAllergens)
+	snap := try(h.store.RecipeVersion(h.ctx, chefSubject, v1.ID)).must(t)
+	if snap.Flavour != "Vanilla Raspberry" || snap.Size.Code != "s" {
+		t.Fatalf("snapshot identity = %q %q", snap.Flavour, snap.Size.Code)
+	}
+
+	// Fulfillment cannot use any staff read directly either.
+	for _, sql := range []string{
+		"SELECT count(*) FROM business.catalog_staff_cake($1::uuid, gen_random_uuid())",
+		"SELECT count(*) FROM business.catalog_staff_cake_page($1::uuid, NULL, NULL, 20)",
+		"SELECT count(*) FROM business.catalog_staff_flavours($1::uuid)",
+		"SELECT count(*) FROM business.catalog_staff_recipe_version($1::uuid, gen_random_uuid())",
+	} {
+		var n int
+		if err := h.api.QueryRow(h.ctx, sql, fulfilSubject).Scan(&n); dbtest.SQLState(err) != "GK403" {
+			t.Errorf("%s as fulfillment: %v, want GK403", sql, err)
+		}
+	}
+
+	// Publishing keeps the first published_at across archive and restore.
+	try(h.store.SetCakeState(h.ctx, chefSubject, "p1", f.cake, catalog.CakeStateInput{ExpectedVersion: 1, State: catalog.StateActive})).must(t)
+	first := *try(h.store.StaffCake(h.ctx, chefSubject, f.cake)).must(t).PublishedAt
+	try(h.store.SetCakeState(h.ctx, chefSubject, "p2", f.cake, catalog.CakeStateInput{ExpectedVersion: 2, State: catalog.StateArchived})).must(t)
+	time.Sleep(5 * time.Millisecond)
+	try(h.store.SetCakeState(h.ctx, chefSubject, "p3", f.cake, catalog.CakeStateInput{ExpectedVersion: 3, State: catalog.StateActive})).must(t)
+	if again := *try(h.store.StaffCake(h.ctx, chefSubject, f.cake)).must(t).PublishedAt; !again.Equal(first) {
+		t.Fatalf("published_at changed on re-activation: %s -> %s", first, again)
+	}
+
+	// No variant on an archived cake; no version on an archived variant.
+	try(h.store.SetCakeState(h.ctx, chefSubject, "p4", f.cake, catalog.CakeStateInput{ExpectedVersion: 4, State: catalog.StateArchived})).must(t)
+	if _, err := h.store.CreateVariant(h.ctx, chefSubject, "kv2", f.cake, catalog.VariantInput{FlavourID: f.flavour, SizeCode: "m", StockMode: catalog.MadeToOrder}); conflictCode(err) != "state_conflict" {
+		t.Fatalf("variant on archived cake: %v, want state_conflict", err)
+	}
+	try(h.store.ArchiveVariant(h.ctx, chefSubject, "ka", f.variant, catalog.VersionInput{ExpectedVersion: 2})).must(t)
+	in := catalog.RecipeVersionInput{VariantID: f.variant, ExpectedVersion: 3, PriceMinor: 9000, ServingsMin: 7, ServingsMax: 10,
+		Coating: "Swiss meringue buttercream", Composition: []string{"Vanilla sponge"}, NoticeID: f.notice, Allergens: commonAllergens}
+	if _, err := h.store.CreateRecipeVersion(h.ctx, chefSubject, "kr", in); conflictCode(err) != "state_conflict" {
+		t.Fatalf("version on archived variant: %v, want state_conflict", err)
+	}
+
+	// The same key on another resource is a different command (K00 key
+	// scope is actor, command, resource, key).
+	other := try(h.store.CreateCake(h.ctx, chefSubject, "k-other", catalog.CakeInput{Name: "Other"})).must(t).ID
+	try(h.store.SetCakeState(h.ctx, chefSubject, "same", other, catalog.CakeStateInput{ExpectedVersion: 1, State: catalog.StateActive})).must(t)
+	third := try(h.store.CreateCake(h.ctx, chefSubject, "k-third", catalog.CakeInput{Name: "Third"})).must(t).ID
+	if r, err := h.store.SetCakeState(h.ctx, chefSubject, "same", third, catalog.CakeStateInput{ExpectedVersion: 1, State: catalog.StateActive}); err != nil || r.Replayed || r.ID != third {
+		t.Fatalf("same key on another cake = %+v, %v; want a new command", r, err)
+	}
+}
+
+// Equal published_at values page by id without loss or repetition.
+func TestPublicPagesBreakTiesByID(t *testing.T) {
+	h := newHarness(t)
+	h.operator(t, `INSERT INTO business.cake (id, name, state, published_at)
+		SELECT gen_random_uuid(), 'Tie ' || g, 'active', '2026-11-04T12:00:00Z' FROM generate_series(1, 23) g`)
+	seen := map[string]bool{}
+	cursor := ""
+	for range 10 {
+		page := try(h.store.PublicPage(h.ctx, cursor, 5)).must(t)
+		for _, c := range page.Cakes {
+			if seen[c.ID] {
+				t.Fatalf("cake %s repeated", c.ID)
+			}
+			seen[c.ID] = true
+		}
+		if page.NextCursor == "" {
+			break
+		}
+		cursor = page.NextCursor
+	}
+	if len(seen) != 23 {
+		t.Fatalf("saw %d of 23 tied cakes", len(seen))
+	}
+}
+
+type planNode struct {
+	IndexName   string     `json:"Index Name"`
+	IndexCond   string     `json:"Index Cond"`
+	RowsRemoved int        `json:"Rows Removed by Filter"`
+	ActualRows  int        `json:"Actual Rows"`
+	Plans       []planNode `json:"Plans"`
+}
+
+func (n *planNode) find(index string) *planNode {
+	if n.IndexName == index {
+		return n
+	}
+	for i := range n.Plans {
+		if m := n.Plans[i].find(index); m != nil {
+			return m
+		}
+	}
+	return nil
 }

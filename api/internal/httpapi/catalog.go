@@ -8,7 +8,9 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strconv"
+	"unicode/utf8"
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/catalog"
 	"github.com/ChichaSasha/gk-cakes/api/internal/identity"
@@ -187,6 +189,8 @@ func catalogStaffRoutes(mux *http.ServeMux, cat Catalog, id Identity, logger *sl
 	}))
 }
 
+var limitPattern = regexp.MustCompile(`^[0-9]{1,3}$`)
+
 // pageLimit reads ?limit= (1 to 50, default 20).
 func pageLimit(w http.ResponseWriter, r *http.Request) (int, bool) {
 	raw := r.URL.Query().Get("limit")
@@ -194,8 +198,8 @@ func pageLimit(w http.ResponseWriter, r *http.Request) (int, bool) {
 		return catalog.DefaultPageSize, true
 	}
 	n, err := strconv.Atoi(raw)
-	if err != nil || n < 1 || n > catalog.MaxPageSize {
-		writeError(w, r, http.StatusBadRequest, "BAD_REQUEST", "limit must be 1 to 50", false)
+	if !limitPattern.MatchString(raw) || err != nil || n < 1 || n > catalog.MaxPageSize {
+		writeError(w, r, http.StatusUnprocessableEntity, "INVALID_INPUT", "limit must be 1 to 50", false)
 		return 0, false
 	}
 	return n, true
@@ -225,7 +229,18 @@ func readCommand(w http.ResponseWriter, r *http.Request, in validator) (string, 
 		writeError(w, r, http.StatusBadRequest, "BAD_REQUEST", "Unreadable request body", false)
 		return "", false
 	}
+	if !utf8.Valid(body) {
+		writeError(w, r, http.StatusBadRequest, "BAD_REQUEST", "The request body must be UTF-8", false)
+		return "", false
+	}
 	if err := decodeStrict(body, in); err != nil {
+		var null *nullError
+		if errors.As(err, &null) {
+			// K00: explicit null clears only named nullable fields; no
+			// catalog command has one.
+			writeError(w, r, http.StatusUnprocessableEntity, "INVALID_INPUT", null.field+" cannot be null", false)
+			return "", false
+		}
 		writeError(w, r, http.StatusBadRequest, "BAD_REQUEST", "The request body must be one JSON object with known fields", false)
 		return "", false
 	}
@@ -242,7 +257,9 @@ func readCommand(w http.ResponseWriter, r *http.Request, in validator) (string, 
 }
 
 // decodeStrict decodes exactly one JSON object with no unknown fields, no
-// repeated keys at any depth and nothing after it.
+// repeated keys at any depth, no null value and nothing after it. Keys must
+// be lower_snake_case ASCII (K00): encoding/json matches field names without
+// regard to case, so "NAME" would otherwise reach the "name" field.
 func decodeStrict(body []byte, v any) error {
 	if err := noDuplicateKeys(body); err != nil {
 		return err
@@ -258,8 +275,15 @@ func decodeStrict(body []byte, v any) error {
 	return nil
 }
 
-// noDuplicateKeys rejects a JSON document that is not an object or repeats a
-// key in any object.
+// nullError: the body has an explicit null at field.
+type nullError struct{ field string }
+
+func (e *nullError) Error() string { return "null value for " + e.field }
+
+var wireKey = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+
+// noDuplicateKeys rejects a JSON document that is not an object, repeats a
+// key in any object, uses a key that is not lower_snake_case or holds a null.
 func noDuplicateKeys(body []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.UseNumber()
@@ -270,12 +294,12 @@ func noDuplicateKeys(body []byte) error {
 	if d, ok := first.(json.Delim); !ok || d != '{' {
 		return errors.New("not a JSON object")
 	}
-	return walkObject(dec, 1)
+	return walkObject(dec, 1, "")
 }
 
 const maxJSONDepth = 16
 
-func walkObject(dec *json.Decoder, depth int) error {
+func walkObject(dec *json.Decoder, depth int, _ string) error {
 	if depth > maxJSONDepth {
 		return errors.New("JSON nested too deeply")
 	}
@@ -289,11 +313,14 @@ func walkObject(dec *json.Decoder, depth int) error {
 		if !ok {
 			return errors.New("object key is not a string")
 		}
+		if !wireKey.MatchString(k) {
+			return errors.New("key " + strconv.Quote(k) + " is not lower_snake_case")
+		}
 		if seen[k] {
 			return errors.New("repeated key " + strconv.Quote(k))
 		}
 		seen[k] = true
-		if err := walkValue(dec, depth); err != nil {
+		if err := walkValue(dec, depth, k); err != nil {
 			return err
 		}
 	}
@@ -301,10 +328,13 @@ func walkObject(dec *json.Decoder, depth int) error {
 	return err
 }
 
-func walkValue(dec *json.Decoder, depth int) error {
+func walkValue(dec *json.Decoder, depth int, field string) error {
 	t, err := dec.Token()
 	if err != nil {
 		return err
+	}
+	if t == nil {
+		return &nullError{field: field}
 	}
 	d, ok := t.(json.Delim)
 	if !ok {
@@ -312,13 +342,13 @@ func walkValue(dec *json.Decoder, depth int) error {
 	}
 	switch d {
 	case '{':
-		return walkObject(dec, depth+1)
+		return walkObject(dec, depth+1, field)
 	case '[':
 		if depth+1 > maxJSONDepth {
 			return errors.New("JSON nested too deeply")
 		}
 		for dec.More() {
-			if err := walkValue(dec, depth+1); err != nil {
+			if err := walkValue(dec, depth+1, field); err != nil {
 				return err
 			}
 		}

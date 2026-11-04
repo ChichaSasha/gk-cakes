@@ -159,9 +159,12 @@ func uuidField(field, s string) error {
 	return nil
 }
 
+// MaxVersion is the largest object version (PostgreSQL integer).
+const MaxVersion = 1<<31 - 1
+
 func expectedVersion(v int) error {
-	if v < 1 {
-		return invalid("expected_version", "is required")
+	if v < 1 || v > MaxVersion {
+		return invalid("expected_version", "must be a version from 1 to %d", MaxVersion)
 	}
 	return nil
 }

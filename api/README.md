@@ -659,9 +659,13 @@ GK-002 size (`mini`, `s`, `m`, `l`, `xl`, `xxl` and the tiered sizes),
 made to order or from ready stock. A variant's price (GBP pence), servings,
 coating, composition, allergen declaration and planned recipe lines live in an
 immutable **recipe version**; a new version becomes current, earlier ones stay
-exactly as they were (what an order pins), and even the owner role cannot
-update or delete them. Each size has its own recipe; nothing scales between
-sizes. Referenced rows are archived, never deleted.
+exactly as they were (what an order pins). A version copies the flavour name,
+size and stock mode it was created with, so it never depends on live rows.
+Triggers stop even the owner role from updating, deleting or truncating
+versions, their allergens and lines, and the notice; cakes, variants and
+flavours cannot be deleted or truncated, a variant's cake, flavour, size and
+stock mode and a flavour's name cannot change (archive and create a new one).
+Each size has its own recipe; nothing scales between sizes.
 
 Allergens are the 14 UK FIC Annex II codes, each with the exact label the chef
 approved (for example `CEREALS CONTAINING GLUTEN (WHEAT)`) and a `prominent`
@@ -674,11 +678,16 @@ use come with GK-032; real recipe data waits for GK-038's measurements.
 
 **Commands** need the chef capability and a current provider session, an
 `Idempotency-Key` header (1 to 128 visible ASCII characters) and, for an
-existing object, `expected_version`. Bodies are one JSON object with no
-unknown or repeated fields. The same key and body return the original result
-with `Idempotent-Replayed: true`; another body is 409 `KEY_REUSED`. A refused
-command stores no key. The database checks the capability again (a revoked
-chef cannot replay) and audits every change.
+existing object, `expected_version`. Bodies are one UTF-8 JSON object with
+lower_snake_case keys, no unknown or repeated fields and no `null` (no catalog
+field is nullable; null is 422). A key is scoped to (account, command, path
+resource); the same key and body return the original object, in its current
+state, with `Idempotent-Replayed: true`; another body is 409 `KEY_REUSED`. A
+refused command stores no key. The database checks the capability again under
+a share lock on the account and capability rows (a revocation waits for a
+command in progress, and a revoked chef cannot replay) and audits every
+change. Technical support's catalog reads are not audited: the catalog is
+public business content, not personal data.
 
 | Route | Who | Notes |
 | --- | --- | --- |
@@ -698,7 +707,9 @@ chef cannot replay) and audits every change.
 
 Errors: 400 `BAD_REQUEST` / `IDEMPOTENCY_KEY_REQUIRED`, 403 `FORBIDDEN`, 404,
 409 `STALE_VERSION` / `KEY_REUSED` / `DUPLICATE` / `CONFLICT`, 413, 422
-`INVALID_INPUT` (names the field), 503. Command receipts are kept until a
+`INVALID_INPUT` (names the field; also an out-of-range `limit` or
+`expected_version`), 503. The page query seeks on its index for every page
+(no `OR` in the keyset predicate). Command receipts are kept until a
 later maintenance job applies the 30-day retention (K00). Images (upload,
 pending to ready) are GK-022 Milestone A2; availability and ready-stock lots
 are GK-023.

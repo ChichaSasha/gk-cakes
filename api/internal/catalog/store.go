@@ -521,7 +521,7 @@ func (s *Store) CreateRecipeVersion(ctx context.Context, subject, key string, in
 	return s.command(ctx, CmdRecipeVersionCreate, `SELECT result_id::text, replayed
 		FROM business.catalog_recipe_version_create($1::uuid, $2, $3, $4::uuid, $5, $6, $7, $8, $9, $10, $11::uuid,
 		  $12::json, $13::json, $14)`,
-		subject, key, BodyHash(CmdRecipeVersionCreate, "", in), in.VariantID, in.ExpectedVersion, in.PriceMinor,
+		subject, key, BodyHash(CmdRecipeVersionCreate, in.VariantID, in.normalized()), in.VariantID, in.ExpectedVersion, in.PriceMinor,
 		in.ServingsMin, in.ServingsMax, in.Coating, in.Composition, in.NoticeID, string(allergens), string(linesJSON),
 		in.SourceHash())
 }
@@ -538,7 +538,7 @@ func (s *Store) command(ctx context.Context, name, sql string, args ...any) (Res
 var invalidFields = map[string]string{
 	"name_invalid": "name", "body_invalid": "body", "cake_invalid": "name", "state_invalid": "state",
 	"flavour_unknown": "flavour_id", "variant_invalid": "size_code", "notice_unknown": "allergen_notice_id",
-	"allergens_required": "allergens", "allergens_duplicate": "allergens", "lines_invalid": "lines",
+	"allergens_required": "allergens", "allergens_duplicate": "allergens", "allergens_invalid": "allergens", "lines_invalid": "lines",
 	"composition_invalid": "composition", "recipe_invalid": "lines", "idempotency_key_invalid": "Idempotency-Key",
 	"expected_version_required": "expected_version",
 }

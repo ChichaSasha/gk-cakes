@@ -126,9 +126,10 @@ func TestPublicCatalogNeedsNoSignIn(t *testing.T) {
 	}{
 		"list":          {"/api/v1/cakes", 200, ""},
 		"list limit 50": {"/api/v1/cakes?limit=50", 200, ""},
-		"limit 51":      {"/api/v1/cakes?limit=51", 400, "BAD_REQUEST"},
-		"limit 0":       {"/api/v1/cakes?limit=0", 400, "BAD_REQUEST"},
-		"limit text":    {"/api/v1/cakes?limit=ten", 400, "BAD_REQUEST"},
+		"limit 51":      {"/api/v1/cakes?limit=51", 422, "INVALID_INPUT"},
+		"limit 0":       {"/api/v1/cakes?limit=0", 422, "INVALID_INPUT"},
+		"limit text":    {"/api/v1/cakes?limit=ten", 422, "INVALID_INPUT"},
+		"limit +5":      {"/api/v1/cakes?limit=+5", 422, "INVALID_INPUT"},
 		"bad cursor":    {"/api/v1/cakes?cursor=bad", 400, "BAD_REQUEST"},
 		"detail":        {"/api/v1/cakes/c1", 200, ""},
 		"missing":       {"/api/v1/cakes/c2", 404, "NOT_FOUND"},
@@ -216,7 +217,13 @@ func TestCatalogCommandInput(t *testing.T) {
 		"invalid name":     {"/api/v1/admin/cakes", "k", `{"name":"","description":""}`, 422, "INVALID_INPUT"},
 		"no allergens":     {"/api/v1/admin/recipes/versions", "k", strings.Replace(recipe, `[{"code":"eggs","label":"EGGS","prominent":false}]`, `[]`, 1), 422, "INVALID_INPUT"},
 		"valid recipe":     {"/api/v1/admin/recipes/versions", "k", recipe, 201, ""},
-		"null description": {"/api/v1/admin/cakes", "k", `{"name":"A","description":null}`, 201, ""},
+		"null description": {"/api/v1/admin/cakes", "k", `{"name":"A","description":null}`, 422, "INVALID_INPUT"},
+		"nested null":      {"/api/v1/admin/recipes/versions", "k", strings.Replace(recipe, `"prominent":false`, `"prominent":null`, 1), 422, "INVALID_INPUT"},
+		"null lines":       {"/api/v1/admin/recipes/versions", "k", strings.Replace(recipe, `"lines":[{"component":"Sponge","quantity":"300.00","unit":"g"}]`, `"lines":null`, 1), 422, "INVALID_INPUT"},
+		"upper-case key":   {"/api/v1/admin/cakes", "k", `{"NAME":"A","description":""}`, 400, "BAD_REQUEST"},
+		"case repeat":      {"/api/v1/admin/cakes", "k", `{"name":"a","Name":"b","description":""}`, 400, "BAD_REQUEST"},
+		"long-s key":       {"/api/v1/admin/cakes", "k", "{\"name\":\"a\",\"de\u017fcription\":\"b\"}", 400, "BAD_REQUEST"},
+		"huge version":     {"/api/v1/admin/cakes/c1/state", "k", `{"expected_version":3000000000,"state":"active"}`, 422, "INVALID_INPUT"},
 	} {
 		cat := &fakeCatalog{}
 		rec := serveCatalog(t, cat, id, http.MethodPost, c.path, "chef", c.key, c.body)
@@ -233,14 +240,19 @@ func TestCatalogCommandInput(t *testing.T) {
 			}
 		}
 	}
+	// Invalid UTF-8 is refused, not replaced.
+	cat0 := &fakeCatalog{}
+	if rec := serveCatalog(t, cat0, id, http.MethodPost, "/api/v1/admin/flavours", "chef", "k", "{\"name\":\"a\xff\"}"); rec.Code != 400 || cat0.calls != 0 {
+		t.Fatalf("invalid UTF-8: %d, calls %d", rec.Code, cat0.calls)
+	}
 	// Oversized body.
 	cat := &fakeCatalog{}
 	big := `{"name":"` + strings.Repeat("a", maxCommandBytes) + `"}`
 	if rec := serveCatalog(t, cat, id, http.MethodPost, "/api/v1/admin/cakes", "chef", "k", big); rec.Code != 413 {
 		t.Fatalf("oversized: %d", rec.Code)
 	}
-	// PATCH: an explicit null on a non-nullable field is invalid; omitted
-	// fields are unchanged.
+	// PATCH: an explicit null on a non-nullable field is invalid (no catalog
+	// field is nullable); omitted fields are unchanged.
 	if rec := serveCatalog(t, cat, id, http.MethodPatch, "/api/v1/admin/cakes/c1", "chef", "k", `{"expected_version":1,"name":null}`); rec.Code != 422 {
 		t.Fatalf("null name: %d %s", rec.Code, rec.Body.String())
 	}

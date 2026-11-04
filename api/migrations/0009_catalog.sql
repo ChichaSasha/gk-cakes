@@ -25,25 +25,27 @@
 
 SET LOCAL ROLE gk_owner;
 
--- K00 command identity: one row per (account, command, key). The API hashes
+-- K00 command identity: one row per (account, command, resource, key). The API hashes
 -- the command's canonical input (path resource and body). result_id is set
 -- inside the same transaction as the effect. Retention (30 days) is a later
 -- maintenance job; business uniqueness prevents duplicate effects afterwards.
 CREATE TABLE business.command_receipt (
   account_id      uuid NOT NULL REFERENCES business.account (id),
   command         text NOT NULL CHECK (command ~ '^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$' AND length(command) <= 80),
+  -- The path resource the command acts on ('' for a create without one).
+  resource        text NOT NULL CHECK (resource = '' OR resource ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'),
   idempotency_key text NOT NULL CHECK (idempotency_key ~ '^[\x21-\x7e]{1,128}$'),
   body_sha256     char(64) NOT NULL CHECK (body_sha256 ~ '^[0-9a-f]{64}$'),
   result_id       uuid NULL,
   created_at      timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (account_id, command, idempotency_key)
+  PRIMARY KEY (account_id, command, resource, idempotency_key)
 );
 
 CREATE INDEX command_receipt_created_idx ON business.command_receipt (created_at);
 
 CREATE TABLE business.flavour (
   id          uuid PRIMARY KEY,
-  name        text NOT NULL CHECK (name = btrim(name) AND char_length(name) BETWEEN 1 AND 80),
+  name        text NOT NULL CHECK (name = btrim(name) AND char_length(name) BETWEEN 1 AND 80 AND name !~ '[[:cntrl:]]'),
   created_at  timestamptz NOT NULL DEFAULT now(),
   created_by  uuid NOT NULL REFERENCES business.account (id),
   archived_at timestamptz NULL,
@@ -56,7 +58,8 @@ CREATE UNIQUE INDEX flavour_active_name_idx ON business.flavour (lower(name)) WH
 -- recipe's "contains" declaration (K01). Immutable; a recipe version pins one.
 CREATE TABLE business.allergen_notice (
   id         uuid PRIMARY KEY,
-  body       text NOT NULL CHECK (body = btrim(body) AND char_length(body) BETWEEN 1 AND 2000),
+  body       text NOT NULL CHECK (body = btrim(body) AND char_length(body) BETWEEN 1 AND 2000
+                                  AND body !~ '[\x01-\x09\x0b-\x1f\x7f]'),
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid NOT NULL REFERENCES business.account (id)
 );
@@ -65,8 +68,9 @@ CREATE INDEX allergen_notice_created_idx ON business.allergen_notice (created_at
 
 CREATE TABLE business.cake (
   id           uuid PRIMARY KEY,
-  name         text NOT NULL CHECK (name = btrim(name) AND char_length(name) BETWEEN 1 AND 120),
-  description  text NOT NULL DEFAULT '' CHECK (description = btrim(description) AND char_length(description) <= 4000),
+  name         text NOT NULL CHECK (name = btrim(name) AND char_length(name) BETWEEN 1 AND 120 AND name !~ '[[:cntrl:]]'),
+  description  text NOT NULL DEFAULT '' CHECK (description = btrim(description) AND char_length(description) <= 4000
+                                              AND description !~ '[\x01-\x09\x0b-\x1f\x7f]'),
   state        text NOT NULL DEFAULT 'draft' CHECK (state IN ('draft', 'active', 'archived')),
   -- First activation; the public listing order. Kept when re-activated.
   -- A draft archived before it was ever published keeps NULL.
@@ -104,10 +108,15 @@ CREATE TABLE business.recipe_version (
   id                 uuid PRIMARY KEY,
   variant_id         uuid NOT NULL REFERENCES business.variant (id),
   revision           integer NOT NULL CHECK (revision >= 1),
+  -- What was bought, copied from the variant and flavour at creation, so the
+  -- snapshot never depends on live rows.
+  flavour_name       text NOT NULL,
+  size_code          text NOT NULL,
+  stock_mode         text NOT NULL,
   price_minor        bigint NOT NULL CHECK (price_minor BETWEEN 1 AND 10000000),
   servings_min       integer NOT NULL CHECK (servings_min BETWEEN 1 AND 500),
   servings_max       integer NOT NULL,
-  coating            text NOT NULL CHECK (coating = btrim(coating) AND char_length(coating) BETWEEN 1 AND 200),
+  coating            text NOT NULL CHECK (coating = btrim(coating) AND char_length(coating) BETWEEN 1 AND 200 AND coating !~ '[[:cntrl:]]'),
   composition        text[] NOT NULL CHECK (cardinality(composition) BETWEEN 1 AND 20),
   allergen_notice_id uuid NOT NULL REFERENCES business.allergen_notice (id),
   -- SHA-256 of the canonical version content, computed by the API.
@@ -131,7 +140,7 @@ CREATE TABLE business.recipe_allergen (
   code              text NOT NULL CHECK (code IN (
                       'celery', 'cereals_containing_gluten', 'crustaceans', 'eggs', 'fish', 'lupin',
                       'milk', 'molluscs', 'mustard', 'tree_nuts', 'peanuts', 'sesame', 'soybeans', 'sulphites')),
-  label             text NOT NULL CHECK (label = btrim(label) AND char_length(label) BETWEEN 1 AND 80),
+  label             text NOT NULL CHECK (label = btrim(label) AND char_length(label) BETWEEN 1 AND 80 AND label !~ '[[:cntrl:]]'),
   prominent         boolean NOT NULL DEFAULT false,
   PRIMARY KEY (recipe_version_id, code)
 );
@@ -141,7 +150,8 @@ CREATE TABLE business.recipe_allergen (
 CREATE TABLE business.recipe_line (
   recipe_version_id uuid NOT NULL REFERENCES business.recipe_version (id),
   position          integer NOT NULL CHECK (position BETWEEN 1 AND 100),
-  component         text NOT NULL CHECK (component = btrim(component) AND char_length(component) BETWEEN 1 AND 120),
+  component         text NOT NULL CHECK (component = btrim(component) AND char_length(component) BETWEEN 1 AND 120
+                                       AND component !~ '[[:cntrl:]]'),
   quantity          numeric(14,2) NOT NULL CHECK (quantity > 0),
   unit              text NOT NULL CHECK (unit IN ('g', 'ml', 'count')),
   CONSTRAINT recipe_line_whole_count CHECK (unit <> 'count' OR quantity = trunc(quantity)),
@@ -171,6 +181,57 @@ CREATE TRIGGER allergen_notice_immutable BEFORE UPDATE OR DELETE ON business.all
   FOR EACH ROW EXECUTE FUNCTION business.catalog_immutable();
 CREATE TRIGGER flavour_no_delete BEFORE DELETE ON business.flavour
   FOR EACH ROW EXECUTE FUNCTION business.catalog_immutable();
+-- Row triggers do not fire on TRUNCATE.
+CREATE TRIGGER catalog_no_truncate_recipe_version BEFORE TRUNCATE ON business.recipe_version
+  FOR EACH STATEMENT EXECUTE FUNCTION business.catalog_immutable();
+CREATE TRIGGER catalog_no_truncate_recipe_allergen BEFORE TRUNCATE ON business.recipe_allergen
+  FOR EACH STATEMENT EXECUTE FUNCTION business.catalog_immutable();
+CREATE TRIGGER catalog_no_truncate_recipe_line BEFORE TRUNCATE ON business.recipe_line
+  FOR EACH STATEMENT EXECUTE FUNCTION business.catalog_immutable();
+CREATE TRIGGER catalog_no_truncate_allergen_notice BEFORE TRUNCATE ON business.allergen_notice
+  FOR EACH STATEMENT EXECUTE FUNCTION business.catalog_immutable();
+CREATE TRIGGER catalog_no_truncate_flavour BEFORE TRUNCATE ON business.flavour
+  FOR EACH STATEMENT EXECUTE FUNCTION business.catalog_immutable();
+CREATE TRIGGER catalog_no_truncate_cake BEFORE TRUNCATE ON business.cake
+  FOR EACH STATEMENT EXECUTE FUNCTION business.catalog_immutable();
+CREATE TRIGGER catalog_no_truncate_variant BEFORE TRUNCATE ON business.variant
+  FOR EACH STATEMENT EXECUTE FUNCTION business.catalog_immutable();
+
+-- A variant's identity (which cake, flavour, size and stock mode) and a
+-- flavour's name never change: archive and create a new one instead.
+CREATE FUNCTION business.catalog_variant_frozen()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  IF (NEW.id, NEW.cake_id, NEW.flavour_id, NEW.size_code, NEW.stock_mode)
+     IS DISTINCT FROM (OLD.id, OLD.cake_id, OLD.flavour_id, OLD.size_code, OLD.stock_mode) THEN
+    RAISE EXCEPTION 'variant identity is immutable' USING ERRCODE = 'GK409';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION business.catalog_flavour_frozen()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  IF (NEW.id, NEW.name) IS DISTINCT FROM (OLD.id, OLD.name) THEN
+    RAISE EXCEPTION 'flavour name is immutable' USING ERRCODE = 'GK409';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER variant_identity_frozen BEFORE UPDATE ON business.variant
+  FOR EACH ROW EXECUTE FUNCTION business.catalog_variant_frozen();
+CREATE TRIGGER flavour_name_frozen BEFORE UPDATE ON business.flavour
+  FOR EACH ROW EXECUTE FUNCTION business.catalog_flavour_frozen();
 CREATE TRIGGER cake_no_delete BEFORE DELETE ON business.cake
   FOR EACH ROW EXECUTE FUNCTION business.catalog_immutable();
 CREATE TRIGGER variant_no_delete BEFORE DELETE ON business.variant
@@ -209,7 +270,7 @@ $$;
 -- same key was used with the same body, NULL for a new command (the caller
 -- then performs it and calls command_finish). A concurrent first use waits
 -- on the primary key until the other transaction ends.
-CREATE FUNCTION business.command_claim(p_account uuid, p_command text, p_key text, p_body_sha256 text)
+CREATE FUNCTION business.command_claim(p_account uuid, p_command text, p_resource text, p_key text, p_body_sha256 text)
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -225,15 +286,15 @@ BEGIN
   IF p_body_sha256 IS NULL OR p_body_sha256 !~ '^[0-9a-f]{64}$' THEN
     RAISE EXCEPTION 'body hash must be 64 lowercase hex characters' USING ERRCODE = 'invalid_parameter_value';
   END IF;
-  INSERT INTO business.command_receipt (account_id, command, idempotency_key, body_sha256)
-  VALUES (p_account, p_command, p_key, p_body_sha256)
+  INSERT INTO business.command_receipt (account_id, command, resource, idempotency_key, body_sha256)
+  VALUES (p_account, p_command, p_resource, p_key, p_body_sha256)
   ON CONFLICT DO NOTHING;
   IF FOUND THEN
     RETURN NULL;
   END IF;
   SELECT r.body_sha256, r.result_id INTO STRICT v_hash, v_result
   FROM business.command_receipt r
-  WHERE r.account_id = p_account AND r.command = p_command AND r.idempotency_key = p_key;
+  WHERE r.account_id = p_account AND r.command = p_command AND r.resource = p_resource AND r.idempotency_key = p_key;
   IF v_hash <> p_body_sha256 THEN
     RAISE EXCEPTION 'key_reused' USING ERRCODE = 'GK409';
   END IF;
@@ -244,7 +305,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION business.command_finish(p_account uuid, p_command text, p_key text, p_result uuid)
+CREATE FUNCTION business.command_finish(p_account uuid, p_command text, p_resource text, p_key text, p_result uuid)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -252,7 +313,8 @@ SET search_path = pg_catalog, pg_temp
 AS $$
 BEGIN
   UPDATE business.command_receipt r SET result_id = p_result
-  WHERE r.account_id = p_account AND r.command = p_command AND r.idempotency_key = p_key AND r.result_id IS NULL;
+  WHERE r.account_id = p_account AND r.command = p_command AND r.resource = p_resource
+    AND r.idempotency_key = p_key AND r.result_id IS NULL;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'command receipt missing or already finished' USING ERRCODE = 'internal_error';
   END IF;
@@ -288,7 +350,7 @@ SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   v_account uuid := business.catalog_staff_account(p_actor, ARRAY['chef']);
-  v_prior uuid := business.command_claim(v_account, 'catalog.flavour_create', p_key, p_body_sha256);
+  v_prior uuid := business.command_claim(v_account, 'catalog.flavour_create', '', p_key, p_body_sha256);
   v_id uuid := pg_catalog.gen_random_uuid();
 BEGIN
   IF v_prior IS NOT NULL THEN
@@ -302,7 +364,7 @@ BEGIN
     WHEN check_violation OR not_null_violation THEN RAISE EXCEPTION 'name_invalid' USING ERRCODE = 'GK422';
   END;
   PERFORM business.audit_record('staff', v_account, 'catalog.flavour_created', 'flavour', v_id, NULL, NULL);
-  PERFORM business.command_finish(v_account, 'catalog.flavour_create', p_key, v_id);
+  PERFORM business.command_finish(v_account, 'catalog.flavour_create', '', p_key, v_id);
   RETURN QUERY SELECT v_id, false;
 END;
 $$;
@@ -315,7 +377,7 @@ SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   v_account uuid := business.catalog_staff_account(p_actor, ARRAY['chef']);
-  v_prior uuid := business.command_claim(v_account, 'catalog.notice_create', p_key, p_body_sha256);
+  v_prior uuid := business.command_claim(v_account, 'catalog.notice_create', '', p_key, p_body_sha256);
   v_id uuid := pg_catalog.gen_random_uuid();
 BEGIN
   IF v_prior IS NOT NULL THEN
@@ -328,7 +390,7 @@ BEGIN
     RAISE EXCEPTION 'body_invalid' USING ERRCODE = 'GK422';
   END;
   PERFORM business.audit_record('staff', v_account, 'catalog.allergen_notice_created', 'allergen_notice', v_id, NULL, NULL);
-  PERFORM business.command_finish(v_account, 'catalog.notice_create', p_key, v_id);
+  PERFORM business.command_finish(v_account, 'catalog.notice_create', '', p_key, v_id);
   RETURN QUERY SELECT v_id, false;
 END;
 $$;
@@ -341,7 +403,7 @@ SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   v_account uuid := business.catalog_staff_account(p_actor, ARRAY['chef']);
-  v_prior uuid := business.command_claim(v_account, 'catalog.cake_create', p_key, p_body_sha256);
+  v_prior uuid := business.command_claim(v_account, 'catalog.cake_create', '', p_key, p_body_sha256);
   v_id uuid := pg_catalog.gen_random_uuid();
 BEGIN
   IF v_prior IS NOT NULL THEN
@@ -354,7 +416,7 @@ BEGIN
     RAISE EXCEPTION 'cake_invalid' USING ERRCODE = 'GK422';
   END;
   PERFORM business.audit_record('staff', v_account, 'catalog.cake_created', 'cake', v_id, NULL, NULL);
-  PERFORM business.command_finish(v_account, 'catalog.cake_create', p_key, v_id);
+  PERFORM business.command_finish(v_account, 'catalog.cake_create', '', p_key, v_id);
   RETURN QUERY SELECT v_id, false;
 END;
 $$;
@@ -369,12 +431,15 @@ SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   v_account uuid := business.catalog_staff_account(p_actor, ARRAY['chef']);
-  v_prior uuid := business.command_claim(v_account, 'catalog.cake_update', p_key, p_body_sha256);
+  v_prior uuid := business.command_claim(v_account, 'catalog.cake_update', coalesce(p_cake::text, ''), p_key, p_body_sha256);
   v_version integer;
 BEGIN
   IF v_prior IS NOT NULL THEN
     RETURN QUERY SELECT v_prior, true;
     RETURN;
+  END IF;
+  IF p_name IS NULL AND p_description IS NULL THEN
+    RAISE EXCEPTION 'cake_invalid' USING ERRCODE = 'GK422';
   END IF;
   SELECT c.version INTO v_version FROM business.cake c WHERE c.id = p_cake FOR UPDATE;
   IF NOT FOUND THEN
@@ -391,7 +456,7 @@ BEGIN
   END;
   PERFORM business.audit_record('staff', v_account, 'catalog.cake_updated', 'cake', p_cake, NULL,
                                 pg_catalog.json_build_object('version', v_version + 1));
-  PERFORM business.command_finish(v_account, 'catalog.cake_update', p_key, p_cake);
+  PERFORM business.command_finish(v_account, 'catalog.cake_update', coalesce(p_cake::text, ''), p_key, p_cake);
   RETURN QUERY SELECT p_cake, false;
 END;
 $$;
@@ -406,7 +471,7 @@ SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   v_account uuid := business.catalog_staff_account(p_actor, ARRAY['chef']);
-  v_prior uuid := business.command_claim(v_account, 'catalog.cake_set_state', p_key, p_body_sha256);
+  v_prior uuid := business.command_claim(v_account, 'catalog.cake_set_state', coalesce(p_cake::text, ''), p_key, p_body_sha256);
   v_version integer;
   v_state text;
 BEGIN
@@ -431,7 +496,7 @@ BEGIN
   WHERE c.id = p_cake;
   PERFORM business.audit_record('staff', v_account, 'catalog.cake_state_changed', 'cake', p_cake, NULL,
                                 pg_catalog.json_build_object('from', v_state, 'to', p_state, 'version', v_version + 1));
-  PERFORM business.command_finish(v_account, 'catalog.cake_set_state', p_key, p_cake);
+  PERFORM business.command_finish(v_account, 'catalog.cake_set_state', coalesce(p_cake::text, ''), p_key, p_cake);
   RETURN QUERY SELECT p_cake, false;
 END;
 $$;
@@ -445,7 +510,7 @@ SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   v_account uuid := business.catalog_staff_account(p_actor, ARRAY['chef']);
-  v_prior uuid := business.command_claim(v_account, 'catalog.variant_create', p_key, p_body_sha256);
+  v_prior uuid := business.command_claim(v_account, 'catalog.variant_create', coalesce(p_cake::text, ''), p_key, p_body_sha256);
   v_id uuid := pg_catalog.gen_random_uuid();
   v_state text;
 BEGIN
@@ -473,7 +538,7 @@ BEGIN
   END;
   PERFORM business.audit_record('staff', v_account, 'catalog.variant_created', 'variant', v_id, NULL,
                                 pg_catalog.json_build_object('cake', p_cake));
-  PERFORM business.command_finish(v_account, 'catalog.variant_create', p_key, v_id);
+  PERFORM business.command_finish(v_account, 'catalog.variant_create', coalesce(p_cake::text, ''), p_key, v_id);
   RETURN QUERY SELECT v_id, false;
 END;
 $$;
@@ -487,7 +552,7 @@ SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   v_account uuid := business.catalog_staff_account(p_actor, ARRAY['chef']);
-  v_prior uuid := business.command_claim(v_account, 'catalog.variant_archive', p_key, p_body_sha256);
+  v_prior uuid := business.command_claim(v_account, 'catalog.variant_archive', coalesce(p_variant::text, ''), p_key, p_body_sha256);
   v_version integer;
   v_archived timestamptz;
 BEGIN
@@ -506,7 +571,7 @@ BEGIN
   UPDATE business.variant v SET archived_at = pg_catalog.now(), version = v.version + 1 WHERE v.id = p_variant;
   PERFORM business.audit_record('staff', v_account, 'catalog.variant_archived', 'variant', p_variant, NULL,
                                 pg_catalog.json_build_object('version', v_version + 1));
-  PERFORM business.command_finish(v_account, 'catalog.variant_archive', p_key, p_variant);
+  PERFORM business.command_finish(v_account, 'catalog.variant_archive', coalesce(p_variant::text, ''), p_key, p_variant);
   RETURN QUERY SELECT p_variant, false;
 END;
 $$;
@@ -525,18 +590,25 @@ SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   v_account uuid := business.catalog_staff_account(p_actor, ARRAY['chef']);
-  v_prior uuid := business.command_claim(v_account, 'catalog.recipe_version_create', p_key, p_body_sha256);
+  v_prior uuid := business.command_claim(v_account, 'catalog.recipe_version_create', coalesce(p_variant::text, ''), p_key, p_body_sha256);
   v_id uuid := pg_catalog.gen_random_uuid();
   v_version integer;
   v_archived timestamptz;
   v_revision integer;
   v_item text;
+  v_flavour text;
+  v_size text;
+  v_stock text;
 BEGIN
   IF v_prior IS NOT NULL THEN
     RETURN QUERY SELECT v_prior, true;
     RETURN;
   END IF;
-  SELECT v.version, v.archived_at INTO v_version, v_archived FROM business.variant v WHERE v.id = p_variant FOR UPDATE;
+  SELECT v.version, v.archived_at, f.name, v.size_code, v.stock_mode
+  INTO v_version, v_archived, v_flavour, v_size, v_stock
+  FROM business.variant v JOIN business.flavour f ON f.id = v.flavour_id
+  WHERE v.id = p_variant
+  FOR UPDATE OF v;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'variant not found' USING ERRCODE = 'GK404';
   END IF;
@@ -554,30 +626,49 @@ BEGIN
   IF p_lines IS NULL OR pg_catalog.json_typeof(p_lines) <> 'array' OR pg_catalog.json_array_length(p_lines) > 100 THEN
     RAISE EXCEPTION 'lines_invalid' USING ERRCODE = 'GK422';
   END IF;
-  IF p_composition IS NULL OR pg_catalog.array_position(p_composition, NULL) IS NOT NULL THEN
+  -- Every element must be an object of the expected JSON types (the API
+  -- sends exactly that; a bypassing caller gets GK422, not a cast error).
+  IF EXISTS (SELECT 1 FROM pg_catalog.json_array_elements(p_allergens) e
+             WHERE pg_catalog.json_typeof(e) <> 'object'
+                OR pg_catalog.json_typeof(e -> 'code') IS DISTINCT FROM 'string'
+                OR pg_catalog.json_typeof(e -> 'label') IS DISTINCT FROM 'string'
+                OR coalesce(pg_catalog.json_typeof(e -> 'prominent'), 'boolean') <> 'boolean') THEN
+    RAISE EXCEPTION 'allergens_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_catalog.json_array_elements(p_lines) e
+             WHERE pg_catalog.json_typeof(e) <> 'object'
+                OR pg_catalog.json_typeof(e -> 'component') IS DISTINCT FROM 'string'
+                OR pg_catalog.json_typeof(e -> 'quantity') IS DISTINCT FROM 'string'
+                OR pg_catalog.json_typeof(e -> 'unit') IS DISTINCT FROM 'string') THEN
+    RAISE EXCEPTION 'lines_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  IF p_composition IS NULL OR coalesce(pg_catalog.array_ndims(p_composition), 0) <> 1
+     OR pg_catalog.array_position(p_composition, NULL) IS NOT NULL THEN
     RAISE EXCEPTION 'composition_invalid' USING ERRCODE = 'GK422';
   END IF;
   FOREACH v_item IN ARRAY p_composition LOOP
-    IF v_item <> pg_catalog.btrim(v_item) OR pg_catalog.char_length(v_item) NOT BETWEEN 1 AND 120 THEN
+    IF v_item <> pg_catalog.btrim(v_item) OR pg_catalog.char_length(v_item) NOT BETWEEN 1 AND 120
+       OR v_item ~ '[[:cntrl:]]' THEN
       RAISE EXCEPTION 'composition_invalid' USING ERRCODE = 'GK422';
     END IF;
   END LOOP;
 
   -- Quantities are given with at most two decimals; the cast would round more.
   -- A missing quantity is NULL and fails the NOT NULL check below.
-  IF EXISTS (SELECT 1 FROM pg_catalog.json_to_recordset(p_lines) AS l(quantity text)
-             WHERE l.quantity !~ '^[0-9]{1,12}(\.[0-9]{1,2})?$') THEN
+  IF EXISTS (SELECT 1 FROM pg_catalog.json_array_elements(p_lines) e
+             WHERE (e ->> 'quantity') !~ '^[0-9]{1,12}(\.[0-9]{1,2})?$') THEN
     RAISE EXCEPTION 'recipe_invalid' USING ERRCODE = 'GK422';
   END IF;
   SELECT coalesce(max(r.revision), 0) + 1 INTO v_revision FROM business.recipe_version r WHERE r.variant_id = p_variant;
   BEGIN
-    INSERT INTO business.recipe_version (id, variant_id, revision, price_minor, servings_min, servings_max, coating,
-                                         composition, allergen_notice_id, source_sha256, created_by)
-    VALUES (v_id, p_variant, v_revision, p_price_minor, p_servings_min, p_servings_max, p_coating,
-            p_composition, p_notice, p_source_sha256, v_account);
+    INSERT INTO business.recipe_version (id, variant_id, revision, flavour_name, size_code, stock_mode, price_minor,
+                                         servings_min, servings_max, coating, composition, allergen_notice_id,
+                                         source_sha256, created_by)
+    VALUES (v_id, p_variant, v_revision, v_flavour, v_size, v_stock, p_price_minor,
+            p_servings_min, p_servings_max, p_coating, p_composition, p_notice, p_source_sha256, v_account);
     INSERT INTO business.recipe_allergen (recipe_version_id, code, label, prominent)
-    SELECT v_id, a.code, a.label, coalesce(a.prominent, false)
-    FROM pg_catalog.json_to_recordset(p_allergens) AS a(code text, label text, prominent boolean);
+    SELECT v_id, a.value ->> 'code', a.value ->> 'label', coalesce((a.value ->> 'prominent')::boolean, false)
+    FROM pg_catalog.json_array_elements(p_allergens) AS a(value);
     INSERT INTO business.recipe_line (recipe_version_id, position, component, quantity, unit)
     SELECT v_id, e.ord::integer, e.value ->> 'component', (e.value ->> 'quantity')::numeric(14,2), e.value ->> 'unit'
     FROM pg_catalog.json_array_elements(p_lines) WITH ORDINALITY AS e(value, ord);
@@ -590,7 +681,7 @@ BEGIN
   UPDATE business.variant v SET current_recipe_version_id = v_id, version = v.version + 1 WHERE v.id = p_variant;
   PERFORM business.audit_record('staff', v_account, 'catalog.recipe_version_created', 'variant', p_variant, NULL,
                                 pg_catalog.json_build_object('recipe_version', v_id, 'revision', v_revision));
-  PERFORM business.command_finish(v_account, 'catalog.recipe_version_create', p_key, v_id);
+  PERFORM business.command_finish(v_account, 'catalog.recipe_version_create', coalesce(p_variant::text, ''), p_key, v_id);
   RETURN QUERY SELECT v_id, false;
 END;
 $$;
@@ -609,7 +700,10 @@ AS $$
   SELECT c.id, c.name, c.description, c.published_at
   FROM business.cake c
   WHERE c.state = 'active'
-    AND (p_after_published IS NULL OR (c.published_at, c.id) < (p_after_published, p_after_id))
+    -- No OR: the first page uses sentinels, so the planner can always seek
+    -- on cake_public_page_idx (a generic plan cannot for "IS NULL OR ...").
+    AND (c.published_at, c.id) < (coalesce(p_after_published, 'infinity'::timestamptz),
+                                  coalesce(p_after_id, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid))
   ORDER BY c.published_at DESC, c.id DESC
   LIMIT least(greatest(coalesce(p_limit, 20), 1), 51);
 $$;
@@ -682,7 +776,8 @@ BEGIN
   RETURN QUERY
   SELECT c.id, c.name, c.description, c.state, c.published_at, c.created_at, c.updated_at, c.version
   FROM business.cake c
-  WHERE p_after_created IS NULL OR (c.created_at, c.id) < (p_after_created, p_after_id)
+  WHERE (c.created_at, c.id) < (coalesce(p_after_created, 'infinity'::timestamptz),
+                                coalesce(p_after_id, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid))
   ORDER BY c.created_at DESC, c.id DESC
   LIMIT least(greatest(coalesce(p_limit, 20), 1), 51);
 END;
@@ -733,7 +828,7 @@ AS $$
 BEGIN
   PERFORM business.catalog_staff_account(p_actor, ARRAY['chef', 'technical_support']);
   RETURN QUERY
-  SELECT r.id, r.variant_id, v.cake_id, f.name, v.size_code, r.revision, r.price_minor, r.servings_min,
+  SELECT r.id, r.variant_id, v.cake_id, r.flavour_name, r.size_code, r.revision, r.price_minor, r.servings_min,
          r.servings_max, r.coating, r.composition,
          (SELECT pg_catalog.json_agg(pg_catalog.json_build_object('code', a.code, 'label', a.label, 'prominent', a.prominent)
                                      ORDER BY a.prominent DESC, a.code)
@@ -744,7 +839,6 @@ BEGIN
          n.id, n.body, r.source_sha256::text, r.created_at
   FROM business.recipe_version r
   JOIN business.variant v ON v.id = r.variant_id
-  JOIN business.flavour f ON f.id = v.flavour_id
   JOIN business.allergen_notice n ON n.id = r.allergen_notice_id
   WHERE r.id = p_recipe_version;
 END;
@@ -780,9 +874,11 @@ REVOKE ALL ON TABLE business.command_receipt, business.flavour, business.allerge
   business.variant, business.recipe_version, business.recipe_allergen, business.recipe_line FROM PUBLIC;
 
 REVOKE ALL ON FUNCTION business.catalog_immutable() FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.catalog_variant_frozen() FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.catalog_flavour_frozen() FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.catalog_staff_account(uuid, text[]) FROM PUBLIC;
-REVOKE ALL ON FUNCTION business.command_claim(uuid, text, text, text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION business.command_finish(uuid, text, text, uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.command_claim(uuid, text, text, text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.command_finish(uuid, text, text, text, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.catalog_expect_version(integer, integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.catalog_flavour_create(uuid, text, text, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.catalog_notice_create(uuid, text, text, text) FROM PUBLIC;

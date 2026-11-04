@@ -84,6 +84,7 @@ func TestOtherInputValidation(t *testing.T) {
 		"bad size":         VariantInput{FlavourID: "11111111-1111-4111-8111-111111111111", SizeCode: "5in", StockMode: MadeToOrder}.Validate(),
 		"bad stock mode":   VariantInput{FlavourID: "11111111-1111-4111-8111-111111111111", SizeCode: "s", StockMode: "resale"}.Validate(),
 		"archive version":  VersionInput{}.Validate(),
+		"huge version":     VersionInput{ExpectedVersion: MaxVersion + 1}.Validate(),
 	} {
 		var inv *InvalidError
 		if !errors.As(err, &inv) {
@@ -137,6 +138,12 @@ func TestBodyHashIsCanonical(t *testing.T) {
 	if r1.SourceHash() == r2.SourceHash() {
 		t.Fatal("source hash ignores the price")
 	}
+	// Omitted and empty line lists are the same content.
+	r3, r4 := validRecipe(), validRecipe()
+	r3.Lines, r4.Lines = nil, []Line{}
+	if r3.SourceHash() != r4.SourceHash() {
+		t.Fatal("source hash differs for omitted and empty lines")
+	}
 }
 
 func TestOptionalDecoding(t *testing.T) {
@@ -149,6 +156,12 @@ func TestOptionalDecoding(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(`{"name":"New"}`), &p); err != nil || !p.Name.Set || p.Name.Value != "New" {
 		t.Fatalf("decoded %+v, %v", p, err)
+	}
+	// A later value replaces an earlier null completely.
+	var o Optional[string]
+	_ = json.Unmarshal([]byte(`null`), &o)
+	if err := json.Unmarshal([]byte(`"x"`), &o); err != nil || o.Null || o.Value != "x" {
+		t.Fatalf("optional after null then value = %+v, %v", o, err)
 	}
 }
 
