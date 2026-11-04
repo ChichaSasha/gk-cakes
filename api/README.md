@@ -651,6 +651,58 @@ where the staging environment holds the migration credential; the run ID is
 appended to the note). A subject can be disabled before its first sign-in. The
 API login can only resolve accounts and list staff for a chef.
 
+## Catalog (K01, K07, GK-022)
+
+Migration `0009_catalog.sql`, package `internal/catalog`. A **cake** is a
+listing (draft, active or archived); its **variants** are one flavour in one
+GK-002 size (`mini`, `s`, `m`, `l`, `xl`, `xxl` and the tiered sizes),
+made to order or from ready stock. A variant's price (GBP pence), servings,
+coating, composition, allergen declaration and planned recipe lines live in an
+immutable **recipe version**; a new version becomes current, earlier ones stay
+exactly as they were (what an order pins), and even the owner role cannot
+update or delete them. Each size has its own recipe; nothing scales between
+sizes. Referenced rows are archived, never deleted.
+
+Allergens are the 14 UK FIC Annex II codes, each with the exact label the chef
+approved (for example `CEREALS CONTAINING GLUTEN (WHEAT)`) and a `prominent`
+flag (Snickers: `PEANUTS`). The shared-kitchen notice is versioned separately
+and pinned by each recipe version. A variant without a current recipe version,
+which always declares at least one allergen and the notice, is not purchasable
+(missing disclosure disables buying, K01). Recipe quantities are exact
+decimals with at most two places; counts are whole. Inventory links and batch
+use come with GK-032; real recipe data waits for GK-038's measurements.
+
+**Commands** need the chef capability and a current provider session, an
+`Idempotency-Key` header (1 to 128 visible ASCII characters) and, for an
+existing object, `expected_version`. Bodies are one JSON object with no
+unknown or repeated fields. The same key and body return the original result
+with `Idempotent-Replayed: true`; another body is 409 `KEY_REUSED`. A refused
+command stores no key. The database checks the capability again (a revoked
+chef cannot replay) and audits every change.
+
+| Route | Who | Notes |
+| --- | --- | --- |
+| `GET /api/v1/cakes?cursor&limit` | anyone | active cakes, newest first; limit 1-50 (default 20); `next_cursor` |
+| `GET /api/v1/cakes/{id}` | anyone | 404 unless active; only active variants |
+| `GET /api/v1/admin/cakes`, `/admin/cakes/{id}` | chef, technical support | every state, with versions and archived variants |
+| `GET /api/v1/admin/recipes/versions/{id}` | chef, technical support | one immutable version with its lines |
+| `GET /api/v1/admin/flavours`, `/admin/allergen-notices/current`, `/admin/sizes` | chef, technical support | |
+| `POST /api/v1/admin/flavours` | chef | `{name}` |
+| `POST /api/v1/admin/allergen-notices` | chef | `{body}`: a new notice version |
+| `POST /api/v1/admin/cakes` | chef | `{name, description}`: a draft |
+| `PATCH /api/v1/admin/cakes/{id}` | chef | `{expected_version, name?, description?}` (not nullable) |
+| `POST /api/v1/admin/cakes/{id}/state` | chef | `{expected_version, state: active\|archived}` |
+| `POST /api/v1/admin/cakes/{id}/variants` | chef | `{flavour_id, size_code, stock_mode}` |
+| `POST /api/v1/admin/variants/{id}/archive` | chef | `{expected_version}` |
+| `POST /api/v1/admin/recipes/versions` | chef | `{variant_id, expected_version, price_minor, servings_min, servings_max, coating, composition, allergen_notice_id, allergens, lines}` |
+
+Errors: 400 `BAD_REQUEST` / `IDEMPOTENCY_KEY_REQUIRED`, 403 `FORBIDDEN`, 404,
+409 `STALE_VERSION` / `KEY_REUSED` / `DUPLICATE` / `CONFLICT`, 413, 422
+`INVALID_INPUT` (names the field), 503. Command receipts are kept until a
+later maintenance job applies the 30-day retention (K00). Images (upload,
+pending to ready) are GK-022 Milestone A2; availability and ready-stock lots
+are GK-023.
+
 ## Not yet verified
 
 - Runtime-role denial and the gateway on the sandbox. They are proven on

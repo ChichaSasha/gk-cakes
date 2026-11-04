@@ -43,6 +43,9 @@ type Options struct {
 	EmailWebhook EmailWebhook
 	// Identity serves the authenticated /api/v1 routes when set (AUTH_ISSUER).
 	Identity Identity
+	// Catalog serves the public catalog when set, and the chef catalog when
+	// Identity is set too.
+	Catalog Catalog
 }
 
 // NewHandler returns the API handler with its middleware chain.
@@ -66,6 +69,12 @@ func NewHandler(opts Options) http.Handler {
 	}
 	if opts.Identity != nil {
 		identityRoutes(mux, opts.Identity, opts.Logger)
+	}
+	if opts.Catalog != nil {
+		catalogPublicRoutes(mux, opts.Catalog, opts.Logger)
+		if opts.Identity != nil {
+			catalogStaffRoutes(mux, opts.Catalog, opts.Identity, opts.Logger)
+		}
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusNotFound, "NOT_FOUND", "Not found", false)
@@ -174,7 +183,7 @@ func withCORS(origin string, next http.Handler) http.Handler {
 			return
 		}
 		h.Set("Access-Control-Allow-Origin", origin)
-		h.Set("Access-Control-Expose-Headers", "X-Request-Id")
+		h.Set("Access-Control-Expose-Headers", "X-Request-Id, Idempotent-Replayed")
 		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 			h.Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE")
 			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key")
