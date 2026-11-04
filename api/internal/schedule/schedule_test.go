@@ -9,8 +9,10 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+func iptr(v int) *int { return &v }
+
 func validVersion() VersionInput {
-	return VersionInput{ExpectedRevision: 0, StandardLimit: 7, BookableUntil: "2027-01-05",
+	return VersionInput{ExpectedRevision: iptr(0), StandardLimit: iptr(7), BookableUntil: "2027-01-05",
 		Weekdays: []WeekdayInput{
 			{Weekday: "saturday", Opens: "12:30", Closes: "15:00", Starts: []string{"12:30", "13:00", "13:30", "14:00"}},
 			{Weekday: "sunday", Opens: "11:00", Closes: "12:00", Starts: []string{"11:00"}},
@@ -23,20 +25,31 @@ func TestVersionValidation(t *testing.T) {
 		t.Fatalf("valid: %v", err)
 	}
 	for name, mutate := range map[string]func(*VersionInput){
-		"negative revision": func(in *VersionInput) { in.ExpectedRevision = -1 },
-		"limit 101":         func(in *VersionInput) { in.StandardLimit = 101 },
-		"no horizon":        func(in *VersionInput) { in.BookableUntil = "" },
-		"bad horizon":       func(in *VersionInput) { in.BookableUntil = "2027-02-30" },
-		"unknown weekday":   func(in *VersionInput) { in.Weekdays[0].Weekday = "Saturday" },
-		"repeated weekday":  func(in *VersionInput) { in.Weekdays[1].Weekday = "saturday" },
-		"bad clock":         func(in *VersionInput) { in.Weekdays[0].Opens = "24:00" },
-		"closes first":      func(in *VersionInput) { in.Weekdays[0].Closes = "12:00" },
-		"ends after close":  func(in *VersionInput) { in.Weekdays[0].Starts = []string{"14:30"} }, // K06 case S05
-		"before opening":    func(in *VersionInput) { in.Weekdays[0].Starts = []string{"12:00"} },
-		"repeated start":    func(in *VersionInput) { in.Weekdays[0].Starts = []string{"13:00", "13:00"} },
-		"one-digit hour":    func(in *VersionInput) { in.Weekdays[1].Starts = []string{"9:00"} },
-		"bad closed date":   func(in *VersionInput) { in.ClosedDates = []string{"25/12/2026"} },
-		"repeated closed":   func(in *VersionInput) { in.ClosedDates = []string{"2026-12-25", "2026-12-25"} },
+		"negative revision": func(in *VersionInput) { in.ExpectedRevision = iptr(-1) },
+		"no revision":       func(in *VersionInput) { in.ExpectedRevision = nil },
+		"limit 101":         func(in *VersionInput) { in.StandardLimit = iptr(101) },
+		"no limit":          func(in *VersionInput) { in.StandardLimit = nil },
+		"clock change hour": func(in *VersionInput) {
+			in.Weekdays[1] = WeekdayInput{Weekday: "sunday", Opens: "00:00", Closes: "03:00", Starts: []string{"01:30"}}
+		},
+		"touches 01:00": func(in *VersionInput) {
+			in.Weekdays[1] = WeekdayInput{Weekday: "sunday", Opens: "00:00", Closes: "03:00", Starts: []string{"00:30"}}
+		},
+		"past midnight": func(in *VersionInput) {
+			in.Weekdays[1] = WeekdayInput{Weekday: "sunday", Opens: "00:00", Closes: "00:30", Starts: []string{"00:00"}}
+		},
+		"no horizon":       func(in *VersionInput) { in.BookableUntil = "" },
+		"bad horizon":      func(in *VersionInput) { in.BookableUntil = "2027-02-30" },
+		"unknown weekday":  func(in *VersionInput) { in.Weekdays[0].Weekday = "Saturday" },
+		"repeated weekday": func(in *VersionInput) { in.Weekdays[1].Weekday = "saturday" },
+		"bad clock":        func(in *VersionInput) { in.Weekdays[0].Opens = "24:00" },
+		"closes first":     func(in *VersionInput) { in.Weekdays[0].Closes = "12:00" },
+		"ends after close": func(in *VersionInput) { in.Weekdays[0].Starts = []string{"14:30"} }, // K06 case S05
+		"before opening":   func(in *VersionInput) { in.Weekdays[0].Starts = []string{"12:00"} },
+		"repeated start":   func(in *VersionInput) { in.Weekdays[0].Starts = []string{"13:00", "13:00"} },
+		"one-digit hour":   func(in *VersionInput) { in.Weekdays[1].Starts = []string{"9:00"} },
+		"bad closed date":  func(in *VersionInput) { in.ClosedDates = []string{"25/12/2026"} },
+		"repeated closed":  func(in *VersionInput) { in.ClosedDates = []string{"2026-12-25", "2026-12-25"} },
 	} {
 		in := validVersion()
 		mutate(&in)
@@ -44,6 +57,12 @@ func TestVersionValidation(t *testing.T) {
 		if err := in.Validate(); !errors.As(err, &inv) {
 			t.Errorf("%s: %v, want invalid", name, err)
 		}
+	}
+	// 00:00 ends at 01:00, before the clocks change: allowed.
+	in0 := validVersion()
+	in0.Weekdays[1] = WeekdayInput{Weekday: "sunday", Opens: "00:00", Closes: "01:00", Starts: []string{"00:00"}}
+	if err := in0.Validate(); err != nil {
+		t.Errorf("00:00-01:00: %v", err)
 	}
 	// The last start that ends exactly at closing is allowed (Sat 14:00-15:00).
 	in := validVersion()
@@ -81,11 +100,21 @@ func TestLotValidation(t *testing.T) {
 			t.Errorf("%s: accepted", name)
 		}
 	}
-	if err := (DayLimitInput{ExpectedVersion: 0, StandardLimit: 5}).Validate(); err != nil {
+	if err := (DayLimitInput{ExpectedVersion: iptr(0), StandardLimit: iptr(5)}).Validate(); err != nil {
 		t.Errorf("first override: %v", err)
 	}
-	if err := (DayLimitInput{ExpectedVersion: 0, StandardLimit: -1}).Validate(); err == nil {
-		t.Error("negative limit accepted")
+	if err := (DayLimitInput{ExpectedVersion: iptr(2), UseScheduleDefault: true}).Validate(); err != nil {
+		t.Errorf("clear override: %v", err)
+	}
+	for name, in := range map[string]DayLimitInput{
+		"negative limit":    {ExpectedVersion: iptr(0), StandardLimit: iptr(-1)},
+		"omitted limit":     {ExpectedVersion: iptr(0)},
+		"omitted version":   {StandardLimit: iptr(5)},
+		"limit and default": {ExpectedVersion: iptr(1), StandardLimit: iptr(5), UseScheduleDefault: true},
+	} {
+		if err := in.Validate(); err == nil {
+			t.Errorf("%s accepted", name)
+		}
 	}
 	if err := (LotStateInput{ExpectedVersion: 1, Action: "sell"}).Validate(); err == nil {
 		t.Error("unknown action accepted")

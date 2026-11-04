@@ -456,11 +456,11 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.lot_create(uuid, text, text, uuid, text, integer, bigint, bigint, timestamp with time zone, timestamp with time zone)",
 		"business.lot_public_list(timestamp with time zone)",
 		"business.lot_set_state(uuid, text, text, uuid, integer, text)",
-		"business.lot_staff_list(uuid, boolean)",
+		"business.lot_staff_list(uuid, boolean, uuid)",
 		"business.schedule_public_days(date, date, timestamp with time zone, integer)",
 		"business.schedule_public_slots(date, text, timestamp with time zone, integer)",
-		"business.schedule_staff_current(uuid)",
 		"business.schedule_staff_days(uuid, date, date, timestamp with time zone)",
+		"business.schedule_staff_version(uuid, uuid)",
 		"business.schedule_version_create(uuid, text, text, integer, integer, date, json, date[])",
 	}
 	slices.Sort(all)

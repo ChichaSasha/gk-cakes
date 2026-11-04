@@ -35,6 +35,12 @@ func (f *fakeSchedule) PublicLots(context.Context) ([]schedule.Lot, error) {
 func (f *fakeSchedule) CurrentVersion(context.Context, string) (schedule.Version, error) {
 	return schedule.Version{}, catalog.ErrNotFound
 }
+func (f *fakeSchedule) VersionByID(context.Context, string, string) (schedule.Version, error) {
+	return schedule.Version{Revision: 1}, nil
+}
+func (f *fakeSchedule) StaffLot(_ context.Context, _, id string) (schedule.Lot, error) {
+	return schedule.Lot{ID: id}, nil
+}
 func (f *fakeSchedule) StaffDays(context.Context, string, time.Time, time.Time) ([]schedule.StaffDay, error) {
 	return []schedule.StaffDay{{Date: "2026-11-14"}}, nil
 }
@@ -133,6 +139,10 @@ func TestStaffScheduleAuthorization(t *testing.T) {
 	}
 	if rec := serveSchedule(t, sch, id, http.MethodGet, "/api/v1/admin/schedule", "chef", "", ""); rec.Code != 404 {
 		t.Fatalf("no schedule yet: %d", rec.Code)
+	}
+	// An omitted limit is refused, not read as 0.
+	if rec := serveSchedule(t, sch, id, http.MethodPost, "/api/v1/admin/days/2026-11-14/limit", "chef", "k", `{"expected_version":0}`); rec.Code != 422 || sch.calls != 1 {
+		t.Fatalf("omitted limit: %d, calls %d", rec.Code, sch.calls)
 	}
 	// A resale lot with its own price is refused before the store.
 	lot := `{"variant_id":"aaaaaaaa-1111-4111-8111-11111111111b","kind":"resale","quantity":1,"price_minor":100,

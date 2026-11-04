@@ -111,10 +111,11 @@ type WeekdayInput struct {
 	Starts  []string `json:"starts"`
 }
 
-// VersionInput publishes the next schedule version.
+// VersionInput publishes the next schedule version. Numbers are pointers so
+// an omitted field is refused rather than read as 0 (a valid value).
 type VersionInput struct {
-	ExpectedRevision int            `json:"expected_revision"`
-	StandardLimit    int            `json:"standard_limit"`
+	ExpectedRevision *int           `json:"expected_revision"`
+	StandardLimit    *int           `json:"standard_limit"`
 	BookableUntil    string         `json:"bookable_until"`
 	Weekdays         []WeekdayInput `json:"weekdays"`
 	ClosedDates      []string       `json:"closed_dates"`
@@ -125,10 +126,10 @@ const AppointmentMinutes = 60
 
 // Validate checks the input as the database does.
 func (in VersionInput) Validate() error {
-	if in.ExpectedRevision < 0 || in.ExpectedRevision > catalog.MaxVersion {
+	if in.ExpectedRevision == nil || *in.ExpectedRevision < 0 || *in.ExpectedRevision > catalog.MaxVersion {
 		return invalid("expected_revision", "must be the current revision (0 when there is none)")
 	}
-	if in.StandardLimit < 0 || in.StandardLimit > 100 {
+	if in.StandardLimit == nil || *in.StandardLimit < 0 || *in.StandardLimit > 100 {
 		return invalid("standard_limit", "must be 0 to 100")
 	}
 	if _, err := ParseDate("bookable_until", in.BookableUntil); err != nil {
@@ -167,6 +168,11 @@ func (in VersionInput) Validate() error {
 				return invalid("weekdays", "%s %s: the 60-minute appointment must start and end within %s-%s",
 					w.Weekday, st, w.Opens, w.Closes)
 			}
+			// UK clocks change at local 01:00-02:00; an appointment touching
+			// that hour would not exist or would be ambiguous on those days.
+			if m > 0 && m < 120 {
+				return invalid("weekdays", "%s %s: appointments cannot touch 01:00-02:00, when UK clocks change", w.Weekday, st)
+			}
 			if starts[st] {
 				return invalid("weekdays", "%s lists %s twice", w.Weekday, st)
 			}
@@ -189,19 +195,27 @@ func (in VersionInput) Validate() error {
 	return nil
 }
 
-// DayLimitInput sets a day's standard limit.
+// DayLimitInput sets a day's standard limit, or with use_schedule_default
+// clears the override so the schedule's default applies again.
 type DayLimitInput struct {
-	ExpectedVersion int `json:"expected_version"`
-	StandardLimit   int `json:"standard_limit"`
+	ExpectedVersion    *int `json:"expected_version"`
+	StandardLimit      *int `json:"standard_limit,omitempty"`
+	UseScheduleDefault bool `json:"use_schedule_default,omitempty"`
 }
 
-// Validate checks the input. expected_version is 0 for a day without an
-// override yet.
+// Validate checks the input. expected_version is 0 for a day without a row
+// yet.
 func (in DayLimitInput) Validate() error {
-	if in.ExpectedVersion < 0 || in.ExpectedVersion > catalog.MaxVersion {
+	if in.ExpectedVersion == nil || *in.ExpectedVersion < 0 || *in.ExpectedVersion > catalog.MaxVersion {
 		return invalid("expected_version", "must be the day's version (0 when it has none)")
 	}
-	if in.StandardLimit < 0 || in.StandardLimit > 100 {
+	if in.UseScheduleDefault {
+		if in.StandardLimit != nil {
+			return invalid("standard_limit", "must be omitted with use_schedule_default")
+		}
+		return nil
+	}
+	if in.StandardLimit == nil || *in.StandardLimit < 0 || *in.StandardLimit > 100 {
 		return invalid("standard_limit", "must be 0 to 100")
 	}
 	return nil
@@ -297,7 +311,7 @@ type Day struct {
 type Availability struct {
 	Timezone         string    `json:"timezone"`
 	AsOf             time.Time `json:"as_of"`
-	ScheduleRevision *int      `json:"schedule_revision"`
+	ScheduleRevision *int      `json:"schedule_version"`
 	Days             []Day     `json:"days"`
 }
 
@@ -340,7 +354,7 @@ type Slot struct {
 
 // Choices is the public schedule projection of one date (K06).
 type Choices struct {
-	ScheduleRevision *int      `json:"schedule_revision"`
+	ScheduleRevision *int      `json:"schedule_version"`
 	AsOf             time.Time `json:"as_of"`
 	Timezone         string    `json:"timezone"`
 	Date             string    `json:"date"`
@@ -349,29 +363,37 @@ type Choices struct {
 	Slots            []Slot    `json:"slots"`
 }
 
-// Choices returns the appointment choices of a date for a new purchase.
-// Browsing creates no hold.
+// Choices returns the appointment choices of a date for a new purchase in
+// one statement, so the day status, version and slot IDs come from the same
+// snapshot. Browsing creates no hold.
 func (s *Store) Choices(ctx context.Context, day time.Time, mode string, quantity int) (Choices, error) {
 	now := s.now().UTC()
 	c := Choices{AsOf: now, Timezone: Timezone, Date: day.Format(time.DateOnly), FulfillmentMode: mode, Slots: []Slot{}}
-	if err := s.DB.QueryRow(ctx, `SELECT day_status, schedule_revision
-		FROM business.schedule_public_days($1::date, $1::date, $2, $3)`, day, now, quantity).Scan(&c.DayStatus, &c.ScheduleRevision); err != nil {
-		return Choices{}, gatewayError("schedule", err)
-	}
-	rows, err := s.DB.Query(ctx, `SELECT slot_id::text, starts_at, ends_at, availability, reason_code
-		FROM business.schedule_public_slots($1::date, $2, $3, $4)`, day, mode, now, quantity)
+	rows, err := s.DB.Query(ctx, `SELECT d.day_status, d.schedule_revision, s.slot_id::text, s.starts_at, s.ends_at,
+		s.availability, s.reason_code
+		FROM business.schedule_public_days($1::date, $1::date, $3, $4) d
+		LEFT JOIN business.schedule_public_slots($1::date, $2, $3, $4) s ON true
+		ORDER BY s.starts_at`, day, mode, now, quantity)
 	if err != nil {
 		return Choices{}, gatewayError("schedule", err)
 	}
-	slots, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Slot, error) {
+	defer rows.Close()
+	for rows.Next() {
+		var id *string
 		var sl Slot
-		return sl, r.Scan(&sl.ID, &sl.StartsAt, &sl.EndsAt, &sl.Availability, &sl.ReasonCode)
-	})
-	if err != nil {
-		return Choices{}, gatewayError("schedule", err)
+		var starts, ends *time.Time
+		var availability *string
+		if err := rows.Scan(&c.DayStatus, &c.ScheduleRevision, &id, &starts, &ends, &availability, &sl.ReasonCode); err != nil {
+			return Choices{}, gatewayError("schedule", err)
+		}
+		if id == nil {
+			continue // a day without starts
+		}
+		sl.ID, sl.StartsAt, sl.EndsAt, sl.Availability = *id, *starts, *ends, *availability
+		c.Slots = append(c.Slots, sl)
 	}
-	if slots != nil {
-		c.Slots = slots
+	if err := rows.Err(); err != nil {
+		return Choices{}, gatewayError("schedule", err)
 	}
 	return c, nil
 }
@@ -429,10 +451,29 @@ func (s *Store) PublicLots(ctx context.Context) ([]Lot, error) {
 
 // StaffLots lists lots for staff (withdrawn ones too when asked).
 func (s *Store) StaffLots(ctx context.Context, subject string, includeInactive bool) ([]Lot, error) {
+	return s.staffLots(ctx, subject, includeInactive, nil)
+}
+
+// StaffLot returns one lot, or ErrNotFound.
+func (s *Store) StaffLot(ctx context.Context, subject, id string) (Lot, error) {
+	if !catalog.ValidUUID(id) {
+		return Lot{}, catalog.ErrNotFound
+	}
+	lots, err := s.staffLots(ctx, subject, true, &id)
+	if err != nil {
+		return Lot{}, err
+	}
+	if len(lots) != 1 {
+		return Lot{}, catalog.ErrNotFound
+	}
+	return lots[0], nil
+}
+
+func (s *Store) staffLots(ctx context.Context, subject string, includeInactive bool, id *string) ([]Lot, error) {
 	rows, err := s.DB.Query(ctx, `SELECT lot_id::text, lot_kind, cake_id::text, cake_name, variant_id::text, flavour,
 		size_code, price_minor, resale_base_minor, produced, reserved, sold, expires_at, original_handover_at,
 		released_at, withdrawn_at, lot_version, recipe_version_id::text, created_at
-		FROM business.lot_staff_list($1::uuid, $2)`, subject, includeInactive)
+		FROM business.lot_staff_list($1::uuid, $2, $3::uuid)`, subject, includeInactive, id)
 	if err != nil {
 		return nil, gatewayError("lots", err)
 	}
@@ -479,8 +520,20 @@ type VersionWindow struct {
 
 // CurrentVersion returns the current schedule version, or ErrNotFound.
 func (s *Store) CurrentVersion(ctx context.Context, subject string) (Version, error) {
+	return s.version(ctx, subject, nil)
+}
+
+// VersionByID returns a published version, or ErrNotFound.
+func (s *Store) VersionByID(ctx context.Context, subject, id string) (Version, error) {
+	if !catalog.ValidUUID(id) {
+		return Version{}, catalog.ErrNotFound
+	}
+	return s.version(ctx, subject, &id)
+}
+
+func (s *Store) version(ctx context.Context, subject string, id *string) (Version, error) {
 	var raw []byte
-	if err := s.DB.QueryRow(ctx, `SELECT business.schedule_staff_current($1::uuid)`, subject).Scan(&raw); err != nil {
+	if err := s.DB.QueryRow(ctx, `SELECT business.schedule_staff_version($1::uuid, $2::uuid)`, subject, id).Scan(&raw); err != nil {
 		return Version{}, gatewayError("schedule", err)
 	}
 	if raw == nil {
@@ -577,7 +630,7 @@ func (s *Store) PublishVersion(ctx context.Context, subject, key string, in Vers
 	}
 	return s.command(ctx, CmdVersionCreate, `SELECT result_id::text, replayed FROM business.schedule_version_create(
 		$1::uuid, $2, $3, $4, $5, $6::date, $7::json, $8::date[])`,
-		subject, key, catalog.BodyHash(CmdVersionCreate, "", in), in.ExpectedRevision, in.StandardLimit,
+		subject, key, catalog.BodyHash(CmdVersionCreate, "", in), *in.ExpectedRevision, *in.StandardLimit,
 		in.BookableUntil, string(raw), closed)
 }
 
@@ -586,7 +639,7 @@ func (s *Store) SetDayLimit(ctx context.Context, subject, key string, day time.T
 	date := day.Format(time.DateOnly)
 	return s.command(ctx, CmdDayLimitSet, `SELECT result_id::text, replayed FROM business.capacity_day_limit_set(
 		$1::uuid, $2, $3, $4::date, $5, $6)`,
-		subject, key, catalog.BodyHash(CmdDayLimitSet, date, in), date, in.ExpectedVersion, in.StandardLimit)
+		subject, key, catalog.BodyHash(CmdDayLimitSet, date, in), date, *in.ExpectedVersion, in.StandardLimit)
 }
 
 // CreateLot records a finished cake lot.
@@ -626,11 +679,13 @@ var invalidFields = map[string]string{
 	"windows_invalid": "weekdays", "starts_invalid": "weekdays", "closed_dates_invalid": "closed_dates",
 	"standard_limit_invalid": "standard_limit", "day_invalid": "date", "lot_invalid": "kind",
 	"expires_invalid": "expires_at", "action_invalid": "action", "expected_version_required": "expected_version",
+	"handover_invalid": "original_handover_at", "allocation_invalid": "input",
 	"idempotency_key_invalid": "Idempotency-Key",
 }
 
 var invalidMessages = map[string]string{
-	"expires_invalid": "must be in the future",
+	"expires_invalid":  "must be in the future",
+	"handover_invalid": "must be in the future and no later than expires_at",
 }
 
 var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "state_conflict": true, "duplicate": true}

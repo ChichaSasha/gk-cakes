@@ -9,7 +9,10 @@
 -- opening hours per weekday, the exact 60-minute appointment starts (each
 -- must end within the hours; no inferred grid) and closed dates. A version is
 -- immutable and applies to new bookings only. Nothing is seeded: until the
--- chef publishes a version nothing is bookable.
+-- chef publishes a version nothing is bookable. An appointment may not touch
+-- local 01:00-02:00, where UK clocks change (K00: no nonexistent or
+-- ambiguous local times), so every start maps to one instant and lasts
+-- exactly 60 minutes.
 --
 -- Capacity. Places are counted in cakes per handover date. The limit is soft
 -- (K04): admission checks committed standard cakes plus the requested
@@ -82,7 +85,7 @@ CREATE TABLE business.capacity_allocation (
   -- The order this allocation belongs to (FK to orders added by GK-025).
   order_ref      uuid NOT NULL,
   day            date NOT NULL REFERENCES business.handover_day (day),
-  cake_quantity  integer NOT NULL CHECK (cake_quantity BETWEEN 1 AND 1000),
+  cake_quantity  integer NOT NULL CHECK (cake_quantity >= 1),
   classification text NOT NULL CHECK (classification IN ('standard', 'chef_extra')),
   state          text NOT NULL CHECK (state IN ('tentative', 'committed', 'released')),
   -- Tentative only: when reconciliation should look at it (K04: a trigger,
@@ -121,7 +124,9 @@ CREATE TABLE business.finished_cake_lot (
   CONSTRAINT finished_cake_lot_resale CHECK (
     (kind = 'resale') = (resale_base_minor IS NOT NULL AND original_handover_at IS NOT NULL)),
   -- K01: explicit base price x 50%, half up.
-  CONSTRAINT finished_cake_lot_resale_price CHECK (kind <> 'resale' OR price_minor = (resale_base_minor + 1) / 2)
+  CONSTRAINT finished_cake_lot_resale_price CHECK (kind <> 'resale' OR price_minor = (resale_base_minor + 1) / 2),
+  -- A resale cake is handed over at its original time, before it expires.
+  CONSTRAINT finished_cake_lot_resale_handover CHECK (original_handover_at IS NULL OR original_handover_at <= expires_at)
 );
 
 CREATE INDEX finished_cake_lot_public_idx ON business.finished_cake_lot (expires_at)
@@ -227,7 +232,7 @@ $$;
 CREATE FUNCTION business.schedule_check_range(p_from date, p_to date)
 RETURNS void
 LANGUAGE plpgsql
-IMMUTABLE
+STABLE
 SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
 AS $$
@@ -297,7 +302,7 @@ BEGIN
   slots AS (
     SELECT st.starts,
            (p_day + st.starts) AT TIME ZONE 'Europe/London' AS s_at,
-           (p_day + st.starts + interval '60 minutes') AT TIME ZONE 'Europe/London' AS e_at
+           ((p_day + st.starts) AT TIME ZONE 'Europe/London') + interval '60 minutes' AS e_at
     FROM cur
     JOIN business.schedule_start st
       ON st.schedule_version_id = cur.version_id AND st.weekday = extract(isodow FROM p_day)::smallint)
@@ -319,7 +324,7 @@ BEGIN
          END,
          cur.version_revision
   FROM slots s CROSS JOIN f CROSS JOIN cur
-  ORDER BY s.starts;
+  ORDER BY s.s_at, s.starts;
 END;
 $$;
 
@@ -341,6 +346,7 @@ AS $$
   JOIN business.cake c ON c.id = v.cake_id
   JOIN business.recipe_version r ON r.id = l.recipe_version_id
   WHERE l.released_at IS NOT NULL AND l.withdrawn_at IS NULL AND l.expires_at > p_now
+    AND (l.original_handover_at IS NULL OR l.original_handover_at > p_now)
     AND l.produced_quantity - l.reserved_quantity - l.sold_quantity > 0
     AND c.state = 'active' AND v.archived_at IS NULL
   ORDER BY l.expires_at, l.id
@@ -349,7 +355,8 @@ $$;
 
 -- ------------------------------------------------------------ staff reads
 
-CREATE FUNCTION business.schedule_staff_current(p_actor uuid)
+-- A published version (p_version NULL: the current one), or NULL.
+CREATE FUNCTION business.schedule_staff_version(p_actor uuid, p_version uuid)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -374,7 +381,9 @@ BEGIN
            'closed_dates', coalesce((SELECT pg_catalog.json_agg(c.day ORDER BY c.day)
                                      FROM business.schedule_closed_date c WHERE c.schedule_version_id = v.id), '[]'::json))
   INTO v_result
-  FROM business.schedule_version v ORDER BY v.revision DESC LIMIT 1;
+  FROM business.schedule_version v
+  WHERE p_version IS NULL OR v.id = p_version
+  ORDER BY v.revision DESC LIMIT 1;
   RETURN v_result;
 END;
 $$;
@@ -403,7 +412,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION business.lot_staff_list(p_actor uuid, p_include_inactive boolean)
+CREATE FUNCTION business.lot_staff_list(p_actor uuid, p_include_inactive boolean, p_lot uuid)
 RETURNS TABLE (lot_id uuid, lot_kind text, cake_id uuid, cake_name text, variant_id uuid, flavour text,
                size_code text, price_minor bigint, resale_base_minor bigint, produced integer, reserved integer,
                sold integer, expires_at timestamptz, original_handover_at timestamptz, released_at timestamptz,
@@ -422,7 +431,7 @@ BEGIN
   JOIN business.variant v ON v.id = l.variant_id
   JOIN business.cake c ON c.id = v.cake_id
   JOIN business.recipe_version r ON r.id = l.recipe_version_id
-  WHERE p_include_inactive OR l.withdrawn_at IS NULL
+  WHERE (p_lot IS NULL OR l.id = p_lot) AND (p_include_inactive OR p_lot IS NOT NULL OR l.withdrawn_at IS NULL)
   ORDER BY l.created_at DESC, l.id DESC
   LIMIT 500;
 END;
@@ -485,9 +494,11 @@ BEGIN
   FOR v_window IN SELECT e FROM pg_catalog.json_array_elements(p_windows) e LOOP
     IF pg_catalog.json_typeof(v_window) <> 'object'
        OR pg_catalog.json_typeof(v_window -> 'weekday') IS DISTINCT FROM 'number'
-       OR (v_window ->> 'weekday') !~ '^[1-7]$'
-       OR (v_window ->> 'opens') !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'
-       OR (v_window ->> 'closes') !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+       OR coalesce((v_window ->> 'weekday') !~ '^[1-7]$', true)
+       OR pg_catalog.json_typeof(v_window -> 'opens') IS DISTINCT FROM 'string'
+       OR pg_catalog.json_typeof(v_window -> 'closes') IS DISTINCT FROM 'string'
+       OR coalesce((v_window ->> 'opens') !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$', true)
+       OR coalesce((v_window ->> 'closes') !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$', true)
        OR pg_catalog.json_typeof(v_window -> 'starts') IS DISTINCT FROM 'array'
        OR pg_catalog.json_array_length(v_window -> 'starts') > 48 THEN
       RAISE EXCEPTION 'windows_invalid' USING ERRCODE = 'GK422';
@@ -509,8 +520,11 @@ BEGIN
       END IF;
       v_starts := (v_start #>> '{}')::time;
       -- The 60-minute appointment must start and end within the window
-      -- (BO-GK-001.pickup_slot end_must_be_within_pickup_hours).
-      IF v_starts < v_opens OR v_starts > v_closes - interval '60 minutes' OR v_closes - interval '60 minutes' < v_opens THEN
+      -- (BO-GK-001.pickup_slot end_must_be_within_pickup_hours), compared
+      -- as intervals so nothing wraps at midnight, and must not touch local
+      -- 01:00-02:00 (UK clock changes).
+      IF v_starts < v_opens OR v_starts::interval + interval '60 minutes' > v_closes::interval
+         OR (v_starts > time '00:00' AND v_starts < time '02:00') THEN
         RAISE EXCEPTION 'starts_invalid' USING ERRCODE = 'GK422';
       END IF;
       BEGIN
@@ -553,6 +567,7 @@ $$;
 -- Sets a day's standard limit (a chef override of the schedule default).
 -- Lowering it below what is committed keeps every accepted order (K04).
 -- p_expected_version is the day's version, 0 when the day has no row yet.
+-- p_limit NULL clears the override (the schedule default applies again).
 CREATE FUNCTION business.capacity_day_limit_set(p_actor uuid, p_key text, p_body_sha256 text, p_day date,
                                                 p_expected_version integer, p_limit integer)
 RETURNS TABLE (result_id uuid, replayed boolean)
@@ -575,7 +590,7 @@ BEGIN
   IF p_day IS NULL THEN
     RAISE EXCEPTION 'day_invalid' USING ERRCODE = 'GK422';
   END IF;
-  IF p_limit IS NULL OR p_limit NOT BETWEEN 0 AND 100 THEN
+  IF p_limit NOT BETWEEN 0 AND 100 THEN
     RAISE EXCEPTION 'standard_limit_invalid' USING ERRCODE = 'GK422';
   END IF;
   IF p_expected_version IS NULL OR p_expected_version < 0 THEN
@@ -586,7 +601,12 @@ BEGIN
     RAISE EXCEPTION 'stale_version' USING ERRCODE = 'GK409';
   END IF;
   IF v_version IS NULL THEN
-    INSERT INTO business.handover_day (day, standard_limit, updated_by) VALUES (p_day, p_limit, v_account);
+    BEGIN
+      INSERT INTO business.handover_day (day, standard_limit, updated_by) VALUES (p_day, p_limit, v_account);
+    EXCEPTION WHEN unique_violation THEN
+      -- Another command or checkout created the day meanwhile.
+      RAISE EXCEPTION 'stale_version' USING ERRCODE = 'GK409';
+    END;
   ELSE
     UPDATE business.handover_day h
     SET standard_limit = p_limit, version = h.version + 1, updated_at = pg_catalog.now(), updated_by = v_account
@@ -610,13 +630,14 @@ SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
-  v_limit integer := business.capacity_day_lock(p_day);
+  v_limit integer;
   v_committed bigint;
   v_id uuid := pg_catalog.gen_random_uuid();
 BEGIN
-  IF p_order IS NULL OR p_quantity IS NULL OR p_quantity < 1 OR p_expires_at IS NULL THEN
+  IF p_order IS NULL OR p_day IS NULL OR p_quantity IS NULL OR p_quantity < 1 OR p_expires_at IS NULL THEN
     RAISE EXCEPTION 'allocation_invalid' USING ERRCODE = 'GK422';
   END IF;
+  v_limit := business.capacity_day_lock(p_day);
   SELECT coalesce(sum(a.cake_quantity), 0) INTO v_committed
   FROM business.capacity_allocation a
   WHERE a.day = p_day AND a.classification = 'standard' AND a.state = 'committed';
@@ -702,13 +723,14 @@ DECLARE
   v_id uuid := pg_catalog.gen_random_uuid();
   v_recipe uuid;
   v_archived timestamptz;
+  v_stock text;
   v_price bigint;
 BEGIN
   IF v_prior IS NOT NULL THEN
     RETURN QUERY SELECT v_prior, true;
     RETURN;
   END IF;
-  SELECT v.current_recipe_version_id, v.archived_at INTO v_recipe, v_archived
+  SELECT v.current_recipe_version_id, v.archived_at, v.stock_mode INTO v_recipe, v_archived, v_stock
   FROM business.variant v WHERE v.id = p_variant FOR SHARE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'variant not found' USING ERRCODE = 'GK404';
@@ -722,6 +744,11 @@ BEGIN
     END IF;
     v_price := (p_resale_base_minor + 1) / 2;
   ELSIF p_kind = 'ready' THEN
+    -- Ready stock is a ready-stock variant; its per-cake price is the
+    -- chef's (GK-002 ready_cake_price_editing).
+    IF v_stock <> 'ready_stock' THEN
+      RAISE EXCEPTION 'state_conflict' USING ERRCODE = 'GK409';
+    END IF;
     IF p_price_minor IS NULL OR p_resale_base_minor IS NOT NULL OR p_original_handover_at IS NOT NULL THEN
       RAISE EXCEPTION 'lot_invalid' USING ERRCODE = 'GK422';
     END IF;
@@ -731,6 +758,9 @@ BEGIN
   END IF;
   IF p_expires_at IS NULL OR p_expires_at <= pg_catalog.now() THEN
     RAISE EXCEPTION 'expires_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  IF p_kind = 'resale' AND (p_original_handover_at <= pg_catalog.now() OR p_original_handover_at > p_expires_at) THEN
+    RAISE EXCEPTION 'handover_invalid' USING ERRCODE = 'GK422';
   END IF;
   BEGIN
     INSERT INTO business.finished_cake_lot (id, variant_id, recipe_version_id, kind, produced_quantity, price_minor,
@@ -811,7 +841,10 @@ BEGIN
     RAISE EXCEPTION 'lot not found' USING ERRCODE = 'GK404';
   END IF;
   IF v_lot.released_at IS NULL OR v_lot.withdrawn_at IS NOT NULL OR v_lot.expires_at <= p_now
-     OR v_lot.produced_quantity - v_lot.reserved_quantity - v_lot.sold_quantity < p_quantity THEN
+     OR (v_lot.original_handover_at IS NOT NULL AND v_lot.original_handover_at <= p_now)
+     OR v_lot.produced_quantity - v_lot.reserved_quantity - v_lot.sold_quantity < p_quantity
+     OR NOT EXISTS (SELECT 1 FROM business.variant v JOIN business.cake c ON c.id = v.cake_id
+                    WHERE v.id = v_lot.variant_id AND v.archived_at IS NULL AND c.state = 'active') THEN
     RAISE EXCEPTION 'stock_unavailable' USING ERRCODE = 'GK409';
   END IF;
   UPDATE business.finished_cake_lot l SET reserved_quantity = l.reserved_quantity + p_quantity WHERE l.id = p_lot;
@@ -856,9 +889,9 @@ REVOKE ALL ON FUNCTION business.schedule_check_range(date, date) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.schedule_public_days(date, date, timestamptz, integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.schedule_public_slots(date, text, timestamptz, integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.lot_public_list(timestamptz) FROM PUBLIC;
-REVOKE ALL ON FUNCTION business.schedule_staff_current(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.schedule_staff_version(uuid, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.schedule_staff_days(uuid, date, date, timestamptz) FROM PUBLIC;
-REVOKE ALL ON FUNCTION business.lot_staff_list(uuid, boolean) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.lot_staff_list(uuid, boolean, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.schedule_version_create(uuid, text, text, integer, integer, date, json, date[]) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.capacity_day_lock(date) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.capacity_day_limit_set(uuid, text, text, date, integer, integer) FROM PUBLIC;
@@ -873,9 +906,9 @@ REVOKE ALL ON FUNCTION business.lot_settle(uuid, integer, boolean) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION business.schedule_public_days(date, date, timestamptz, integer) TO gk_api;
 GRANT EXECUTE ON FUNCTION business.schedule_public_slots(date, text, timestamptz, integer) TO gk_api;
 GRANT EXECUTE ON FUNCTION business.lot_public_list(timestamptz) TO gk_api;
-GRANT EXECUTE ON FUNCTION business.schedule_staff_current(uuid) TO gk_api;
+GRANT EXECUTE ON FUNCTION business.schedule_staff_version(uuid, uuid) TO gk_api;
 GRANT EXECUTE ON FUNCTION business.schedule_staff_days(uuid, date, date, timestamptz) TO gk_api;
-GRANT EXECUTE ON FUNCTION business.lot_staff_list(uuid, boolean) TO gk_api;
+GRANT EXECUTE ON FUNCTION business.lot_staff_list(uuid, boolean, uuid) TO gk_api;
 GRANT EXECUTE ON FUNCTION business.schedule_version_create(uuid, text, text, integer, integer, date, json, date[]) TO gk_api;
 GRANT EXECUTE ON FUNCTION business.capacity_day_limit_set(uuid, text, text, date, integer, integer) TO gk_api;
 GRANT EXECUTE ON FUNCTION business.lot_create(uuid, text, text, uuid, text, integer, bigint, bigint, timestamptz, timestamptz) TO gk_api;

@@ -725,7 +725,9 @@ is seeded: until the chef publishes a schedule version, every date is
   chef-approved date, never a month conversion), opening hours per weekday,
   the exact 60-minute appointment starts (each must start and end within the
   hours; no inferred grid) and closed dates. Local times are Europe/London;
-  slot instants are computed per date, so daylight saving is handled.
+  slot instants are computed per date. An appointment may not touch local
+  01:00-02:00, where UK clocks change, so every start maps to one instant and
+  each appointment lasts exactly 60 minutes.
 - **Day capacity** is counted in cakes per handover date and is soft (K04).
   Checkout (GK-025) will call the owner-internal engine: `capacity_admit`
   refuses (`day_full`) when committed standard cakes plus the quantity exceed
@@ -734,25 +736,36 @@ is seeded: until the chef publishes a schedule version, every date is
   commit; `capacity_commit` never refuses; `capacity_release` frees. The chef
   may set a day's limit below what is committed; accepted orders stay. Chef
   extras are outside the standard count but in the staff workload. The public
-  sees only `remaining = max(0, limit - committed - tentative)`.
+  sees only `remaining = max(0, limit - committed - tentative)`; every
+  tentative hold counts until reconciliation releases it (the 15 minutes is a
+  reconcile trigger, K04). A day override can be cleared
+  (`use_schedule_default`) so later schedule defaults apply again.
 - **Lead time** for a new purchase is 192 elapsed hours from now to the
   appointment start, equality allowed (BO-GK-001.lead_time). Chef-approved
   shorter lead for a specific finished cake (`lead_time_exception`) comes
   with checkout.
 - **Finished cake lots** (ready stock or resale) are physical cakes of a
   variant's current recipe version: created unreleased, released by the
-  chef, withdrawn; `lot_reserve` is exclusive (no oversell) and `lot_settle`
-  returns or sells reserved cakes. A resale lot keeps its original handover
-  time and costs the chef-entered base x 50%, half up.
+  chef, withdrawn; `lot_reserve` is exclusive (no oversell; a waiting second
+  reservation gets `stock_unavailable`) and `lot_settle` returns or sells
+  reserved cakes. Ready lots need a ready-stock variant and carry the chef's
+  per-cake price (GK-002 `ready_cake_price_editing`), independent of the
+  recipe version's price. A resale lot keeps its original handover time,
+  which must be in the future and no later than its expiry, and costs the
+  chef-entered base x 50%, half up. Lots are offered and reservable only while
+  released, not withdrawn, unexpired, before a resale handover, and of an
+  active cake and variant.
 
 | Route | Who | Notes |
 | --- | --- | --- |
-| `GET /api/v1/availability?from&to&quantity` | anyone | at most 31 dates; per date `status` (`open`, `full`, `lead_time`, `closed`, `outside_horizon`, `no_times`) and `remaining_places` |
+| `GET /api/v1/availability?from&to&quantity` | anyone | at most 31 dates; `{timezone, as_of, schedule_version, days[{date, status, remaining_places}]}`; status `open`, `full`, `lead_time`, `closed`, `outside_horizon` or `no_times` |
 | `GET /api/v1/schedule?date&fulfillment_mode&purpose=new_purchase&quantity` | anyone | `slots[{id, starts_at, ends_at, availability, reason_code}]`: `available`, `requestable` (GK delivery: subject to chef confirmation) or `unavailable` (`lead_time`, `full`, `closed`, `outside_horizon`); stable slot IDs per version; no per-slot cap; no hold |
-| `GET /api/v1/ready-cakes` | anyone | released, unexpired lots with stock left |
-| `GET /api/v1/admin/schedule`, `/admin/days?from&to`, `/admin/lots` | chef, fulfilment, technical support | day view: limit, override, committed, tentative, chef extras, workload, remaining, `online_closed` |
-| `POST /api/v1/admin/schedule/versions` | chef | `{expected_revision, standard_limit, bookable_until, weekdays[{weekday, opens, closes, starts}], closed_dates}` |
-| `POST /api/v1/admin/days/{date}/limit` | chef | `{expected_version (0 for a day without one), standard_limit}` |
+| `GET /api/v1/ready-cakes` | anyone | `{cakes: [...]}`: offered lots with stock left |
+| `GET /api/v1/admin/schedule` | chef, fulfilment, technical support | the current version; 404 before the first one |
+| `GET /api/v1/admin/days?from&to` | chef, fulfilment, technical support | `{timezone, days[...]}`: limit, override, version, committed, tentative, chef extras, workload, remaining, `online_closed` |
+| `GET /api/v1/admin/lots?include_inactive=true\|false` | chef, fulfilment, technical support | `{lots: [...]}` with stock counts |
+| `POST /api/v1/admin/schedule/versions` | chef | `{expected_revision, standard_limit, bookable_until, weekdays[{weekday, opens, closes, starts}], closed_dates}`; answers with the version it published, also on a replay |
+| `POST /api/v1/admin/days/{date}/limit` | chef | `{expected_version (0 for a day without a row), standard_limit}` or `{expected_version, use_schedule_default: true}` |
 | `POST /api/v1/admin/lots` | chef | `{variant_id, kind: ready\|resale, quantity, price_minor \| resale_base_minor + original_handover_at, expires_at}` |
 | `POST /api/v1/admin/lots/{id}/state` | chef | `{expected_version, action: release\|withdraw}` |
 

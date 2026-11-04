@@ -25,6 +25,7 @@ import (
 	"github.com/ChichaSasha/gk-cakes/api/internal/schedule"
 	"github.com/ChichaSasha/gk-cakes/api/migrations"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -49,7 +50,7 @@ func ownerSchedule(revision int, bookableUntil string) schedule.VersionInput {
 		return out
 	}
 	return schedule.VersionInput{
-		ExpectedRevision: revision, StandardLimit: 7, BookableUntil: bookableUntil,
+		ExpectedRevision: ptr(revision), StandardLimit: ptr(7), BookableUntil: bookableUntil,
 		Weekdays: []schedule.WeekdayInput{
 			{Weekday: "thursday", Opens: "11:00", Closes: "17:00", Starts: half("11:00", "16:00")},
 			{Weekday: "friday", Opens: "10:00", Closes: "17:00", Starts: half("10:00", "16:00")},
@@ -116,6 +117,30 @@ func (h *harness) mustOwner(t *testing.T, sql string, args ...any) {
 
 func day(s string) time.Time { d, _ := time.Parse(time.DateOnly, s); return d }
 
+func pgMessageAny(err error) string {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Message
+	}
+	return ""
+}
+
+func pgMessage(err error) string {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "GK422" {
+		return pgErr.Message
+	}
+	return ""
+}
+
+// rawPublish calls the gateway directly, bypassing the API's validation.
+func (h *harness) rawPublish(expected int, key, windows string) error {
+	var id string
+	var replayed bool
+	return h.api.QueryRow(h.ctx, `SELECT result_id::text, replayed FROM business.schedule_version_create(
+		$1::uuid, $2, $3, $4, 7, '2027-01-05', $5::json, '{}')`, chef, key, strings.Repeat("a", 64), expected, windows).Scan(&id, &replayed)
+}
+
 func (h *harness) publish(t *testing.T, key string, in schedule.VersionInput) {
 	t.Helper()
 	if err := in.Validate(); err != nil {
@@ -161,19 +186,34 @@ func TestScheduleVersionsAndPublicDays(t *testing.T) {
 	if _, err := h.store.PublishVersion(h.ctx, chef, "v-stale", ownerSchedule(0, "2027-01-05")); conflict(err) != "stale_version" {
 		t.Fatalf("stale publish: %v", err)
 	}
-	for name, starts := range map[string][]string{"ends after closing": {"14:30"}, "before opening": {"12:00"}} {
+	for name, c := range map[string]struct{ weekday, opens, closes, start, msg string }{
+		"ends-after-closing": {"saturday", "12:30", "15:00", "14:30", "starts_invalid"}, // K06 case S05
+		"before-opening":     {"saturday", "12:30", "15:00", "12:00", "starts_invalid"},
+		"past-midnight":      {"sunday", "00:00", "00:30", "00:00", "starts_invalid"},
+		"clock-change-hour":  {"sunday", "00:00", "03:00", "01:30", "starts_invalid"},
+		"touches-01":         {"sunday", "00:00", "03:00", "00:15", "starts_invalid"},
+	} {
 		bad := ownerSchedule(1, "2027-01-05")
-		bad.Weekdays[2].Starts = starts
+		bad.Weekdays = []schedule.WeekdayInput{{Weekday: c.weekday, Opens: c.opens, Closes: c.closes, Starts: []string{c.start}}}
 		if err := bad.Validate(); err == nil {
 			t.Errorf("%s: API validation passed", name)
 		}
-		raw := `[{"weekday":6,"opens":"12:30","closes":"15:00","starts":["` + starts[0] + `"]}]`
-		var id string
-		var replayed bool
-		err := h.api.QueryRow(h.ctx, `SELECT result_id::text, replayed FROM business.schedule_version_create(
-			$1::uuid, $2, $3, 1, 7, '2027-01-05', $4::json, '{}')`, chef, "k-"+name, strings.Repeat("a", 64), raw).Scan(&id, &replayed)
-		if dbtest.SQLState(err) != "GK422" {
-			t.Errorf("%s at the gateway: %v, want GK422", name, err)
+		raw := `[{"weekday":` + map[string]string{"saturday": "6", "sunday": "7"}[c.weekday] + `,"opens":"` + c.opens +
+			`","closes":"` + c.closes + `","starts":["` + c.start + `"]}]`
+		if err := h.rawPublish(1, "k-"+name, raw); pgMessage(err) != c.msg {
+			t.Errorf("%s at the gateway: %v, want GK422 %s", name, err, c.msg)
+		}
+	}
+	// Malformed windows are refused as input, not as constraint errors.
+	for name, raw := range map[string]string{
+		"null-opens":    `[{"weekday":6,"opens":null,"closes":"15:00","starts":[]}]`,
+		"missing-close": `[{"weekday":6,"opens":"12:30","starts":[]}]`,
+		"number-start":  `[{"weekday":6,"opens":"12:30","closes":"15:00","starts":[1230]}]`,
+		"weekday-8":     `[{"weekday":8,"opens":"12:30","closes":"15:00","starts":[]}]`,
+		"not-object":    `[6]`,
+	} {
+		if err := h.rawPublish(1, "k-"+name, raw); dbtest.SQLState(err) != "GK422" {
+			t.Errorf("%s: %v, want GK422", name, err)
 		}
 	}
 
@@ -313,10 +353,10 @@ func TestSoftDayCapacity(t *testing.T) {
 		t.Fatalf("admission at 8 of 7: %v", err)
 	}
 	// The chef lowers the limit 7 -> 5: all 8 stay committed.
-	if _, err := h.store.SetDayLimit(h.ctx, chef, "lim", day(d), schedule.DayLimitInput{ExpectedVersion: 1, StandardLimit: 5}); err != nil {
+	if _, err := h.store.SetDayLimit(h.ctx, chef, "lim", day(d), schedule.DayLimitInput{ExpectedVersion: ptr(1), StandardLimit: ptr(5)}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.store.SetDayLimit(h.ctx, chef, "lim2", day(d), schedule.DayLimitInput{ExpectedVersion: 1, StandardLimit: 6}); conflict(err) != "stale_version" {
+	if _, err := h.store.SetDayLimit(h.ctx, chef, "lim2", day(d), schedule.DayLimitInput{ExpectedVersion: ptr(1), StandardLimit: ptr(6)}); conflict(err) != "stale_version" {
 		t.Fatalf("stale limit: %v", err)
 	}
 	// A chef extra of 10 cakes is visible as workload, outside the count.
@@ -331,9 +371,6 @@ func TestSoftDayCapacity(t *testing.T) {
 		got.Workload != 18 || got.RemainingPlaces != 0 || got.OnlineClosed {
 		t.Fatalf("staff day = %+v", got)
 	}
-	if pub := h.days(t, d, d, 1)[d]; *pub.RemainingPlaces != 0 {
-		t.Fatalf("public remaining = %d, want 0 (extras are not shown)", *pub.RemainingPlaces)
-	}
 	// Release frees a place only below the limit; release is idempotent.
 	h.mustOwner(t, "SELECT business.capacity_release($1::uuid, $2::date)", order(8), d)
 	h.mustOwner(t, "SELECT business.capacity_release($1::uuid, $2::date)", order(8), d)
@@ -344,7 +381,7 @@ func TestSoftDayCapacity(t *testing.T) {
 	// the engine directly.
 	h.owner(t, "SELECT business.account_ensure($1::uuid, false)", customer)
 	for _, s := range []string{fulfil, customer} {
-		if _, err := h.store.SetDayLimit(h.ctx, s, "x", day(d), schedule.DayLimitInput{ExpectedVersion: 2, StandardLimit: 9}); !errors.Is(err, catalog.ErrForbidden) {
+		if _, err := h.store.SetDayLimit(h.ctx, s, "x", day(d), schedule.DayLimitInput{ExpectedVersion: ptr(2), StandardLimit: ptr(9)}); !errors.Is(err, catalog.ErrForbidden) {
 			t.Errorf("%s sets a limit: %v", s, err)
 		}
 	}
@@ -408,29 +445,41 @@ func TestFinishedCakeLots(t *testing.T) {
 	if len(lots) != 1 || lots[0].Available != 1 || lots[0].PriceMinor != 9000 || lots[0].Produced != nil || lots[0].Version != 0 {
 		t.Fatalf("public lots = %+v", lots)
 	}
-	// Two concurrent reservations of the last cake: exactly one wins.
-	var wg sync.WaitGroup
-	errs := make([]error, 2)
-	for k := range 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			errs[k] = h.owner(t, "SELECT business.lot_reserve($1::uuid, 1, now())", lot.ID)
-		}()
-	}
-	wg.Wait()
-	won := 0
-	for _, err := range errs {
-		switch dbtest.SQLState(err) {
-		case "":
-			won++
-		case "GK409":
-		default:
-			t.Fatalf("reserve: %v", err)
+	// A reservation in progress holds the lot: a second one waits, then
+	// finds no stock (stock_unavailable), never a constraint error.
+	reserve := func(tx pgx.Tx) error {
+		if _, err := tx.Exec(h.ctx, "SET LOCAL ROLE gk_owner"); err != nil {
+			return err
 		}
+		_, err := tx.Exec(h.ctx, "SELECT business.lot_reserve($1::uuid, 1, now())", lot.ID)
+		return err
 	}
-	if won != 1 {
-		t.Fatalf("%d reservations of one cake succeeded", won)
+	first, err := h.db.MigratorConn(t).Begin(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reserve(first); err != nil {
+		t.Fatal(err)
+	}
+	second := make(chan error, 1)
+	go func() {
+		tx, err := h.db.MigratorConn(t).Begin(h.ctx)
+		if err == nil {
+			err = reserve(tx)
+			_ = tx.Rollback(h.ctx)
+		}
+		second <- err
+	}()
+	select {
+	case err := <-second:
+		t.Fatalf("second reservation finished while the first held the lot: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	if err := first.Commit(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-second; pgMessageAny(err) != "stock_unavailable" {
+		t.Fatalf("second reservation: %v, want GK409 stock_unavailable", err)
 	}
 	if lots, _ := h.store.PublicLots(h.ctx); len(lots) != 0 {
 		t.Fatalf("a fully reserved lot is public: %+v", lots)
@@ -441,7 +490,7 @@ func TestFinishedCakeLots(t *testing.T) {
 	}
 
 	// Resale: base x 50%, half up; original handover kept.
-	original := time.Now().Add(-24 * time.Hour).UTC().Truncate(time.Second)
+	original := time.Now().Add(48 * time.Hour).UTC().Truncate(time.Second)
 	for base, price := range map[int64]int64{9000: 4500, 9001: 4501, 1: 1} {
 		r, err := h.store.CreateLot(h.ctx, chef, fmt.Sprintf("resale-%d", base), schedule.LotInput{
 			VariantID: variant, Kind: schedule.LotResale, Quantity: 1, ResaleBaseMinor: ptr(base),
@@ -456,7 +505,7 @@ func TestFinishedCakeLots(t *testing.T) {
 			}
 		}
 	}
-	// A resale lot cannot carry its own price; withdrawn lots are hidden.
+	// A resale lot cannot carry its own price.
 	if _, err := h.api.Exec(h.ctx, `SELECT * FROM business.lot_create($1::uuid, 'bad', $2, $3::uuid, 'resale', 1, 100, 9000, now(), now() + interval '1 day')`,
 		chef, strings.Repeat("d", 64), variant); dbtest.SQLState(err) != "GK422" {
 		t.Fatalf("resale with a price: %v", err)
@@ -531,4 +580,226 @@ func TestScheduleOverHTTP(t *testing.T) {
 		t.Fatalf("limit = %v", limit)
 	}
 	call("GET", "/api/v1/ready-cakes", "", nil, 200)
+}
+
+func TestCapacityEdges(t *testing.T) {
+	h := newHarness(t)
+	h.publish(t, "v1", ownerSchedule(0, "2027-01-05"))
+	const d = "2026-11-14" // Saturday, last start 14:00 GMT
+	order := func(i int) string { return fmt.Sprintf("00000000-0000-4000-9000-%012x", i) }
+
+	// Day-level lead time: the last start exactly 192 h away keeps the day
+	// open; one second later it closes.
+	last := time.Date(2026, 11, 14, 14, 0, 0, 0, time.UTC)
+	h.now = last.Add(-192 * time.Hour)
+	if got := h.days(t, d, d, 1)[d].Status; got != "open" {
+		t.Fatalf("last start exactly 192 h away: %s", got)
+	}
+	h.now = h.now.Add(time.Second)
+	if got := h.days(t, d, d, 1)[d].Status; got != "lead_time" {
+		t.Fatalf("last start 192 h - 1 s away: %s", got)
+	}
+	h.now = time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)
+
+	// Chef extras neither reduce public places nor block admission.
+	h.mustOwner(t, "SELECT business.capacity_day_lock($1::date)", d)
+	h.mustOwner(t, `INSERT INTO business.capacity_allocation (id, order_ref, day, cake_quantity, classification, state, chef_evidence)
+		VALUES (gen_random_uuid(), gen_random_uuid(), $1::date, 10, 'chef_extra', 'committed', 'Instagram order agreed by Elina')`, d)
+	if r := *h.days(t, d, d, 1)[d].RemainingPlaces; r != 7 {
+		t.Fatalf("remaining with 10 chef extras = %d, want 7", r)
+	}
+	for i := range 6 {
+		h.mustOwner(t, "SELECT business.capacity_admit($1::uuid, $2::date, 1, now() + interval '15 minutes')", order(i), d)
+		h.mustOwner(t, "SELECT business.capacity_commit($1::uuid, $2::date)", order(i), d)
+	}
+	// One place left: a 2-cake purchase sees every slot full; 1 cake sees
+	// them available.
+	two, _ := h.store.Choices(h.ctx, day(d), schedule.Collection, 2)
+	one, _ := h.store.Choices(h.ctx, day(d), schedule.Collection, 1)
+	if two.DayStatus != "full" || two.Slots[0].Availability != "unavailable" || *two.Slots[0].ReasonCode != "full" ||
+		one.Slots[0].Availability != "available" {
+		t.Fatalf("slots with 1 place left: q2 %+v / q1 %+v", two.Slots[0], one.Slots[0])
+	}
+
+	// The day lock serializes admission with a commit in progress: with 6
+	// committed and order 6 held, committing it (uncommitted transaction)
+	// makes a concurrent admission wait, then refuse.
+	h.mustOwner(t, "SELECT business.capacity_admit($1::uuid, $2::date, 1, now() + interval '15 minutes')", order(6), d)
+	tx, err := h.db.MigratorConn(t).Begin(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(h.ctx, "SET LOCAL ROLE gk_owner; SELECT business.capacity_commit('"+order(6)+"'::uuid, '"+d+"'::date)"); err != nil {
+		t.Fatal(err)
+	}
+	admitted := make(chan error, 1)
+	go func() {
+		admitted <- h.owner(t, "SELECT business.capacity_admit($1::uuid, $2::date, 1, now() + interval '15 minutes')", order(7), d)
+	}()
+	select {
+	case err := <-admitted:
+		t.Fatalf("admission finished during an uncommitted commit: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	if err := tx.Commit(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-admitted; pgMessageAny(err) != "day_full" {
+		t.Fatalf("admission after the 7th commit: %v, want day_full", err)
+	}
+
+	// Clearing an override brings back the schedule default.
+	days, _ := h.store.StaffDays(h.ctx, chef, day(d), day(d))
+	try := func(key string, in schedule.DayLimitInput) error {
+		_, err := h.store.SetDayLimit(h.ctx, chef, key, day(d), in)
+		return err
+	}
+	if err := try("lim3", schedule.DayLimitInput{ExpectedVersion: ptr(days[0].Version), StandardLimit: ptr(3)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := try("clear", schedule.DayLimitInput{ExpectedVersion: ptr(days[0].Version + 1), UseScheduleDefault: true}); err != nil {
+		t.Fatal(err)
+	}
+	if days, _ := h.store.StaffDays(h.ctx, chef, day(d), day(d)); days[0].StandardLimit != 7 || days[0].LimitOverride {
+		t.Fatalf("after clearing: %+v", days[0])
+	}
+
+	// Two first limits on a new day race: one wins, the other is a stale
+	// version (409), never a fault.
+	errs := make([]error, 2)
+	var wg sync.WaitGroup
+	for k := range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, errs[k] = h.store.SetDayLimit(h.ctx, chef, fmt.Sprintf("race-%d", k), day("2026-11-21"),
+				schedule.DayLimitInput{ExpectedVersion: ptr(0), StandardLimit: ptr(4 + k)})
+		}()
+	}
+	wg.Wait()
+	ok, stale := 0, 0
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			ok++
+		case conflict(err) == "stale_version":
+			stale++
+		default:
+			t.Fatalf("racing first limits: %v", err)
+		}
+	}
+	if ok != 1 || stale != 1 {
+		t.Fatalf("racing first limits: %d ok, %d stale", ok, stale)
+	}
+
+	// A replayed publish returns the version it published, not a newer one.
+	h.publish(t, "v2", ownerSchedule(1, "2027-01-05"))
+	res, err := h.store.PublishVersion(h.ctx, chef, "v1", ownerSchedule(0, "2027-01-05"))
+	if err != nil || !res.Replayed {
+		t.Fatalf("replay: %+v, %v", res, err)
+	}
+	if v, err := h.store.VersionByID(h.ctx, chef, res.ID); err != nil || v.Revision != 1 {
+		t.Fatalf("replayed version = %+v, %v; want revision 1", v, err)
+	}
+}
+
+func TestLotVisibilityAndRules(t *testing.T) {
+	h := newHarness(t)
+	variant := h.readyVariant(t)
+	h.store.Now = time.Now
+	expires := time.Now().Add(72 * time.Hour).UTC().Format(time.RFC3339)
+	newLot := func(key string) string {
+		r, err := h.store.CreateLot(h.ctx, chef, key, schedule.LotInput{VariantID: variant, Kind: schedule.LotReady, Quantity: 2,
+			PriceMinor: ptr[int64](8000), ExpiresAt: expires})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.store.SetLotState(h.ctx, chef, key+"-rel", r.ID, schedule.LotStateInput{ExpectedVersion: 1, Action: "release"}); err != nil {
+			t.Fatal(err)
+		}
+		return r.ID
+	}
+	public := func() map[string]bool {
+		lots, err := h.store.PublicLots(h.ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := map[string]bool{}
+		for _, l := range lots {
+			m[l.ID] = true
+		}
+		return m
+	}
+	reserve := func(id string) string {
+		return pgMessageAny(h.owner(t, "SELECT business.lot_reserve($1::uuid, 1, now())", id))
+	}
+	unreleased, err := h.store.CreateLot(h.ctx, chef, "u", schedule.LotInput{VariantID: variant, Kind: schedule.LotReady, Quantity: 1,
+		PriceMinor: ptr[int64](8000), ExpiresAt: expires})
+	if err != nil {
+		t.Fatal(err)
+	}
+	withdrawn, expired := newLot("w"), newLot("e")
+	if _, err := h.store.SetLotState(h.ctx, chef, "w-wd", withdrawn, schedule.LotStateInput{ExpectedVersion: 2, Action: "withdraw"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.admin.Exec(h.ctx, "UPDATE business.finished_cake_lot SET expires_at = now() - interval '1 minute' WHERE id = $1", expired); err != nil {
+		t.Fatal(err)
+	}
+	if p := public(); p[unreleased.ID] || p[withdrawn] || p[expired] {
+		t.Fatalf("hidden lots are public: %v", p)
+	}
+	for name, id := range map[string]string{"unreleased": unreleased.ID, "withdrawn": withdrawn, "expired": expired} {
+		if got := reserve(id); got != "stock_unavailable" {
+			t.Errorf("reserve %s: %q, want stock_unavailable", name, got)
+		}
+	}
+	// A resale cake whose original handover has passed is neither listed
+	// nor reservable; one handed over after it expires is refused.
+	resale, err := h.store.CreateLot(h.ctx, chef, "rs", schedule.LotInput{VariantID: variant, Kind: schedule.LotResale, Quantity: 1,
+		ResaleBaseMinor: ptr[int64](9000), OriginalHandoverAt: time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339), ExpiresAt: expires})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.store.SetLotState(h.ctx, chef, "rs-rel", resale.ID, schedule.LotStateInput{ExpectedVersion: 1, Action: "release"})
+	if !public()[resale.ID] {
+		t.Fatal("released resale lot is not public")
+	}
+	if _, err := h.admin.Exec(h.ctx, "UPDATE business.finished_cake_lot SET original_handover_at = now() - interval '1 minute' WHERE id = $1", resale.ID); err != nil {
+		t.Fatal(err)
+	}
+	if public()[resale.ID] || reserve(resale.ID) != "stock_unavailable" {
+		t.Fatal("a resale cake past its original handover is still offered")
+	}
+	late := time.Now().Add(96 * time.Hour).UTC().Format(time.RFC3339)
+	if _, err := h.store.CreateLot(h.ctx, chef, "late", schedule.LotInput{VariantID: variant, Kind: schedule.LotResale, Quantity: 1,
+		ResaleBaseMinor: ptr[int64](9000), OriginalHandoverAt: late, ExpiresAt: expires}); err == nil {
+		t.Fatal("resale handed over after it expires was accepted")
+	}
+	// A ready lot needs a ready-stock variant.
+	f, _ := h.cat.CreateFlavour(h.ctx, chef, "f2", catalog.FlavourInput{Name: "Vanilla Raspberry"})
+	c, _ := h.cat.CreateCake(h.ctx, chef, "c2", catalog.CakeInput{Name: "Pink piping"})
+	mto, _ := h.cat.CreateVariant(h.ctx, chef, "v2", c.ID, catalog.VariantInput{FlavourID: f.ID, SizeCode: "s", StockMode: catalog.MadeToOrder})
+	n, _ := h.cat.CreateNotice(h.ctx, chef, "n2", catalog.NoticeInput{Body: "Notice"})
+	if _, err := h.cat.CreateRecipeVersion(h.ctx, chef, "r2", catalog.RecipeVersionInput{VariantID: mto.ID, ExpectedVersion: 1,
+		PriceMinor: 9000, ServingsMin: 7, ServingsMax: 10, Coating: "Swiss meringue buttercream", Composition: []string{"Vanilla sponge"},
+		NoticeID: n.ID, Allergens: []catalog.Allergen{{Code: "eggs", Label: "EGGS"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.store.CreateLot(h.ctx, chef, "mto", schedule.LotInput{VariantID: mto.ID, Kind: schedule.LotReady, Quantity: 1,
+		PriceMinor: ptr[int64](9000), ExpiresAt: expires}); conflict(err) != "state_conflict" {
+		t.Fatalf("ready lot of a made-to-order variant: %v", err)
+	}
+	// A lot of an unpublished (archived) cake is hidden and not reservable.
+	open := newLot("o")
+	cakes, _ := h.cat.StaffPage(h.ctx, chef, "", 50)
+	for _, ck := range cakes.Cakes {
+		if ck.Name == "Chocolate swirl" {
+			if _, err := h.cat.SetCakeState(h.ctx, chef, "arch", ck.ID, catalog.CakeStateInput{ExpectedVersion: ck.Version, State: catalog.StateArchived}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if public()[open] || reserve(open) != "stock_unavailable" {
+		t.Fatal("a lot of an archived cake is still offered")
+	}
 }

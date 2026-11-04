@@ -21,6 +21,8 @@ type Schedule interface {
 	Choices(ctx context.Context, day time.Time, mode string, quantity int) (schedule.Choices, error)
 	PublicLots(ctx context.Context) ([]schedule.Lot, error)
 	CurrentVersion(ctx context.Context, subject string) (schedule.Version, error)
+	VersionByID(ctx context.Context, subject, id string) (schedule.Version, error)
+	StaffLot(ctx context.Context, subject, id string) (schedule.Lot, error)
 	StaffDays(ctx context.Context, subject string, from, to time.Time) ([]schedule.StaffDay, error)
 	StaffLots(ctx context.Context, subject string, includeInactive bool) ([]schedule.Lot, error)
 	PublishVersion(ctx context.Context, subject, key string, in schedule.VersionInput) (catalog.Result, error)
@@ -151,7 +153,7 @@ func scheduleStaffRoutes(mux *http.ServeMux, sch Schedule, id Identity, logger *
 		}
 		res, err := sch.PublishVersion(r.Context(), a.Subject, key, in)
 		respondCommand(w, r, logger, http.StatusCreated, res, err, func() (any, error) {
-			return sch.CurrentVersion(r.Context(), a.Subject)
+			return sch.VersionByID(r.Context(), a.Subject, res.ID) // the saved version, also on a replay
 		})
 	}))
 	mux.HandleFunc("POST /api/v1/admin/days/{date}/limit", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
@@ -182,7 +184,7 @@ func scheduleStaffRoutes(mux *http.ServeMux, sch Schedule, id Identity, logger *
 		}
 		res, err := sch.CreateLot(r.Context(), a.Subject, key, in)
 		respondCommand(w, r, logger, http.StatusCreated, res, err, func() (any, error) {
-			return staffLot(r.Context(), sch, a.Subject, res.ID)
+			return sch.StaffLot(r.Context(), a.Subject, res.ID)
 		})
 	}))
 	mux.HandleFunc("POST /api/v1/admin/lots/{id}/state", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
@@ -193,20 +195,7 @@ func scheduleStaffRoutes(mux *http.ServeMux, sch Schedule, id Identity, logger *
 		}
 		res, err := sch.SetLotState(r.Context(), a.Subject, key, r.PathValue("id"), in)
 		respondCommand(w, r, logger, http.StatusOK, res, err, func() (any, error) {
-			return staffLot(r.Context(), sch, a.Subject, res.ID)
+			return sch.StaffLot(r.Context(), a.Subject, res.ID)
 		})
 	}))
-}
-
-func staffLot(ctx context.Context, sch Schedule, subject, id string) (any, error) {
-	lots, err := sch.StaffLots(ctx, subject, true)
-	if err != nil {
-		return nil, err
-	}
-	for _, l := range lots {
-		if l.ID == id {
-			return l, nil
-		}
-	}
-	return map[string]string{"id": id}, nil
 }
