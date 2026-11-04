@@ -5,13 +5,16 @@ import (
 	"context"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/config"
 	"github.com/ChichaSasha/gk-cakes/api/internal/database"
 	"github.com/ChichaSasha/gk-cakes/api/internal/httpapi"
+	"github.com/ChichaSasha/gk-cakes/api/internal/identity"
 	"github.com/ChichaSasha/gk-cakes/api/internal/notifications"
 )
 
@@ -52,6 +55,12 @@ func main() {
 	} else {
 		logger.Info("email webhook not configured; /webhooks/email is not served")
 	}
+	if cfg.Auth.Enabled() {
+		opts.Identity = identityService(cfg.Auth, pool)
+		logger.Info("identity enabled", "issuer", cfg.Auth.Issuer)
+	} else {
+		logger.Info("identity not configured; authenticated /api/v1 routes are not served")
+	}
 	handler := httpapi.NewHandler(opts)
 	if err := httpapi.Serve(ctx, ln, handler, cfg.ShutdownTimeout); err != nil {
 		logger.Error("serve", "error", err.Error())
@@ -72,4 +81,16 @@ func readiness(env config.Env, pool database.Pool, logger *slog.Logger) httpapi.
 		return pool
 	}
 	return &database.LoginGate{Pool: pool, Group: apiGroup, Logger: logger}
+}
+
+// identityService verifies the provider's tokens and resolves accounts
+// through the gk_api login. Provider calls have their own short budget
+// (proposed provider timeout 5s) inside the request deadline.
+func identityService(a config.Auth, db identity.Querier) *identity.Service {
+	client := &http.Client{Timeout: 5 * time.Second}
+	return &identity.Service{
+		Verifier:  &identity.Verifier{Issuer: a.Issuer, HTTP: client},
+		Sessions:  &identity.SessionChecker{Issuer: a.Issuer, PublishableKey: a.PublishableKey, HTTP: client},
+		Directory: &identity.Directory{DB: db},
+	}
 }

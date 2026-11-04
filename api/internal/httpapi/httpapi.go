@@ -41,6 +41,8 @@ type Options struct {
 	Logger   *slog.Logger
 	// EmailWebhook serves POST /webhooks/email when set (EMAIL_WEBHOOK_SECRET).
 	EmailWebhook EmailWebhook
+	// Identity serves the authenticated /api/v1 routes when set (AUTH_ISSUER).
+	Identity Identity
 }
 
 // NewHandler returns the API handler with its middleware chain.
@@ -61,6 +63,9 @@ func NewHandler(opts Options) http.Handler {
 	})
 	if opts.EmailWebhook != nil {
 		mux.HandleFunc("POST /webhooks/email", emailWebhook(opts.EmailWebhook))
+	}
+	if opts.Identity != nil {
+		identityRoutes(mux, opts.Identity, opts.Logger)
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusNotFound, "NOT_FOUND", "Not found", false)

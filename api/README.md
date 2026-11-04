@@ -54,6 +54,7 @@ and staging/production reject local hosts and Unix sockets.
 | `PAYMENT_SECRET`         | api        | optional until its adapter exists; live keys only in production, test keys only elsewhere   |
 | `PAYMENT_WEBHOOK_SECRET`, `STORAGE_WRITE_KEY` | api | optional until their adapters exist; redacted |
 | `EMAIL_WEBHOOK_SECRET`   | api        | Resend webhook signing secret (`whsec_` + base64), redacted; when set, the API serves `POST /webhooks/email`, otherwise that path is 404 |
+| `AUTH_ISSUER`, `AUTH_PUBLISHABLE_KEY` | api | public identity-provider settings: the exact token issuer `https://<project>.supabase.co/auth/v1` and the publishable key `sb_publishable_...` (a secret key is refused); required in staging/production, otherwise both or neither; without them the authenticated `/api/v1` routes are not served, see [Identity](#identity-k00-gk-021) |
 | `EMAIL_API_KEY`          | worker     | Resend sending key (`re_...`), redacted; see email dispatch below                          |
 | `RECOVERY_B2_KEY_ID`, `RECOVERY_B2_KEY` | worker | B2 application key for the recovery journal (key secret redacted); scope enforced at start, see [Recovery journal](#recovery-journal-k11-gk-024) |
 | `RECOVERY_ENCRYPTION_KEYS` | worker   | journal encryption keys `kid:base64(32 bytes)[,...]`, redacted                              |
@@ -85,7 +86,7 @@ production stores wait for the first authorized production release (GK-036).
 | `RECOVERY_B2_KEY_ID`, `RECOVERY_B2_KEY` | B2 key: one bucket, prefix `recovery/`, list/read/write only (no delete) | worker service variables (sealed); Bitwarden | create a new key with the B2 CLI, update the variables, redeploy, delete the old key | delete the key in B2 |
 | `EMAIL_WEBHOOK_SECRET`   | signing secret of the Resend webhook endpoint for this environment's API | API service variables (sealed) | replace the endpoint's secret in Resend, update the variable and redeploy promptly (deliveries signed with a secret the API does not have are refused and retried by Resend) | delete the webhook endpoint in Resend |
 | `RECOVERY_ENCRYPTION_KEYS` | seals journal envelopes; one list per environment | worker service variables (sealed) **and** Bitwarden (envelopes are unreadable without it) | prepend a new `kid:key`, keep the old ones listed (they still open older envelopes) | never drop a key while envelopes sealed with it are retained |
-| `MIGRATION_DATABASE_URL` | migration credential (used by `gk-migrate` in deploys and by the manual Email proof workflow) | GitHub environment secret, staging: `STAGING_MIGRATION_DATABASE_URL` | rotate the password of the same role (see below)                | rotate; runtime services never hold it       |
+| `MIGRATION_DATABASE_URL` | migration credential (used by `gk-migrate` in deploys and by the manual Email proof and Identity admin workflows) | GitHub environment secret, staging: `STAGING_MIGRATION_DATABASE_URL` | rotate the password of the same role (see below)                | rotate; runtime services never hold it       |
 | `RAILWAY_STAGING_TOKEN`  | Railway project token, staging environment only | GitHub environment `staging` secret (deployable from `main` only) | regenerate in Railway, update the secret                  | delete the token in Railway                  |
 | Provider secrets         | per provider account and environment | API service variables                            | provider dashboard, update the variable, redeploy               | revoke the key in the provider dashboard     |
 
@@ -102,7 +103,7 @@ are provisioned per environment outside Git and granted exactly one group:
 | Group       | Purpose                       | Privileges                                                  |
 | ----------- | ----------------------------- | ----------------------------------------------------------- |
 | `gk_owner`  | owns business objects         | never granted to runtime; migration credential may `SET ROLE` |
-| `gk_api`    | API runtime                   | schema `USAGE`; `EXECUTE` on `email_event_record` (webhook evidence); more gateway functions as features add them |
+| `gk_api`    | API runtime                   | schema `USAGE`; `EXECUTE` on `email_event_record` (webhook evidence), `identity_resolve` and `identity_staff_list` (identity); more gateway functions as features add them |
 | `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions (`job_claim`, `job_heartbeat`, `job_complete`, `job_release`, `job_fail`, `job_attention`) and the lease-fenced notification gateway (`notification_dispatch_begin`, `notification_attempt_record`, `notification_recovery_*`) |
 | `gk_backup` | backup reader                 | `SELECT` on business tables                                 |
 
@@ -526,6 +527,61 @@ managers about adverse evidence beyond the audit trail (GK-024 Milestone B,
 after GK-021 and GK-023/025); after a restore, re-correlating `unmatched`
 events and applying `matched` events that arrived while their intent was
 still `queued` (GK-034 Milestone B).
+
+## Identity (K00, GK-021)
+
+Supabase authenticates; the API decides who a signed-in user is here and what
+they may do. The browser sends the provider's access token as
+`Authorization: Bearer <token>`; the API never sees passwords.
+
+**Token checks** (`internal/identity`, `Verifier`): ES256 only, signed by a key
+from the fixed configured issuer's JWKS (`AUTH_ISSUER` + `/.well-known/jwks.json`);
+`iss` exactly `AUTH_ISSUER`; `aud` `authenticated`; `exp` (and `nbf`/`iat`
+when present) within 30 seconds of clock skew; `sub` and `session_id` UUIDs;
+`role` `authenticated`; not an anonymous session. Other algorithms, a missing
+key ID, critical header extensions, other key types and malformed or oversized
+tokens are refused. Keys are cached; an unknown key ID (a rotation) refetches
+the set at most every 30 seconds, and a set older than 10 minutes is refetched
+so a withdrawn key stops working. If the key set cannot be fetched and none is
+cached, requests fail closed (503); a later outage keeps using cached keys.
+Provider metadata (`app_metadata`, `user_metadata`, any role claim) is never
+read for authorization.
+
+**Accounts and capabilities** (migration `0007_identity.sql`): the first
+authenticated request of a subject creates its local account
+(`identity_resolve`, audited `account.created`). Staff capabilities are granted
+locally: `chef` (manages the business, lists staff), `fulfillment` (prepare,
+ready, dispatch, handover) and `technical_support` (bounded audited access);
+future roles grant nothing. A disabled account can do nothing (403
+`ACCOUNT_DISABLED`).
+
+**Sessions.** Signing out ends the provider session but cannot revoke an
+issued token (1 hour on the sandbox). Staff routes, and later every sensitive
+mutation, ask the provider whether the session is current (`GET
+AUTH_ISSUER/user`): an ended session is 401 `SESSION_ENDED` at once, and an
+unanswered check fails closed (503). Customer reads rely on the verified token
+until it expires. Observed on the sandbox (2026-11-04): after sign-out,
+`/user` answers 403 `session_not_found` for the old token and the refresh
+token is refused.
+
+| Route | Who | Responses |
+| --- | --- | --- |
+| `GET /api/v1/me` | any signed-in, enabled account | `{account_id, capabilities, session_expires_at}` |
+| `GET /api/v1/admin/me` | any staff capability, current session | same |
+| `GET /api/v1/admin/staff` | `chef`, current session (checked again by the database) | `{staff: [{account_id, capability, granted_at}]}` |
+
+Errors: 401 `UNAUTHENTICATED` (no or refused token, with
+`WWW-Authenticate: Bearer`), 401 `SESSION_ENDED`, 403 `FORBIDDEN` (missing
+capability), 403 `ACCOUNT_DISABLED`, 503 `UNAVAILABLE` (provider or database).
+Responses never say which token check failed; the reason is logged without
+the token.
+
+**Operator commands.** Until chefs manage staff in the application, grants,
+revocations and disabling are operator commands, audited by the database:
+`go run ./cmd/gk-identity-admin -action grant|revoke|disable|enable|show
+-subject <uuid> [-capability ...] -note "..."` with `MIGRATION_DATABASE_URL`, or
+on staging the **Identity admin** workflow (repository admins, from `main`).
+The API login can only resolve accounts and list staff for a chef.
 
 ## Not yet verified
 
