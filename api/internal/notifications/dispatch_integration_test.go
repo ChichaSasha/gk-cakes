@@ -859,7 +859,11 @@ func TestRuntimeRolesUseOnlyTheNotificationGateway(t *testing.T) {
 		"business.payment_recovery_frozen(uuid, uuid, bigint)", "business.payment_recovery_prepared(uuid, uuid, bigint, uuid)",
 		"business.payment_recovery_reconcile(uuid, uuid, bigint, uuid, text)",
 		"business.payment_recovery_reserve(uuid, uuid, bigint, uuid, text, uuid, integer, text, text, timestamp with time zone)",
-		"business.payment_recovery_secured(uuid, uuid, bigint, uuid)"}, worker...)
+		"business.payment_recovery_secured(uuid, uuid, bigint, uuid)",
+		// GK-025 A3c1 expire request and order hold review.
+		"business.order_hold_review_run(uuid, uuid, bigint)",
+		"business.payment_expire_admit(uuid, uuid, bigint, uuid)",
+		"business.payment_expire_record(uuid, uuid, bigint, uuid, text, integer, text)"}, worker...)
 	slices.Sort(want)
 	if !slices.Equal(got, want) {
 		t.Errorf("gk_worker can execute %v, want exactly %v", got, want)

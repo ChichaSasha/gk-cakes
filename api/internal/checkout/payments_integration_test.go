@@ -195,6 +195,7 @@ type payHarness struct {
 	*commandHarness
 	stripe  *fakeStripe
 	pay     *payments.Worker
+	reviews *checkout.HoldReviews
 	webhook *payments.Webhook
 	handler jobs.Handler
 }
@@ -214,7 +215,9 @@ func newPayHarness(t *testing.T) *payHarness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &payHarness{commandHarness: h, stripe: fs, pay: pay, webhook: wh, handler: jobs.Chain(h.cmds.Handle, pay.Handle)}
+	reviews := &checkout.HoldReviews{DB: h.worker, Logger: logger}
+	return &payHarness{commandHarness: h, stripe: fs, pay: pay, reviews: reviews, webhook: wh,
+		handler: jobs.Chain(h.cmds.Handle, pay.Handle, reviews.Handle)}
 }
 
 // step claims the next due job (false when none) and runs it, finalizing
@@ -1010,7 +1013,7 @@ func TestDelayedFirstDispatchStillCreatesTheSession(t *testing.T) {
 	}
 	keyless := *h.pay
 	keyless.Provider = nil
-	h.handler = jobs.Chain(h.cmds.Handle, keyless.Handle)
+	h.handler = jobs.Chain(h.cmds.Handle, keyless.Handle, h.reviews.Handle)
 	errs := h.drain(t)
 	var de *jobs.DeferError
 	if len(errs) != 1 || !errors.As(errs[0], &de) {
@@ -1021,7 +1024,7 @@ func TestDelayedFirstDispatchStillCreatesTheSession(t *testing.T) {
 	}
 	// Three hours later (the initiation instant is far behind).
 	h.owner(t, "UPDATE business.payment_collection SET initiated_at = initiated_at - interval '3 hours' WHERE id = $1::uuid", res.ID)
-	h.handler = jobs.Chain(h.cmds.Handle, h.pay.Handle)
+	h.handler = jobs.Chain(h.cmds.Handle, h.pay.Handle, h.reviews.Handle)
 	h.due(t)
 	if errs := h.drain(t); len(errs) != 0 {
 		t.Fatalf("delayed first dispatch: %v", errs)
@@ -1048,12 +1051,12 @@ func TestRetryAfterARefusedConnectionAnHourLater(t *testing.T) {
 	}
 	unreachable := *h.pay
 	unreachable.Provider = down
-	h.handler = jobs.Chain(h.cmds.Handle, unreachable.Handle)
+	h.handler = jobs.Chain(h.cmds.Handle, unreachable.Handle, h.reviews.Handle)
 	errs := h.drain(t)
 	if len(errs) != 1 || len(attention(errs)) != 0 || h.collection(t, res.ID).State != "unknown" || len(h.stripe.creates) != 0 {
 		t.Fatalf("refused connection: %v %+v", errs, h.collection(t, res.ID))
 	}
-	h.handler = jobs.Chain(h.cmds.Handle, h.pay.Handle)
+	h.handler = jobs.Chain(h.cmds.Handle, h.pay.Handle, h.reviews.Handle)
 	h.stripe.skew = 61 * time.Minute
 	h.due(t)
 	if errs := h.drain(t); len(errs) != 0 {

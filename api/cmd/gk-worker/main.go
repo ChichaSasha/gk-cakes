@@ -100,7 +100,10 @@ func main() {
 	} else {
 		logger.Warn("stripe not configured; payment jobs wait")
 	}
-	handler := jobs.Chain(commands.Handle, pay.Handle, emailHandler)
+	// Order hold reviews (expiry cleanup and release of unpaid holds) need
+	// neither Stripe nor the journal.
+	reviews := &checkout.HoldReviews{DB: pool, Logger: logger}
+	handler := jobs.Chain(commands.Handle, pay.Handle, reviews.Handle, emailHandler)
 
 	w := jobs.New(pool, jobs.Options{
 		Handler:         handler,
