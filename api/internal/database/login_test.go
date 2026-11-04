@@ -12,19 +12,27 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// fakeRow scans one login-query answer, or fails.
+// fakeRow scans one login-query answer, or fails. current defaults to user
+// and usable to groups (a login acting as itself, inheriting its groups).
 type fakeRow struct {
-	user     string
-	elevated bool
-	groups   []string
-	err      error
+	user, current  string
+	elevated       bool
+	groups, usable []string
+	err            error
 }
 
 func (r fakeRow) Scan(dest ...any) error {
 	if r.err != nil {
 		return r.err
 	}
-	*dest[0].(*string), *dest[1].(*bool), *dest[2].(*[]string) = r.user, r.elevated, r.groups
+	if r.current == "" {
+		r.current = r.user
+	}
+	if r.usable == nil {
+		r.usable = r.groups
+	}
+	*dest[0].(*string), *dest[1].(*string), *dest[2].(*bool) = r.user, r.current, r.elevated
+	*dest[3].(*[]string), *dest[4].(*[]string) = r.groups, r.usable
 	return nil
 }
 
@@ -59,6 +67,9 @@ func TestCheckLoginDecisions(t *testing.T) {
 		"extra group":  {fakeRow{user: "x", groups: []string{"gk_api", "gk_owner"}}, "holds gk_api, gk_owner"},
 		"no group":     {fakeRow{user: "x"}, "holds no role"},
 		"names itself": {fakeRow{user: "gk_api_staging", groups: []string{}}, "gk_api_staging must hold only the gk_api group"},
+		"switched role": {fakeRow{user: "postgres", current: "gk_api_staging", groups: []string{"gk_api"}},
+			"the session of postgres acts as role gk_api_staging"},
+		"not inheriting": {fakeRow{user: "x", groups: []string{"gk_api"}, usable: []string{}}, "does not inherit"},
 	} {
 		err := CheckLogin(ctx, &fakePool{rows: []fakeRow{c.row}}, "gk_api")
 		if !errors.Is(err, ErrLogin) || !strings.Contains(err.Error(), c.want) {
@@ -79,8 +90,10 @@ func TestWaitLoginRetriesOnlyUnreachable(t *testing.T) {
 	if err := WaitLogin(ctx, p, "gk_worker", time.Millisecond); err != nil || p.queries != 3 {
 		t.Fatalf("WaitLogin: %v after %d queries, want pass after 3", err, p.queries)
 	}
+	bounded, stop := context.WithTimeout(ctx, time.Second)
+	defer stop()
 	wrong := &fakePool{rows: []fakeRow{{user: "w", groups: []string{"gk_api"}}}}
-	if err := WaitLogin(ctx, wrong, "gk_worker", time.Millisecond); !errors.Is(err, ErrLogin) || wrong.queries != 1 {
+	if err := WaitLogin(bounded, wrong, "gk_worker", time.Millisecond); !errors.Is(err, ErrLogin) || wrong.queries != 1 {
 		t.Fatalf("wrong login: %v after %d queries, want ErrLogin at once", err, wrong.queries)
 	}
 	short, cancel := context.WithTimeout(ctx, 20*time.Millisecond)

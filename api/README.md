@@ -111,11 +111,12 @@ Runtime roles cannot write protected tables, run DDL, `TRUNCATE` or `SET ROLE gk
 the integration suite proves this with real logins. Migration 0001 refuses to run
 if a group already inherits `gk_owner` or a predefined data role.
 
-After provisioning a login, check that it holds exactly its one group and no
-other privileged role (expect a single row, e.g. `gk_api`):
+After provisioning a login, check that it holds exactly its one group, inherits
+its privileges and holds no other privileged role (expect a single row, e.g.
+`gk_api | true`):
 
 ```sql
-SELECT r.rolname FROM pg_roles r
+SELECT r.rolname, pg_has_role('<login>', r.oid, 'USAGE') AS inherits FROM pg_roles r
 WHERE pg_has_role('<login>', r.oid, 'MEMBER') AND r.rolname <> '<login>';
 
 -- expect every column false
@@ -124,13 +125,14 @@ FROM pg_roles WHERE rolname = '<login>';
 ```
 
 The services repeat these checks themselves in every environment except
-`local` (`database.CheckLogin`): the API's `/readyz`, which is its Railway
-health check, stays 503 and logs `database login refused` until its login
-holds exactly `gk_api` with no elevated attribute, so a deploy with an
-administrator, migration or other-service login fails and the previous one
-keeps serving; the worker exits at start (code 2) unless its login holds
-exactly `gk_worker`, and waits up to 30 seconds for an unreachable database
-(code 1). On staging (2026-11-03) the API had been running with a login other
+`local` (`database.CheckLogin`, on the session's login, `session_user`): the
+login must hold and inherit exactly its group, have no elevated attribute and
+not have switched role. The API's `/readyz`, which is its Railway health
+check, stays 503 and logs `database login refused` until its login passes for
+`gk_api`, so a deploy with an administrator, migration or other-service login
+fails and the previous one keeps serving. The worker exits at start (code 2)
+unless its login passes for `gk_worker`, and waits up to 30 seconds for an
+unreachable database (code 1). On staging (2026-11-03) the API had been running with a login other
 than `gk_api_staging` and only failed once the webhook needed a granted
 function.
 
@@ -166,15 +168,19 @@ get no image and cannot be released. Workflows: `.github/workflows/staging.yml` 
   start command persists on a service). It then watches for 90 seconds: the
   deployment must stay SUCCESS and keep running its first container. Railway
   restarts a crashed process under its restart policy without leaving SUCCESS,
-  so the check counts Railway's `Starting Container` lines in the deployment's
-  own log: a second one fails the deploy (the service runs one replica).
+  so the check counts starts in the newest lines of the deployment's own log:
+  Railway's `Starting Container` lines and the worker's own first log line
+  (`worker starting`, passed as `-start-line`). A second start by either count
+  fails the deploy (the service runs one replica).
   Railway's `deploymentInstanceExecutions` listed nothing for the running
   staging worker, so it is not used. The worker exits at start when its email
   or recovery-journal settings or its database login are wrong. If the token
   cannot read the deployment log (after five consecutive errors, or on every
-  read of the period), or no single start line appears, the check falls back
-  to the status and prints a GitHub warning (escaped, so a provider message
-  cannot inject a workflow command). It is off until
+  read of the period), or the latest read is inconclusive (no start line, or
+  a full page that may hide an earlier start), the check falls back to the
+  status and prints a GitHub warning. On GitHub Actions every output line with
+  provider text is escaped, so it cannot inject a workflow command or a step
+  output. It is off until
   `STAGING_WORKER_ENABLED` is `true` and is recorded as `staging-worker` (not
   read by the release gate).
 - **Release.** Publish a GitHub release tagged `api-vX.Y.Z` or `ui-vX.Y.Z` on a

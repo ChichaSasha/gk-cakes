@@ -20,8 +20,9 @@
 # start command gk-worker, no public endpoint); it deploys after a successful
 # API deploy once STAGING_WORKER_ENABLED is true, and must keep running its
 # first container for a settle period: a crash and restart (a second
-# "Starting Container" in its deployment log) fails the deploy (it exits at
-# start if its email, recovery-journal or database-login settings are bad).
+# "Starting Container" or "worker starting" line in its deployment log) fails
+# the deploy (it exits at start if its email, recovery-journal or
+# database-login settings are bad).
 name: Staging
 run-name: ${{ inputs.version && format('Staging release {0}', inputs.version) || format('Staging {0}', github.event.workflow_run.head_sha) }}
 
@@ -342,7 +343,7 @@ jobs:
             exit 1
           fi
           go run ./cmd/gk-railway-deploy -service "$SERVICE_ID" -environment "$ENVIRONMENT_ID" -image "$IMAGE" \
-            -start-command /usr/local/bin/gk-worker -settle 90s
+            -start-command /usr/local/bin/gk-worker -settle 90s -start-line "worker starting"
       - name: Record result
         if: always() && steps.record.outputs.id != ''
         env:

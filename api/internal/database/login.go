@@ -23,31 +23,41 @@ type Querier interface {
 }
 
 // loginQuery mirrors the provisioning checks in api/README.md (Database
-// roles): every role the login is a member of, directly or through another
-// role, and whether it has any elevated attribute.
-const loginQuery = `SELECT r.rolname::text,
+// roles) for the session's login (session_user, which SET ROLE or a role
+// connection option cannot change): whether the session still acts as that
+// login, any elevated attribute, every role the login is a member of
+// (directly or through another role), and every role whose privileges it can
+// use without SET ROLE (membership with INHERIT, PostgreSQL 16+ semantics).
+const loginQuery = `SELECT r.rolname::text, current_user::text,
 	r.rolsuper OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication OR r.rolbypassrls,
 	ARRAY(SELECT g.rolname::text FROM pg_roles g
-		WHERE g.oid <> r.oid AND pg_has_role(r.oid, g.oid, 'MEMBER') ORDER BY 1)
-FROM pg_roles r WHERE r.rolname = current_user`
+		WHERE g.oid <> r.oid AND pg_has_role(r.oid, g.oid, 'MEMBER') ORDER BY 1),
+	ARRAY(SELECT g.rolname::text FROM pg_roles g
+		WHERE g.oid <> r.oid AND pg_has_role(r.oid, g.oid, 'USAGE') ORDER BY 1)
+FROM pg_roles r WHERE r.rolname = session_user`
 
-// CheckLogin verifies that the connected login holds exactly group (for
-// example gk_api) and no superuser, createrole, createdb, replication or
-// bypassrls attribute, so a service can never run with an administrator or
-// migration credential, or with another service's login. It returns an
-// ErrLogin-wrapped error naming the login and its roles (never credentials),
-// or a plain error when the check itself could not run.
+// CheckLogin verifies that the session's login holds exactly group (for
+// example gk_api), inherits its privileges, has no superuser, createrole,
+// createdb, replication or bypassrls attribute, and has not switched role, so
+// a service can never run with an administrator or migration credential, with
+// another service's login, or with a login that cannot use its grants. It
+// returns an ErrLogin-wrapped error naming the login and its roles (never
+// credentials), or a plain error when the check itself could not run.
 func CheckLogin(ctx context.Context, q Querier, group string) error {
 	var (
-		user     string
-		elevated bool
-		groups   []string
+		user, current   string
+		elevated        bool
+		members, usable []string
 	)
-	if err := q.QueryRow(ctx, loginQuery).Scan(&user, &elevated, &groups); err != nil {
+	if err := q.QueryRow(ctx, loginQuery).Scan(&user, &current, &elevated, &members, &usable); err != nil {
 		return fmt.Errorf("database: check login: %w", err)
 	}
-	if elevated || len(groups) != 1 || groups[0] != group {
-		held := strings.Join(groups, ", ")
+	only := func(roles []string) bool { return len(roles) == 1 && roles[0] == group }
+	switch {
+	case current != user:
+		return fmt.Errorf("%w: the session of %s acts as role %s; a service must not change role", ErrLogin, user, current)
+	case elevated || !only(members):
+		held := strings.Join(members, ", ")
 		if held == "" {
 			held = "no role"
 		}
@@ -57,6 +67,9 @@ func CheckLogin(ctx context.Context, q Querier, group string) error {
 		}
 		return fmt.Errorf("%w: %s must hold only the %s group and no elevated attribute; it holds %s%s",
 			ErrLogin, user, group, held, attr)
+	case !only(usable):
+		return fmt.Errorf("%w: %s is a member of %s but does not inherit its privileges (NOINHERIT, or granted WITH INHERIT FALSE)",
+			ErrLogin, user, group)
 	}
 	return nil
 }

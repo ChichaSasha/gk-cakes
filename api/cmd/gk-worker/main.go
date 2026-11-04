@@ -23,8 +23,13 @@ const (
 	loginReadyTimeout   = 30 * time.Second
 )
 
+// startLine is logged first at every start; the staging deploy counts it
+// (gk-railway-deploy -start-line) to catch a crash and restart.
+const startLine = "worker starting"
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger.Info(startLine)
 	cfg, err := config.LoadWorker(os.Getenv)
 	if err != nil {
 		logger.Error("invalid configuration", "error", err.Error())
@@ -41,7 +46,7 @@ func main() {
 	defer pool.Close()
 
 	if cfg.Env != config.EnvLocal { // only local development may use another login
-		if code, err := verifyLogin(ctx, pool); err != nil {
+		if code, err := verifyLogin(ctx, pool, loginReadyTimeout, 2*time.Second); err != nil {
 			logger.Error("database login", "error", err.Error())
 			os.Exit(code)
 		}
@@ -76,11 +81,11 @@ func journalRoot(env config.Env) string { return "recovery/" + string(env) + "/"
 
 // verifyLogin refuses to run jobs with any login other than a least-privilege
 // gk_worker one (exit 2: the configuration must change), waiting up to
-// loginReadyTimeout for a briefly unreachable database (exit 1).
-func verifyLogin(ctx context.Context, pool *pgxpool.Pool) (int, error) {
-	ctx, cancel := context.WithTimeout(ctx, loginReadyTimeout)
+// timeout for a briefly unreachable database (exit 1).
+func verifyLogin(ctx context.Context, q database.Querier, timeout, interval time.Duration) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	err := database.WaitLogin(ctx, pool, "gk_worker", 2*time.Second)
+	err := database.WaitLogin(ctx, q, "gk_worker", interval)
 	switch {
 	case err == nil:
 		return 0, nil

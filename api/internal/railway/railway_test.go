@@ -36,6 +36,7 @@ type fakeRailway struct {
 	// line of its own output); logFails refuses the first N log queries
 	// (negative: all), logReads counts them.
 	logs     []string
+	logPages [][]string // when set, read i answers logPages[i] (the last repeats)
 	logFails int
 	logReads int
 }
@@ -74,6 +75,9 @@ func (f *fakeRailway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		lines := f.logs
+		if f.logPages != nil {
+			lines = f.logPages[min(f.logReads-1, len(f.logPages)-1)]
+		}
 		if lines == nil {
 			lines = []string{"Starting Container", `{"level":"INFO","msg":"worker started"}`}
 		}
@@ -376,7 +380,7 @@ func TestSettleCatchesACrashLoopBehindASuccessStatus(t *testing.T) {
 	}
 	absent := &fakeRailway{statuses: []string{"SUCCESS"}, logs: []string{app}}
 	res, err = deployer(t, absent).Deploy(context.Background(), req)
-	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "no single container start") {
+	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "inconclusive: no start line") {
 		t.Fatalf("no start line: %+v, %v; want success with a warning, never a silent pass", res, err)
 	}
 	full := make([]string, MaxLogLines)
@@ -386,8 +390,44 @@ func TestSettleCatchesACrashLoopBehindASuccessStatus(t *testing.T) {
 	}
 	truncated := &fakeRailway{statuses: []string{"SUCCESS"}, logs: full}
 	res, err = deployer(t, truncated).Deploy(context.Background(), req)
-	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "no single container start") {
+	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "inconclusive: the deployment log page was full") {
 		t.Fatalf("a full log page: %+v, %v; want it treated as unknown, not as one start", res, err)
+	}
+	// deploymentLogs returns the newest lines: after one steady read, a full
+	// page may hide the first start, so the latest read decides.
+	later := &fakeRailway{statuses: []string{"SUCCESS"}, logPages: [][]string{{"Starting Container"}, full}}
+	res, err = deployer(t, later).Deploy(context.Background(), req)
+	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "page was full") || later.logReads < 2 {
+		t.Fatalf("steady, then full pages: %+v, %v after %d reads; want a warning, not a silent pass", res, err, later.logReads)
+	}
+}
+
+// The process's own start line is a second count, so a restart is caught
+// even without Railway's container-start line; it is only counted when named.
+func TestSettleCountsTheProcessStartLine(t *testing.T) {
+	req := Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage, Settle: 50 * time.Millisecond, StartLine: "worker starting"}
+	for name, logs := range map[string][]string{
+		"own line twice":            {"worker starting", "worker starting"},
+		"own line twice, one start": {"Starting Container", "worker starting", "x", "worker starting"},
+	} {
+		f := &fakeRailway{statuses: []string{"SUCCESS"}, logs: logs}
+		if _, err := deployer(t, f).Deploy(context.Background(), req); err == nil || !strings.Contains(err.Error(), "started 2 times") {
+			t.Errorf("%s: %v, want the restart reported", name, err)
+		}
+	}
+	own := &fakeRailway{statuses: []string{"SUCCESS"}, logs: []string{"worker starting", "database login verified"}}
+	if res, err := deployer(t, own).Deploy(context.Background(), req); err != nil || len(res.Warnings) != 0 {
+		t.Fatalf("own line once, no platform line: %+v, %v; want a steady pass", res, err)
+	}
+	partial := &fakeRailway{statuses: []string{"SUCCESS"}, logs: []string{"Starting Container", "worker starting now", "worker starting now"}}
+	if res, err := deployer(t, partial).Deploy(context.Background(), req); err != nil || len(res.Warnings) != 0 {
+		t.Fatalf("lines merely starting with the start line: %+v, %v; want them not counted", res, err)
+	}
+	unnamed := &fakeRailway{statuses: []string{"SUCCESS"}, logs: []string{"worker starting", "worker starting"}}
+	req.StartLine = ""
+	res, err := deployer(t, unnamed).Deploy(context.Background(), req)
+	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "no start line") {
+		t.Fatalf("start line not named: %+v, %v; want those lines ignored (inconclusive)", res, err)
 	}
 }
 

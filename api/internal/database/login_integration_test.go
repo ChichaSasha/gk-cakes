@@ -51,9 +51,30 @@ func login(t *testing.T, db *dbtest.DB, name, options string, extra ...string) *
 	return conn
 }
 
-// TestCheckLoginRealRoles: only a login holding exactly its group, with no
-// elevated attribute, passes; administrator, migration and other-service
-// logins are refused with ErrLogin.
+// switched runs SET ROLE role on conn (after any setup statements on it), so
+// current_user differs from the session's login; the role is reset and
+// setup roles dropped at cleanup.
+func switched(t *testing.T, conn *pgx.Conn, role string, setup ...string) *pgx.Conn {
+	t.Helper()
+	ctx := context.Background()
+	for _, sql := range append(setup, "SET ROLE "+role) {
+		if _, err := conn.Exec(ctx, sql); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	t.Cleanup(func() {
+		_, _ = conn.Exec(context.Background(), "RESET ROLE")
+		if len(setup) > 0 {
+			_, _ = conn.Exec(context.Background(), "DROP ROLE IF EXISTS "+role)
+		}
+	})
+	return conn
+}
+
+// TestCheckLoginRealRoles: only a login holding and inheriting exactly its
+// group, with no elevated attribute and acting as itself, passes;
+// administrator, migration and other-service logins, logins that cannot use
+// their group's grants, and sessions that switched role are refused.
 func TestCheckLoginRealRoles(t *testing.T) {
 	ctx := context.Background()
 	db := migrated(t)
@@ -85,6 +106,13 @@ func TestCheckLoginRealRoles(t *testing.T) {
 		"bypassrls":  {login(t, db, "gk_bypassrls_"+suffix, "BYPASSRLS IN ROLE gk_api"), "gk_api", "elevated attribute"},
 		"replication": {login(t, db, "gk_replication_"+suffix, "REPLICATION IN ROLE gk_api"), "gk_api",
 			"elevated attribute"},
+		"noinherit login": {login(t, db, "gk_noinherit_"+suffix, "NOINHERIT IN ROLE gk_api"), "gk_api",
+			"does not inherit"},
+		"grant without inherit": {login(t, db, "gk_noinhgrant_"+suffix, "",
+			"GRANT gk_api TO gk_noinhgrant_"+suffix+" WITH INHERIT FALSE"), "gk_api", "does not inherit"},
+		"login switched to its group": {switched(t, db.LoginConn(t, "gk_api"), "gk_api"), "gk_api", "acts as role gk_api"},
+		"superuser acting as a login": {switched(t, db.AdminConn(t), "gk_api_acting_"+suffix,
+			"CREATE ROLE gk_api_acting_"+suffix+" LOGIN IN ROLE gk_api"), "gk_api", "acts as role gk_api_acting_"},
 	}
 	for name, c := range refused {
 		err := database.CheckLogin(ctx, c.conn, c.group)

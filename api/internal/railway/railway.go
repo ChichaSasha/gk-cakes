@@ -36,6 +36,11 @@ type Request struct {
 	// Settle keeps watching after SUCCESS and fails if the deployment crashes
 	// within it: the check for a process with no health endpoint.
 	Settle time.Duration
+	// StartLine optionally names the log message the process writes once at
+	// each start (for example "worker starting"); during Settle it is counted
+	// like Railway's own container-start line, so a restart is caught even if
+	// the platform line is missing.
+	StartLine string
 }
 
 // Result reports the deployment Railway created.
@@ -83,12 +88,15 @@ const (
   environmentLogs(environmentId: $environmentId, anchorDate: $anchorDate, beforeDate: $beforeDate,
     beforeLimit: $beforeLimit, afterDate: $anchorDate, afterLimit: 0) { timestamp message attributes { key value } }
 }`
-	// startsQuery reads one deployment's runtime log. Railway writes a
-	// "Starting Container" line each time it starts the deployment's container
-	// (seen in the staging logs on 2026-11-03), so a crash and restart under
-	// the restart policy shows a second one while the status stays SUCCESS.
-	// (Railway's deploymentInstanceExecutions listed no execution for a
-	// running staging worker, so it cannot show restarts.)
+	// startsQuery reads the newest lines of one deployment's runtime log.
+	// Railway writes a "Starting Container" line when it starts the
+	// deployment's container (one per start in the staging logs of
+	// 2026-11-03; a line per restart-policy restart is assumed, not yet
+	// observed), so a crash and restart under the restart policy shows a
+	// second one while the status stays SUCCESS. Request.StartLine adds the
+	// process's own start line as a second count. (Railway's
+	// deploymentInstanceExecutions listed no execution for a running staging
+	// worker, so it cannot show restarts.)
 	startsQuery = `query gkStarts($deploymentId: String!, $limit: Int!) {
   deploymentLogs(deploymentId: $deploymentId, limit: $limit) { message }
 }`
@@ -152,13 +160,15 @@ const containerStart = "Starting Container"
 const (
 	startsSteady  = "steady"
 	startsBad     = "bad"
-	startsUnknown = "unknown" // no start line yet, or the log was truncated
+	startsUnknown = "unknown" // no start line yet, or the log page was full
 )
 
-// starts counts the container starts in deploymentID's log: one means the
-// first container still runs (the service has one replica), more mean it was
-// restarted.
-func (d *Deployer) starts(ctx context.Context, deploymentID string) (string, string, error) {
+// starts counts the starts in deploymentID's log, as the larger of Railway's
+// container-start lines and the process's own start lines (startLine, when
+// set): one means the first container still runs (the service has one
+// replica), more mean it was restarted. For an unknown result the reason says
+// why.
+func (d *Deployer) starts(ctx context.Context, deploymentID, startLine string) (string, string, error) {
 	var out struct {
 		Logs []struct {
 			Message string `json:"message"`
@@ -167,17 +177,24 @@ func (d *Deployer) starts(ctx context.Context, deploymentID string) (string, str
 	if err := d.call(ctx, startsQuery, map[string]any{"deploymentId": deploymentID, "limit": MaxLogLines}, &out); err != nil {
 		return "", "", err
 	}
-	n := 0
+	platform, own := 0, 0
 	for _, l := range out.Logs {
-		if strings.EqualFold(strings.TrimSpace(l.Message), containerStart) {
-			n++
+		msg := strings.TrimSpace(l.Message)
+		switch {
+		case strings.EqualFold(msg, containerStart):
+			platform++
+		case startLine != "" && msg == startLine:
+			own++
 		}
 	}
+	n := max(platform, own)
 	switch {
 	case n > 1:
-		return startsBad, fmt.Sprintf("its container started %d times (restarted)", n), nil
-	case n == 0 || len(out.Logs) >= MaxLogLines:
-		return startsUnknown, "", nil
+		return startsBad, fmt.Sprintf("it started %d times (restarted)", n), nil
+	case len(out.Logs) >= MaxLogLines:
+		return startsUnknown, "the deployment log page was full, so earlier starts may be missing", nil
+	case n == 0:
+		return startsUnknown, "no start line appeared in the deployment log", nil
 	}
 	return startsSteady, "", nil
 }
@@ -236,7 +253,8 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 	deadline := time.Now().Add(d.Timeout)
 	var settleUntil time.Time // set once SUCCESS is first seen
 	startsChecked := req.Settle > 0
-	startsSeen := false // one container start was counted
+	startsSeen := false // the latest successful read counted exactly one start
+	startsWhy := ""     // why the latest successful read was inconclusive
 	startsRead := false // the deployment log was read at least once
 	var startErr error  // the last failed read
 	startErrors := 0    // consecutive failed reads
@@ -276,7 +294,7 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 					}
 				}
 				if startsChecked {
-					state, why, serr := d.starts(ctx, deployed.ID)
+					state, why, serr := d.starts(ctx, deployed.ID, req.StartLine)
 					switch {
 					case serr != nil:
 						startErr = serr
@@ -288,7 +306,7 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 						return res, fmt.Errorf("railway: deployment %s is not running steadily within %s of SUCCESS: %s", deployed.ID, req.Settle, why)
 					default:
 						startErrors, startsRead = 0, true
-						startsSeen = startsSeen || state == startsSteady
+						startsSeen, startsWhy = state == startsSteady, why
 					}
 				}
 				if time.Now().After(settleUntil) {
@@ -297,7 +315,7 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 					case !startsRead && startErr != nil:
 						res.Warnings = append(res.Warnings, "deployment log not readable; settle checked the deployment status only: "+startErr.Error())
 					default:
-						res.Warnings = append(res.Warnings, "no single container start appeared in the deployment log; settle checked the deployment status only")
+						res.Warnings = append(res.Warnings, "restart check inconclusive: "+startsWhy+"; settle checked the deployment status only")
 					}
 					return res, nil
 				}
