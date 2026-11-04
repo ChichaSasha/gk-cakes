@@ -49,7 +49,7 @@ func (s SQLStore) reservation(ctx context.Context, fn string, op Operation, enve
 	)
 	err := s.db.QueryRow(ctx,
 		"SELECT result, op_state, op_outcome, op_outcome_hash FROM business."+fn+"($1::uuid, $2, $3::uuid, $4, $5, $6, $7)",
-		op.ID, string(op.Kind), op.AggregateID, op.PriorVersion, op.PayloadHash(), envelopeKey, op.ReplayUntil,
+		op.ID, string(op.Kind), op.AggregateID, op.PriorVersion, op.PayloadHash(), envelopeKey, op.ReplayUntilArg(),
 	).Scan(&res.Result, &state, &outcome, &hash)
 	if err != nil {
 		return Reservation{}, err

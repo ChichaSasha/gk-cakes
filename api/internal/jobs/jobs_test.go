@@ -1,7 +1,9 @@
 package jobs
 
 import (
+	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -32,5 +34,22 @@ func TestAttentionKeepsTheReasonAndCause(t *testing.T) {
 	}
 	if reason("") == "" {
 		t.Fatal("empty reason stored")
+	}
+}
+
+func TestChainOffersTheJobUntilAHandlerOwnsIt(t *testing.T) {
+	var seen []string
+	h := func(name string, err error) Handler {
+		return func(context.Context, Job) error { seen = append(seen, name); return err }
+	}
+	owned := errors.New("owned")
+	if err := Chain(h("a", ErrNoHandler), h("b", owned), h("c", nil))(context.Background(), Job{}); !errors.Is(err, owned) {
+		t.Fatalf("Chain = %v, want b's answer", err)
+	}
+	if strings.Join(seen, ",") != "a,b" {
+		t.Fatalf("handlers called %v, want a then b only", seen)
+	}
+	if err := Chain(h("x", ErrNoHandler))(context.Background(), Job{}); !errors.Is(err, ErrNoHandler) {
+		t.Fatalf("unowned job: %v", err)
 	}
 }

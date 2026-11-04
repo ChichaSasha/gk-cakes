@@ -21,6 +21,7 @@ type Checkout interface {
 	ArchiveCode(ctx context.Context, subject, key, codeID string, in catalog.VersionInput) (catalog.Result, error)
 	Checkout(ctx context.Context, subject string, digest []byte, key string, in checkout.CheckoutInput) (catalog.Result, error)
 	GetOrder(ctx context.Context, id, subject string, digest []byte) (checkout.Order, error)
+	FreeConfirm(ctx context.Context, id, subject string, digest []byte, key string, in checkout.FreeConfirmInput) (catalog.Result, error)
 	CurrentPolicy(ctx context.Context) (checkout.Policy, error)
 	RecordPolicy(ctx context.Context, subject, key string, in checkout.PolicyInput) (catalog.Result, error)
 }
@@ -140,8 +141,36 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 			return checkout.Placed{OrderID: res.ID, State: "pending", PollAfterSeconds: checkout.PollAfterSeconds}, nil
 		})
 	}
+	// K03 free confirmation: 202 "confirmation pending" (K11 protection runs
+	// in the worker); poll the order.
+	postFreeConfirm := func(w http.ResponseWriter, r *http.Request) {
+		a, signedIn, ok := optionalCustomer(id, w, r, logger)
+		if !ok {
+			return
+		}
+		var digest []byte
+		if !signedIn {
+			d, err := checkout.GuestProofDigest(r.Header.Get(OrderCapabilityHeader))
+			if err != nil {
+				writeError(w, r, http.StatusNotFound, "NOT_FOUND", "Not found", false)
+				return
+			}
+			digest = d
+		}
+		var in checkout.FreeConfirmInput
+		key, ok := readCommand(w, r, &in)
+		if !ok {
+			return
+		}
+		res, err := co.FreeConfirm(r.Context(), r.PathValue("id"), a.Subject, digest, key, in)
+		respondCommand(w, r, logger, http.StatusAccepted, res, err, func() (any, error) {
+			return checkout.Confirming{OrderID: r.PathValue("id"), State: "confirmation_pending",
+				PollAfterSeconds: checkout.PollAfterSeconds}, nil
+		})
+	}
 	if checkoutEnabled {
 		mux.HandleFunc("POST /api/v1/checkouts", postCheckout)
+		mux.HandleFunc("POST /api/v1/orders/{id}/free-confirmation", postFreeConfirm)
 	}
 	mux.HandleFunc("GET /api/v1/orders/{id}", func(w http.ResponseWriter, r *http.Request) {
 		a, signedIn, ok := optionalCustomer(id, w, r, logger)

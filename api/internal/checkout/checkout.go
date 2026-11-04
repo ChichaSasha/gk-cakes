@@ -52,6 +52,9 @@ type Querier interface {
 type Store struct {
 	DB  Querier
 	Now func() time.Time
+	// Env is the recovery journal environment (APP_ENV) that order commands
+	// are protected under; the worker's journal must use the same one.
+	Env string
 }
 
 func (s *Store) now() time.Time {
@@ -417,7 +420,7 @@ var invalidMessages = map[string]string{
 
 var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "state_conflict": true,
 	"duplicate": true, "item_unavailable": true, "slot_unavailable": true, "price_changed": true,
-	"quote_expired": true, "policy_changed": true, "code_used_up": true}
+	"quote_expired": true, "policy_changed": true, "code_used_up": true, "payment_required": true, "lead_time": true}
 
 // conflictAliases name engine refusals in the customer's terms.
 var conflictAliases = map[string]string{"day_full": "slot_unavailable", "stock_unavailable": "item_unavailable"}

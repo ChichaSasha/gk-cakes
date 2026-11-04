@@ -979,3 +979,39 @@ func TestRuntimeRolesCannotUseRecoveryInternals(t *testing.T) {
 		}
 	}
 }
+
+// Commands have no replay deadline in the database; dispatches must have
+// one; the command is secured with its outcome like a dispatch.
+func TestCommandOperationsRecordNoReplayDeadline(t *testing.T) {
+	h := newHarness(t)
+	c := h.coord
+	op := recovery.Operation{ID: uuidAt(901), Kind: recovery.KindCommand, AggregateID: uuidAt(902), PriorVersion: 1,
+		Payload: json.RawMessage(`{"command":"test"}`)}
+	store := h.store()
+	committed := false
+	apply := func(ctx context.Context) (recovery.Outcome, recovery.State, error) {
+		o := recovery.Outcome{Status: "confirmed"}
+		state, _, err := store.MarkCommitted(ctx, op, o, false)
+		committed = true
+		return o, state, err
+	}
+	if got, err := c.Command(context.Background(), store, op, apply); err != nil || got.Status != "confirmed" || !committed {
+		t.Fatalf("Command = %+v, %v", got, err)
+	}
+	var kind string
+	var replay *time.Time
+	if err := h.owner.QueryRow(context.Background(), "SELECT kind, replay_until, state FROM business.recovery_operation WHERE id = $1::uuid", op.ID).
+		Scan(&kind, &replay, new(string)); err != nil || kind != "command" || replay != nil || h.state(op.ID) != "secured" {
+		t.Fatalf("recorded %s %v %s (%v)", kind, replay, h.state(op.ID), err)
+	}
+	for name, sql := range map[string]string{
+		"dispatch without deadline": `INSERT INTO business.recovery_operation (id, kind, aggregate_id, prior_version, payload_hash, envelope_key, replay_until)
+			VALUES (gen_random_uuid(), 'dispatch', gen_random_uuid(), 0, repeat('a', 64), 'k1', NULL)`,
+		"command with deadline": `INSERT INTO business.recovery_operation (id, kind, aggregate_id, prior_version, payload_hash, envelope_key, replay_until)
+			VALUES (gen_random_uuid(), 'command', gen_random_uuid(), 0, repeat('a', 64), 'k2', now())`,
+	} {
+		if _, err := h.owner.Exec(context.Background(), sql); dbtest.SQLState(err) != "23514" {
+			t.Errorf("%s: %v, want a check violation", name, err)
+		}
+	}
+}

@@ -843,7 +843,12 @@ func TestRuntimeRolesUseOnlyTheNotificationGateway(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := append([]string{"business.job_claim(uuid, interval)", "business.job_complete(uuid, uuid, bigint)",
-		"business.job_heartbeat(uuid, uuid, bigint, interval)", "business.job_release(uuid, uuid, bigint, interval)"}, worker...)
+		"business.job_heartbeat(uuid, uuid, bigint, interval)", "business.job_release(uuid, uuid, bigint, interval)",
+		// GK-025 lease-fenced order commands.
+		"business.order_command_apply(uuid, uuid, bigint, uuid)", "business.order_command_begin(uuid, uuid, bigint)",
+		"business.order_command_frozen(uuid, uuid, bigint)", "business.order_command_prepared(uuid, uuid, bigint, uuid)",
+		"business.order_command_reserve(uuid, uuid, bigint, uuid, text, uuid, integer, text, text)",
+		"business.order_command_secured(uuid, uuid, bigint, uuid)"}, worker...)
 	slices.Sort(want)
 	if !slices.Equal(got, want) {
 		t.Errorf("gk_worker can execute %v, want exactly %v", got, want)

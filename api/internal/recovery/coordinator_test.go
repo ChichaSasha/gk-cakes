@@ -51,7 +51,7 @@ func TestDispatchRejectsInvalidOperationsBeforeTouchingState(t *testing.T) {
 		"negative version":        func(o *Operation) { o.PriorVersion = -1 },
 		"payload not JSON":        func(o *Operation) { o.Payload = json.RawMessage(`{`) },
 		"dispatch without replay": func(o *Operation) { o.ReplayUntil = time.Time{} },
-		"command (not supported)": func(o *Operation) { o.Kind = "command" },
+		"command via Dispatch":    func(o *Operation) { o.Kind = KindCommand; o.ReplayUntil = time.Time{} },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
