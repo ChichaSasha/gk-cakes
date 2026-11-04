@@ -6,3 +6,8 @@
 
 GRANT USAGE ON SCHEMA gk_meta TO gk_backup;
 GRANT SELECT ON TABLE gk_meta.schema_migration TO gk_backup;
+
+-- Future sequences (an identity or serial column) stay readable by the
+-- backup login, as tables already are (0001), so pg_dump never fails on one.
+SET LOCAL ROLE gk_owner;
+ALTER DEFAULT PRIVILEGES IN SCHEMA business GRANT SELECT ON SEQUENCES TO gk_backup;

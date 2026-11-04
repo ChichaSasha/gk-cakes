@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -84,9 +85,20 @@ func TestBackupRestoresWithTheSameRows(t *testing.T) {
 	store, sealer := newMemStore(), testSealer(t)
 	at := time.Date(2026, 11, 4, 2, 30, 0, 0, time.UTC)
 	d := &Dumper{Env: "test", DB: source.LoginURL(t, "gk_backup"), PgDump: pgDump, Store: store, Sealer: sealer, Now: func() time.Time { return at }}
+	// A job written after the counts but before pg_dump starts: the dump
+	// uses the same snapshot as the counts, so it must not contain it.
+	d.beforeDump = func(ctx context.Context) {
+		if _, err := owner.Exec(ctx, "BEGIN; SET LOCAL ROLE gk_owner; SELECT business.job_enqueue(gen_random_uuid(), NULL); COMMIT"); err != nil {
+			t.Errorf("concurrent write: %v", err)
+		}
+	}
 	m, err := d.Dump(ctx)
 	if err != nil {
 		t.Fatalf("Dump: %v", err)
+	}
+	stamp := at.Format(stampLayout)
+	if want := []string{Root("test") + stamp + "/dump.sealed", manifestName("test", stamp)}; !slices.Equal(store.puts, want) {
+		t.Fatalf("uploads %v, want the dump, then the manifest", store.puts)
 	}
 	if m.Rows["job"] != 2 || m.Rows["account"] != 1 || m.Rows["staff_capability"] != 1 || m.Rows["audit_event"] < 2 ||
 		m.SchemaVersion != m.Migrations[len(m.Migrations)-1] || !strings.HasPrefix(m.SchemaVersion, "0008_") || m.DumpBytes == 0 {

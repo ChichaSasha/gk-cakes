@@ -212,7 +212,8 @@ authorization; review in the morning).** Supabase login `gk_backup_staging` (mem
 delete); a backup encryption key; all four as GitHub `staging` environment secrets
 (`STAGING_BACKUP_*`) with copies in the Creator's Keychain for Bitwarden. B2 lifecycle rule on
 `database/` only: hide after 30 days, delete one day later. Turn on with the repository
-variable `STAGING_BACKUP_ENABLED=true` after the backup PR is merged. A restore into
+variable `STAGING_BACKUP_ENABLED=true` only after the staging deploy that applies
+migration 0008 succeeds (the backup login reads the migration history from then on). A restore into
 `gk-cakes-restore-test` (GK-014) still needs the Creator's restore-time credentials.
 
 **GK-024 staging email setup (Owner: Creator; agent guides each step).** Needed

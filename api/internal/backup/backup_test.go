@@ -20,6 +20,7 @@ type memStore struct {
 	mu    sync.Mutex
 	objs  map[string][]byte
 	reads map[string]int
+	puts  []string // names in upload order
 }
 
 func newMemStore() *memStore { return &memStore{objs: map[string][]byte{}, reads: map[string]int{}} }
@@ -28,6 +29,7 @@ func (s *memStore) Put(_ context.Context, name string, data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.objs[name] = append([]byte(nil), data...)
+	s.puts = append(s.puts, name)
 	return nil
 }
 
@@ -111,24 +113,37 @@ func TestLatestPicksTheNewestCompleteBackup(t *testing.T) {
 func TestLatestRefusesForeignOrTamperedManifests(t *testing.T) {
 	sealer := testSealer(t)
 	at := time.Date(2026, 11, 4, 2, 30, 0, 0, time.UTC)
-	name := manifestName("staging", at.Format(stampLayout))
+	stamp := at.Format(stampLayout)
+	name := manifestName("staging", stamp)
+	dump := Root("staging") + stamp + "/dump.sealed"
+	// Each case breaks exactly one binding; the others hold.
+	put := func(s *memStore, m Manifest, sealedFor string) {
+		body, _ := json.Marshal(m)
+		sealed, _ := sealer.Seal(sealedFor, body)
+		_ = s.Put(context.Background(), name, sealed)
+	}
 	cases := map[string]func(s *memStore){
-		"another environment's manifest under this name": func(s *memStore) {
-			body, _ := json.Marshal(manifestAt("production", at))
-			sealed, _ := sealer.Seal(name, body)
-			_ = s.Put(context.Background(), name, sealed)
+		"another environment": func(s *memStore) {
+			m := manifestAt("production", at)
+			m.Dump = dump
+			put(s, m, name)
 		},
-		"a manifest claiming another time": func(s *memStore) {
-			body, _ := json.Marshal(manifestAt("staging", at.Add(time.Hour)))
-			sealed, _ := sealer.Seal(name, body)
-			_ = s.Put(context.Background(), name, sealed)
+		"another time": func(s *memStore) {
+			m := manifestAt("staging", at.Add(time.Hour))
+			m.Dump = Root("staging") + at.Add(time.Hour).Format(stampLayout) + "/dump.sealed"
+			put(s, m, name)
 		},
-		"a manifest sealed for another name (moved)": func(s *memStore) {
-			body, _ := json.Marshal(manifestAt("staging", at))
-			sealed, _ := sealer.Seal(manifestName("staging", "20260101-000000z"), body)
-			_ = s.Put(context.Background(), name, sealed)
+		"a dump elsewhere": func(s *memStore) {
+			m := manifestAt("staging", at)
+			m.Dump = Root("staging") + "20260101-000000z/dump.sealed"
+			put(s, m, name)
 		},
-		"a corrupted manifest": func(s *memStore) { _ = s.Put(context.Background(), name, []byte(`{"v":1}`)) },
+		"sealed for another name (moved)": func(s *memStore) {
+			m := manifestAt("staging", at)
+			m.Dump = dump
+			put(s, m, manifestName("staging", "20260101-000000z"))
+		},
+		"corrupted": func(s *memStore) { _ = s.Put(context.Background(), name, []byte(`{"v":1}`)) },
 	}
 	for label, setup := range cases {
 		s := newMemStore()
@@ -136,6 +151,13 @@ func TestLatestRefusesForeignOrTamperedManifests(t *testing.T) {
 		if _, err := Latest(context.Background(), s, sealer, "staging"); err == nil {
 			t.Errorf("%s: accepted", label)
 		}
+	}
+	ok := newMemStore()
+	m := manifestAt("staging", at)
+	m.Dump = dump
+	put(ok, m, name)
+	if _, err := Latest(context.Background(), ok, sealer, "staging"); err != nil {
+		t.Fatalf("the intact manifest: %v", err)
 	}
 }
 
@@ -162,6 +184,13 @@ func TestRestoreCheckFailsFastOnAStaleOrAlteredBackup(t *testing.T) {
 	if _, err := r.Check(context.Background()); err == nil || !strings.Contains(err.Error(), "does not match its manifest") {
 		t.Fatalf("altered dump: %v", err)
 	}
+	// A backup dated in the future would be chosen forever: refused.
+	future := newMemStore()
+	putBackup(t, future, sealer, manifestAt("staging", now.Add(48*time.Hour)), []byte("archive"))
+	r.Store = future
+	if _, err := r.Check(context.Background()); err == nil || !strings.Contains(err.Error(), "in the future") {
+		t.Fatalf("future-dated backup: %v", err)
+	}
 	// A dump sealed with another key cannot be opened.
 	other, _ := recovery.NewSealer("k2:" + strings.Repeat("A", 43) + "=")
 	foreign := newMemStore()
@@ -180,17 +209,23 @@ func TestRunKeepsThePasswordOffTheCommandLine(t *testing.T) {
 	dir := t.TempDir()
 	argsFile := filepath.Join(dir, "args")
 	tool := filepath.Join(dir, "tool")
-	script := "#!/bin/sh\necho \"$@\" > " + argsFile + "\necho \"password was $PGPASSWORD\" >&2\nexit 3\n"
+	script := "#!/bin/sh\necho \"$@\" > " + argsFile + "\necho \"tool: error: password was $PGPASSWORD; host env ${PGHOST:-none} b2 ${BACKUP_B2_KEY:-none}\" >&2\nexit 3\n"
 	if err := os.WriteFile(tool, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("PGHOST", "elsewhere.example.com") // inherited PG* variables never reach the tool
+	t.Setenv("BACKUP_B2_KEY", "b2-secret")
 	_, err := run(context.Background(), tool, "postgres://gk_backup_staging:s3cr3t-pw@db.example.com:5432/postgres?sslmode=verify-full", 1024, "--format=custom")
 	args, _ := os.ReadFile(argsFile)
 	if strings.Contains(string(args), "s3cr3t-pw") || !strings.Contains(string(args), "gk_backup_staging@db.example.com") {
 		t.Fatalf("command line %q", args)
 	}
-	if err == nil || strings.Contains(err.Error(), "s3cr3t-pw") || !strings.Contains(err.Error(), "[redacted]") {
-		t.Fatalf("error %v; want the tool's message with the password redacted", err)
+	if err == nil || strings.Contains(err.Error(), "s3cr3t-pw") || !strings.Contains(err.Error(), "[redacted]") || !strings.Contains(err.Error(), "host env none b2 none") {
+		t.Fatalf("error %v; want the tool's message with the password redacted and no inherited PGHOST", err)
+	}
+	// Without a password nothing is "redacted" (no scrambled message).
+	if _, err := run(context.Background(), tool, "postgres://u@127.0.0.1/db", 1024); err == nil || strings.Contains(err.Error(), "[redacted]") {
+		t.Fatalf("error without a password: %v", err)
 	}
 	big := filepath.Join(dir, "big")
 	if err := os.WriteFile(big, []byte("#!/bin/sh\nhead -c 4096 /dev/zero\n"), 0o755); err != nil {
@@ -198,5 +233,21 @@ func TestRunKeepsThePasswordOffTheCommandLine(t *testing.T) {
 	}
 	if _, err := run(context.Background(), big, "postgres://u:p@127.0.0.1/db", 1024); err == nil || !strings.Contains(err.Error(), "exceeds 1024 bytes") {
 		t.Fatalf("oversized output: %v", err)
+	}
+}
+
+// Tool errors keep one line: PostgreSQL's DETAIL, CONTEXT, LINE and "Command
+// was" lines can quote row values and the workflow logs are public.
+func TestToolErrorKeepsOneLine(t *testing.T) {
+	stderr := "pg_restore: while PROCESSING TOC:\npg_restore: error: could not execute query: ERROR:  duplicate key value violates unique constraint \"x_pkey\"\nDETAIL:  Key (email)=(someone@example.com) already exists.\nCONTEXT:  COPY account, line 1: \"someone@example.com\"\nCommand was: COPY business.account (id) FROM stdin;\n"
+	got := toolError(stderr, "")
+	if !strings.HasPrefix(got, "pg_restore: error: could not execute query") || strings.Contains(got, "someone@example.com") {
+		t.Fatalf("toolError = %q", got)
+	}
+	if got := toolError("pg_dump: error: connection failed: password pw1 rejected\n", "pw1"); strings.Contains(got, "pw1") {
+		t.Fatalf("password not redacted: %q", got)
+	}
+	if got := toolError("plain noise\n", ""); got != "no error message" {
+		t.Fatalf("no error line: %q", got)
 	}
 }

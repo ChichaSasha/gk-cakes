@@ -497,3 +497,20 @@ func TestB2AreaScopesTheKey(t *testing.T) {
 		}
 	}
 }
+
+// TestB2NeverTruncatesObjects: an object larger than the read limit is
+// refused on upload, and a larger download is an error, never a cut-off body.
+func TestB2NeverTruncatesObjects(t *testing.T) {
+	f := newFakeB2(t)
+	j := f.journal(t)
+	big := make([]byte, MaxObjectBytes+1)
+	if err := j.Put(context.Background(), "recovery/test/big", big); err == nil || !strings.Contains(err.Error(), "could not be read back") {
+		t.Fatalf("Put of %d bytes: %v", len(big), err)
+	}
+	f.mu.Lock()
+	f.files["recovery/test/big"] = big
+	f.mu.Unlock()
+	if got, err := j.Get(context.Background(), "recovery/test/big"); err == nil || got != nil {
+		t.Fatalf("Get of an oversized object: %d bytes, %v; want an error", len(got), err)
+	}
+}

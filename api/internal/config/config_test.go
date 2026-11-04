@@ -366,7 +366,7 @@ func TestLoadAPIAuth(t *testing.T) {
 }
 
 func TestLoadBackup(t *testing.T) {
-	keys := map[string]string{"BACKUP_B2_KEY_ID": "003c1eda0170c830000000010", "BACKUP_B2_KEY": "K003" + canary,
+	keys := map[string]string{"BACKUP_B2_KEY_ID": "0031234abcd000000000000a1", "BACKUP_B2_KEY": "K003" + canary,
 		"BACKUP_ENCRYPTION_KEYS": "k1:" + canary}
 	dump := merge(keys, map[string]string{"APP_ENV": "staging",
 		"BACKUP_DATABASE_URL": "postgresql://gk_backup_staging:" + canary + "@db.example.supabase.co:5432/postgres?sslmode=verify-full"})
@@ -382,15 +382,19 @@ func TestLoadBackup(t *testing.T) {
 		restore bool
 		mention string
 	}{
-		"no keys":                 {map[string]string{"APP_ENV": "staging", "BACKUP_DATABASE_URL": dump["BACKUP_DATABASE_URL"]}, false, "BACKUP_B2_KEY_ID, BACKUP_B2_KEY and BACKUP_ENCRYPTION_KEYS are required"},
-		"bad key id":              {merge(dump, map[string]string{"BACKUP_B2_KEY_ID": "key/with/slash"}), false, "BACKUP_B2_KEY_ID must be"},
-		"dump without database":   {merge(keys, map[string]string{"APP_ENV": "staging"}), false, "BACKUP_DATABASE_URL is required"},
-		"dump without TLS":        {merge(dump, map[string]string{"BACKUP_DATABASE_URL": "postgres://u:" + canary + "@db.example.supabase.co/postgres?sslmode=require"}), false, "sslmode=verify-full"},
-		"restore without target":  {merge(keys, map[string]string{"APP_ENV": "staging"}), true, "RESTORE_DATABASE_URL is required"},
-		"restore to a remote db":  {merge(restore, map[string]string{"RESTORE_DATABASE_URL": "postgres://u:" + canary + "@db.example.supabase.co/postgres?sslmode=verify-full"}), true, "loopback"},
-		"restore to a socket":     {merge(restore, map[string]string{"RESTORE_DATABASE_URL": "postgres://u:" + canary + "@/db?host=/var/run/postgresql"}), true, "loopback"},
-		"restore with a fallback": {merge(restore, map[string]string{"RESTORE_DATABASE_URL": "postgres://u:" + canary + "@127.0.0.1,db.example.com/db"}), true, "loopback"},
-		"restore not postgres":    {merge(restore, map[string]string{"RESTORE_DATABASE_URL": "mysql://u:" + canary + "@127.0.0.1/db"}), true, "not a valid PostgreSQL URL"},
+		"no keys":                       {map[string]string{"APP_ENV": "staging", "BACKUP_DATABASE_URL": dump["BACKUP_DATABASE_URL"]}, false, "BACKUP_B2_KEY_ID, BACKUP_B2_KEY and BACKUP_ENCRYPTION_KEYS are required"},
+		"bad key id":                    {merge(dump, map[string]string{"BACKUP_B2_KEY_ID": "key/with/slash"}), false, "BACKUP_B2_KEY_ID must be"},
+		"dump without database":         {merge(keys, map[string]string{"APP_ENV": "staging"}), false, "BACKUP_DATABASE_URL is required"},
+		"dump without TLS":              {merge(dump, map[string]string{"BACKUP_DATABASE_URL": "postgres://u:" + canary + "@db.example.supabase.co/postgres?sslmode=require"}), false, "sslmode=verify-full"},
+		"restore without target":        {merge(keys, map[string]string{"APP_ENV": "staging"}), true, "RESTORE_DATABASE_URL is required"},
+		"restore to a remote db":        {merge(restore, map[string]string{"RESTORE_DATABASE_URL": "postgres://u:" + canary + "@db.example.supabase.co/postgres?sslmode=verify-full"}), true, "loopback"},
+		"restore to a socket":           {merge(restore, map[string]string{"RESTORE_DATABASE_URL": "postgres://u:" + canary + "@/db?host=/var/run/postgresql"}), true, "loopback"},
+		"restore with a fallback":       {merge(restore, map[string]string{"RESTORE_DATABASE_URL": "postgres://u:" + canary + "@127.0.0.1,db.example.com/db"}), true, "loopback"},
+		"restore not postgres":          {merge(restore, map[string]string{"RESTORE_DATABASE_URL": "mysql://u:" + canary + "@127.0.0.1/db"}), true, "not a valid PostgreSQL URL"},
+		"restore via hostaddr":          {merge(restore, map[string]string{"RESTORE_DATABASE_URL": "postgres://u:" + canary + "@127.0.0.1:5432/restore?hostaddr=203.0.113.9"}), true, "RESTORE_DATABASE_URL must"},
+		"restore via loopback hostaddr": {merge(restore, map[string]string{"RESTORE_DATABASE_URL": "postgres://u@localhost:5432/restore?hostaddr=127.0.0.1"}), true, "RESTORE_DATABASE_URL"},
+		"restore via service":           {merge(restore, map[string]string{"RESTORE_DATABASE_URL": "postgres://u@127.0.0.1:5432/restore?service=prod"}), true, "RESTORE_DATABASE_URL"},
+		"password in the query":         {merge(dump, map[string]string{"BACKUP_DATABASE_URL": "postgresql://gk_backup_staging@db.example.supabase.co:5432/postgres?sslmode=verify-full&password=" + canary}), false, "must not set password"},
 	} {
 		_, err := LoadBackup(env(c.env), c.restore)
 		if err == nil || !strings.Contains(err.Error(), c.mention) {

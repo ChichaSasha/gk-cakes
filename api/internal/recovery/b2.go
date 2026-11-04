@@ -74,6 +74,10 @@ func isExpired(err error) bool {
 	return errors.As(err, &be) && be.Status == http.StatusUnauthorized && (be.Code == "expired_auth_token" || be.Code == "bad_auth_token")
 }
 
+// MaxObjectBytes is the largest object this client reads back (64 MiB); a
+// larger response is an error, never a truncated object.
+const MaxObjectBytes = 64 << 20
+
 var objectName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$`)
 
 // NewB2 validates cfg; the key's scope is checked on first use.
@@ -131,9 +135,13 @@ func (b *B2) do(req *http.Request, op string, out any) ([]byte, error) {
 		return nil, fmt.Errorf("b2 %s: %w", op, err)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxObjectBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("b2 %s: read: %w", op, err)
+	}
+	if len(body) > MaxObjectBytes {
+		// Never return a cut-off object as if it were whole.
+		return nil, fmt.Errorf("b2 %s: response larger than %d bytes", op, MaxObjectBytes)
 	}
 	if resp.StatusCode/100 != 2 {
 		be := &b2Error{Status: resp.StatusCode, Op: op}
@@ -277,6 +285,9 @@ func (b *B2) Ping(ctx context.Context) error {
 func (b *B2) Put(ctx context.Context, name string, data []byte) error {
 	if err := b.checkName(name); err != nil {
 		return err
+	}
+	if len(data) > MaxObjectBytes {
+		return fmt.Errorf("recovery: object %q is larger than %d bytes and could not be read back", name, MaxObjectBytes)
 	}
 	sum := sha1.Sum(data)
 	want := hex.EncodeToString(sum[:])

@@ -29,6 +29,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ChichaSasha/gk-cakes/api/internal/recovery"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -45,8 +46,11 @@ type Sealer interface {
 	Open(name string, data []byte) ([]byte, error)
 }
 
-// DefaultMaxBytes bounds a dump held in memory for sealing (256 MiB).
-const DefaultMaxBytes = 256 << 20
+// DefaultMaxBytes bounds a dump (44 MiB): it is held in memory for sealing,
+// and the sealed object (base64 in JSON, about 4/3 larger) must stay within
+// what the store reads back (recovery.MaxObjectBytes, 64 MiB). Streaming
+// encryption replaces this limit when the database grows.
+const DefaultMaxBytes = 44 << 20
 
 // Manifest describes one backup. It holds no business data: names, versions,
 // counts and hashes only.
@@ -76,6 +80,8 @@ type Dumper struct {
 	Sealer   Sealer
 	MaxBytes int
 	Now      func() time.Time
+
+	beforeDump func(context.Context) // test hook: runs after the counts, before pg_dump
 }
 
 // Dump takes a backup and returns its manifest. The dump and the row counts
@@ -102,6 +108,11 @@ func (d *Dumper) Dump(ctx context.Context) (Manifest, error) {
 
 	m := Manifest{V: 1, Environment: d.Env, CreatedAt: now().UTC().Truncate(time.Second), Rows: map[string]int64{}}
 	var snapshot string
+	// This connection sits idle in its transaction while pg_dump runs; a
+	// server timeout must not end it (that would fail the backup).
+	if _, err := tx.Exec(ctx, "SET LOCAL idle_in_transaction_session_timeout = 0"); err != nil {
+		return Manifest{}, fmt.Errorf("backup: session settings: %w", err)
+	}
 	if err := tx.QueryRow(ctx, "SELECT pg_export_snapshot()").Scan(&snapshot); err != nil {
 		return Manifest{}, fmt.Errorf("backup: export snapshot: %w", err)
 	}
@@ -127,6 +138,9 @@ func (d *Dumper) Dump(ctx context.Context) (Manifest, error) {
 	if m.PgDump, err = toolVersion(ctx, pgDump); err != nil {
 		return Manifest{}, err
 	}
+	if d.beforeDump != nil {
+		d.beforeDump(ctx)
+	}
 	archive, err := run(ctx, pgDump, d.DB, maxBytes, "--format=custom", "--snapshot="+snapshot,
 		"--schema=business", "--schema=gk_meta", "--no-password")
 	if err != nil {
@@ -143,6 +157,9 @@ func (d *Dumper) Dump(ctx context.Context) (Manifest, error) {
 	sealedDump, err := d.Sealer.Seal(m.Dump, archive)
 	if err != nil {
 		return Manifest{}, err
+	}
+	if len(sealedDump) > recovery.MaxObjectBytes {
+		return Manifest{}, fmt.Errorf("backup: sealed dump is %d bytes, more than the store reads back (%d)", len(sealedDump), recovery.MaxObjectBytes)
 	}
 	if err := d.Store.Put(ctx, m.Dump, sealedDump); err != nil {
 		return Manifest{}, fmt.Errorf("backup: store dump: %w", err)
@@ -203,8 +220,8 @@ func toolVersion(ctx context.Context, tool string) (string, error) {
 }
 
 // run executes a PostgreSQL client tool against dbURL. The password goes in
-// PGPASSWORD, never on the command line; stdout is capped at maxBytes and
-// stderr is reported without the URL.
+// PGPASSWORD, never on the command line; the tool gets no other PG* or backup
+// variables; stdout is capped at maxBytes; errors keep one line (toolError).
 func run(ctx context.Context, tool, dbURL string, maxBytes int, args ...string) ([]byte, error) {
 	u, err := url.Parse(dbURL)
 	if err != nil {
@@ -213,22 +230,57 @@ func run(ctx context.Context, tool, dbURL string, maxBytes int, args ...string) 
 	password, _ := u.User.Password()
 	u.User = url.User(u.User.Username())
 	cmd := exec.CommandContext(ctx, tool, append(args, "--dbname="+u.String())...)
-	cmd.Env = append(os.Environ(), "PGPASSWORD="+password, "PGAPPNAME=gk-backup")
+	cmd.Env = toolEnv(password, "gk-backup")
 	var stdout limitedBuffer
 	stdout.max = maxBytes
 	var stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &limitedWriter{w: &stderr, n: 8 << 10}
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(strings.ReplaceAll(stderr.String(), password, "[redacted]"))
-		if stdout.over {
-			return nil, fmt.Errorf("output exceeds %d bytes", maxBytes)
-		}
-		return nil, fmt.Errorf("%w: %s", err, msg)
-	}
-	if stdout.over {
+	err = cmd.Run()
+	switch {
+	case stdout.over:
 		return nil, fmt.Errorf("output exceeds %d bytes", maxBytes)
+	case err != nil:
+		return nil, fmt.Errorf("%w: %s", err, toolError(stderr.String(), password))
 	}
 	return stdout.Bytes(), nil
+}
+
+// toolEnv is the environment for a PostgreSQL client tool: this process's,
+// without any PG* (PGHOST, PGHOSTADDR, PGSERVICE...) or backup variables,
+// plus the password and an application name.
+func toolEnv(password, app string) []string {
+	var env []string
+	for _, kv := range os.Environ() {
+		k, _, _ := strings.Cut(kv, "=")
+		if strings.HasPrefix(k, "PG") || strings.HasPrefix(k, "BACKUP_") || strings.HasPrefix(k, "RESTORE_") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	if password != "" {
+		env = append(env, "PGPASSWORD="+password)
+	}
+	return append(env, "PGAPPNAME="+app)
+}
+
+// toolError keeps the first line that names the error. PostgreSQL's DETAIL,
+// CONTEXT, LINE, HINT and "Command was" lines can quote row values, and the
+// workflow logs are public, so they are dropped.
+func toolError(stderr, password string) string {
+	for _, line := range strings.Split(stderr, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.Contains(line, "error:") && !strings.HasPrefix(line, "ERROR:") && !strings.Contains(line, "FATAL:") {
+			continue
+		}
+		if password != "" {
+			line = strings.ReplaceAll(line, password, "[redacted]")
+		}
+		if len(line) > 300 {
+			line = line[:300] + "…"
+		}
+		return line
+	}
+	return "no error message"
 }
 
 // limitedBuffer keeps at most max bytes and records an overflow. The buffer
@@ -335,6 +387,10 @@ func (r *Restorer) Check(ctx context.Context) (Report, error) {
 		return Report{}, err
 	}
 	rep := Report{Manifest: m, Age: now().Sub(m.CreatedAt)}
+	if rep.Age < -5*time.Minute {
+		// A future-dated backup would be chosen forever and hide stopped backups.
+		return rep, fmt.Errorf("backup: the newest backup is dated %s in the future", (-rep.Age).Round(time.Minute))
+	}
 	if rep.Age > maxAge {
 		return rep, fmt.Errorf("backup: the newest backup is %s old (more than %s): backups have stopped", rep.Age.Round(time.Minute), maxAge)
 	}
@@ -388,7 +444,7 @@ func (r *Restorer) Check(ctx context.Context) (Report, error) {
 }
 
 // restore loads archive into target without owners or privileges (the
-// disposable target has none of the production roles).
+// disposable target has none of the production roles), in one transaction.
 func restore(ctx context.Context, tool, target string, archive []byte) error {
 	u, err := url.Parse(target)
 	if err != nil {
@@ -397,17 +453,13 @@ func restore(ctx context.Context, tool, target string, archive []byte) error {
 	password, _ := u.User.Password()
 	u.User = url.User(u.User.Username())
 	cmd := exec.CommandContext(ctx, tool, "--no-owner", "--no-privileges", "--exit-on-error", "--single-transaction",
-		"--dbname="+u.String())
-	cmd.Env = append(os.Environ(), "PGPASSWORD="+password, "PGAPPNAME=gk-backup-restore")
+		"--no-password", "--dbname="+u.String())
+	cmd.Env = toolEnv(password, "gk-backup-restore")
 	cmd.Stdin = bytes.NewReader(archive)
 	var stderr bytes.Buffer
 	cmd.Stderr = &limitedWriter{w: &stderr, n: 8 << 10}
 	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if password != "" {
-			msg = strings.ReplaceAll(msg, password, "[redacted]")
-		}
-		return fmt.Errorf("%w: %s", err, msg)
+		return fmt.Errorf("%w: %s", err, toolError(stderr.String(), password))
 	}
 	return nil
 }

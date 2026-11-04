@@ -217,8 +217,10 @@ func LoadBackup(getenv func(string) string, restore bool) (Backup, error) {
 	}
 	if restore {
 		cfg.RestoreURL = l.restoreURL("RESTORE_DATABASE_URL")
+		l.plainConnection("RESTORE_DATABASE_URL", cfg.RestoreURL)
 	} else {
 		cfg.DatabaseURL = l.databaseURL("BACKUP_DATABASE_URL", cfg.Env)
+		l.plainConnection("BACKUP_DATABASE_URL", cfg.DatabaseURL)
 	}
 	switch {
 	case cfg.B2KeyID == "" || !cfg.B2Key.IsSet() || !cfg.EncryptionKeys.IsSet():
@@ -227,6 +229,24 @@ func LoadBackup(getenv func(string) string, restore bool) (Backup, error) {
 		l.fail("BACKUP_B2_KEY_ID must be a B2 application key ID")
 	}
 	return cfg, l.err()
+}
+
+// plainConnection refuses URL parameters that the PostgreSQL client tools
+// honour but this validation does not see (hostaddr, service, passfile), or
+// that would put the password on a command line (password).
+func (l *loader) plainConnection(name string, s Secret) {
+	if !s.IsSet() {
+		return
+	}
+	u, err := url.Parse(s.value)
+	if err != nil {
+		return
+	}
+	for _, p := range []string{"password", "hostaddr", "service", "passfile"} {
+		if u.Query().Has(p) {
+			l.fail("%s must not set %s in its query", name, p)
+		}
+	}
 }
 
 // restoreURL accepts only a loopback PostgreSQL database: restore checks
