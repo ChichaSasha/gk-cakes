@@ -314,16 +314,42 @@ func TestEvaluateMatrix(t *testing.T) {
 			s.PaymentIntent.Status = "requires_capture"
 			s.PaymentIntent.LatestCharge.Captured = false
 		}, VerdictPending},
-		"unpaid":                    {func(s *Session) { s.PaymentStatus = "unpaid" }, VerdictPending},
-		"no_payment_required":       {func(s *Session) { s.PaymentStatus = "no_payment_required" }, VerdictPending},
-		"complete without intent":   {func(s *Session) { s.PaymentIntent = nil }, VerdictPending},
-		"intent not expanded":       {func(s *Session) { s.PaymentIntent = &PaymentIntent{ID: "pi_1"} }, VerdictPending},
-		"charge not expanded":       {func(s *Session) { s.PaymentIntent.LatestCharge = &Charge{ID: "ch_1"} }, VerdictPending},
-		"charge not paid":           {func(s *Session) { s.PaymentIntent.LatestCharge.Paid = false }, VerdictPending},
-		"charge failed":             {func(s *Session) { s.PaymentIntent.LatestCharge.Status = "failed" }, VerdictPending},
-		"charge without time":       {func(s *Session) { s.PaymentIntent.LatestCharge.Created = 0 }, VerdictPending},
-		"expired unpaid":            {func(s *Session) { s.Status, s.PaymentStatus, s.PaymentIntent = "expired", "unpaid", nil }, VerdictCancelled},
-		"expired with failed PI":    {func(s *Session) { s.Status, s.PaymentStatus = "expired", "unpaid"; s.PaymentIntent.Status = "canceled" }, VerdictCancelled},
+		"unpaid":                  {func(s *Session) { s.PaymentStatus = "unpaid" }, VerdictPending},
+		"no_payment_required":     {func(s *Session) { s.PaymentStatus = "no_payment_required" }, VerdictPending},
+		"complete without intent": {func(s *Session) { s.PaymentIntent = nil }, VerdictPending},
+		"intent not expanded":     {func(s *Session) { s.PaymentIntent = &PaymentIntent{ID: "pi_1"} }, VerdictPending},
+		"charge not expanded":     {func(s *Session) { s.PaymentIntent.LatestCharge = &Charge{ID: "ch_1"} }, VerdictPending},
+		"charge not paid":         {func(s *Session) { s.PaymentIntent.LatestCharge.Paid = false }, VerdictPending},
+		"charge failed":           {func(s *Session) { s.PaymentIntent.LatestCharge.Status = "failed" }, VerdictPending},
+		"charge without time":     {func(s *Session) { s.PaymentIntent.LatestCharge.Created = 0 }, VerdictPending},
+		"expired unpaid":          {func(s *Session) { s.Status, s.PaymentStatus, s.PaymentIntent = "expired", "unpaid", nil }, VerdictCancelled},
+		"expired with failed PI":  {func(s *Session) { s.Status, s.PaymentStatus = "expired", "unpaid"; s.PaymentIntent.Status = "canceled" }, VerdictCancelled},
+		"expired needing a method": {func(s *Session) {
+			s.Status, s.PaymentStatus = "expired", "unpaid"
+			s.PaymentIntent.Status = "requires_payment_method"
+		}, VerdictCancelled},
+		"expired processing": {func(s *Session) {
+			s.Status, s.PaymentStatus = "expired", "unpaid"
+			s.PaymentIntent.Status = "processing"
+		}, VerdictPending},
+		"expired requires_capture": {func(s *Session) {
+			s.Status, s.PaymentStatus = "expired", "unpaid"
+			s.PaymentIntent.Status = "requires_capture"
+		}, VerdictPending},
+		"expired requires_action": {func(s *Session) {
+			s.Status, s.PaymentStatus = "expired", "unpaid"
+			s.PaymentIntent.Status = "requires_action"
+		}, VerdictPending},
+		"expired intent unexpanded": {func(s *Session) {
+			s.Status, s.PaymentStatus = "expired", "unpaid"
+			s.PaymentIntent = &PaymentIntent{ID: "pi_1"}
+		}, VerdictPending},
+		"fully refunded": {func(s *Session) {
+			s.PaymentIntent.LatestCharge.Refunded, s.PaymentIntent.LatestCharge.AmountRefunded = true, 8585
+		}, VerdictMismatch},
+		"partly refunded":           {func(s *Session) { s.PaymentIntent.LatestCharge.AmountRefunded = 1 }, VerdictMismatch},
+		"refunded flag only":        {func(s *Session) { s.PaymentIntent.LatestCharge.Refunded = true }, VerdictMismatch},
+		"disputed":                  {func(s *Session) { s.PaymentIntent.LatestCharge.Disputed = true }, VerdictMismatch},
 		"expired with succeeded PI": {func(s *Session) { s.Status, s.PaymentStatus = "expired", "unpaid" }, VerdictMismatch},
 		"wrong amount":              {func(s *Session) { s.AmountTotal = i64(8584) }, VerdictMismatch},
 		"no amount":                 {func(s *Session) { s.AmountTotal = nil }, VerdictMismatch},

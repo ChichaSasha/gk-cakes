@@ -132,6 +132,9 @@ CREATE TABLE business.payment_collection (
   -- Bounded evidence: IDs, statuses, amounts, currency, timestamps only.
   evidence            json NULL CHECK (evidence IS NULL OR octet_length(evidence::text) <= 4096),
   mismatch_reason     text NULL CHECK (length(mismatch_reason) BETWEEN 1 AND 200),
+  -- The observation that contradicted the collection (bounded like
+  -- evidence); a succeeded collection keeps its paid evidence.
+  mismatch_evidence   json NULL CHECK (mismatch_evidence IS NULL OR octet_length(mismatch_evidence::text) <= 4096),
   version             integer NOT NULL DEFAULT 1 CHECK (version >= 1),
   created_at          timestamptz NOT NULL DEFAULT now(),
   updated_at          timestamptz NOT NULL DEFAULT now(),
@@ -233,7 +236,8 @@ AS $$
 $$;
 
 -- Owner-internal: schedule the collection's reconcile job no later than
--- p_at: a waiting one is brought forward, otherwise a new one is enqueued.
+-- p_at: a waiting one is brought forward, otherwise a new one is enqueued
+-- (at most one waiting job per collection, also under concurrency).
 CREATE FUNCTION business.payment_schedule_reconcile(p_collection uuid, p_at timestamptz)
 RETURNS uuid
 LANGUAGE plpgsql
@@ -243,6 +247,9 @@ AS $$
 DECLARE
   v_job uuid;
 BEGIN
+  -- Concurrent schedulers of one collection take turns (the collection row
+  -- lock; callers hold no order lock, or already hold this one).
+  PERFORM 1 FROM business.payment_collection pc WHERE pc.id = p_collection FOR UPDATE;
   SELECT j.id INTO v_job
   FROM business.payment_job pj JOIN business.job j ON j.id = pj.job_id
   WHERE pj.collection_id = p_collection AND pj.purpose = 'reconcile' AND j.state IN ('queued', 'retry')
@@ -406,9 +413,13 @@ BEGIN
     RETURN;
   END IF;
   IF p_metadata_collection IS NOT NULL AND p_metadata_env IS NOT DISTINCT FROM p_env THEN
+    -- Locked before the event row references it (its foreign key would
+    -- otherwise share-lock it first and concurrent deliveries deadlock when
+    -- scheduling the reconcile).
     SELECT * INTO v_c FROM business.payment_collection c
     WHERE c.id = p_metadata_collection AND c.environment = p_env AND c.provider_account_id = p_account
-      AND c.livemode = p_livemode;
+      AND c.livemode = p_livemode
+    FOR UPDATE;
   END IF;
   INSERT INTO business.stripe_event
     (id, account, livemode, event_id, event_type, environment, provider_created_at, object_type, object_id,
@@ -831,7 +842,8 @@ $$;
 -- mismatch. Returns the collection's state afterwards and its paid
 -- confirmation command (when one exists). A restore freeze stops a paid
 -- record under its own lock (GK002); another unresolved protected operation
--- on the order is GK409 order_busy (nothing is recorded; retry later).
+-- on the order is GK409 order_busy (nothing is recorded; retry later), an
+-- operation at this or a later order version GK409 order_stale (attention).
 CREATE FUNCTION business.payment_reconcile_record(
   p_job_id uuid, p_worker uuid, p_generation bigint, p_collection uuid, p_verdict text, p_session_id text,
   p_session_status text, p_payment_status text, p_payment_intent_id text, p_evidence json, p_success_at timestamptz,
@@ -873,16 +885,21 @@ BEGIN
   SELECT oc.id INTO v_cmd FROM business.order_command oc WHERE oc.collection_id = c.id;
 
   IF p_verdict = 'mismatch' THEN
+    -- A succeeded collection keeps its state and paid evidence; the
+    -- contradicting observation is kept beside it.
     UPDATE business.payment_collection pc
     SET state = CASE WHEN pc.state = 'succeeded' THEN pc.state ELSE 'unknown' END,
-        mismatch_reason = p_reason, evidence = p_evidence, last_observed_at = pg_catalog.now(),
+        evidence = CASE WHEN pc.state = 'succeeded' THEN pc.evidence ELSE p_evidence END,
+        mismatch_reason = p_reason, mismatch_evidence = p_evidence, last_observed_at = pg_catalog.now(),
         version = pc.version + 1, updated_at = pg_catalog.now()
     WHERE pc.id = c.id;
     PERFORM business.audit_record('system', NULL, 'payment.mismatch', 'order', c.order_id, NULL,
                                   pg_catalog.json_build_object('collection_id', c.id, 'reason', p_reason));
-  ELSIF c.state = 'succeeded' OR c.mismatch_reason IS NOT NULL OR c.state = 'failed' THEN
-    -- Decided already (or under manager reconciliation): only the
-    -- observation time moves.
+  ELSIF c.state IN ('succeeded', 'failed') OR c.mismatch_reason IS NOT NULL
+        OR (c.state = 'cancelled' AND p_verdict <> 'paid') THEN
+    -- Decided already (or under manager reconciliation; a stale observation
+    -- never reopens a cancelled collection): only the observation time
+    -- moves. Real funds after a cancellation are still recorded as paid.
     UPDATE business.payment_collection pc SET last_observed_at = pg_catalog.now() WHERE pc.id = c.id;
   ELSIF p_verdict = 'pending' THEN
     UPDATE business.payment_collection pc
@@ -930,10 +947,14 @@ BEGIN
       v_hash := pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(v_payload, 'UTF8')), 'hex');
       SELECT r.result INTO v_reserve
       FROM business.recovery_reserve(v_cmd, 'command', v_o.id, v_o.version, v_hash, v_key, NULL) r;
-      IF v_reserve <> 'reserved' THEN
-        -- Another protected operation on the order is unresolved (or the
-        -- order moved on): nothing is recorded; the reconcile retries.
+      IF v_reserve = 'busy' THEN
+        -- Another protected operation on the order is unresolved: nothing
+        -- is recorded; the reconcile retries (counted, then attention).
         RAISE EXCEPTION 'order_busy' USING ERRCODE = 'GK409';
+      ELSIF v_reserve <> 'reserved' THEN
+        -- The order already has an operation at this or a later version:
+        -- this can never succeed; manager attention, nothing recorded.
+        RAISE EXCEPTION 'order_stale' USING ERRCODE = 'GK409';
       END IF;
       v_job := business.job_enqueue(v_cmd, NULL);
       INSERT INTO business.order_command (id, order_id, command, actor_kind, actor_account_id, guest_capability_id,
@@ -1107,7 +1128,15 @@ DECLARE
 BEGIN
   SELECT pg_catalog.json_build_object(
            'id', o.id, 'version', o.version,
-           'lifecycle', CASE WHEN o.recovery_state = 'confirmation_pending' THEN 'confirmation_pending' ELSE o.lifecycle END,
+           -- K11: a commit not yet secured, or a recorded payment whose paid
+           -- confirmation is not secured yet ("payment received,
+           -- confirmation being secured"), is confirmation_pending.
+           'lifecycle', CASE WHEN o.recovery_state = 'confirmation_pending'
+                               OR EXISTS (SELECT 1 FROM business.order_command pcmd
+                                          JOIN business.recovery_operation pr ON pr.id = pcmd.id
+                                          WHERE pcmd.order_id = o.id AND pcmd.command = 'paid_confirm'
+                                            AND pr.state <> 'secured')
+                             THEN 'confirmation_pending' ELSE o.lifecycle END,
            'payment_requirement', o.payment_requirement,
            'placed_at', o.placed_at, 'date', o.handover_day, 'fulfillment_mode', o.fulfillment_mode,
            'slot', pg_catalog.json_build_object('id', o.slot_id, 'starts_at', o.original_handover_at, 'ends_at', o.handover_ends_at),

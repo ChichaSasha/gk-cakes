@@ -3,6 +3,7 @@
 package checkout_test
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -844,6 +845,10 @@ func TestPaidSuccessAfterTheOrderChangedIsRefused(t *testing.T) {
 	if !ran || err != nil || h.collection(t, coll).State != "succeeded" {
 		t.Fatalf("reconcile: %v %v", ran, err)
 	}
+	// K11: payment received, confirmation being secured.
+	if o := h.paidOrderView(t, order, d); o.Lifecycle != "confirmation_pending" || o.PaidAt != nil || o.Payment.State != "succeeded" {
+		t.Fatalf("recorded but not committed %+v", o)
+	}
 	h.owner(t, "UPDATE business.capacity_allocation SET state = 'released', expires_at = NULL WHERE order_ref = $1::uuid", order)
 	errs := h.drain(t)
 	if got := attention(errs); len(got) != 1 || !strings.Contains(got[0], "full return") {
@@ -1109,5 +1114,184 @@ func TestFirstCallTooLateFailsWithoutCallingStripe(t *testing.T) {
 	}
 	if _, err := h.start(order, d, "pay-2", 1); err != nil {
 		t.Fatalf("new collection after the failure: %v", err)
+	}
+}
+
+// A restore freeze refuses new collections (503, retry later); a replay of
+// an existing request still answers.
+func TestPaymentInitiationRefusedWhileFrozen(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d := h.paidOrder(t, f, pol)
+	first, err := h.start(order, d, "pay-1", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.stripe.status, h.stripe.errType = 400, "invalid_request_error"
+	h.drain(t) // failed: a new collection would be allowed
+	h.owner(t, "SELECT business.recovery_set_freeze(true, 'restore drill')")
+	if _, err := h.start(order, d, "pay-2", 1); !errors.Is(err, checkout.ErrRecoveryFrozen) || !errors.Is(err, checkout.ErrPaymentsUnavailable) {
+		t.Fatalf("while frozen: %v", err)
+	}
+	if again, err := h.start(order, d, "pay-1", 1); err != nil || !again.Replayed || again.ID != first.ID {
+		t.Fatalf("replay while frozen: %+v %v", again, err)
+	}
+	if got := h.count(t, "SELECT count(*) FROM business.payment_collection WHERE order_id = $1::uuid", order); got != 1 {
+		t.Fatalf("%d collections, want 1", got)
+	}
+	h.owner(t, "SELECT business.recovery_set_freeze(false, NULL)")
+	if _, err := h.start(order, d, "pay-2", 1); err != nil {
+		t.Fatalf("after the freeze: %v", err)
+	}
+}
+
+// Concurrent deliveries for one collection leave one waiting reconcile job.
+func TestConcurrentEventsScheduleOneReconcile(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d := h.paidOrder(t, f, pol)
+	coll, session := h.started(t, order, d)
+	for round := range 10 {
+		h.owner(t, `UPDATE business.job SET state = 'completed', lease_owner = NULL, lease_until = NULL
+			WHERE state IN ('queued', 'retry')`)
+		var wg sync.WaitGroup
+		for i := range 4 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				h.deliver(t, fmt.Sprintf("evt_r%d_%d", round, i), "checkout.session.completed", "checkout.session", session, coll, order)
+			}()
+		}
+		wg.Wait()
+		if got := h.count(t, `SELECT count(*) FROM business.payment_job pj JOIN business.job j ON j.id = pj.job_id
+			WHERE pj.collection_id = $1::uuid AND pj.purpose = 'reconcile' AND j.state IN ('queued', 'retry')`, coll); got != 1 {
+			t.Fatalf("round %d: %d waiting reconcile jobs, want 1", round, got)
+		}
+	}
+}
+
+// insertOrderOperation records another protected operation on the order at
+// its current version (a competing command), in state.
+func (h *payHarness) insertOrderOperation(t *testing.T, order string, version int) string {
+	t.Helper()
+	id := payments.NewID()
+	h.owner(t, `INSERT INTO business.recovery_operation (id, kind, aggregate_id, prior_version, payload_hash, envelope_key, replay_until)
+		VALUES ($1::uuid, 'command', $2::uuid, $3, repeat('a', 64), 'recovery/test/op/' || $2 || '/x-' || $1, 'infinity')`, id, order, version)
+	return id
+}
+
+// A paid record waits (counted retries, then attention) while another
+// protected operation on the order is unresolved, and goes to attention at
+// once when the order already has an operation at its version.
+func TestPaidRecordWaitsWhileBusyAndEscalatesWhenStale(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d := h.paidOrder(t, f, pol)
+	coll, session := h.started(t, order, d)
+	h.stripe.pay(session, time.Date(2026, 11, 5, 10, 9, 0, 0, time.UTC))
+	// An unresolved operation at an earlier version holds the order.
+	other := h.insertOrderOperation(t, order, 0)
+	h.deliver(t, "evt_completed", "checkout.session.completed", "checkout.session", session, coll, order)
+	errs := h.drain(t)
+	var de *jobs.DeferError
+	if len(errs) != 1 || errors.As(errs[0], &de) || len(attention(errs)) != 0 {
+		t.Fatalf("busy: %v, want one counted retry", errs)
+	}
+	if c := h.collection(t, coll); c.State != "pending" || h.count(t, "SELECT count(*) FROM business.order_command WHERE order_id = $1::uuid", order) != 0 {
+		t.Fatalf("busy recorded something: %+v", c)
+	}
+	if got := h.count(t, `SELECT count(*) FROM business.payment_job pj JOIN business.job j ON j.id = pj.job_id
+		WHERE pj.collection_id = $1::uuid AND j.state = 'retry' AND j.failures = 1`, coll); got != 1 {
+		t.Fatalf("%d reconcile jobs with one counted failure, want 1", got)
+	}
+	// The competing operation resolves at the order's version: stale.
+	h.owner(t, `UPDATE business.recovery_operation SET prior_version = 1, state = 'secured', prepared_ack_at = now(), outcome_ack_at = now(),
+		outcome = '{"status":"refused"}', outcome_hash = repeat('b', 64) WHERE id = $1::uuid`, other)
+	h.due(t)
+	errs = h.drain(t)
+	if got := attention(errs); len(got) != 1 || !strings.Contains(got[0], "later version") {
+		t.Fatalf("stale: %v", errs)
+	}
+	if c := h.collection(t, coll); c.State != "pending" {
+		t.Fatalf("stale recorded something: %+v", c)
+	}
+}
+
+// recordDirect runs payment_reconcile_record for collection on a freshly
+// scheduled reconcile job, as a worker that began before a decision would.
+func (h *payHarness) recordDirect(t *testing.T, coll, session, verdict string, evidence string, successAt *time.Time, reason *string) string {
+	t.Helper()
+	h.owner(t, "SELECT business.payment_schedule_reconcile($1::uuid, now())", coll)
+	h.workers++
+	job := jobs.Job{Worker: fmt.Sprintf("00000000-0000-4000-8000-%012d", h.workers)}
+	if err := h.worker.QueryRow(h.ctx, `SELECT job_id::text, job_operation_id::text, job_generation
+		FROM business.job_claim($1::uuid, interval '60 seconds')`, job.Worker).Scan(&job.ID, &job.OperationID, &job.Generation); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	var cmd *string
+	if err := h.worker.QueryRow(context.Background(), `SELECT collection_state, command_id::text FROM business.payment_reconcile_record(
+		$1::uuid, $2::uuid, $3, $4::uuid, $5, $6, 'open', 'unpaid', NULL, $7::json, $8, $9)`,
+		job.ID, job.Worker, job.Generation, coll, verdict, session, evidence, successAt, reason).Scan(&state, &cmd); err != nil {
+		t.Fatalf("record %s: %v", verdict, err)
+	}
+	return state
+}
+
+// A stale pending observation never reopens a cancelled collection, and a
+// later mismatch on a succeeded collection keeps its paid evidence.
+func TestDecidedCollectionsKeepTheirDecisionAndEvidence(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d := h.paidOrder(t, f, pol)
+	coll, session := h.started(t, order, d)
+	h.stripe.session(session).status = "expired"
+	h.deliver(t, "evt_expired", "checkout.session.expired", "checkout.session", session, coll, order)
+	if errs := h.drain(t); len(errs) != 0 || h.collection(t, coll).State != "cancelled" {
+		t.Fatalf("expired: %v %+v", errs, h.collection(t, coll))
+	}
+	if got := h.recordDirect(t, coll, session, "pending", `{"session_id":"`+session+`","session_status":"open"}`, nil, nil); got != "cancelled" {
+		t.Fatalf("stale pending moved a cancelled collection to %s", got)
+	}
+
+	// A second order, paid; then a contradicting observation.
+	h2 := h
+	coll2, session2 := func() (string, string) {
+		quote, d2 := h2.guestQuote(t, "q-paid-2", checkout.QuoteInput{Date: "2026-11-14", SlotID: f.slot,
+			FulfillmentMode: schedule.Collection, Lines: []checkout.QuoteLine{{VariantID: f.v1000, Quantity: 1}}})
+		o2 := must[catalog.Result](t)(h2.checkout("", d2, "k-paid-2", quote, pol)).ID
+		res, err := h2.start(o2, d2, "pay-x", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if errs := h2.drain(t); len(errs) != 0 {
+			t.Fatalf("dispatch: %v", errs)
+		}
+		return res.ID, h2.collection(t, res.ID).SessionID
+	}()
+	h.stripe.pay(session2, time.Date(2026, 11, 5, 10, 9, 0, 0, time.UTC))
+	h.due(t)
+	if errs := h.drain(t); len(errs) != 0 || h.collection(t, coll2).State != "succeeded" {
+		t.Fatalf("paid: %v %+v", errs, h.collection(t, coll2))
+	}
+	var before string
+	if err := h.admin.QueryRow(h.ctx, "SELECT evidence::text FROM business.payment_collection WHERE id = $1::uuid", coll2).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	reason := "charge was refunded"
+	if got := h.recordDirect(t, coll2, session2, "mismatch", `{"session_id":"`+session2+`","charge_refunded":true}`, nil, &reason); got != "succeeded" {
+		t.Fatalf("mismatch moved a succeeded collection to %s", got)
+	}
+	var after, mismatch string
+	if err := h.admin.QueryRow(h.ctx, `SELECT evidence::text, mismatch_evidence::text FROM business.payment_collection
+		WHERE id = $1::uuid`, coll2).Scan(&after, &mismatch); err != nil {
+		t.Fatal(err)
+	}
+	if after != before || !strings.Contains(before, `"charge_status":"succeeded"`) || !strings.Contains(mismatch, "charge_refunded") {
+		t.Fatalf("evidence %s -> %s, mismatch %s", before, after, mismatch)
 	}
 }

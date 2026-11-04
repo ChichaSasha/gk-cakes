@@ -115,6 +115,9 @@ type Charge struct {
 	Currency       string `json:"currency"`
 	Created        int64  `json:"created"`
 	Livemode       bool   `json:"livemode"`
+	Refunded       bool   `json:"refunded"`
+	AmountRefunded int64  `json:"amount_refunded"`
+	Disputed       bool   `json:"disputed"`
 	Expanded       bool   `json:"-"`
 }
 

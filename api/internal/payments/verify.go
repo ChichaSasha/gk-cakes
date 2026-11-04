@@ -42,6 +42,9 @@ type Evidence struct {
 	AmountCaptured  *int64 `json:"amount_captured,omitempty"`
 	ChargeCurrency  string `json:"charge_currency,omitempty"`
 	ChargeCreated   string `json:"charge_created,omitempty"`
+	ChargeRefunded  *bool  `json:"charge_refunded,omitempty"`
+	AmountRefunded  *int64 `json:"amount_refunded,omitempty"`
+	ChargeDisputed  *bool  `json:"charge_disputed,omitempty"`
 }
 
 // Verdict is the decision about one retrieved session.
@@ -69,6 +72,7 @@ func evidenceOf(s *Session) Evidence {
 					ev.ChargePaid, ev.ChargeCaptured = &ch.Paid, &ch.Captured
 					ev.AmountCaptured = &ch.AmountCaptured
 					ev.ChargeCurrency = sanitize(statusPattern, ch.Currency)
+					ev.ChargeRefunded, ev.AmountRefunded, ev.ChargeDisputed = &ch.Refunded, &ch.AmountRefunded, &ch.Disputed
 					if ch.Created > 0 {
 						ev.ChargeCreated = time.Unix(ch.Created, 0).UTC().Format(time.RFC3339)
 					}
@@ -84,8 +88,11 @@ func evidenceOf(s *Session) Evidence {
 // collection is a mismatch (never confirmed); it is paid only when the
 // session is paid AND its payment intent succeeded with the full amount in
 // GBP AND the latest charge is paid, captured and succeeded for the full
-// amount (the success instant is the charge's provider time); a session
-// that expired without a succeeded payment is cancelled; anything else
+// amount and neither refunded (in any part) nor disputed (the success
+// instant is the charge's provider time); a refunded or disputed charge is a
+// mismatch (manager reconciliation, never a booking); a session that expired
+// with no payment intent, or with one canceled or still requiring a payment
+// method, is cancelled (no successful or unresolved funds); anything else
 // (open, processing, requires_capture, unpaid, no_payment_required on a
 // nonzero amount, complete without a succeeded payment intent) is pending.
 func Evaluate(s *Session, exp Expectation) Verdict {
@@ -133,6 +140,10 @@ func Evaluate(s *Session, exp Expectation) Verdict {
 				return mismatch("charge currency is not GBP")
 			case ch.Status == "succeeded" && ch.Captured && ch.AmountCaptured != exp.AmountMinor:
 				return mismatch("charge captured another amount")
+			case ch.Refunded || ch.AmountRefunded != 0:
+				return mismatch("charge was refunded")
+			case ch.Disputed:
+				return mismatch("charge is disputed")
 			}
 		}
 	}
@@ -145,7 +156,7 @@ func Evaluate(s *Session, exp Expectation) Verdict {
 		v.Kind, v.SuccessAt = VerdictPaid, time.Unix(ch.Created, 0).UTC()
 	case s.Status == "expired" && pi != nil && pi.Expanded && pi.Status == "succeeded":
 		return mismatch("expired session with a succeeded payment intent")
-	case s.Status == "expired":
+	case s.Status == "expired" && (pi == nil || pi.Expanded && (pi.Status == "canceled" || pi.Status == "requires_payment_method")):
 		v.Kind = VerdictCancelled
 	default:
 		v.Kind = VerdictPending

@@ -24,8 +24,6 @@ const (
 	// ReconcileRecheck: a session that is not decided yet is retrieved
 	// again (a webhook brings the check forward).
 	ReconcileRecheck = 15 * time.Minute
-	// BusyRetry: another protected operation on the order is unresolved.
-	BusyRetry = time.Minute
 )
 
 // Attention reasons stored on the job (no personal data).
@@ -40,6 +38,7 @@ const (
 	reasonMode      = "Checkout Session created in the wrong Stripe mode: collection unknown, never confirmed"
 	reasonMismatch  = "Stripe evidence does not match the collection (amount, currency, account, mode or metadata): never confirmed; manager reconciliation"
 	reasonRetrieve  = "Stripe refused reading the Checkout Session: check the key, then requeue"
+	reasonStale     = "payment succeeded but the order already has a protected operation at this or a later version: nothing recorded; manager reconciliation"
 )
 
 // Worker is the job handler for payment collections: the protected
@@ -285,7 +284,11 @@ func (w *Worker) reconcile(ctx context.Context, log *slog.Logger, store leaseSto
 	case errors.Is(err, recovery.ErrFrozen):
 		return jobs.Defer(FreezeRecheck, err)
 	case errors.Is(err, errOrderBusy):
-		return jobs.Defer(BusyRetry, err)
+		// A counted retry (1m, 5m, 15m, 1h, then attention): busy is
+		// normally brief, never silent for long.
+		return err
+	case errors.Is(err, errOrderStale):
+		return jobs.Attention(reasonStale, err)
 	case err != nil:
 		return err
 	}
@@ -312,7 +315,10 @@ var _ recovery.Store = leaseStore{}
 // ErrLeaseLost means the worker no longer holds the job's live lease.
 var ErrLeaseLost = errors.New("payments: job lease lost")
 
-var errOrderBusy = errors.New("payments: another protected operation on the order is unresolved")
+var (
+	errOrderBusy  = errors.New("payments: another protected operation on the order is unresolved")
+	errOrderStale = errors.New("payments: the order already has an operation at this or a later version")
+)
 
 func gatewayErr(err error) error {
 	var pgErr *pgconn.PgError
@@ -323,6 +329,8 @@ func gatewayErr(err error) error {
 		return fmt.Errorf("%w (checked at the record)", recovery.ErrFrozen)
 	case errors.As(err, &pgErr) && pgErr.Code == "GK409" && pgErr.Message == "order_busy":
 		return errOrderBusy
+	case errors.As(err, &pgErr) && pgErr.Code == "GK409" && pgErr.Message == "order_stale":
+		return errOrderStale
 	}
 	return err
 }
