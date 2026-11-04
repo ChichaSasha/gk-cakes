@@ -768,3 +768,15 @@ input[type=checkbox][aria-invalid=true]{outline:2px solid var(--error);outline-o
 .accordion .allergen-alert,.detail-copy .allergen-alert{color:#fff}
 #request-date-note:empty{display:none}
 .size-table{overflow:visible;border-radius:0}.size-table caption{padding-left:2px}
+/* GK-016 r01b: readable day labels (no faded opacity; ≥10.5px, ~7:1), draft choice, gallery states. */
+.picker-cal .calendar-days .day:disabled{opacity:1;color:#55585e}
+.picker-cal .calendar-days .day small{font-size:10.5px;color:#3f4247}
+.picker-cal .calendar-days .day:disabled small{color:#55585e}
+.picker-cal .calendar-days .day.s-open small{color:#1a5c32}
+.draft-choice{max-width:760px;margin:0 auto 60px;padding:24px 26px;border-radius:22px;background:#ffffffd6;box-shadow:var(--sh-1)}
+.draft-choice:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+.draft-choice .form-actions{justify-content:flex-start}
+.form-actions.centred{justify-content:center}
+.gallery-state{padding:40px 20px 70px}
+@media(max-width:760px){.picker-cal .calendar-days .day small{font-size:10px}}
+.picker-cal .calendar-days .day[aria-pressed=true] small{color:#fff}
