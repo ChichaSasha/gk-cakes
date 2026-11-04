@@ -111,17 +111,50 @@ Runtime roles cannot write protected tables, run DDL, `TRUNCATE` or `SET ROLE gk
 the integration suite proves this with real logins. Migration 0001 refuses to run
 if a group already inherits `gk_owner` or a predefined data role.
 
-After provisioning a login, check that it holds exactly its one group and no
-other privileged role (expect a single row, e.g. `gk_api`):
+After provisioning a login, check that it holds exactly its one group, inherits
+its privileges, holds no other privileged role (expect a single row, e.g.
+`gk_api | true`), and owns nothing and holds no direct grant:
 
 ```sql
-SELECT r.rolname FROM pg_roles r
+SELECT r.rolname, pg_has_role('<login>', r.oid, 'USAGE') AS inherits FROM pg_roles r
 WHERE pg_has_role('<login>', r.oid, 'MEMBER') AND r.rolname <> '<login>';
 
 -- expect every column false
 SELECT rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls
 FROM pg_roles WHERE rolname = '<login>';
+
+-- expect false (run in the service's database): the login owns nothing and
+-- holds no privilege granted to it directly
+SELECT EXISTS (SELECT 1 FROM pg_class WHERE relowner = r.oid)
+    OR EXISTS (SELECT 1 FROM pg_namespace WHERE nspowner = r.oid)
+    OR EXISTS (SELECT 1 FROM pg_proc WHERE proowner = r.oid)
+    OR EXISTS (SELECT 1 FROM pg_class c, aclexplode(c.relacl) a WHERE a.grantee = r.oid)
+    OR EXISTS (SELECT 1 FROM pg_attribute t, aclexplode(t.attacl) a WHERE a.grantee = r.oid)
+    OR EXISTS (SELECT 1 FROM pg_namespace n, aclexplode(n.nspacl) a WHERE a.grantee = r.oid)
+    OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a WHERE a.grantee = r.oid)
+    OR EXISTS (SELECT 1 FROM pg_database d, aclexplode(d.datacl) a
+               WHERE d.datname = current_database() AND a.grantee = r.oid)
+FROM pg_roles r WHERE r.rolname = '<login>';
 ```
+
+The services repeat these checks themselves in every environment except
+`local` (`database.CheckLogin`, on the session's login, `session_user`): the
+login must hold and inherit exactly its group, have no elevated attribute and
+not have switched role. It must also, in the service's database, own no
+table, schema or function and hold no privilege granted to it directly (table,
+column, schema, function or database): an owner bypasses grants and a direct
+grant bypasses the group. The API's `/readyz`, which is its Railway health
+check, stays 503 and logs `database login refused` until its login passes for
+`gk_api`, so a deploy with an administrator, migration or other-service login
+fails and the previous one keeps serving. The worker exits at start (code 2)
+unless its login passes for `gk_worker`, and waits up to 30 seconds for an
+unreachable database (code 1; a shutdown signal while waiting is a normal
+stop). The worker has no fallback: once its new deployment reaches SUCCESS,
+Railway has replaced the old one, so a wrong worker login stops email
+dispatch until a fixed login is deployed (the deploy fails, which is the
+signal). On staging (2026-11-03) the API had been running with a login other
+than `gk_api_staging` and only failed once the webhook needed a granted
+function. Both staging logins passed these checks on 2026-11-04.
 
 `gk-migrate` applies files once, in order, under an advisory lock. Applied files
 are immutable (checksummed). An older build on a newer database (a rollback)
@@ -153,14 +186,23 @@ get no image and cannot be released. Workflows: `.github/workflows/staging.yml` 
   command `/usr/local/bin/gk-worker` and no health check or public domain. It
   refuses a `RAILWAY_WORKER_SERVICE_ID` equal to the API or UI service (the
   start command persists on a service). It then watches for 90 seconds: the
-  deployment must stay SUCCESS and keep running its first instance. Railway
+  deployment must stay SUCCESS and keep running its first container. Railway
   restarts a crashed process under its restart policy without leaving SUCCESS,
-  so a second instance execution, or one that crashed, exited or is restarting,
-  fails the deploy (the service runs one replica, so two running executions
-  mean a restart). The worker exits at start when its email or recovery-journal
-  settings are wrong. If the token cannot read instance executions (after five
-  consecutive errors), or the deployment never appears among them, the check
-  falls back to the status and prints a GitHub warning. It is off until
+  so the check counts starts in the newest lines of the deployment's own log:
+  Railway's `Starting Container` lines and the worker's own first log line
+  (`worker starting`, passed as `-start-line`). A second start by either count
+  fails the deploy (the service runs one replica).
+  Railway's `deploymentInstanceExecutions` listed nothing for the running
+  staging worker, so it is not used. The worker exits at start when its email
+  or recovery-journal settings or its database login are wrong. If the token
+  cannot read the deployment log (after five consecutive errors, or on every
+  read of the period), or the latest read failed or is inconclusive (no start
+  line, the named `-start-line` missing, or a full page that may hide an
+  earlier start), the check falls back to the status and prints a GitHub
+  warning. On GitHub Actions every output line with provider text is escaped:
+  line breaks and `%` are encoded, so it cannot end an annotation or start a
+  `::command::` line, and the legacy `##[` form is broken up; step outputs
+  accept only `[A-Za-z0-9_-]` values. It is off until
   `STAGING_WORKER_ENABLED` is `true` and is recorded as `staging-worker` (not
   read by the release gate).
 - **Release.** Publish a GitHub release tagged `api-vX.Y.Z` or `ui-vX.Y.Z` on a

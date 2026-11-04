@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -18,10 +19,29 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const journalReadyTimeout = 30 * time.Second
+const (
+	journalReadyTimeout = 30 * time.Second
+	loginReadyTimeout   = 30 * time.Second
+)
+
+// startLine is logged first at every start; the staging deploy counts it
+// (gk-railway-deploy -start-line in .github/workflows/staging.yml, kept in
+// step by a test) to catch a crash and restart.
+const startLine = "worker starting"
+
+// workerGroup is the only group a deployed worker's login may hold.
+const workerGroup = "gk_worker"
+
+// startLogger returns the process logger after logging startLine, so the
+// start line always comes first, before any configuration can fail.
+func startLogger(w io.Writer) *slog.Logger {
+	logger := slog.New(slog.NewJSONHandler(w, nil))
+	logger.Info(startLine)
+	return logger
+}
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := startLogger(os.Stdout)
 	cfg, err := config.LoadWorker(os.Getenv)
 	if err != nil {
 		logger.Error("invalid configuration", "error", err.Error())
@@ -36,6 +56,18 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+
+	checked, code, err := startupLogin(ctx, cfg.Env, pool, loginReadyTimeout, 2*time.Second)
+	switch {
+	case err != nil && code == 0:
+		logger.Info("worker stopped while waiting for the database")
+		return
+	case err != nil:
+		logger.Error("database login", "error", err.Error())
+		os.Exit(code)
+	case checked:
+		logger.Info("database login verified", "group", workerGroup)
+	}
 
 	handler := jobs.Unhandled
 	if cfg.Email.Enabled() {
@@ -62,6 +94,37 @@ func main() {
 }
 
 func journalRoot(env config.Env) string { return "recovery/" + string(env) + "/" }
+
+// startupLogin decides whether the worker may run jobs. Every environment
+// except local development requires a least-privilege gk_worker login
+// (checked reports that the check ran); see verifyLogin for the exit codes.
+func startupLogin(ctx context.Context, env config.Env, q database.Querier, timeout, interval time.Duration) (checked bool, code int, err error) {
+	if env == config.EnvLocal { // only local development may use another login
+		return false, 0, nil
+	}
+	code, err = verifyLogin(ctx, q, timeout, interval)
+	return true, code, err
+}
+
+// verifyLogin refuses to run jobs with any login other than a least-privilege
+// gk_worker one (exit 2: the configuration must change), waiting up to
+// timeout for a briefly unreachable database (exit 1). A shutdown signal
+// while waiting returns code 0 with the context error: a normal stop.
+func verifyLogin(parent context.Context, q database.Querier, timeout, interval time.Duration) (int, error) {
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+	err := database.WaitLogin(ctx, q, workerGroup, interval)
+	switch {
+	case err == nil:
+		return 0, nil
+	case errors.Is(err, database.ErrLogin):
+		return 2, err
+	case parent.Err() != nil:
+		return 0, err
+	default:
+		return 1, err
+	}
+}
 
 // emailDispatcher wires the Resend client and the B2 recovery journal. It
 // returns exit code 2 for configuration problems and 1 when the journal is

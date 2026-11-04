@@ -32,12 +32,14 @@ type fakeRailway struct {
 	updateErr string
 	pollFails int    // first N status polls answer with a GraphQL error
 	metaImage string // image reported in deployment meta, if any
-	// executions are the instance executions reported for the deployment
-	// ("" for the default single RUNNING one); executionsErr refuses the query.
-	executions      []string
-	executionsFails int  // first N execution queries fail (negative: all)
-	olderPage       bool // our executions come on a second page
-	missing         bool // our deployment is never listed
+	// logs is the deployment's runtime log (nil: one container start and a
+	// line of its own output); logFails refuses the first N log queries
+	// (negative: all), logReads counts them.
+	logs         []string
+	logPages     [][]string // when set, read i answers logPages[i] (the last repeats)
+	logFails     int
+	logFailAfter int // when > 0, every log query after the first logFailAfter fails
+	logReads     int
 }
 
 func (f *fakeRailway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -60,41 +62,31 @@ func (f *fakeRailway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"serviceInstanceUpdate": true}})
 	case strings.Contains(req.Query, "serviceInstanceDeployV2"):
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"serviceInstanceDeployV2": "dep-123"}})
-	case strings.Contains(req.Query, "deploymentInstanceExecutions"):
-		if f.executionsFails != 0 {
-			if f.executionsFails > 0 {
-				f.executionsFails--
+	case strings.Contains(req.Query, "deploymentLogs"):
+		f.logReads++
+		if f.logFails != 0 || (f.logFailAfter > 0 && f.logReads > f.logFailAfter) {
+			if f.logFails > 0 {
+				f.logFails--
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"errors": []map[string]string{{"message": "Not Authorized"}}})
 			return
 		}
-		input, _ := req.Variables["input"].(map[string]any)
-		if input["serviceId"] != testService || input["environmentId"] != testEnv {
-			http.Error(w, "unexpected input", http.StatusBadRequest)
+		if req.Variables["deploymentId"] != "dep-123" || req.Variables["limit"] != float64(MaxLogLines) {
+			http.Error(w, "unexpected variables", http.StatusBadRequest)
 			return
 		}
-		statuses := f.executions
-		if statuses == nil {
-			statuses = []string{"RUNNING"}
+		lines := f.logs
+		if f.logPages != nil {
+			lines = f.logPages[min(f.logReads-1, len(f.logPages)-1)]
 		}
-		older := []map[string]any{{"node": map[string]any{"deploymentId": "older-deployment", "status": "REMOVED"}}}
-		var ours []map[string]any
-		for _, st := range statuses {
-			ours = append(ours, map[string]any{"node": map[string]any{"deploymentId": "dep-123", "status": st}})
+		if lines == nil {
+			lines = []string{"Starting Container", `{"level":"INFO","msg":"worker started"}`}
 		}
-		if f.missing {
-			ours = nil
+		var out []map[string]any
+		for _, l := range lines {
+			out = append(out, map[string]any{"message": l})
 		}
-		edges, next, cursor := append(older, ours...), false, ""
-		if f.olderPage {
-			if req.Variables["after"] == nil {
-				edges, next, cursor = older, true, "cursor-2"
-			} else if req.Variables["after"] == "cursor-2" {
-				edges = ours
-			}
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"deploymentInstanceExecutions": map[string]any{
-			"edges": edges, "pageInfo": map[string]any{"hasNextPage": next, "endCursor": cursor}}}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"deploymentLogs": out}})
 	case strings.Contains(req.Query, "deployment("):
 		if f.pollFails > 0 {
 			f.pollFails--
@@ -350,41 +342,141 @@ func TestEnvironmentLogsReadsTheAnchoredWindow(t *testing.T) {
 }
 
 // Railway restarts a crashed deployment under its restart policy and keeps
-// it SUCCESS, so the settle period also checks the instance executions.
+// it SUCCESS, so the settle period also counts the container starts in the
+// deployment's log.
 func TestSettleCatchesACrashLoopBehindASuccessStatus(t *testing.T) {
 	req := Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage, Settle: 50 * time.Millisecond}
-	for name, executions := range map[string][]string{
-		"restarted":      {"CRASHED", "RUNNING"},
-		"two executions": {"RUNNING", "RUNNING"},
-		"exited":         {"EXITED"},
-		"restarting":     {"RESTARTING"},
+	app := `{"level":"ERROR","msg":"database login","error":"refused"}`
+	for name, logs := range map[string][]string{
+		"restarted":         {"Starting Container", app, "Starting Container"},
+		"restarted, spaced": {"Starting Container", app, "  starting container\n"},
+		"crash loop":        {"Starting Container", app, "Starting Container", app, "Starting Container"},
 	} {
-		f := &fakeRailway{statuses: []string{"SUCCESS"}, executions: executions}
+		f := &fakeRailway{statuses: []string{"SUCCESS"}, logs: logs}
 		if _, err := deployer(t, f).Deploy(context.Background(), req); err == nil || !strings.Contains(err.Error(), "not running steadily") {
-			t.Errorf("%s: err = %v, want the crash loop reported", name, err)
+			t.Errorf("%s: err = %v, want the restart reported", name, err)
 		}
 	}
 	steady := &fakeRailway{statuses: []string{"SUCCESS"}}
-	if res, err := deployer(t, steady).Deploy(context.Background(), req); err != nil || len(res.Warnings) != 0 {
-		t.Fatalf("steady: %+v, %v", res, err)
+	if res, err := deployer(t, steady).Deploy(context.Background(), req); err != nil || len(res.Warnings) != 0 || steady.logReads == 0 {
+		t.Fatalf("steady: %+v, %v after %d log reads", res, err, steady.logReads)
 	}
-	blind := &fakeRailway{statuses: []string{"SUCCESS"}, executionsFails: -1}
+	quoted := &fakeRailway{statuses: []string{"SUCCESS"}, logs: []string{"Starting Container", `{"msg":"Starting Container"}`}}
+	if res, err := deployer(t, quoted).Deploy(context.Background(), req); err != nil || len(res.Warnings) != 0 {
+		t.Fatalf("an application line mentioning the phrase: %+v, %v; want one start counted", res, err)
+	}
+	noSettle := &fakeRailway{statuses: []string{"SUCCESS"}, logs: []string{"Starting Container", "Starting Container"}}
+	if _, err := deployer(t, noSettle).Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage}); err != nil || noSettle.logReads != 0 {
+		t.Fatalf("without a settle period: %v after %d log reads; want no log check", err, noSettle.logReads)
+	}
+
+	blind := &fakeRailway{statuses: []string{"SUCCESS"}, logFails: -1}
 	res, err := deployer(t, blind).Deploy(context.Background(), req)
-	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "not readable") {
-		t.Fatalf("executions unreadable: %+v, %v; want success with a warning", res, err)
+	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "not readable") || !strings.Contains(res.Warnings[0], "Not Authorized") {
+		t.Fatalf("log unreadable: %+v, %v; want success with one warning naming the error", res, err)
 	}
-	transient := &fakeRailway{statuses: []string{"SUCCESS"}, executionsFails: 2}
+	transient := &fakeRailway{statuses: []string{"SUCCESS"}, logFails: 2}
 	if res, err := deployer(t, transient).Deploy(context.Background(), req); err != nil || len(res.Warnings) != 0 {
 		t.Fatalf("two transient errors: %+v, %v; want the check to continue", res, err)
 	}
-	paged := &fakeRailway{statuses: []string{"SUCCESS"}, olderPage: true, executions: []string{"CRASHED", "RUNNING"}}
-	if _, err := deployer(t, paged).Deploy(context.Background(), req); err == nil {
-		t.Fatal("a restart listed on the second page was missed")
-	}
-	absent := &fakeRailway{statuses: []string{"SUCCESS"}, missing: true}
+	absent := &fakeRailway{statuses: []string{"SUCCESS"}, logs: []string{app}}
 	res, err = deployer(t, absent).Deploy(context.Background(), req)
-	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "never appeared") {
-		t.Fatalf("deployment never listed: %+v, %v; want success with a warning, never a silent pass", res, err)
+	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "inconclusive: no start line") {
+		t.Fatalf("no start line: %+v, %v; want success with a warning, never a silent pass", res, err)
+	}
+	full := make([]string, MaxLogLines)
+	full[0] = "Starting Container"
+	for i := 1; i < len(full); i++ {
+		full[i] = app
+	}
+	truncated := &fakeRailway{statuses: []string{"SUCCESS"}, logs: full}
+	res, err = deployer(t, truncated).Deploy(context.Background(), req)
+	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "inconclusive: the deployment log page was full") {
+		t.Fatalf("a full log page: %+v, %v; want it treated as unknown, not as one start", res, err)
+	}
+	// The pages the API returns for a limit are assumed to be the newest lines
+	// (only oldest-first order within a short page was observed): after one
+	// steady read, a full page may hide the first start, so the latest read
+	// decides.
+	later := &fakeRailway{statuses: []string{"SUCCESS"}, logPages: [][]string{{"Starting Container"}, full}}
+	res, err = deployer(t, later).Deploy(context.Background(), req)
+	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "page was full") || later.logReads < 2 {
+		t.Fatalf("steady, then full pages: %+v, %v after %d reads; want a warning, not a silent pass", res, err, later.logReads)
+	}
+}
+
+// A failed read voids an earlier steady one: if the reads fail from some
+// point until the period ends (fewer than the error limit), the decision
+// would otherwise rest on a stale read, possibly before a crash loop began.
+func TestSettleLatestFailedReadIsNotASteadyPass(t *testing.T) {
+	f := &fakeRailway{statuses: []string{"SUCCESS"}, logFailAfter: 1}
+	d := deployer(t, f)
+	// At most 5 reads fit in the period (one at SUCCESS, then every 60 ms
+	// until 200 ms have passed), so the error limit is never reached.
+	d.PollInterval = 60 * time.Millisecond
+	res, err := d.Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage, Settle: 200 * time.Millisecond})
+	if err != nil || f.logReads < 2 || f.logReads > maxPollErrors {
+		t.Fatalf("setup: %v after %d reads; want 2..%d reads", err, f.logReads, maxPollErrors)
+	}
+	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "inconclusive: the latest deployment-log read failed") ||
+		!strings.Contains(res.Warnings[0], "Not Authorized") {
+		t.Fatalf("steady, then failed reads until the end: warnings %q; want one naming the failed read, never a silent pass", res.Warnings)
+	}
+}
+
+// The process's own start line is a second count, so a restart is caught
+// even without Railway's container-start line; it is only counted when named.
+func TestSettleCountsTheProcessStartLine(t *testing.T) {
+	req := Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage, Settle: 50 * time.Millisecond, StartLine: "worker starting"}
+	for name, logs := range map[string][]string{
+		"own line twice":            {"worker starting", "worker starting"},
+		"own line twice, one start": {"Starting Container", "worker starting", "x", "worker starting"},
+	} {
+		f := &fakeRailway{statuses: []string{"SUCCESS"}, logs: logs}
+		if _, err := deployer(t, f).Deploy(context.Background(), req); err == nil || !strings.Contains(err.Error(), "started 2 times") {
+			t.Errorf("%s: %v, want the restart reported", name, err)
+		}
+	}
+	own := &fakeRailway{statuses: []string{"SUCCESS"}, logs: []string{"worker starting", "database login verified"}}
+	if res, err := deployer(t, own).Deploy(context.Background(), req); err != nil || len(res.Warnings) != 0 {
+		t.Fatalf("own line once, no platform line: %+v, %v; want a steady pass", res, err)
+	}
+	both := &fakeRailway{statuses: []string{"SUCCESS"}, logs: []string{"Starting Container", "worker starting", "database login verified"}}
+	if res, err := deployer(t, both).Deploy(context.Background(), req); err != nil || len(res.Warnings) != 0 {
+		t.Fatalf("both lines once: %+v, %v; want a steady pass", res, err)
+	}
+	raw := &fakeRailway{statuses: []string{"SUCCESS"}, logs: []string{"Starting Container",
+		`{"time":"2026-11-04T00:00:00Z","level":"INFO","msg":"worker starting"}`, `{"level":"INFO","msg":"worker starting"}`}}
+	if _, err := deployer(t, raw).Deploy(context.Background(), req); err == nil || !strings.Contains(err.Error(), "started 2 times") {
+		t.Fatalf("own line twice as unparsed JSON: %v, want the restart reported", err)
+	}
+	// A named start line that never matches (renamed, or not parsed) must not
+	// leave the check resting silently on Railway's line.
+	partial := &fakeRailway{statuses: []string{"SUCCESS"}, logs: []string{"Starting Container", "worker starting now", "worker starting now"}}
+	res, err := deployer(t, partial).Deploy(context.Background(), req)
+	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], `start line "worker starting" did not appear`) {
+		t.Fatalf("only lines merely starting with the start line: %+v, %v; want them not counted and an inconclusive warning", res, err)
+	}
+	unnamed := &fakeRailway{statuses: []string{"SUCCESS"}, logs: []string{"worker starting", "worker starting"}}
+	req.StartLine = ""
+	res, err = deployer(t, unnamed).Deploy(context.Background(), req)
+	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "no start line") {
+		t.Fatalf("start line not named: %+v, %v; want those lines ignored (inconclusive)", res, err)
+	}
+}
+
+// A settle period whose reads all failed, though fewer than maxPollErrors in a
+// row, names the read error rather than a missing start line.
+func TestSettleWarningNamesReadErrors(t *testing.T) {
+	f := &fakeRailway{statuses: []string{"SUCCESS"}, logFails: -1}
+	d := deployer(t, f)
+	d.PollInterval = 30 * time.Millisecond
+	res, err := d.Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage, Settle: 50 * time.Millisecond})
+	if err != nil || f.logReads >= maxPollErrors {
+		t.Fatalf("setup: %v after %d reads; want fewer than %d reads", err, f.logReads, maxPollErrors)
+	}
+	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "not readable") || !strings.Contains(res.Warnings[0], "Not Authorized") {
+		t.Fatalf("warnings %q; want one naming the read error", res.Warnings)
 	}
 }
 
