@@ -431,7 +431,8 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	all, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	wantAPI := []string{ // GK-021 adds the identity gateway, GK-022 the catalog gateway
+	wantAPI := []string{ // GK-021 adds the identity gateway, GK-022 the catalog, GK-023 schedule and lots
+		"business.capacity_day_limit_set(uuid, text, text, date, integer, integer)",
 		"business.catalog_cake_create(uuid, text, text, text, text)",
 		"business.catalog_cake_set_state(uuid, text, text, uuid, integer, text)",
 		"business.catalog_cake_update(uuid, text, text, uuid, integer, text, text)",
@@ -452,6 +453,15 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.email_event_record(text, text, timestamp with time zone, text, uuid, json, text)",
 		"business.identity_resolve(uuid)",
 		"business.identity_staff_list(uuid)",
+		"business.lot_create(uuid, text, text, uuid, text, integer, bigint, bigint, timestamp with time zone, timestamp with time zone)",
+		"business.lot_public_list(timestamp with time zone)",
+		"business.lot_set_state(uuid, text, text, uuid, integer, text)",
+		"business.lot_staff_list(uuid, boolean)",
+		"business.schedule_public_days(date, date, timestamp with time zone, integer)",
+		"business.schedule_public_slots(date, text, timestamp with time zone, integer)",
+		"business.schedule_staff_current(uuid)",
+		"business.schedule_staff_days(uuid, date, date, timestamp with time zone)",
+		"business.schedule_version_create(uuid, text, text, integer, integer, date, json, date[])",
 	}
 	slices.Sort(all)
 	if err != nil || !slices.Equal(all, wantAPI) {

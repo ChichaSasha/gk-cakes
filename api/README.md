@@ -714,6 +714,55 @@ later maintenance job applies the 30-day retention (K00). Images (upload,
 pending to ready) are GK-022 Milestone A2; availability and ready-stock lots
 are GK-023.
 
+## Schedule, capacity and finished cakes (K01, K04, K06, GK-023)
+
+Migration `0010_schedule_capacity.sql`, package `internal/schedule`. Nothing
+is seeded: until the chef publishes a schedule version, every date is
+`outside_horizon`.
+
+- **Schedule versions** (immutable, new bookings only) hold the default
+  standard places per day, the last bookable date (the horizon: a concrete
+  chef-approved date, never a month conversion), opening hours per weekday,
+  the exact 60-minute appointment starts (each must start and end within the
+  hours; no inferred grid) and closed dates. Local times are Europe/London;
+  slot instants are computed per date, so daylight saving is handled.
+- **Day capacity** is counted in cakes per handover date and is soft (K04).
+  Checkout (GK-025) will call the owner-internal engine: `capacity_admit`
+  refuses (`day_full`) when committed standard cakes plus the quantity exceed
+  the limit, while other orders' tentative holds do not count against
+  admission, so two holds for the last place can both be admitted and both
+  commit; `capacity_commit` never refuses; `capacity_release` frees. The chef
+  may set a day's limit below what is committed; accepted orders stay. Chef
+  extras are outside the standard count but in the staff workload. The public
+  sees only `remaining = max(0, limit - committed - tentative)`.
+- **Lead time** for a new purchase is 192 elapsed hours from now to the
+  appointment start, equality allowed (BO-GK-001.lead_time). Chef-approved
+  shorter lead for a specific finished cake (`lead_time_exception`) comes
+  with checkout.
+- **Finished cake lots** (ready stock or resale) are physical cakes of a
+  variant's current recipe version: created unreleased, released by the
+  chef, withdrawn; `lot_reserve` is exclusive (no oversell) and `lot_settle`
+  returns or sells reserved cakes. A resale lot keeps its original handover
+  time and costs the chef-entered base x 50%, half up.
+
+| Route | Who | Notes |
+| --- | --- | --- |
+| `GET /api/v1/availability?from&to&quantity` | anyone | at most 31 dates; per date `status` (`open`, `full`, `lead_time`, `closed`, `outside_horizon`, `no_times`) and `remaining_places` |
+| `GET /api/v1/schedule?date&fulfillment_mode&purpose=new_purchase&quantity` | anyone | `slots[{id, starts_at, ends_at, availability, reason_code}]`: `available`, `requestable` (GK delivery: subject to chef confirmation) or `unavailable` (`lead_time`, `full`, `closed`, `outside_horizon`); stable slot IDs per version; no per-slot cap; no hold |
+| `GET /api/v1/ready-cakes` | anyone | released, unexpired lots with stock left |
+| `GET /api/v1/admin/schedule`, `/admin/days?from&to`, `/admin/lots` | chef, fulfilment, technical support | day view: limit, override, committed, tentative, chef extras, workload, remaining, `online_closed` |
+| `POST /api/v1/admin/schedule/versions` | chef | `{expected_revision, standard_limit, bookable_until, weekdays[{weekday, opens, closes, starts}], closed_dates}` |
+| `POST /api/v1/admin/days/{date}/limit` | chef | `{expected_version (0 for a day without one), standard_limit}` |
+| `POST /api/v1/admin/lots` | chef | `{variant_id, kind: ready\|resale, quantity, price_minor \| resale_base_minor + original_handover_at, expires_at}` |
+| `POST /api/v1/admin/lots/{id}/state` | chef | `{expected_version, action: release\|withdraw}` |
+
+Commands follow the catalog's rules (Idempotency-Key, expected version,
+strict JSON, audit). Schema r1.5 deviations in this milestone: slots are
+derived from the published starts (stable IDs) instead of stored
+`pickup_slot` rows; `capacity_allocation.order_ref` gets its foreign key to
+`orders` with GK-025; `pickup_change`, `delivery_agreement` and
+`lead_time_exception` come with orders.
+
 ## Not yet verified
 
 - Runtime-role denial and the gateway on the sandbox. They are proven on
