@@ -5,6 +5,7 @@ package backup
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -101,7 +102,7 @@ func TestBackupRestoresWithTheSameRows(t *testing.T) {
 		t.Fatalf("uploads %v, want the dump, then the manifest", store.puts)
 	}
 	if m.Rows["job"] != 2 || m.Rows["account"] != 1 || m.Rows["staff_capability"] != 1 || m.Rows["audit_event"] < 2 ||
-		m.SchemaVersion != m.Migrations[len(m.Migrations)-1] || !strings.HasPrefix(m.SchemaVersion, "0008_") || m.DumpBytes == 0 {
+		m.SchemaVersion != m.Migrations[len(m.Migrations)-1] || m.SchemaVersion != newestMigration(t) || m.DumpBytes == 0 {
 		t.Fatalf("manifest = %+v", m)
 	}
 	for name, data := range store.objs {
@@ -171,4 +172,15 @@ func TestOnlyTheBackupLoginReadsTheHistory(t *testing.T) {
 			t.Errorf("%s took a backup: %v", group, err)
 		}
 	}
+}
+
+// newestMigration is the name of the last embedded migration, without .sql.
+func newestMigration(t *testing.T) string {
+	t.Helper()
+	entries, err := fs.Glob(migrations.FS, "*.sql")
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("migrations: %v", err)
+	}
+	slices.Sort(entries)
+	return strings.TrimSuffix(entries[len(entries)-1], ".sql")
 }
