@@ -49,9 +49,12 @@
 -- intent and latest charge) and decides a verdict; the database records it:
 -- 'paid' (all funds checks passed; the success instant is the charge's
 -- provider time, observed_at the local observation), 'pending' (anything not
--- yet paid), 'cancelled' (the session expired unpaid: recorded only; holds
--- are released by A3c) or 'mismatch' (wrong amount, currency, account, mode
--- or metadata: the collection becomes unknown, never confirmed). A paid
+-- yet paid), 'cancelled' (the session expired with no payment intent or a
+-- canceled one: recorded only; holds are released by A3c; a decided
+-- collection never moves back) or 'mismatch' (wrong amount, currency,
+-- account, mode or metadata, a refunded or disputed charge: the collection
+-- becomes unknown, never confirmed; a succeeded one keeps its paid evidence
+-- and records the observation beside it). A paid
 -- verdict, in the same transaction, makes the collection succeeded and
 -- records the order command 'paid_confirm' (receipt instant = the success
 -- instant, actor system, exact payload = order snapshot + collection

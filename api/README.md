@@ -940,7 +940,7 @@ proof) instead of returning one; the appointment is the quote's.
 | `POST /api/v1/admin/policies` | chef | `{source_decision_id, source_revision_sha256, summary, effective_at, approver_evidence}` |
 | `POST /api/v1/checkouts` (only with `CHECKOUT_ENABLED=true`) | a guest (`guest_proof` of the quote) or the signed-in owner | `{quote_id, quote_version: 1, consented_policy_version, contact{full_name, email, payer_name?}}` with Idempotency-Key |
 | `POST /api/v1/orders/{id}/free-confirmation` (only with `CHECKOUT_ENABLED=true`) | the owner (bearer) or the guest (`X-Order-Capability` with `pay`) | `{expected_version}` with Idempotency-Key; 202 `confirmation_pending` |
-| `POST /api/v1/orders/{id}/payment` (only with `CHECKOUT_ENABLED=true`; 503 without `STRIPE_ACCOUNT_ID`) | the owner (bearer) or the guest (`X-Order-Capability` with `read` and `pay`) | `{expected_version}` with Idempotency-Key; 202 `payment_pending`, see [Payments](#payments-k04-gk-025-a3b) |
+| `POST /api/v1/orders/{id}/payment` (only with `CHECKOUT_ENABLED=true`; 503 without `STRIPE_ACCOUNT_ID` or during a restore freeze) | the owner (bearer) or the guest (`X-Order-Capability` with `pay`) | `{expected_version}` with Idempotency-Key; 202 `payment_pending`, see [Payments](#payments-k04-gk-025-a3b) |
 | `GET /api/v1/orders/{id}` | the owner (bearer) or the guest (`X-Order-Capability`: the quote's proof) | the order snapshot (`lifecycle` is `confirmation_pending` until K11 secures a commit; `paid_at` only then; `payment`: the latest collection); 404 otherwise |
 | `POST /webhooks/stripe` (only with `STRIPE_WEBHOOK_SECRET`) | Stripe (signed) | events; 200 only after the durable insert |
 
@@ -963,39 +963,54 @@ of the order may still succeed (`created`, `pending` or `unknown`):
 `PAYMENT_IN_PROGRESS` ("do not pay again"), except that the same actor
 (account, or guest capability) with the same key replays the same collection
 (`Idempotent-Replayed`; another body is `KEY_REUSED`). A failed, expired or
-cancelled collection allows a new one; a succeeded one never does. The
-collection stores the amount (the order total, GBP pence), the environment,
-the Stripe account (`STRIPE_ACCOUNT_ID`) and the mode (live only in
-production), its exact dispatch payload, its dispatch job and an audit event,
-in one transaction, and the API answers 202
+cancelled collection allows a new one; a succeeded one never does. While a
+restore freeze is on, a new collection is refused with 503 `UNAVAILABLE`
+(retryable; a replay still answers). The collection stores the amount (the
+order total, GBP pence), the environment, the Stripe account
+(`STRIPE_ACCOUNT_ID`), the mode (live only in production) and the UI origin
+of the return URLs, its dispatch job and an audit event, in one transaction,
+and the API answers 202
 `{order_id, operation_id, state: "payment_pending", poll_after_seconds: 3}`
 (`operation_id` is the collection, which is also the Stripe idempotency key).
 
-**2. The Checkout Session request** is built once at initiation and never
-rebuilt (stored in the payload, form-encoded, keys sorted): `mode=payment`,
+**2. The Checkout Session request** is built once, at the first dispatch, and
+never rebuilt (stored in the payload, form-encoded, keys sorted): `mode=payment`,
 one line item (`price_data[currency]=gbp`, `price_data[unit_amount]` = the
 order total, `price_data[product_data][name]=GK Cakes order`, `quantity=1`),
 `client_reference_id` = the order, `metadata[order_id|collection_id|environment]`
 and the same three under `payment_intent_data[metadata]`, `success_url` and
 `cancel_url` = `<UI_ORIGIN>/orders/<id>?payment=returned` (the return never
-confirms anything) and `expires_at` = the initiation second + 30 minutes
-(Stripe's minimum). No customer name, email or cake detail is sent. Every
+confirms anything) and `expires_at` = the first dispatch second (database
+clock) + 2 hours (Stripe allows 30 minutes to 24 hours; two hours leaves room
+for retries of a call that may never have reached Stripe, and A3c's
+15-minute attempt expiry bounds how long a hold really waits). No customer
+name, email or cake detail is sent. Every
 request pins `Stripe-Version: 2026-08-26.dahlia` (verified on the sandbox).
 
-**3. Dispatch (worker, K11 `Dispatch`).** The dispatch is a recovery
-operation of kind `dispatch` (aggregate = collection, prior version 0),
-reserved at the first dispatch, which fixes `replay_until` = first dispatch +
-23 hours (Stripe keeps idempotency keys 24 hours). The worker validates the
-stored payload against the collection (exact keys and values, canonical
-encoding, environment, account, mode), writes the encrypted prepared envelope,
-and right before each call `payment_dispatch_admit` re-checks the restore
-freeze and the window on the database clock and records
-`dispatch_started_at`. Every call is appended to `business.payment_attempt`.
+**3. Dispatch (worker, K11 `Dispatch`).** Only once the worker has its Stripe
+key and journal (a waiting job fixes nothing and starts no window),
+`payment_dispatch_fix` stores the request built on the database clock (the
+function checks it belongs to the collection, order, amount, environment,
+account, mode and expiry) and only then fixes `first_dispatch_at` and
+`replay_until` = first dispatch + 23 hours (Stripe keeps idempotency keys 24
+hours). The dispatch is a recovery operation of kind `dispatch` (aggregate =
+collection, prior version 0) reserved with that payload's hash; the worker
+validates the stored payload against the collection (exact keys and values,
+canonical encoding, environment, account, mode, return origin, expiry),
+writes the encrypted prepared envelope (the body is persisted before the
+external create, K04), and right before each call `payment_dispatch_admit`
+re-checks the restore freeze and the window on the database clock and records
+`dispatch_started_at`. A first call (none ever admitted) with less than 31
+minutes of session lifetime left (for example after the journal was down for
+over 1.5 hours) is not made: the dispatch is recorded as `rejected`
+(`expired_before_dispatch`), the collection `failed` without any Stripe call
+and the job goes to attention. Every call is appended to
+`business.payment_attempt`.
 
 | Stripe response | Attempt | Collection | Job |
 | --- | --- | --- | --- |
 | 200 Checkout Session | `created` | `pending` (session ID, URL, provider `expires_at`, mode); a reconcile 15 minutes later | completed |
-| 400/402 `invalid_request_error` or `card_error` (for example a dispatch more than about a minute after the initiation: the stored `expires_at` is then under 30 minutes away) | `rejected` | `failed` (the customer may start a new one) | attention |
+| 400/402 `invalid_request_error` or `card_error` (for example a retry so late that the stored `expires_at` is under 30 minutes away) | `rejected` | `failed` (the customer may start a new one) | attention |
 | 400 `idempotency_error` | `conflict` | `unknown`; the dispatch goes to `reconcile` | attention (never a new session under another key) |
 | 401/403/404 and other 4xx | `refused` | unchanged | attention (fix the key, then requeue) |
 | 409, 429 | `deferred` | unchanged | retry with the same key and body |
@@ -1020,7 +1035,8 @@ its metadata, and `business.payment_event_record` stores it once per
 503, so Stripe retries the same event; a duplicate is acknowledged without new
 work). When the metadata names a collection of this environment, account and
 mode that is not yet decided, that collection's reconcile is scheduled now (a
-waiting one is brought forward, so duplicate events never pile up jobs).
+waiting one is brought forward under the collection's row lock, so duplicate
+or concurrent events never pile up jobs).
 Every verified event is stored (IDs, type, mode, times, body hash; never
 customer or card data), including `charge.refunded` and events of other
 collections or environments, which start nothing.
@@ -1033,16 +1049,23 @@ created session, or one a verified event named) and decides:
   session's metadata or `client_reference_id` do not name this collection,
   order and environment, the mode is wrong, the currency is not GBP, the
   amount differs, the payment intent or charge contradicts them (metadata,
-  mode, currency, a different received or captured amount), the session is
-  not found in this account, or an expired session has a succeeded payment;
+  mode, currency, a different received or captured amount), the charge is
+  refunded (in any part) or disputed, the session is not found in this
+  account, or an expired session has a succeeded payment. On a collection
+  that already succeeded the state and paid evidence stay; the contradicting
+  observation is kept beside them (`mismatch_reason`, `mismatch_evidence`);
 - **paid** only when all hold: session `payment_status = paid`; payment
   intent `succeeded`, `amount_received` = the amount, GBP; latest charge
-  `paid`, `captured`, `succeeded`, `amount_captured` = the amount. The
+  `paid`, `captured`, `succeeded`, `amount_captured` = the amount, not
+  refunded (`refunded = false`, `amount_refunded = 0`) and not disputed. The
   authoritative success instant is the charge's `created` (provider time;
   never the webhook arrival), `observed_at` is recorded separately;
 - **cancelled** (record only; holds are not released: A3c): the session
-  expired without a succeeded payment;
-- **pending** otherwise (open, processing, requires_capture, unpaid,
+  expired and its payment intent is absent, `canceled` or
+  `requires_payment_method` (no successful or unresolved funds); a later
+  stale observation never reopens it;
+- **pending** otherwise (open, processing, requires_capture, an expired
+  session whose intent is still processing or awaiting action, unpaid,
   no_payment_required on a nonzero amount, complete without a succeeded
   payment intent or charge): the observation is recorded and the session is
   retrieved again in 15 minutes (or at the next event).
@@ -1056,8 +1079,10 @@ order command `paid_confirm` (actor system; receipt instant = the success
 instant; exact payload = the order snapshot and the collection evidence),
 reserves its K11 command operation on the order and enqueues its job, at most
 once per collection (unique), however many events arrive in whatever order.
-Another unresolved protected operation on the order makes the record wait a
-minute (nothing is recorded meanwhile); a restore freeze stops it under its
+Another unresolved protected operation on the order makes the record retry
+(counted: 1, 5, 15 and 60 minutes, then attention; nothing is recorded
+meanwhile); an operation already at this or a later order version can never
+succeed and goes to attention at once; a restore freeze stops it under its
 own lock. `order_command_apply` then commits it: an order still awaiting
 payment with its holds intact gets its day allocation committed, ready cakes
 sold, code consumed and `paid_at` = the success instant, as `confirmed` when
@@ -1066,9 +1091,11 @@ the handover is at least 192 h after the success (equality allowed), or as
 fulfillment; the job goes to attention so the case is never silent). An order
 that changed or lost its holds is `refused` (`order_changed`,
 `holds_released`): the collection stays `succeeded`, the order's version
-moves, and the job goes to attention (full return is A3c). Either way the
-order reads `confirmation_pending` until the outcome envelope is secured;
-only then `confirmed` (or `paid_awaiting_agreement`) with `paid_at`.
+moves, and the job goes to attention (full return is A3c). From the moment
+the payment is recorded (K11 "payment received, confirmation being secured")
+until the paid confirmation's outcome envelope is secured the order reads
+`confirmation_pending`; only then `confirmed` (or `paid_awaiting_agreement`)
+with `paid_at`, or back to `awaiting_payment` after a refusal.
 
 `GET /api/v1/orders/{id}` adds `payment` (the latest collection: `id`,
 `state`, `amount_minor`, `currency`, `requested_at`, `checkout_url` only while
@@ -1081,13 +1108,24 @@ client (one session), retrieves and verifies it (pending), expires it
 idempotency conflict; it refuses live keys and prints IDs only. Passed against
 account `acct_1UNHEgPqGToF2ulH` on 2026-11-04 (the same day the sandbox also
 showed that `expires_at` = creation + 30 minutes is accepted with about a
-minute of tolerance and refused beyond it).
+minute of tolerance and refused beyond it, which is why the request is fixed
+at the first dispatch with two hours of lifetime, not at the initiation).
 
-Recorded decisions: the dispatch's recovery operation is reserved at the first
-dispatch (as for email), because its replay deadline is fixed at reservation;
-the collection, its key, body, account and environment exist from the
-initiation. The customer's email is not sent to Stripe in this milestone.
+Recorded decisions: the request and its window are fixed at the first
+dispatch, and the dispatch's recovery operation is reserved then (as for
+email), because its replay deadline is fixed at reservation; the collection,
+its key, account, environment and return origin exist from the initiation.
+The customer's email is not sent to Stripe in this milestone.
 `STRIPE_SECRET_KEY` lives on the worker only; the API never calls Stripe.
+
+**Release order.** Deploy the worker of this release before (or with) the
+API, and keep `CHECKOUT_ENABLED` off until the new worker runs with
+`STRIPE_SECRET_KEY`/`STRIPE_ACCOUNT_ID` and the journal: an older (A3a)
+worker does not know payment jobs and backs them off as unhandled (retries
+1, 5, 15, 60 minutes, then attention), so a payment requested before the new
+worker is deployed waits and may reach attention (requeue it with
+`business.job_requeue` once the new worker runs). A new worker without a key
+makes payment jobs wait without starting their windows.
 
 Not yet:
 
@@ -1103,7 +1141,9 @@ Not yet:
   non-GBP session, intent or charge is a mismatch for now), delivery
   collections;
 - manager reconciliation tooling for `unknown` collections and dispatches in
-  `reconcile`.
+  `reconcile`;
+- journal readiness reaching the API: initiation is refused during a restore
+  freeze, but an unreachable journal only makes the worker wait.
 
 ## Not yet verified
 
