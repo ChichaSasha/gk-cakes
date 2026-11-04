@@ -453,7 +453,7 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.discount_code_archive(uuid, text, text, uuid, integer)",
 		"business.discount_code_create(uuid, text, text, text, text, integer, timestamp with time zone, integer, integer)",
 		"business.discount_code_revise(uuid, text, text, uuid, integer, text, integer, timestamp with time zone, integer, integer)",
-		"business.discount_staff_list(uuid)",
+		"business.discount_staff_list(uuid, uuid)",
 		"business.email_event_record(text, text, timestamp with time zone, text, uuid, json, text)",
 		"business.identity_resolve(uuid)",
 		"business.identity_staff_list(uuid)",

@@ -37,6 +37,9 @@ func (f *fakeCheckout) GetQuote(_ context.Context, _, subject string, digest []b
 func (f *fakeCheckout) Codes(context.Context, string) ([]checkout.Code, error) {
 	return []checkout.Code{{ID: "c1"}}, nil
 }
+func (f *fakeCheckout) CodeByID(_ context.Context, _, id string) (checkout.Code, error) {
+	return checkout.Code{ID: id}, nil
+}
 func (f *fakeCheckout) CreateCode(context.Context, string, string, checkout.CodeInput) (catalog.Result, error) {
 	f.calls++
 	return catalog.Result{ID: "c1"}, nil
@@ -67,15 +70,18 @@ func serveCheckout(t *testing.T, co *fakeCheckout, id Identity, method, path, au
 	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if strings.Contains(logs.String(), "guest_proof") || (hdr != nil && hdr[QuoteProofHeader] != "" && strings.Contains(logs.String(), hdr[QuoteProofHeader])) {
+	if strings.Contains(logs.String(), "guest_proof") || strings.Contains(logs.String(), testProof) ||
+		(hdr != nil && hdr[QuoteProofHeader] != "" && strings.Contains(logs.String(), hdr[QuoteProofHeader])) {
 		t.Fatalf("a proof reached the logs: %s", logs.String())
 	}
 	return rec
 }
 
+var testProof = base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32))
+
 func TestQuoteRoutes(t *testing.T) {
 	id := catalogIdentity()
-	proof := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32))
+	proof := testProof
 	body := `{"date":"2026-11-14","slot_id":"aaaaaaaa-1111-4111-8111-11111111111b","fulfillment_mode":"collection",
 		"lines":[{"variant_id":"bbbbbbbb-1111-4111-8111-11111111111b","quantity":1}]`
 	guest := body + `,"guest_proof":"` + proof + `"}`
@@ -118,5 +124,44 @@ func TestQuoteRoutes(t *testing.T) {
 	}
 	if rec := serveCheckout(t, co, id, http.MethodGet, "/api/v1/admin/discount-codes", "support", "", "", nil); rec.Code != 200 {
 		t.Fatalf("support reads codes: %d", rec.Code)
+	}
+}
+
+// AC1: a client cannot send a price, currency or oversized quantity; such a
+// body is malformed (K00 400: unknown fields), never priced.
+func TestQuoteRefusesClientPrices(t *testing.T) {
+	id := catalogIdentity()
+	line := `{"variant_id":"bbbbbbbb-1111-4111-8111-11111111111b","quantity":1}`
+	head := `{"date":"2026-11-14","slot_id":"aaaaaaaa-1111-4111-8111-11111111111b","fulfillment_mode":"collection","guest_proof":"` + testProof + `",`
+	for name, c := range map[string]struct {
+		body   string
+		status int
+	}{
+		"unit price":   {head + `"lines":[{"variant_id":"bbbbbbbb-1111-4111-8111-11111111111b","quantity":1,"unit_price_minor":1}]}`, 400},
+		"total":        {head + `"lines":[` + line + `],"total_minor":1}`, 400},
+		"currency":     {head + `"lines":[` + line + `],"currency":"EUR"}`, 400},
+		"overflow qty": {head + `"lines":[{"variant_id":"bbbbbbbb-1111-4111-8111-11111111111b","quantity":99999999999999999999}]}`, 400},
+		"21 cakes":     {head + `"lines":[{"variant_id":"bbbbbbbb-1111-4111-8111-11111111111b","quantity":21}]}`, 422},
+	} {
+		co := &fakeCheckout{}
+		if rec := serveCheckout(t, co, id, http.MethodPost, "/api/v1/checkout/quotes", "", "k", c.body, nil); rec.Code != c.status || co.calls != 0 {
+			t.Errorf("%s: %d (calls %d), want %d", name, rec.Code, co.calls, c.status)
+		}
+	}
+	// A token without identity configured is refused, not ignored.
+	co := &fakeCheckout{}
+	if rec := serveCheckout(t, co, nil, http.MethodPost, "/api/v1/checkout/quotes", "anything", "k", head+`"lines":[`+line+`]}`, nil); rec.Code != 401 || co.calls != 0 {
+		t.Fatalf("token without identity: %d, calls %d", rec.Code, co.calls)
+	}
+	// Browsers may send the quote proof header cross-origin.
+	var logs bytes.Buffer
+	h := NewHandler(Options{UIOrigin: "https://gkcake.com", DB: fakePinger{}, Checkout: co, Logger: slog.New(slog.NewJSONHandler(&logs, nil))})
+	req := httptest.NewRequest(http.MethodOptions, "/api/v1/checkout/quotes/q", nil)
+	req.Header.Set("Origin", "https://gkcake.com")
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if !strings.Contains(rec.Header().Get("Access-Control-Allow-Headers"), QuoteProofHeader) {
+		t.Fatalf("preflight allows %q", rec.Header().Get("Access-Control-Allow-Headers"))
 	}
 }

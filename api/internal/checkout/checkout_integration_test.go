@@ -314,11 +314,16 @@ func TestQuoteRules(t *testing.T) {
 			Lines: []checkout.QuoteLine{{VariantID: f.v1001, Quantity: 1}}}
 	}
 	key := 0
+	// Each guest quote needs a fresh proof (K02); d only marks a guest.
 	try := func(subject string, d []byte, in checkout.QuoteInput) error {
 		key++
+		if d != nil {
+			_, d = proof(t)
+		}
 		_, err := h.quote(t, subject, d, fmt.Sprintf("k%d", key), in)
 		return err
 	}
+	fresh := func() []byte { _, d := proof(t); return d }
 
 	// Codes: free delivery only with GK delivery; a per-customer code needs
 	// sign-in; expired and archived codes are unknown.
@@ -339,7 +344,7 @@ func TestQuoteRules(t *testing.T) {
 		t.Fatalf("free delivery with collection: %v", err)
 	}
 	in.FulfillmentMode = schedule.GKDelivery
-	q, err := h.quote(t, "", digest, "fd-ok", in)
+	q, err := h.quote(t, "", fresh(), "fd-ok", in)
 	if err != nil || q.DiscountMinor != 0 || q.TotalMinor != 1001 || q.Discount == nil || q.Discount.Kind != "free_delivery" {
 		t.Fatalf("free delivery with GK delivery: %+v %v", q, err)
 	}
@@ -380,7 +385,7 @@ func TestQuoteRules(t *testing.T) {
 	}
 	ready := base()
 	ready.Lines = []checkout.QuoteLine{{LotID: f.readyLot, Quantity: 2}}
-	q, err = h.quote(t, "", digest, "ready", ready)
+	q, err = h.quote(t, "", fresh(), "ready", ready)
 	if err != nil || q.TotalMinor != 17000 || q.Lines[0].UnitPriceMinor != 8500 {
 		t.Fatalf("ready cakes on a full day: %+v %v", q, err)
 	}
@@ -429,4 +434,125 @@ func TestQuoteAccess(t *testing.T) {
 	if r := must[catalog.Result](t)(h.co.CreateQuote(h.ctx, "", other, "g", in)); r.ID == guest.ID || r.Replayed {
 		t.Fatal("a guest's key leaked into another guest's scope")
 	}
+}
+
+func TestQuoteSafetyRules(t *testing.T) {
+	h := newHarness(t)
+	f := h.setup(t)
+	base := checkout.QuoteInput{Date: "2026-11-14", SlotID: f.slot, FulfillmentMode: schedule.Collection,
+		Lines: []checkout.QuoteLine{{VariantID: f.v1000, Quantity: 1}}}
+	direct := func(p_now string, code any, lines string, digest []byte) error {
+		var id string
+		var replayed bool
+		return h.api.QueryRow(h.ctx, `SELECT result_id::text, replayed FROM business.quote_create(NULL, $1, 'direct', $2,
+			'2026-11-14', $3::uuid, 'collection', $4::json, $5, $6::timestamptz)`,
+			digest, strings.Repeat("a", 64), f.slot, lines, code, p_now).Scan(&id, &replayed)
+	}
+
+	// A guest proof belongs to one quote: a replay is fine, a new key is not.
+	_, digest := proof(t)
+	first := must[catalog.Result](t)(h.co.CreateQuote(h.ctx, "", digest, "one", base))
+	if again := must[catalog.Result](t)(h.co.CreateQuote(h.ctx, "", digest, "one", base)); again.ID != first.ID || !again.Replayed {
+		t.Fatalf("replay with the same proof: %+v", again)
+	}
+	if _, err := h.co.CreateQuote(h.ctx, "", digest, "two", base); !strings.HasPrefix(invalidField(err), "guest_proof") {
+		t.Fatalf("reused proof: %v", err)
+	}
+
+	// A ready cake must be within its safe expiry at the end of the
+	// appointment (Sat 14 Nov 13:30 GMT for the first slot).
+	shortLot := must[catalog.Result](t)(h.sch.CreateLot(h.ctx, chef, "short", schedule.LotInput{VariantID: h.readyVariantOf(t, f),
+		Kind: schedule.LotReady, Quantity: 1, PriceMinor: ptr[int64](5000), ExpiresAt: time.Now().Add(48 * time.Hour).UTC().Format(time.RFC3339)})).ID
+	must[catalog.Result](t)(h.sch.SetLotState(h.ctx, chef, "short-rel", shortLot, schedule.LotStateInput{ExpectedVersion: 1, Action: "release"}))
+	h.owner(t, "UPDATE business.finished_cake_lot SET expires_at = '2026-11-14T13:29:59Z' WHERE id = $1", shortLot)
+	in := base
+	in.Lines = []checkout.QuoteLine{{LotID: shortLot, Quantity: 1}}
+	_, d := proof(t)
+	if _, err := h.co.CreateQuote(h.ctx, "", d, "short", in); conflict(err) != "item_unavailable" {
+		t.Fatalf("lot expiring before the appointment ends: %v", err)
+	}
+	h.owner(t, "UPDATE business.finished_cake_lot SET expires_at = '2026-11-14T13:30:00Z' WHERE id = $1", shortLot)
+	_, d = proof(t)
+	if _, err := h.co.CreateQuote(h.ctx, "", d, "short", in); err != nil {
+		t.Fatalf("lot good through the end of the appointment: %v", err)
+	}
+
+	// Resale lots are not quotable yet.
+	h.owner(t, `UPDATE business.finished_cake_lot SET kind = 'resale', resale_base_minor = 10000, price_minor = 5000,
+		original_handover_at = '2026-11-14T12:30:00Z' WHERE id = $1`, shortLot)
+	_, d = proof(t)
+	if _, err := h.co.CreateQuote(h.ctx, "", d, "resale", in); conflict(err) != "item_unavailable" {
+		t.Fatalf("resale lot: %v", err)
+	}
+
+	// The gateway caps a basket at 20 cakes even when the API is bypassed.
+	_, d = proof(t)
+	lines := `[{"variant_id":"` + f.v1001 + `","quantity":11},{"variant_id":"` + f.v1000 + `","quantity":10}]`
+	if err := direct("2026-11-05T10:00:00Z", nil, lines, d); dbtest.SQLState(err) != "GK422" {
+		t.Fatalf("21 cakes: %v", err)
+	}
+
+	// Code expiry: refused at the expiry instant, accepted a second before.
+	h.code(t, "edge", checkout.CodeInput{Code: "EDGE", CodeTerms: checkout.CodeTerms{Kind: checkout.KindPercentage, BasisPoints: ptr(1000)}})
+	h.owner(t, `INSERT INTO business.discount_code_version (id, code_id, revision, kind, basis_points, expires_at, created_by)
+		SELECT gen_random_uuid(), id, 2, 'percentage', 1000, '2026-11-05T10:00:00Z', created_by FROM business.discount_code WHERE code = 'EDGE'`)
+	one := `[{"variant_id":"` + f.v1000 + `","quantity":1}]`
+	_, d = proof(t)
+	if err := direct("2026-11-05T10:00:00Z", "EDGE", one, d); dbtest.SQLState(err) != "GK422" {
+		t.Fatalf("code at its expiry: %v", err)
+	}
+	_, d = proof(t)
+	if err := direct("2026-11-05T09:59:59Z", "EDGE", one, d); err != nil {
+		t.Fatalf("code a second before expiry: %v", err)
+	}
+
+	// A disabled owner can neither read nor create quotes.
+	mine := must[catalog.Result](t)(h.co.CreateQuote(h.ctx, customerA, nil, "mine", base))
+	h.owner(t, "SELECT business.account_set_disabled($1::uuid, true, 'test')", customerA)
+	if _, err := h.co.GetQuote(h.ctx, mine.ID, customerA, nil); !errors.Is(err, catalog.ErrNotFound) {
+		t.Fatalf("disabled owner reads: %v", err)
+	}
+	if _, err := h.co.CreateQuote(h.ctx, customerA, nil, "mine-2", base); !errors.Is(err, catalog.ErrForbidden) {
+		t.Fatalf("disabled owner creates: %v", err)
+	}
+
+	// Retention: only the owner-only purge removes quotes, and only those
+	// expired more than 30 days ago.
+	if _, err := h.admin.Exec(h.ctx, "DELETE FROM business.checkout_quote"); dbtest.SQLState(err) != "GK409" {
+		t.Fatalf("plain delete: %v", err)
+	}
+	var before int
+	if err := h.admin.QueryRow(h.ctx, "SELECT count(*) FROM business.checkout_quote").Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	// An old quote (sent 40 days ago) with one line.
+	h.owner(t, `INSERT INTO business.checkout_quote (id, guest_proof_digest, idempotency_key, body_sha256, handover_day, slot_id,
+		slot_starts_at, slot_ends_at, schedule_revision, fulfillment_mode, subtotal_minor, discount_minor, total_minor, sent_at, expires_at)
+		SELECT 'aaaaaaaa-0000-4000-8000-000000000001', sha256('old'::bytea), 'old', body_sha256, handover_day, slot_id, slot_starts_at,
+		       slot_ends_at, schedule_revision, fulfillment_mode, subtotal_minor, discount_minor, total_minor,
+		       now() - interval '40 days', now() - interval '39 days'
+		FROM business.checkout_quote WHERE id = $1`, first.ID)
+	h.owner(t, `INSERT INTO business.checkout_quote_line (quote_id, line_no, variant_id, recipe_version_id, quantity, unit_price_minor,
+		discount_minor, net_minor) SELECT 'aaaaaaaa-0000-4000-8000-000000000001', 1, variant_id, recipe_version_id, quantity,
+		unit_price_minor, discount_minor, net_minor FROM business.checkout_quote_line WHERE quote_id = $1`, first.ID)
+	h.owner(t, "SELECT business.quote_purge_expired(now() - interval '31 days')")
+	var n, oldLines int
+	if err := h.admin.QueryRow(h.ctx, `SELECT (SELECT count(*) FROM business.checkout_quote),
+		(SELECT count(*) FROM business.checkout_quote_line WHERE quote_id = 'aaaaaaaa-0000-4000-8000-000000000001')`).Scan(&n, &oldLines); err != nil ||
+		n != before || oldLines != 0 {
+		t.Fatalf("after purge: %d quotes (want %d), %d old lines (want 0), %v", n, before, oldLines, err)
+	}
+	if _, err := h.api.Exec(h.ctx, "SELECT business.quote_purge_expired(now() - interval '31 days')"); dbtest.SQLState(err) != "42501" {
+		t.Fatalf("gk_api purge: %v", err)
+	}
+}
+
+// readyVariantOf returns the fixture's ready-stock variant.
+func (h *harness) readyVariantOf(t *testing.T, f fixture) string {
+	t.Helper()
+	var id string
+	if err := h.admin.QueryRow(h.ctx, "SELECT variant_id::text FROM business.finished_cake_lot WHERE id = $1", f.readyLot).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
 }

@@ -15,6 +15,7 @@ type Checkout interface {
 	CreateQuote(ctx context.Context, subject string, digest []byte, key string, in checkout.QuoteInput) (catalog.Result, error)
 	GetQuote(ctx context.Context, id, subject string, digest []byte) (checkout.Quote, error)
 	Codes(ctx context.Context, subject string) ([]checkout.Code, error)
+	CodeByID(ctx context.Context, subject, id string) (checkout.Code, error)
 	CreateCode(ctx context.Context, subject, key string, in checkout.CodeInput) (catalog.Result, error)
 	ReviseCode(ctx context.Context, subject, key, codeID string, in checkout.CodeRevision) (catalog.Result, error)
 	ArchiveCode(ctx context.Context, subject, key, codeID string, in catalog.VersionInput) (catalog.Result, error)
@@ -27,8 +28,14 @@ const QuoteProofHeader = "X-Quote-Proof"
 // signed-in customer); without one the request is a guest's. A sent but
 // refused token is refused, never downgraded to a guest.
 func optionalCustomer(id Identity, w http.ResponseWriter, r *http.Request, logger *slog.Logger) (identity.Actor, bool, bool) {
-	if r.Header.Get("Authorization") == "" || id == nil {
+	if r.Header.Get("Authorization") == "" {
 		return identity.Actor{}, false, true
+	}
+	if id == nil {
+		// Sign-in is not configured: a sent token cannot be honoured, and a
+		// request that meant to be signed in is never downgraded to a guest.
+		identityError(w, r, logger, identity.ErrUnauthenticated)
+		return identity.Actor{}, false, false
 	}
 	token, ok := bearer(r)
 	if !ok {
@@ -102,16 +109,7 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, logger *slog.L
 		respond(w, r, logger, http.StatusOK, map[string]any{"codes": codes}, err)
 	}))
 	codeAfter := func(ctx context.Context, subject, codeID string) (any, error) {
-		codes, err := co.Codes(ctx, subject)
-		if err != nil {
-			return nil, err
-		}
-		for _, c := range codes {
-			if c.ID == codeID {
-				return c, nil
-			}
-		}
-		return nil, catalog.ErrNotFound
+		return co.CodeByID(ctx, subject, codeID)
 	}
 	mux.HandleFunc("POST /api/v1/admin/discount-codes", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
 		var in checkout.CodeInput

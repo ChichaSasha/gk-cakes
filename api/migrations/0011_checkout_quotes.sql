@@ -21,8 +21,11 @@
 -- exemption is claimed). GK delivery is quoted later by the chef and paid
 -- separately, so a quote covers cakes only. A quote is immutable, valid for
 -- 24 elapsed hours from when it is first returned (K02), reserves nothing
--- and belongs to its signed-in customer or to the holder of a guest proof
--- (only its SHA-256 digest is stored); a guessed quote ID gives no access.
+-- and belongs to its signed-in customer or to the holder of a fresh guest
+-- proof bound to that quote alone (only its SHA-256 digest is stored); a
+-- guessed quote ID gives no access. A ready-made cake must still be within
+-- its safe expiry at the end of the appointment. Expired quotes are removed
+-- by an owner-only retention purge; quotes are otherwise immutable.
 --
 -- Not yet quotable: resale lots (their handover is the original one) and
 -- chef-approved shorter lead times; ready cakes need the ordinary 192-hour
@@ -80,9 +83,10 @@ CREATE TABLE business.checkout_quote (
 
 CREATE UNIQUE INDEX checkout_quote_owner_key_idx ON business.checkout_quote (owner_account_id, idempotency_key)
   WHERE owner_account_id IS NOT NULL;
-CREATE UNIQUE INDEX checkout_quote_guest_key_idx ON business.checkout_quote (guest_proof_digest, idempotency_key)
+-- A guest proof is fresh for one quote (K02): its digest is bound to it.
+CREATE UNIQUE INDEX checkout_quote_guest_idx ON business.checkout_quote (guest_proof_digest)
   WHERE guest_proof_digest IS NOT NULL;
-CREATE INDEX checkout_quote_sent_idx ON business.checkout_quote (sent_at);
+CREATE INDEX checkout_quote_expires_idx ON business.checkout_quote (expires_at);
 
 CREATE TABLE business.checkout_quote_line (
   quote_id          uuid NOT NULL REFERENCES business.checkout_quote (id),
@@ -102,10 +106,26 @@ CREATE TRIGGER discount_code_version_immutable BEFORE UPDATE OR DELETE ON busine
   FOR EACH ROW EXECUTE FUNCTION business.catalog_immutable();
 CREATE TRIGGER discount_code_no_delete BEFORE DELETE ON business.discount_code
   FOR EACH ROW EXECUTE FUNCTION business.catalog_immutable();
+-- Quotes never change; they are deleted only by quote_purge_expired, which
+-- marks its own transaction.
+CREATE FUNCTION business.quote_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND pg_catalog.current_setting('business.quote_purge', true) = 'on' THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION '% rows are immutable', TG_TABLE_NAME USING ERRCODE = 'GK409';
+END;
+$$;
+
 CREATE TRIGGER checkout_quote_immutable BEFORE UPDATE OR DELETE ON business.checkout_quote
-  FOR EACH ROW EXECUTE FUNCTION business.catalog_immutable();
+  FOR EACH ROW EXECUTE FUNCTION business.quote_guard();
 CREATE TRIGGER checkout_quote_line_immutable BEFORE UPDATE OR DELETE ON business.checkout_quote_line
-  FOR EACH ROW EXECUTE FUNCTION business.catalog_immutable();
+  FOR EACH ROW EXECUTE FUNCTION business.quote_guard();
 CREATE TRIGGER discount_no_truncate_code BEFORE TRUNCATE ON business.discount_code
   FOR EACH STATEMENT EXECUTE FUNCTION business.catalog_immutable();
 CREATE TRIGGER discount_no_truncate_version BEFORE TRUNCATE ON business.discount_code_version
@@ -200,8 +220,11 @@ BEGIN
   IF p_expires_at IS NOT NULL AND p_expires_at <= pg_catalog.now() THEN
     RAISE EXCEPTION 'expires_invalid' USING ERRCODE = 'GK422';
   END IF;
-  IF p_total_limit < 1 OR p_per_customer_limit < 1 THEN
+  IF p_total_limit < 1 THEN
     RAISE EXCEPTION 'limit_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  IF p_per_customer_limit < 1 THEN
+    RAISE EXCEPTION 'per_customer_limit_invalid' USING ERRCODE = 'GK422';
   END IF;
 END;
 $$;
@@ -314,7 +337,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION business.discount_staff_list(p_actor uuid)
+CREATE FUNCTION business.discount_staff_list(p_actor uuid, p_code uuid)
 RETURNS TABLE (code_id uuid, code text, code_version integer, archived_at timestamptz, version_id uuid, kind text,
                basis_points integer, expires_at timestamptz, total_limit integer, per_customer_limit integer,
                version_created_at timestamptz)
@@ -330,6 +353,7 @@ BEGIN
   FROM business.discount_code c
   JOIN LATERAL (SELECT * FROM business.discount_code_version dv WHERE dv.code_id = c.id
                 ORDER BY dv.revision DESC LIMIT 1) v ON true
+  WHERE p_code IS NULL OR c.id = p_code
   ORDER BY c.archived_at IS NOT NULL, c.code
   LIMIT 500;
 END;
@@ -400,7 +424,7 @@ BEGIN
   -- Replay: same owner or guest and key. A concurrent first use waits on the
   -- unique index; the transaction-level advisory lock keeps it simple.
   PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
-    'quote|' || coalesce(v_account::text, pg_catalog.encode(p_guest_digest, 'hex')) || '|' || p_key, 0));
+    'quote|' || coalesce(v_account::text || '|' || p_key, pg_catalog.encode(p_guest_digest, 'hex')), 0));
   SELECT q.id, q.body_sha256 INTO v_prior, v_prior_hash FROM business.checkout_quote q
   WHERE q.idempotency_key = p_key
     AND (q.owner_account_id = v_account OR q.guest_proof_digest = p_guest_digest);
@@ -410,6 +434,10 @@ BEGIN
     END IF;
     RETURN QUERY SELECT v_prior, true;
     RETURN;
+  END IF;
+  -- A guest proof belongs to one quote: a new quote needs a fresh proof.
+  IF v_account IS NULL AND EXISTS (SELECT 1 FROM business.checkout_quote q WHERE q.guest_proof_digest = p_guest_digest) THEN
+    RAISE EXCEPTION 'proof_reused' USING ERRCODE = 'GK422';
   END IF;
 
   IF p_mode IS NULL OR p_mode NOT IN ('collection', 'customer_courier', 'gk_delivery') THEN
@@ -492,6 +520,14 @@ BEGIN
      AND NOT (v_mto = 0 AND v_slot.reason_code = 'full') THEN
     RAISE EXCEPTION 'slot_unavailable' USING ERRCODE = 'GK409';
   END IF;
+  -- A ready-made cake must be within its safe expiry when it is handed over
+  -- (K01, K04): through the end of the appointment.
+  FOR i IN 1 .. v_n LOOP
+    IF v_lots[i] IS NOT NULL AND EXISTS (SELECT 1 FROM business.finished_cake_lot l
+                                         WHERE l.id = v_lots[i] AND l.expires_at < v_slot.ends_at) THEN
+      RAISE EXCEPTION 'item_unavailable' USING ERRCODE = 'GK409';
+    END IF;
+  END LOOP;
 
   IF p_code IS NOT NULL THEN
     SELECT v.id, v.kind, v.basis_points, v.expires_at, v.per_customer_limit
@@ -550,7 +586,7 @@ DECLARE
   v_result json;
 BEGIN
   SELECT pg_catalog.json_build_object(
-           'id', q.id, 'sent_at', q.sent_at, 'expires_at', q.expires_at, 'date', q.handover_day,
+           'id', q.id, 'version', 1, 'sent_at', q.sent_at, 'expires_at', q.expires_at, 'date', q.handover_day,
            'slot', pg_catalog.json_build_object('id', q.slot_id, 'starts_at', q.slot_starts_at, 'ends_at', q.slot_ends_at),
            'schedule_version', q.schedule_revision, 'fulfillment_mode', q.fulfillment_mode,
            'subtotal_minor', q.subtotal_minor, 'discount_minor', q.discount_minor, 'total_minor', q.total_minor,
@@ -580,6 +616,31 @@ BEGIN
 END;
 $$;
 
+-- Owner-only retention: remove quotes that expired before p_before (at
+-- least 30 days ago, K00 key retention). Returns how many were removed.
+-- Checkout (A2) keeps what an order needs in its own snapshot rows.
+CREATE FUNCTION business.quote_purge_expired(p_before timestamptz)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_count integer;
+BEGIN
+  IF p_before IS NULL OR p_before > pg_catalog.now() - interval '30 days' THEN
+    RAISE EXCEPTION 'quotes are kept at least 30 days after they expire' USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+  PERFORM pg_catalog.set_config('business.quote_purge', 'on', true);
+  DELETE FROM business.checkout_quote_line l USING business.checkout_quote q
+  WHERE l.quote_id = q.id AND q.expires_at < p_before;
+  DELETE FROM business.checkout_quote q WHERE q.expires_at < p_before;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  PERFORM pg_catalog.set_config('business.quote_purge', 'off', true);
+  RETURN v_count;
+END;
+$$;
+
 REVOKE ALL ON TABLE business.discount_code, business.discount_code_version, business.checkout_quote,
   business.checkout_quote_line FROM PUBLIC;
 
@@ -589,13 +650,15 @@ REVOKE ALL ON FUNCTION business.discount_check_version(text, integer, timestampt
 REVOKE ALL ON FUNCTION business.discount_code_create(uuid, text, text, text, text, integer, timestamptz, integer, integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.discount_code_revise(uuid, text, text, uuid, integer, text, integer, timestamptz, integer, integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.discount_code_archive(uuid, text, text, uuid, integer) FROM PUBLIC;
-REVOKE ALL ON FUNCTION business.discount_staff_list(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.discount_staff_list(uuid, uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.quote_guard() FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.quote_purge_expired(timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.quote_create(uuid, bytea, text, text, date, uuid, text, json, text, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.quote_get(uuid, uuid, bytea) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION business.discount_code_create(uuid, text, text, text, text, integer, timestamptz, integer, integer) TO gk_api;
 GRANT EXECUTE ON FUNCTION business.discount_code_revise(uuid, text, text, uuid, integer, text, integer, timestamptz, integer, integer) TO gk_api;
 GRANT EXECUTE ON FUNCTION business.discount_code_archive(uuid, text, text, uuid, integer) TO gk_api;
-GRANT EXECUTE ON FUNCTION business.discount_staff_list(uuid) TO gk_api;
+GRANT EXECUTE ON FUNCTION business.discount_staff_list(uuid, uuid) TO gk_api;
 GRANT EXECUTE ON FUNCTION business.quote_create(uuid, bytea, text, text, date, uuid, text, json, text, timestamptz) TO gk_api;
 GRANT EXECUTE ON FUNCTION business.quote_get(uuid, uuid, bytea) TO gk_api;

@@ -799,13 +799,20 @@ Migration `0011_checkout_quotes.sql`, package `internal/checkout`.
   paid separately, so a quote covers cakes only. A quote is immutable, valid
   24 elapsed hours from when it is first returned, reserves nothing and
   belongs to the signed-in customer or to the holder of a guest proof (32
-  random bytes, unpadded base64url; only the SHA-256 digest is stored). A
-  guessed quote ID gives no access (404). Resale lots and chef-approved
-  shorter lead times are not quotable yet.
+  random bytes, unpadded base64url; only the SHA-256 digest is stored), which
+  must be fresh for each new quote (a replay of the same key is fine). A
+  guessed quote ID gives no access (404). A ready cake must be within its safe
+  expiry at the end of the appointment. Resale lots and chef-approved shorter
+  lead times are not quotable yet. A client price, total, currency or unknown
+  field is a malformed request (400). The response carries `version: 1`
+  (quotes are immutable; a changed price is a new quote). Expired quotes are
+  removed only by the owner-only `quote_purge_expired` (at least 30 days after
+  expiry). **Before production:** rate-limit quote creation (anonymous
+  callers can create rows) and the code lookup it implies.
 
 | Route | Who | Notes |
 | --- | --- | --- |
-| `POST /api/v1/checkout/quotes` | a guest (`guest_proof` in the body) or a signed-in customer (bearer; a refused token is 401, never a guest) | `{date, slot_id, fulfillment_mode, lines[{variant_id \| lot_id, quantity}], discount_code?}` with Idempotency-Key (scoped to the customer or guest proof); 409 `SLOT_UNAVAILABLE` / `ITEM_UNAVAILABLE` when the choice changed |
+| `POST /api/v1/checkout/quotes` | a guest (`guest_proof` in the body) or a signed-in customer (bearer; a refused token, or any token when sign-in is not configured, is 401, never a guest) | `{date, slot_id, fulfillment_mode, lines[{variant_id \| lot_id, quantity}], discount_code?}` with Idempotency-Key (scoped to the customer or guest proof); 409 `SLOT_UNAVAILABLE` / `ITEM_UNAVAILABLE` when the choice changed |
 | `GET /api/v1/checkout/quotes/{id}` | the owner (bearer) or the proof holder (`X-Quote-Proof` header) | 404 otherwise |
 | `GET /api/v1/admin/discount-codes` | chef, technical support | current terms of each code |
 | `POST /api/v1/admin/discount-codes` | chef | `{code, kind, basis_points?, expires_at?, total_limit?, per_customer_limit?}` |

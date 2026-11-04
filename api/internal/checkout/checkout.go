@@ -311,7 +311,7 @@ type Code struct {
 func (s *Store) Codes(ctx context.Context, subject string) ([]Code, error) {
 	rows, err := s.DB.Query(ctx, `SELECT code_id::text, code, code_version, archived_at, version_id::text, kind,
 		basis_points, expires_at, total_limit, per_customer_limit, version_created_at
-		FROM business.discount_staff_list($1::uuid)`, subject)
+		FROM business.discount_staff_list($1::uuid, NULL)`, subject)
 	if err != nil {
 		return nil, gatewayError("codes", err)
 	}
@@ -327,6 +327,31 @@ func (s *Store) Codes(ctx context.Context, subject string) ([]Code, error) {
 		codes = []Code{}
 	}
 	return codes, nil
+}
+
+// CodeByID returns one code, or ErrNotFound.
+func (s *Store) CodeByID(ctx context.Context, subject, id string) (Code, error) {
+	if !catalog.ValidUUID(id) {
+		return Code{}, catalog.ErrNotFound
+	}
+	rows, err := s.DB.Query(ctx, `SELECT code_id::text, code, code_version, archived_at, version_id::text, kind,
+		basis_points, expires_at, total_limit, per_customer_limit, version_created_at
+		FROM business.discount_staff_list($1::uuid, $2::uuid)`, subject, id)
+	if err != nil {
+		return Code{}, gatewayError("code", err)
+	}
+	codes, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Code, error) {
+		var c Code
+		return c, r.Scan(&c.ID, &c.Code, &c.Version, &c.ArchivedAt, &c.VersionID, &c.Kind, &c.BasisPoints,
+			&c.ExpiresAt, &c.TotalLimit, &c.PerCustomerLimit, &c.TermsSince)
+	})
+	if err != nil {
+		return Code{}, gatewayError("code", err)
+	}
+	if len(codes) != 1 {
+		return Code{}, catalog.ErrNotFound
+	}
+	return codes[0], nil
 }
 
 // CreateCode creates a discount code.
@@ -375,7 +400,8 @@ var invalidFields = map[string]string{
 	"proof_invalid": "guest_proof", "mode_invalid": "fulfillment_mode", "lines_invalid": "lines",
 	"lines_duplicate": "lines", "code_unknown": "discount_code", "code_requires_sign_in": "discount_code",
 	"code_not_applicable": "discount_code", "kind_invalid": "kind", "expires_invalid": "expires_at",
-	"limit_invalid": "total_limit", "code_invalid": "code", "idempotency_key_invalid": "Idempotency-Key",
+	"limit_invalid": "total_limit", "per_customer_limit_invalid": "per_customer_limit", "code_invalid": "code",
+	"idempotency_key_invalid": "Idempotency-Key", "proof_reused": "guest_proof",
 	"expected_version_required": "expected_version",
 }
 
@@ -385,6 +411,7 @@ var invalidMessages = map[string]string{
 	"code_not_applicable":   "applies to GK delivery only",
 	"expires_invalid":       "must be in the future",
 	"lines_duplicate":       "must not repeat a cake",
+	"proof_reused":          "must be fresh for each new quote",
 }
 
 var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "state_conflict": true,
