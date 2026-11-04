@@ -3,11 +3,14 @@ package checkout
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/catalog"
+	"github.com/ChichaSasha/gk-cakes/api/internal/jobs"
+	"github.com/ChichaSasha/gk-cakes/api/internal/recovery"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -107,5 +110,25 @@ func TestQuoteErrors(t *testing.T) {
 	var inv *catalog.InvalidError
 	if err := gatewayError("q", &pgconn.PgError{Code: "GK422", Message: "code_requires_sign_in"}); !errors.As(err, &inv) || inv.Field != "discount_code" {
 		t.Errorf("code_requires_sign_in: %v", err)
+	}
+}
+
+func TestPaidOutcomesThatNeedAPersonGoToAttention(t *testing.T) {
+	cases := map[string]bool{
+		`{"status":"confirmed","evidence":{"order_version":2}}`:                                   false,
+		`{"status":"refused","evidence":{"reason":"holds_released"}}`:                             false,
+		`{"status":"confirmed","evidence":{"order_version":2,"collection_id":"c"}}`:               false,
+		`{"status":"paid_awaiting_agreement","evidence":{"order_version":2,"collection_id":"c"}}`: true,
+		`{"status":"refused","evidence":{"reason":"order_changed","collection_id":"c"}}`:          true,
+	}
+	for raw, want := range cases {
+		var o recovery.Outcome
+		if err := json.Unmarshal([]byte(raw), &o); err != nil {
+			t.Fatal(err)
+		}
+		var ae *jobs.AttentionError
+		if got := errors.As(paidAttention(o), &ae); got != want {
+			t.Errorf("%s: attention %v, want %v", raw, got, want)
+		}
 	}
 }
