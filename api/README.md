@@ -1100,8 +1100,9 @@ with `paid_at`, or back to `awaiting_payment` after a refusal.
 
 `GET /api/v1/orders/{id}` adds `payment` (the latest collection: `id`,
 `state`, `amount_minor`, `currency`, `requested_at`, `checkout_url` only while
-the session is open and unexpired and the order still awaits payment,
-`expires_at` from Stripe), and `cancel_reason` and `cancelled_at` (step 7).
+the session is open and unexpired, the order still awaits payment and no
+expire request was made, `expires_at` from Stripe), and `cancel_reason` and
+`cancelled_at` (step 7).
 
 **7. Expiry, never-dispatched cleanup and release (worker, GK-025 A3c1,
 migration `0015_payment_expiry.sql`).** K03/K04: the timer is a trigger to
@@ -1120,12 +1121,14 @@ them.
   <collection>-expire`. `payment_expire_record` appends the answer to
   `business.payment_attempt` (kind `expire`): `expired` (200), `not_open`
   (400 `invalid_request_error`: the session is already complete or expired),
-  `rejected` (404, other 4xx) end the expire requests; `unknown` (no answer,
-  5xx) and `deferred` (409, 429) retry later with the same key (Stripe replays
-  its first answer; counted retries 1, 5, 15, 60 minutes, then attention);
-  `refused` (401/403) goes to attention. Whatever Stripe answers, the
-  reconcile then retrieves and verifies the session as in step 5 and only
-  that verdict counts: a payment still processing stays `pending` (no second
+  `rejected` (404, other 4xx) end the expire requests; `refused` (401/403)
+  goes to attention; after `unknown` (no answer, 5xx) or `deferred` (409,
+  429) the reconcile still retrieves and records its verdict, and a session
+  still pending is asked again with the same key a minute later (Stripe
+  replays its first answer; a deferral, not a counted failure). Once an
+  expire request was made the order view no longer offers the checkout link.
+  Whatever Stripe answers, the reconcile retrieves and verifies the session
+  as in step 5 and only that verdict counts: a payment still processing stays `pending` (no second
   expire request; re-checked every 15 minutes or at the next event), a paid
   one is confirmed, an expired one with no or a failed payment intent is
   `cancelled`. Verified on the sandbox on 2026-11-04 with
@@ -1228,6 +1231,12 @@ reached attention meanwhile.
 
 Not yet:
 
+- a failed delayed payment on a completed session (its payment intent back
+  to `requires_payment_method`, for example a bank debit that fails after
+  the customer finished Checkout): Stripe never expires a complete session,
+  so Evaluate keeps the collection `pending` and the order keeps its holds
+  (the review looks again every 15 minutes) until a reviewed Evaluate rule
+  or manager tooling exists;
 - the full-return core (A3c2): refund goals, refund dispatch, observation
   quarantine, and returning money for refused paid confirmations, including
   a success observed after the order was released;

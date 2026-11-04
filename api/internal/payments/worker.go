@@ -24,6 +24,10 @@ const (
 	// ReconcileRecheck: a session that is not decided yet is retrieved
 	// again (a webhook brings the check forward).
 	ReconcileRecheck = 15 * time.Minute
+	// ExpireRetry: an expire request without an answer (no response, 5xx,
+	// 409, 429) is asked again with the same key this much later (beyond
+	// the 30-second admission guard of migration 0015).
+	ExpireRetry = time.Minute
 )
 
 // Attention reasons stored on the job (no personal data).
@@ -287,17 +291,18 @@ func errString(err error) string {
 // it (pending, session last seen open, first admitted dispatch at least 15
 // minutes ago, not answered yet) and records the answer. A nil error means
 // the reconcile goes on to retrieve and verify, which alone decides; Stripe
-// refusing because the session is no longer open is fine. A lost or
-// deferred answer retries later with the same key (harmless).
-func (w *Worker) expire(ctx context.Context, log *slog.Logger, store leaseStore, b begin) error {
+// refusing because the session is no longer open is fine. retry reports a
+// lost or deferred answer: the reconcile still verifies now, and a still
+// pending session asks again later with the same key (harmless).
+func (w *Worker) expire(ctx context.Context, log *slog.Logger, store leaseStore, b begin) (retry bool, err error) {
 	status, err := store.expireAdmit(ctx, b.CollectionID)
 	switch {
 	case err != nil:
-		return err
+		return false, err
 	case status == "frozen":
-		return jobs.Defer(FreezeRecheck, recovery.ErrFrozen)
+		return false, jobs.Defer(FreezeRecheck, recovery.ErrFrozen)
 	case status != "ok":
-		return nil
+		return false, nil
 	}
 	callCtx, cancel := context.WithTimeout(ctx, ProviderTimeout)
 	res := w.Provider.ExpireSession(callCtx, ExpireKey(b.CollectionID), b.SessionID)
@@ -305,21 +310,22 @@ func (w *Worker) expire(ctx context.Context, log *slog.Logger, store leaseStore,
 	log.Info("stripe expire session call", "result", string(res.Kind), "http_status", res.Status,
 		"provider_code", res.Code, "error", errString(res.Err))
 	if err := store.recordExpire(ctx, b.CollectionID, res); err != nil {
-		return fmt.Errorf("payments: record expire request: %w", err)
+		return false, fmt.Errorf("payments: record expire request: %w", err)
 	}
 	switch res.Kind {
 	case Expired, NotOpen, Rejected:
-		return nil
+		return false, nil
 	case Refused:
-		return jobs.Attention(reasonExpireRefused, errors.New(res.String()))
-	default: // Unknown, Deferred: the same key later
-		return errors.New(res.String())
+		return false, jobs.Attention(reasonExpireRefused, errors.New(res.String()))
+	default: // Unknown, Deferred: verify now, the same key later
+		return true, nil
 	}
 }
 
 func (w *Worker) reconcile(ctx context.Context, log *slog.Logger, store leaseStore, b begin) error {
 	log = log.With("session_id", b.SessionID)
-	if err := w.expire(ctx, log, store, b); err != nil {
+	retryExpire, err := w.expire(ctx, log, store, b)
+	if err != nil {
 		return err
 	}
 	callCtx, cancel := context.WithTimeout(ctx, ProviderTimeout)
@@ -356,6 +362,9 @@ func (w *Worker) reconcile(ctx context.Context, log *slog.Logger, store leaseSto
 	log.Info("payment reconciled", "verdict", v.Kind, "reason", v.Reason, "collection_state", state, "command_id", cmd)
 	switch v.Kind {
 	case VerdictPending:
+		if retryExpire {
+			return jobs.Defer(ExpireRetry, errors.New("payments: session not decided yet; the expire request is asked again with the same key"))
+		}
 		return jobs.Defer(ReconcileRecheck, errors.New("payments: session not decided yet"))
 	case VerdictMismatch:
 		return jobs.Attention(reasonMismatch, errors.New(v.Reason))

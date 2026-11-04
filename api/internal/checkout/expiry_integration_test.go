@@ -16,7 +16,10 @@ import (
 	"github.com/ChichaSasha/gk-cakes/api/internal/checkout"
 	"github.com/ChichaSasha/gk-cakes/api/internal/dbtest"
 	"github.com/ChichaSasha/gk-cakes/api/internal/jobs"
+	"github.com/ChichaSasha/gk-cakes/api/internal/migrate"
+	"github.com/ChichaSasha/gk-cakes/api/internal/payments"
 	"github.com/ChichaSasha/gk-cakes/api/internal/schedule"
+	"github.com/ChichaSasha/gk-cakes/api/migrations"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -237,50 +240,69 @@ func TestExpireAtFifteenMinutesReleasesTheHolds(t *testing.T) {
 	h.noPersonalDataInLogs(t)
 }
 
-// A lost expire answer is retried with the same key: Stripe replays its
-// first answer, so the session is expired once.
-func TestLostExpireAnswerIsRetriedWithTheSameKey(t *testing.T) {
+// An expire request without an answer does not stop the reconcile: the
+// session is still retrieved and verified, and while it stays pending the
+// same key is asked again a minute later (Defer, not a counted failure).
+// When Stripe expired it but the answer was lost, the retrieve alone
+// decides (cancelled).
+func TestUnansweredExpireRequestStillVerifiesAndRetries(t *testing.T) {
 	h := newPayHarness(t)
 	f := h.setup(t)
 	pol := h.policy(t, "p1")
 	order, d := h.paidOrder(t, f, pol)
 	coll, session := h.started(t, order, d)
 	h.age(t, coll)
-	// Both the answer and the HTTP client's own replay of the request
-	// (net/http replays a request carrying an Idempotency-Key on a reused
-	// connection) are lost.
-	h.stripe.expireDrop = 100
-	h.due(t)
-	errs := h.drain(t)
-	if len(errs) != 1 || len(attention(errs)) != 0 || h.collection(t, coll).State != "pending" {
-		t.Fatalf("lost answer: %v %+v", errs, h.collection(t, coll))
+	retry := func(status int, want []string) {
+		t.Helper()
+		h.stripe.mu.Lock()
+		h.stripe.expireStatus = status
+		h.stripe.mu.Unlock()
+		h.owner(t, "UPDATE business.payment_collection SET expire_requested_at = expire_requested_at - interval '1 minute' WHERE id = $1::uuid", coll)
+		h.due(t)
+		errs := h.drain(t)
+		var de *jobs.DeferError
+		if len(errs) != 1 || !errors.As(errs[0], &de) || de.After != payments.ExpireRetry || h.collection(t, coll).State != "pending" {
+			t.Fatalf("HTTP %d: %v %+v", status, errs, h.collection(t, coll))
+		}
+		if got := h.expireAttempts(t, coll); strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("HTTP %d: attempts %v, want %v", status, got, want)
+		}
+		// The session was verified (still open) in the same run.
+		if got := h.count(t, "SELECT count(*) FROM business.payment_collection WHERE id = $1::uuid AND last_observed_at IS NOT NULL", coll); got != 1 {
+			t.Fatalf("HTTP %d: the session was not verified", status)
+		}
 	}
-	if got := h.expireAttempts(t, coll); len(got) != 1 || got[0] != "unknown" {
-		t.Fatalf("attempts %v", got)
+	retry(500, []string{"unknown"})
+	retry(429, []string{"unknown", "deferred"})
+	// Once an expire request was made the customer is no longer offered the
+	// checkout link, though the payment still reads pending.
+	if v, raw := h.view(t, order, d); v.Payment == nil || v.Payment.State != "pending" || v.Payment.CheckoutURL != nil {
+		t.Fatalf("view after an expire request %s", raw)
 	}
-	// The retry a minute later (beyond the 30-second guard).
+	// Stripe expires it but the answer (and net/http's own replay of a
+	// request carrying an Idempotency-Key) is lost: the retrieve decides.
 	h.stripe.mu.Lock()
-	h.stripe.expireDrop = 0
+	h.stripe.expireStatus, h.stripe.expireDrop = 0, 100
 	h.stripe.mu.Unlock()
 	h.owner(t, "UPDATE business.payment_collection SET expire_requested_at = expire_requested_at - interval '1 minute' WHERE id = $1::uuid", coll)
 	h.due(t)
 	if errs := h.drain(t); len(errs) != 0 {
-		t.Fatalf("retry: %v", errs)
+		t.Fatalf("lost answer: %v", errs)
+	}
+	if got := h.expireAttempts(t, coll); strings.Join(got, ",") != "unknown,deferred,unknown" {
+		t.Fatalf("attempts %v", got)
+	}
+	if c := h.collection(t, coll); c.State != "cancelled" || h.stripe.session(session).status != "expired" {
+		t.Fatalf("collection %+v", c)
 	}
 	calls := h.expireCalls()
-	if len(calls) < 2 {
+	if len(calls) < 3 {
 		t.Fatalf("expire calls %v", calls)
 	}
 	for _, c := range calls {
 		if c != coll+"-expire" {
 			t.Fatalf("expire calls %v, want one key", calls)
 		}
-	}
-	if got := h.expireAttempts(t, coll); len(got) != 2 || got[1] != "expired" {
-		t.Fatalf("attempts %v", got)
-	}
-	if c := h.collection(t, coll); c.State != "cancelled" || h.stripe.session(session).status != "expired" {
-		t.Fatalf("collection %+v", c)
 	}
 	// The hold has not ended yet: nothing released before it.
 	if o := h.orderRow(t, order); o.Lifecycle != "awaiting_payment" {
@@ -335,10 +357,13 @@ func TestExpireOfAPaidSessionConfirmsAndReleasesNothing(t *testing.T) {
 }
 
 // A payment still processing at 15 minutes: the expire request is made and
-// refused (the session is no longer open); the collection stays pending
-// and the customer keeps seeing "pending" (still checking; do not pay
-// again); nothing is released until a later verified terminal-unpaid
-// verdict, and no second expire request is made.
+// refused (the session is complete, no longer open); the collection stays
+// pending and the customer keeps seeing "pending" (still checking; do not
+// pay again); no second expire request is made. If the delayed payment then
+// fails (the payment intent back to requires_payment_method) the session
+// stays complete (Stripe never expires a complete session), so Evaluate
+// keeps it pending and the holds stay: no reviewed rule exists yet for
+// that case (README "Not yet").
 func TestProcessingPaymentAtFifteenMinutesKeepsTheHolds(t *testing.T) {
 	h := newPayHarness(t)
 	f := h.setup(t)
@@ -374,8 +399,7 @@ func TestProcessingPaymentAtFifteenMinutesKeepsTheHolds(t *testing.T) {
 	if id, at := h.reviewJob(t, order); id == "" || time.Until(at) < 14*time.Minute {
 		t.Fatalf("review job %s at %s, want one about 15 minutes away", id, at)
 	}
-	// Later reconciles: still processing, then the payment fails and the
-	// session expires (a verified terminal-unpaid verdict).
+	// Later reconciles: still processing, then the delayed payment fails.
 	h.due(t)
 	if errs := h.drain(t); len(errs) != 1 || h.orderRow(t, order).Lifecycle != "awaiting_payment" {
 		t.Fatalf("still processing: %v %+v", errs, h.orderRow(t, order))
@@ -384,21 +408,30 @@ func TestProcessingPaymentAtFifteenMinutesKeepsTheHolds(t *testing.T) {
 		h.stripe.mu.Lock()
 		defer h.stripe.mu.Unlock()
 		s := h.stripe.sessions[session]
-		s.status = "expired"
 		s.pi["status"] = "requires_payment_method"
+		s.pi["latest_charge"].(map[string]any)["status"] = "failed"
 	}()
-	h.due(t)
-	if errs := h.drain(t); len(errs) != 0 {
-		t.Fatalf("failed payment: %v", errs)
+	for range 2 {
+		h.due(t)
+		errs := h.drain(t)
+		if len(errs) != 1 || !errors.As(errs[0], &de) || h.collection(t, coll).State != "pending" {
+			t.Fatalf("failed delayed payment: %v %+v", errs, h.collection(t, coll))
+		}
+	}
+	if h.stripe.session(session).status != "complete" {
+		t.Fatal("the fake changed the session's status")
 	}
 	if calls := h.expireCalls(); len(calls) != 1 {
 		t.Fatalf("expire calls %v, want exactly one", calls)
 	}
-	if o := h.orderRow(t, order); o.Lifecycle != "cancelled" || o.CancelReason != "payment_not_completed" {
+	if o := h.orderRow(t, order); o.Lifecycle != "awaiting_payment" || o.CancelReason != "" {
 		t.Fatalf("order %+v", o)
 	}
-	if got := h.paidHolds(t, order, f.readyLot); got != "released/returned 0r0s" {
+	if got := h.paidHolds(t, order, f.readyLot); got != "tentative/reserved 1r0s" {
 		t.Fatalf("holds %s", got)
+	}
+	if id, _ := h.reviewJob(t, order); id == "" {
+		t.Fatal("the review stopped looking at a pending collection")
 	}
 }
 
@@ -972,5 +1005,140 @@ func TestExpiryGatewaysAreLeaseFenced(t *testing.T) {
 		if _, err := conn.Exec(h.ctx, sql); dbtest.SQLState(err) != "42501" {
 			t.Errorf("gk_api: %s: %v, want 42501", sql, err)
 		}
+	}
+}
+
+// A collection Stripe rejected (failed, nothing created) brings the review
+// forward; the order is released once its hold has ended, not before.
+func TestRejectedCollectionIsReleasedAfterTheHold(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d := h.paidOrder(t, f, pol)
+	res, err := h.start(order, d, "pay-1", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.stripe.status, h.stripe.errType = 400, "invalid_request_error"
+	if got := attention(h.drain(t)); len(got) != 1 || !strings.Contains(got[0], "rejected") {
+		t.Fatalf("rejected dispatch: %v", got)
+	}
+	if c := h.collection(t, res.ID); c.State != "failed" {
+		t.Fatalf("collection %+v", c)
+	}
+	// Before the hold ends the review keeps the holds.
+	h.due(t)
+	if errs := h.drain(t); len(errs) != 0 || h.orderRow(t, order).Lifecycle != "awaiting_payment" {
+		t.Fatalf("before the hold ended: %v %+v", errs, h.orderRow(t, order))
+	}
+	h.endHold(t, order)
+	h.due(t)
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatal(errs)
+	}
+	if o := h.orderRow(t, order); o.Lifecycle != "cancelled" || o.CancelReason != "payment_not_completed" {
+		t.Fatalf("order %+v", o)
+	}
+	if got := h.paidHolds(t, order, f.readyLot); got != "released/returned 0r0s" {
+		t.Fatalf("holds %s", got)
+	}
+	if len(h.stripe.sessions) != 0 {
+		t.Fatalf("sessions %d", len(h.stripe.sessions))
+	}
+}
+
+// Concurrent schedulers (collections failing at once, the review itself)
+// leave at most one waiting review job, also while the current one runs.
+func TestConcurrentReviewSchedulersLeaveOneWaitingJob(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, _ := h.paidOrder(t, f, pol)
+	waiting := func() int {
+		return h.count(t, `SELECT count(*) FROM business.order_hold_review_job rj JOIN business.job j ON j.id = rj.job_id
+			WHERE rj.order_id = $1::uuid AND j.state IN ('queued', 'retry')`, order)
+	}
+	for round := range 3 {
+		// The waiting review is leased (running): every scheduler must
+		// enqueue anew, and only one may.
+		id, _ := h.reviewJob(t, order)
+		job := h.claimOnly(t, id)
+		conns := make([]*pgx.Conn, 6)
+		for i := range conns {
+			conns[i] = h.db.MigratorConn(t)
+		}
+		errs := make([]error, len(conns))
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i, conn := range conns {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				errs[i] = func() error {
+					tx, err := conn.Begin(context.Background())
+					if err != nil {
+						return err
+					}
+					defer tx.Rollback(context.Background())
+					if _, err := tx.Exec(context.Background(), "SET LOCAL ROLE gk_owner"); err != nil {
+						return err
+					}
+					if _, err := tx.Exec(context.Background(), "SELECT business.order_hold_review_schedule($1::uuid, now())", order); err != nil {
+						return err
+					}
+					return tx.Commit(context.Background())
+				}()
+			}()
+		}
+		close(start)
+		wg.Wait()
+		for _, err := range errs {
+			if err != nil {
+				t.Fatalf("round %d: %v", round, err)
+			}
+		}
+		if got := waiting(); got != 1 {
+			t.Fatalf("round %d: %d waiting review jobs, want 1", round, got)
+		}
+		h.finish(t, job, nil)
+	}
+	if got := h.count(t, "SELECT count(*) FROM business.order_hold_review_job WHERE order_id = $1::uuid", order); got != 4 {
+		t.Fatalf("%d review jobs in all, want 4 (one per round plus the first)", got)
+	}
+}
+
+// Orders already awaiting payment when migration 0015 is applied get one
+// hold review each, due no earlier than 15 minutes after the migration.
+func TestMigrationBackfillsHoldReviews(t *testing.T) {
+	h := &payHarness{commandHarness: &commandHarness{harness: newHarnessAt(t, "0014_payments")}}
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, _ := h.paidOrder(t, f, pol)
+	before := time.Now()
+	if _, err := migrate.Run(h.ctx, h.db.MigratorConn(t), migrations.FS); err != nil {
+		t.Fatal(err)
+	}
+	after := time.Now()
+	var placed, holdUntil, due time.Time
+	var jobsN int
+	if err := h.admin.QueryRow(h.ctx, `SELECT o.placed_at, r.hold_until,
+		(SELECT count(*) FROM business.order_hold_review_job rj WHERE rj.order_id = o.id),
+		(SELECT j.next_attempt_at FROM business.order_hold_review_job rj JOIN business.job j ON j.id = rj.job_id
+		 WHERE rj.order_id = o.id AND j.state = 'queued')
+		FROM business.orders o JOIN business.order_hold_review r ON r.order_id = o.id WHERE o.id = $1::uuid`, order).Scan(
+		&placed, &holdUntil, &jobsN, &due); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.count(t, "SELECT count(*) FROM business.order_hold_review"); got != 1 || jobsN != 1 || !due.Equal(holdUntil) {
+		t.Fatalf("%d reviews, %d jobs, due %s, hold until %s", got, jobsN, due, holdUntil)
+	}
+	// The later of placed_at (a test clock) and the migration instant.
+	lo, hi := before.Add(15*time.Minute-2*time.Second), after.Add(15*time.Minute+2*time.Second)
+	if placed.After(after) {
+		lo, hi = placed.Add(15*time.Minute), placed.Add(15*time.Minute)
+	}
+	if holdUntil.Before(lo) || holdUntil.After(hi) {
+		t.Fatalf("hold until %s, want between %s and %s (placed %s)", holdUntil, lo, hi, placed)
 	}
 }

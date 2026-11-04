@@ -661,8 +661,10 @@ BEGIN
 END;
 $$;
 
--- As in 0014; a dispatch closed by the never-dispatched cleanup records its
--- 'rejected' outcome without another audit event (the cleanup audited it).
+-- As in 0014; a dispatch whose collection the never-dispatched cleanup
+-- closed (the collection row says so, whatever the worker reports) records
+-- its 'rejected' outcome without another audit event (the cleanup audited
+-- it).
 CREATE OR REPLACE FUNCTION business.payment_recovery_committed(
   p_job_id uuid, p_worker uuid, p_generation bigint, p_operation_id uuid, p_outcome json, p_outcome_hash text)
 RETURNS TABLE (op_state text, changed boolean)
@@ -677,11 +679,12 @@ DECLARE
   v_livemode boolean;
   v_state text;
   v_changed boolean;
+  v_cancel_reason text;
 BEGIN
   IF v_status IS NULL OR v_status NOT IN ('created', 'rejected') THEN
     RAISE EXCEPTION 'unsupported payment dispatch outcome %', v_status USING ERRCODE = 'invalid_parameter_value';
   END IF;
-  PERFORM 1 FROM business.payment_collection pc WHERE pc.id = v.collection_id FOR UPDATE;
+  SELECT pc.cancel_reason INTO v_cancel_reason FROM business.payment_collection pc WHERE pc.id = v.collection_id FOR UPDATE;
   SELECT c.op_state, c.changed INTO v_state, v_changed
   FROM business.recovery_mark_committed(p_operation_id, p_outcome, p_outcome_hash, false) c;
   IF v_status = 'created' THEN
@@ -705,7 +708,7 @@ BEGIN
     UPDATE business.payment_collection pc
     SET state = 'failed', version = pc.version + 1, updated_at = pg_catalog.now()
     WHERE pc.id = v.collection_id AND pc.state IN ('created', 'unknown') AND pc.mismatch_reason IS NULL;
-    IF v_changed AND (v_ev ->> 'reason') IS DISTINCT FROM 'never_dispatched' THEN
+    IF v_changed AND v_cancel_reason IS DISTINCT FROM 'never_dispatched' THEN
       PERFORM business.audit_record('system', NULL, 'payment.failed', 'payment_collection', v.collection_id, NULL,
                                     pg_catalog.json_build_object('reason', coalesce(v_ev ->> 'reason', 'rejected_by_stripe')));
     END IF;
@@ -714,7 +717,9 @@ BEGIN
 END;
 $$;
 
--- As in 0014, plus cancel_reason and cancelled_at; a paid confirmation that
+-- As in 0014, plus cancel_reason and cancelled_at; the checkout URL is no
+-- longer offered once the order left awaiting payment or an expire request
+-- was made for the session; a paid confirmation that
 -- is not secured yet shows confirmation_pending only while the order still
 -- awaits payment (a late success for a released order never shows it as
 -- being confirmed). A collection past its 15 minutes keeps its own state
@@ -766,6 +771,7 @@ BEGIN
                          'checkout_url', CASE WHEN pc.state = 'pending' AND pc.session_status = 'open'
                                                    AND pc.provider_expires_at > pg_catalog.now()
                                                    AND o.lifecycle = 'awaiting_payment'
+                                                   AND pc.expire_requested_at IS NULL
                                               THEN pc.checkout_url END,
                          'expires_at', pc.provider_expires_at)
                        FROM business.payment_collection pc
