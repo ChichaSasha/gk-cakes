@@ -34,9 +34,11 @@ var validLocalAPI = map[string]string{
 }
 
 var validProductionAPI = map[string]string{
-	"APP_ENV":      "production",
-	"DATABASE_URL": "postgresql://gk_api:" + canary + "@db.example.supabase.co:5432/postgres?sslmode=verify-full",
-	"UI_ORIGIN":    "https://gkcake.com",
+	"APP_ENV":              "production",
+	"DATABASE_URL":         "postgresql://gk_api:" + canary + "@db.example.supabase.co:5432/postgres?sslmode=verify-full",
+	"UI_ORIGIN":            "https://gkcake.com",
+	"AUTH_ISSUER":          "https://example.supabase.co/auth/v1",
+	"AUTH_PUBLISHABLE_KEY": "sb_publishable_0123456789abcdefXYZ",
 }
 
 func TestLoadAPIRejectsMissingSecretAndOrigin(t *testing.T) {
@@ -317,5 +319,48 @@ func TestLoadMigrateRequiresMigrationCredential(t *testing.T) {
 	}
 	if !cfg.DatabaseURL.IsSet() {
 		t.Error("MIGRATION_DATABASE_URL not loaded")
+	}
+}
+
+func TestLoadAPIAuth(t *testing.T) {
+	prod, err := LoadAPI(env(validProductionAPI))
+	if err != nil || !prod.Auth.Enabled() || prod.Auth.Issuer != "https://example.supabase.co/auth/v1" ||
+		prod.Auth.PublishableKey != "sb_publishable_0123456789abcdefXYZ" {
+		t.Fatalf("production auth: %+v, %v", prod.Auth, err)
+	}
+	local, err := LoadAPI(env(validLocalAPI))
+	if err != nil || local.Auth.Enabled() {
+		t.Fatalf("local without auth: %+v, %v; want it optional and off", local.Auth, err)
+	}
+	if l, err := LoadAPI(env(merge(validLocalAPI, map[string]string{
+		"AUTH_ISSUER": "http://127.0.0.1:54321/auth/v1", "AUTH_PUBLISHABLE_KEY": "sb_publishable_0123456789abcdefXYZ",
+	}))); err != nil || !l.Auth.Enabled() {
+		t.Fatalf("local provider over http: %+v, %v", l.Auth, err)
+	}
+	staging := merge(validProductionAPI, map[string]string{"APP_ENV": "staging", "UI_ORIGIN": "https://staging.gkcake.com"})
+	for name, c := range map[string]struct {
+		env     map[string]string
+		mention string
+	}{
+		"required in production":   {merge(validProductionAPI, map[string]string{"AUTH_ISSUER": "", "AUTH_PUBLISHABLE_KEY": ""}), "AUTH_ISSUER and AUTH_PUBLISHABLE_KEY are required in production"},
+		"required in staging":      {merge(staging, map[string]string{"AUTH_ISSUER": "", "AUTH_PUBLISHABLE_KEY": ""}), "required in staging"},
+		"issuer without key":       {merge(validLocalAPI, map[string]string{"AUTH_ISSUER": "https://example.supabase.co/auth/v1"}), "set together"},
+		"key without issuer":       {merge(validLocalAPI, map[string]string{"AUTH_PUBLISHABLE_KEY": "sb_publishable_0123456789abcdefXYZ"}), "set together"},
+		"issuer with other path":   {merge(validProductionAPI, map[string]string{"AUTH_ISSUER": "https://example.supabase.co/auth/v1/"}), "AUTH_ISSUER must be the provider's auth URL"},
+		"issuer with query":        {merge(validProductionAPI, map[string]string{"AUTH_ISSUER": "https://example.supabase.co/auth/v1?x=1"}), "AUTH_ISSUER must be the provider's auth URL"},
+		"issuer with credentials":  {merge(validProductionAPI, map[string]string{"AUTH_ISSUER": "https://u:p@example.supabase.co/auth/v1"}), "AUTH_ISSUER must be the provider's auth URL"},
+		"issuer over http":         {merge(validProductionAPI, map[string]string{"AUTH_ISSUER": "http://example.supabase.co/auth/v1"}), "public https URL in production"},
+		"loopback issuer deployed": {merge(staging, map[string]string{"AUTH_ISSUER": "https://localhost/auth/v1"}), "public https URL in staging"},
+		"remote issuer over http":  {merge(validLocalAPI, map[string]string{"AUTH_ISSUER": "http://example.supabase.co/auth/v1", "AUTH_PUBLISHABLE_KEY": "sb_publishable_0123456789abcdefXYZ"}), "https for a non-local provider"},
+		"secret key":               {merge(validProductionAPI, map[string]string{"AUTH_PUBLISHABLE_KEY": "sb_secret_" + canary}), "never a secret key"},
+		"legacy key":               {merge(validProductionAPI, map[string]string{"AUTH_PUBLISHABLE_KEY": "eyJhbGciOiJIUzI1NiJ9." + canary}), "AUTH_PUBLISHABLE_KEY"},
+	} {
+		_, err := LoadAPI(env(c.env))
+		if err == nil || !strings.Contains(err.Error(), c.mention) {
+			t.Errorf("%s: %v, want an error mentioning %q", name, err, c.mention)
+		}
+		if err != nil && strings.Contains(err.Error(), canary) {
+			t.Errorf("%s: error leaks a value: %q", name, err)
+		}
 	}
 }

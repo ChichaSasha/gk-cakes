@@ -65,6 +65,10 @@ func (d *DB) MigratorConn(t *testing.T) *pgx.Conn {
 	return d.connect(t, d.urlFor(migratorRole, migratorRole))
 }
 
+// MigratorURL is the migration role's connection URL, for commands that
+// read MIGRATION_DATABASE_URL.
+func (d *DB) MigratorURL() string { return d.urlFor(migratorRole, migratorRole).String() }
+
 // LoginConn creates a login user that is a member of group (for example
 // gk_api) and connects as it. The user is dropped at cleanup.
 func (d *DB) LoginConn(t *testing.T, group string) *pgx.Conn {

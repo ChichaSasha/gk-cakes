@@ -92,8 +92,9 @@ GK-021, which consumes its resource evidence.
    Store `DATABASE_URL` in backend environment; migration URL in CI migration environment.
 3. Configure managed identity with [redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls):
    at GK-021, use exact actual site/login callback and local dev URL from GK-020 and the selected identity implementation, no wildcard
-   production callback. Public `AUTH_URL`/publishable key are deliberate; issuer,
-   audience, JWKS trusted URL and signing algorithm are backend config. Creator
+   production callback. The API's `AUTH_ISSUER` and `AUTH_PUBLISHABLE_KEY` are public
+   by design (audience `authenticated`, ES256 keys from the issuer's JWKS are fixed in
+   code; see api/README.md "Identity"); staging values are set. Creator
    identifies first manager by verified account subject in GK-010; Agent GK-021 records local role,
    never user-editable metadata. Customer/provider account recovery remains personal.
 4. [Storage access policy](https://supabase.com/docs/guides/storage/security/access-control):

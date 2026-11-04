@@ -431,8 +431,14 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	all, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	if err != nil || len(all) != 1 {
-		t.Fatalf("gk_api can execute %v (%v), want only email_event_record", all, err)
+	wantAPI := []string{ // GK-021 adds the identity gateway
+		"business.email_event_record(text, text, timestamp with time zone, text, uuid, json, text)",
+		"business.identity_resolve(uuid)",
+		"business.identity_staff_list(uuid)",
+	}
+	slices.Sort(all)
+	if err != nil || !slices.Equal(all, wantAPI) {
+		t.Fatalf("gk_api can execute %v (%v), want exactly %v", all, err, wantAPI)
 	}
 	conn := h.db.LoginConn(t, "gk_api")
 	for _, sql := range []string{"SELECT count(*) FROM business.email_event", "SELECT count(*) FROM business.notification_intent"} {

@@ -77,7 +77,23 @@ type API struct {
 	UIOrigin        string
 	ShutdownTimeout time.Duration
 	Providers       Providers
+	Auth            Auth
 }
+
+// Auth configures verification of the identity provider's access tokens
+// (Supabase, contracts K00). Both values are public. Required in staging and
+// production; elsewhere both or neither are set, and without them the API
+// serves no authenticated route.
+type Auth struct {
+	// Issuer is the exact token issuer, e.g. https://<ref>.supabase.co/auth/v1;
+	// the signing keys and the session check are read from it.
+	Issuer string
+	// PublishableKey is the provider's public client key (sb_publishable_...).
+	PublishableKey string
+}
+
+// Enabled reports whether token verification is configured.
+func (a Auth) Enabled() bool { return a.Issuer != "" }
 
 // Worker is the configuration of the maintenance/job process. It uses its own
 // DATABASE_URL value, provisioned with the worker credential.
@@ -128,6 +144,7 @@ func LoadAPI(getenv func(string) string) (API, error) {
 		EmailWebhookSecret:   l.webhookSecret("EMAIL_WEBHOOK_SECRET"),
 		StorageWriteKey:      l.optionalSecret("STORAGE_WRITE_KEY"),
 	}
+	cfg.Auth = l.auth(cfg.Env)
 	return cfg, l.err()
 }
 
@@ -306,6 +323,43 @@ func (l *loader) origin(name string, env Env) string {
 		return ""
 	}
 	return raw
+}
+
+var publishableKey = regexp.MustCompile(`^sb_publishable_[A-Za-z0-9_-]{16,}$`)
+
+// auth validates the identity provider settings: an exact https issuer
+// ending in /auth/v1 (http only for a loopback provider outside deployed
+// environments) and a publishable key, never a secret one.
+func (l *loader) auth(env Env) Auth {
+	a := Auth{Issuer: l.get("AUTH_ISSUER"), PublishableKey: l.get("AUTH_PUBLISHABLE_KEY")}
+	switch {
+	case a.Issuer == "" && a.PublishableKey == "":
+		if env.deployed() {
+			l.fail("AUTH_ISSUER and AUTH_PUBLISHABLE_KEY are required in %s", env)
+		}
+		return Auth{}
+	case a.Issuer == "" || a.PublishableKey == "":
+		l.fail("AUTH_ISSUER and AUTH_PUBLISHABLE_KEY must be set together")
+		return Auth{}
+	}
+	u, err := url.Parse(a.Issuer)
+	switch {
+	case err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
+		u.Path != "/auth/v1" || (u.Scheme != "https" && u.Scheme != "http"):
+		l.fail("AUTH_ISSUER must be the provider's auth URL, such as https://<project>.supabase.co/auth/v1")
+		return Auth{}
+	case env.deployed() && (u.Scheme != "https" || isLoopback(u.Hostname())):
+		l.fail("AUTH_ISSUER must be a public https URL in %s", env)
+		return Auth{}
+	case u.Scheme != "https" && !isLoopback(u.Hostname()):
+		l.fail("AUTH_ISSUER must use https for a non-local provider")
+		return Auth{}
+	}
+	if !publishableKey.MatchString(a.PublishableKey) {
+		l.fail("AUTH_PUBLISHABLE_KEY must be the provider's publishable key (sb_publishable_...), never a secret key")
+		return Auth{}
+	}
+	return a
 }
 
 func (l *loader) optionalSecret(name string) Secret { return Secret{value: l.get(name)} }
