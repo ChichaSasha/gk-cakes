@@ -22,36 +22,49 @@
 		technical_support: 'Technical support'
 	};
 
-	onMount(async () => {
-		if (!signInConfigured || !(await currentSession())) {
-			await goto(resolve('/sign-in?next=/admin'), { replaceState: true });
-			return;
-		}
-		try {
-			me = await authedGet<Me>('/api/v1/admin/me');
-			if (me.capabilities.includes('chef')) {
-				staff = (await authedGet<{ staff: StaffMember[] }>('/api/v1/admin/staff')).staff;
-			}
-		} catch (e) {
-			if (e instanceof ApiError && e.signInRequired) {
-				await signOut();
+	onMount(() => {
+		let active = true;
+		(async () => {
+			if (!signInConfigured || !(await currentSession())) {
+				if (!active) return;
 				await goto(resolve('/sign-in?next=/admin'), { replaceState: true });
 				return;
 			}
-			if (e instanceof ApiError && e.code === 'FORBIDDEN') {
-				problem = 'This account has no staff access.';
-			} else if (e instanceof ApiError && e.code === 'ACCOUNT_DISABLED') {
-				problem = 'This account is disabled.';
-			} else {
-				problem = 'The staff area could not be loaded right now. Please try again.';
+			try {
+				me = await authedGet<Me>('/api/v1/admin/me');
+				if (me.capabilities.includes('chef')) {
+					staff = (await authedGet<{ staff: StaffMember[] }>('/api/v1/admin/staff')).staff;
+				}
+			} catch (e) {
+				if (!active) return;
+				if (e instanceof ApiError && e.signInRequired) {
+					await signOut();
+					await goto(resolve('/sign-in?next=/admin&ended=1'), { replaceState: true });
+					return;
+				}
+				if (e instanceof ApiError && e.code === 'FORBIDDEN') {
+					problem = 'This account has no staff access.';
+				} else if (e instanceof ApiError && e.code === 'ACCOUNT_DISABLED') {
+					problem = 'This account is disabled.';
+				} else {
+					problem = 'The staff area could not be loaded right now. Please try again.';
+				}
 			}
-		}
+		})();
+		return () => {
+			active = false;
+		};
 	});
 
 	async function leave() {
-		await signOut();
+		const reached = await signOut();
 		me = null;
 		staff = null;
+		if (!reached) {
+			problem =
+				'You are signed out on this device, but the sign-in service could not be reached to end the session everywhere.';
+			return;
+		}
 		await goto(resolve('/'), { replaceState: true });
 	}
 </script>

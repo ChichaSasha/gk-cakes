@@ -8,29 +8,42 @@
 	let me = $state<Me | null>(null);
 	let problem = $state('');
 
-	onMount(async () => {
-		if (!signInConfigured || !(await currentSession())) {
-			await goto(resolve('/sign-in?next=/account'), { replaceState: true });
-			return;
-		}
-		try {
-			me = await authedGet<Me>('/api/v1/me');
-		} catch (e) {
-			if (e instanceof ApiError && e.signInRequired) {
-				await signOut();
+	onMount(() => {
+		let active = true;
+		(async () => {
+			if (!signInConfigured || !(await currentSession())) {
+				if (!active) return;
 				await goto(resolve('/sign-in?next=/account'), { replaceState: true });
 				return;
 			}
-			problem =
-				e instanceof ApiError && e.code === 'ACCOUNT_DISABLED'
-					? 'This account is disabled. Please contact us if you think this is a mistake.'
-					: 'We could not load your account right now. Please try again.';
-		}
+			try {
+				me = await authedGet<Me>('/api/v1/me');
+			} catch (e) {
+				if (!active) return;
+				if (e instanceof ApiError && e.signInRequired) {
+					await signOut();
+					await goto(resolve('/sign-in?next=/account&ended=1'), { replaceState: true });
+					return;
+				}
+				problem =
+					e instanceof ApiError && e.code === 'ACCOUNT_DISABLED'
+						? 'This account is disabled. Please contact us if you think this is a mistake.'
+						: 'We could not load your account right now. Please try again.';
+			}
+		})();
+		return () => {
+			active = false;
+		};
 	});
 
 	async function leave() {
-		await signOut();
+		const reached = await signOut();
 		me = null;
+		if (!reached) {
+			problem =
+				'You are signed out on this device, but the sign-in service could not be reached to end the session everywhere.';
+			return;
+		}
 		await goto(resolve('/'), { replaceState: true });
 	}
 </script>

@@ -5,13 +5,16 @@
 	import { safeReturnPath } from '../../lib/api';
 	import { auth, callbackUrl, rememberReturnPath, signInConfigured } from '../../lib/auth';
 
-	const returnPath = safeReturnPath(page.url.searchParams.get('next'));
+	const returnPath = $derived(safeReturnPath(page.url.searchParams.get('next')));
+	const ended = $derived(page.url.searchParams.get('ended') === '1');
 
 	let email = $state('');
 	let password = $state('');
 	let busy = $state(false);
 	let message = $state('');
 	let linkSent = $state(false);
+
+	const unavailable = 'Sign-in is not available right now. Please try again.';
 
 	async function signInWithPassword(event: SubmitEvent) {
 		event.preventDefault();
@@ -21,10 +24,9 @@
 			const { error } = await auth().auth.signInWithPassword({ email, password });
 			if (error) {
 				// One message for every refusal: it never reveals whether an account exists.
-				message =
-					error.status === 400 || error.status === 401 || error.status === 422
-						? 'The email or password is not right.'
-						: 'Sign-in is not available right now. Please try again.';
+				message = [400, 401, 422].includes(error.status ?? 0)
+					? 'The email or password is not right.'
+					: unavailable;
 				return;
 			}
 			password = '';
@@ -47,9 +49,11 @@
 				email,
 				options: { emailRedirectTo: callbackUrl(), shouldCreateUser: false }
 			});
-			// The same answer whether or not the address has an account.
-			if (error && error.status !== undefined && error.status >= 500) {
-				message = 'Sign-in is not available right now. Please try again.';
+			// No answer from the provider (status 0) or a provider fault: say so.
+			// Otherwise the same answer whether or not the address has an
+			// account, including when sending is rate-limited.
+			if (error && ((error.status ?? 0) === 0 || (error.status ?? 0) >= 500)) {
+				message = unavailable;
 				return;
 			}
 			linkSent = true;
@@ -70,15 +74,16 @@
 		<p role="alert">Sign-in is not available on this site yet.</p>
 	{:else if linkSent}
 		<p role="status">
-			If an account exists for {email}, we have sent it a sign-in link. It works once, in this
-			browser, for 30 minutes.
+			If an account exists for {email}, we have sent it a sign-in link. It works once, for 30
+			minutes. If nothing arrives within a few minutes, please try again later.
 		</p>
 		<p><button type="button" onclick={() => (linkSent = false)}>Use a password instead</button></p>
 	{:else}
+		{#if ended}<p role="status">Your session has ended. Please sign in again.</p>{/if}
 		<form onsubmit={signInWithPassword}>
 			<label>
 				Email
-				<input type="email" autocomplete="email" required bind:value={email} disabled={busy} />
+				<input type="email" autocomplete="username" required bind:value={email} disabled={busy} />
 			</label>
 			<label>
 				Password

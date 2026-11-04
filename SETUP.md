@@ -185,8 +185,10 @@ Creator's authorization; review in the morning).** Supabase sandbox `flbgymxjelz
   (no wildcard). Verified: foreign, lookalike, plain-http and production hosts fall back
   to the site URL; Supabase also accepts any path on the site URL's own host.
 - Self sign-up off on staging until the account designs (GK-016) are approved; accounts
-  are created by invitation. Minimum password length 10; email links expire after 30
-  minutes.
+  are created by invitation (Authentication → Users → Invite) or by the admin API. The
+  invitation email links to `/auth/callback?token_hash=...&type=invite` (template changed
+  from the default implicit-flow link, which would put tokens in the URL). Minimum
+  password length 10; email links expire after 30 minutes.
 - Auth emails through Resend SMTP as `GK Cakes <orders@gkcake.com>` (send-only key
   `gk-supabase-auth-staging`, Keychain `gk-staging-supabase-SMTP_PASSWORD`; copy it to
   Bitwarden), at most 10 per hour. Supabase SMTP cannot set Reply-To
@@ -197,6 +199,11 @@ Creator's authorization; review in the morning).** Supabase sandbox `flbgymxjelz
   the sandbox test account `gk-test-staff@gkcake.com` holds `fulfillment`.
 - Production: a separate production identity project and its exact callbacks
   (`https://gkcake.com/auth/callback`) come with the first production release (GK-036).
+- For Creator review: (1) the session (access and refresh tokens) persists in the
+  browser's localStorage, the provider's store, behind a strict Content Security Policy;
+  (2) Supabase accepts any path on the site URL's host as a redirect, not only the
+  allowlisted callback; (3) staging and local development share this sandbox's
+  allowlist; (4) auth emails have no Reply-To until a send-email hook exists.
 
 **GK-024 staging email setup (Owner: Creator; agent guides each step).** Needed
 before the staging worker sends and the webhook records evidence. Secret values

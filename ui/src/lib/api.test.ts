@@ -10,6 +10,17 @@ function fakeFetch(status: number, body: unknown, seen: Request[] = []): typeof 
 	}) as typeof fetch;
 }
 
+/** Awaits a promise expected to reject with an ApiError. */
+async function failure(p: Promise<unknown>): Promise<ApiError> {
+	try {
+		await p;
+	} catch (e) {
+		expect(e).toBeInstanceOf(ApiError);
+		return e as ApiError;
+	}
+	throw new Error('expected the call to fail');
+}
+
 describe('apiGet', () => {
 	it('sends the access token as a bearer header only, never cookies', async () => {
 		const seen: Request[] = [];
@@ -56,11 +67,9 @@ describe('apiGet', () => {
 				retryable: false
 			}
 		};
-		const err = await apiGet('/api/v1/admin/me', {
-			baseUrl: base,
-			fetch: fakeFetch(401, body)
-		}).catch((e) => e);
-		expect(err).toBeInstanceOf(ApiError);
+		const err = await failure(
+			apiGet('/api/v1/admin/me', { baseUrl: base, fetch: fakeFetch(401, body) })
+		);
 		expect(err.status).toBe(401);
 		expect(err.code).toBe('SESSION_ENDED');
 		expect(err.requestId).toBe('r1');
@@ -68,19 +77,16 @@ describe('apiGet', () => {
 	});
 
 	it('treats an unreadable error and an unreachable API as retryable failures', async () => {
-		const bad = await apiGet('/api/v1/me', {
-			baseUrl: base,
-			fetch: fakeFetch(502, undefined)
-		}).catch((e) => e);
+		const bad = await failure(
+			apiGet('/api/v1/me', { baseUrl: base, fetch: fakeFetch(502, undefined) })
+		);
 		expect(bad.status).toBe(502);
 		expect(bad.code).toBe('UNKNOWN');
 		expect(bad.retryable).toBe(true);
-		const down = await apiGet('/api/v1/me', {
-			baseUrl: base,
-			fetch: (async () => {
-				throw new TypeError('failed to fetch');
-			}) as typeof fetch
-		}).catch((e) => e);
+		const unreachable = (async () => {
+			throw new TypeError('failed to fetch');
+		}) as typeof fetch;
+		const down = await failure(apiGet('/api/v1/me', { baseUrl: base, fetch: unreachable }));
 		expect(down.status).toBe(0);
 		expect(down.code).toBe('NETWORK');
 		expect(down.retryable).toBe(true);

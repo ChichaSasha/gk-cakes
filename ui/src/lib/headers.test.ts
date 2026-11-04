@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isPrivatePath, withConnectSources } from './headers';
+import { isPrivateRoute, partialSignInSettings, withConnectSources } from './headers';
 import { origin, publishableKey } from './settings';
 
 describe('withConnectSources', () => {
@@ -22,12 +22,20 @@ describe('withConnectSources', () => {
 	});
 });
 
-describe('isPrivatePath', () => {
-	it('marks sign-in and private pages', () => {
-		for (const p of ['/account', '/admin', '/admin/x', '/sign-in', '/auth/callback'])
-			expect(isPrivatePath(p)).toBe(true);
-		for (const p of ['/', '/healthz', '/accounting', '/administer', '/cakes'])
-			expect(isPrivatePath(p)).toBe(false);
+describe('isPrivateRoute', () => {
+	it('marks sign-in and private routes by route ID', () => {
+		for (const r of ['/account', '/admin', '/sign-in', '/auth/callback'])
+			expect(isPrivateRoute(r)).toBe(true);
+		for (const r of [null, '/', '/healthz', '/accounting', '/administer'])
+			expect(isPrivateRoute(r)).toBe(false);
+	});
+});
+
+describe('partialSignInSettings', () => {
+	it('names what is missing only when some settings are set', () => {
+		expect(partialSignInSettings({ A: 'x', B: undefined, C: '' })).toEqual(['B', 'C']);
+		expect(partialSignInSettings({ A: undefined, B: undefined })).toEqual([]);
+		expect(partialSignInSettings({ A: 'x', B: 'y' })).toEqual([]);
 	});
 });
 

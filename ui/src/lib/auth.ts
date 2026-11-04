@@ -1,11 +1,18 @@
 // Browser sign-in (GK-021) with the identity provider's SDK (Supabase).
 // PKCE flow: an email link returns a one-time code to /auth/callback, which
 // is exchanged using a verifier held only in this browser, then removed from
-// the URL. The SDK keeps the session in memory and persists it in this
-// origin's localStorage (the provider-supported store); a strict Content
-// Security Policy limits script to this site. Sign-out ends the provider
-// session and clears the stored one.
-import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
+// the URL. Invitation emails link to /auth/callback with a token hash instead
+// (verified once). The SDK keeps the session in memory and persists it, with
+// its access and refresh tokens, in this origin's localStorage (the
+// provider-supported store, accepted for GK-021 with a strict Content
+// Security Policy). Sign-out ends the provider session when it is reachable
+// and always clears the stored one; other tabs follow (onSignedOut).
+import {
+	createClient,
+	type EmailOtpType,
+	type Session,
+	type SupabaseClient
+} from '@supabase/supabase-js';
 import { browser } from '$app/env';
 import { PUBLIC_API_URL, PUBLIC_AUTH_PUBLISHABLE_KEY, PUBLIC_AUTH_URL } from '$app/env/public';
 import { apiGet, safeReturnPath, type ReturnPath } from './api';
@@ -16,6 +23,7 @@ export const signInConfigured = Boolean(
 );
 
 const RETURN_KEY = 'gk-return-path';
+const RETURN_TTL_MS = 30 * 60 * 1000; // as long as an email link is valid
 
 let client: SupabaseClient | undefined;
 
@@ -46,16 +54,43 @@ export async function authedGet<T>(path: string): Promise<T> {
 	return apiGet<T>(path, { baseUrl: PUBLIC_API_URL as string, token: session?.access_token });
 }
 
-/** Remembers where to go after an email-link sign-in (never in the URL). */
+/**
+ * Remembers where to go after an email-link sign-in (never in the URL). It
+ * is kept in localStorage for 30 minutes, because the link usually opens in
+ * a new tab.
+ */
 export function rememberReturnPath(path: string): void {
-	sessionStorage.setItem(RETURN_KEY, safeReturnPath(path));
+	localStorage.setItem(
+		RETURN_KEY,
+		JSON.stringify({ path: safeReturnPath(path), expires: Date.now() + RETURN_TTL_MS })
+	);
 }
 
-/** The remembered return page, once. */
+/** The remembered return page, once (an allowed page, or /account). */
 export function takeReturnPath(): ReturnPath {
-	const path = sessionStorage.getItem(RETURN_KEY);
-	sessionStorage.removeItem(RETURN_KEY);
-	return safeReturnPath(path);
+	const raw = localStorage.getItem(RETURN_KEY);
+	localStorage.removeItem(RETURN_KEY);
+	try {
+		const saved = JSON.parse(raw ?? 'null') as { path?: string; expires?: number } | null;
+		return saved && typeof saved.expires === 'number' && saved.expires > Date.now()
+			? safeReturnPath(saved.path)
+			: '/account';
+	} catch {
+		return '/account';
+	}
+}
+
+/** Email-link types the callback accepts with a token hash. */
+const TOKEN_HASH_TYPES: EmailOtpType[] = ['invite', 'magiclink', 'email', 'signup'];
+
+/** Signs in with an emailed token hash (invitation links), once. */
+export async function verifyTokenHash(tokenHash: string, type: string): Promise<boolean> {
+	if (!TOKEN_HASH_TYPES.includes(type as EmailOtpType)) return false;
+	const { error } = await auth().auth.verifyOtp({
+		token_hash: tokenHash,
+		type: type as EmailOtpType
+	});
+	return !error;
 }
 
 /** The exact email-link callback URL for this site (allowlisted at the provider). */
@@ -63,13 +98,34 @@ export function callbackUrl(): string {
 	return `${location.origin}/auth/callback`;
 }
 
-/** Ends the provider session and clears local state. */
-export async function signOut(): Promise<void> {
+/**
+ * Ends the provider session and clears local state. Returns false when the
+ * provider could not be reached: this device is signed out regardless, but
+ * the session may stay valid at the provider until it expires.
+ */
+export async function signOut(): Promise<boolean> {
+	localStorage.removeItem(RETURN_KEY);
+	signingOutHere = true;
 	try {
-		await auth().auth.signOut({ scope: 'local' });
+		const { error } = await auth().auth.signOut({ scope: 'local' });
+		return !error;
 	} finally {
-		sessionStorage.removeItem(RETURN_KEY);
+		signingOutHere = false;
 	}
+}
+
+// This tab's own sign-out is handled by the page that started it.
+let signingOutHere = false;
+
+/**
+ * Calls fn when the session ends without this tab asking (another tab signed
+ * out, or the session could not be refreshed). Returns an unsubscribe.
+ */
+export function onSignedOut(fn: () => void): () => void {
+	const { data } = auth().auth.onAuthStateChange((event) => {
+		if (event === 'SIGNED_OUT' && !signingOutHere) fn();
+	});
+	return () => data.subscription.unsubscribe();
 }
 
 export interface Me {

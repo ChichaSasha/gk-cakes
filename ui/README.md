@@ -54,19 +54,39 @@ sign-in says it is not configured.
 access token as `Authorization: Bearer` (never cookies or URLs).
 
 - The provider SDK (`@supabase/supabase-js`, PKCE flow) keeps the session in
-  memory and persists it in this origin's `localStorage` under `gk-auth`, the
-  provider-supported store. Email links return a one-time code to the exact,
-  allowlisted `/auth/callback`; the page removes it from the URL and history
-  before any other request and exchanges it with the verifier only this
-  browser holds. Where to go next is kept in `sessionStorage`, limited to
-  `/account` and `/admin`, never taken from the URL after the link.
-- Sign-out ends the provider session (the API refuses that session at once on
-  staff routes) and clears the stored session.
-- Messages never reveal whether an email has an account.
-- Content Security Policy: script and style only from this site plus
-  SvelteKit's nonce'd inline code, `frame-ancestors 'none'`, `object-src
-'none'`; `connect-src` adds `PUBLIC_API_URL` and `PUBLIC_AUTH_URL` at runtime
-  (`src/hooks.server.ts`). Private pages are `no-store` and `no-referrer`.
+  memory and persists it, access and refresh tokens included, in this origin's
+  `localStorage` under `gk-auth` (the provider-supported store; a GK-021
+  decision for Creator review, protected by the Content Security Policy).
+- Email sign-in links return a one-time code to the exact, allowlisted
+  `/auth/callback`, exchanged with the verifier only the requesting browser
+  holds. Invitation emails link to `/auth/callback?token_hash=...&type=invite`
+  (verified once). The callback removes the code or token hash from the URL and
+  history before it calls the provider; same-origin page scripts load first,
+  with no referrer.
+- When the app starts, `src/hooks.client.ts` removes sign-in secrets from any
+  other URL (a provider code, token hash or error, and any implicit-flow
+  `#access_token`/`#error` fragment), wherever the provider sent the browser.
+- After an email link, the user returns to `/account` or `/admin` only; the
+  choice is kept in `localStorage` for 30 minutes (links usually open in a new
+  tab), never taken from the URL.
+- Sign-out ends the provider session when the provider is reachable (the API
+  then refuses that session at once on staff routes) and always clears the
+  stored session; the page says so if the provider could not be reached.
+  Signing out in one tab sends the others' private pages to sign-in. A 401
+  from the API signs out and shows "Your session has ended".
+- Messages never reveal whether an email has an account, including when
+  sending a link is rate-limited; an unreachable provider is reported.
+- Response headers (`src/hooks.server.ts`, checked in CI by
+  `scripts/check-headers.sh`): Content Security Policy with
+  `script-src 'self' 'nonce-…'`, `style-src 'self'`, `style-src-attr
+'unsafe-inline'` (inline style attributes only, for SvelteKit's route
+  announcer), `object-src 'none'`, `frame-ancestors 'none'`, `base-uri` and
+  `form-action 'self'`, and `connect-src 'self'` plus `PUBLIC_API_URL` and
+  `PUBLIC_AUTH_URL`; `nosniff`; `Cross-Origin-Opener-Policy: same-origin`.
+  Private routes (decided by the matched route, not the raw path) add
+  `no-store`, `no-referrer` and `X-Robots-Tag: noindex, nofollow`.
+- The bundle secret check needs no new variables: the `PUBLIC_*` values are
+  public and read at start.
 - Styling is functional only until the account designs (GK-016) are approved.
 
 No browser test runner is configured yet; one is added when a runner is approved

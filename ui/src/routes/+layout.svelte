@@ -1,8 +1,24 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import { onSignedOut, signInConfigured } from '../lib/auth';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
+
+	// Signing out in any tab leaves the private pages of every tab, so no
+	// private data stays on screen.
+	onMount(() => {
+		if (!signInConfigured) return;
+		return onSignedOut(() => {
+			const id = page.route.id ?? '';
+			if (id === '/account' || id === '/admin') {
+				void goto(resolve('/sign-in'), { replaceState: true, invalidateAll: true });
+			}
+		});
+	});
 </script>
 
 <header>

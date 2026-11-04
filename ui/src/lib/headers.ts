@@ -19,7 +19,16 @@ export function withConnectSources(policy: string, origins: (string | undefined)
 	return directives.join('; ');
 }
 
-/** Pages whose content is private or carries a one-time code. */
-export function isPrivatePath(pathname: string): boolean {
-	return /^\/(account|admin|sign-in|auth)(\/|$)/.test(pathname);
+/**
+ * Whether a route is private or carries a one-time code. Decided by the
+ * route SvelteKit matched (not the raw path, which may be percent-encoded).
+ */
+export function isPrivateRoute(routeId: string | null): boolean {
+	return routeId !== null && /^\/(account|admin|sign-in|auth)(\/|$)/.test(routeId);
+}
+
+/** Names of the sign-in settings that are missing when only some are set. */
+export function partialSignInSettings(values: Record<string, string | undefined>): string[] {
+	const missing = Object.keys(values).filter((k) => !values[k]);
+	return missing.length > 0 && missing.length < Object.keys(values).length ? missing : [];
 }

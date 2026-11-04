@@ -2,28 +2,40 @@
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { auth, signInConfigured, takeReturnPath } from '../../../lib/auth';
+	import { auth, signInConfigured, takeReturnPath, verifyTokenHash } from '../../../lib/auth';
 
 	let failed = $state(false);
 
-	onMount(async () => {
-		const params = new URL(location.href).searchParams;
-		const code = params.get('code');
-		// Remove the one-time code (or the provider's error) from the URL and
-		// history before anything else is requested.
-		history.replaceState(history.state, '', '/auth/callback');
-		if (!signInConfigured || !code || params.has('error')) {
-			failed = true;
-			return;
-		}
-		// The code is useless without the verifier this browser stored when
-		// the link was requested (PKCE).
-		const { error } = await auth().auth.exchangeCodeForSession(code);
-		if (error) {
-			failed = true;
-			return;
-		}
-		await goto(resolve(takeReturnPath()), { replaceState: true });
+	onMount(() => {
+		let active = true;
+		(async () => {
+			const params = new URL(location.href).searchParams;
+			const code = params.get('code');
+			const tokenHash = params.get('token_hash');
+			const type = params.get('type') ?? '';
+			// Remove the one-time code, token hash or provider error from the URL
+			// and history before anything else is requested.
+			history.replaceState(history.state, '', '/auth/callback');
+			let ok = false;
+			if (signInConfigured && !params.has('error')) {
+				if (code) {
+					// Useless without the verifier this browser stored when the link
+					// was requested (PKCE).
+					ok = !(await auth().auth.exchangeCodeForSession(code)).error;
+				} else if (tokenHash) {
+					ok = await verifyTokenHash(tokenHash, type); // invitation links
+				}
+			}
+			if (!active) return;
+			if (!ok) {
+				failed = true;
+				return;
+			}
+			await goto(resolve(takeReturnPath()), { replaceState: true });
+		})();
+		return () => {
+			active = false;
+		};
 	});
 </script>
 
@@ -41,6 +53,7 @@
 		</p>
 		<p><a href={resolve('/sign-in')}>Sign in again</a></p>
 	{:else}
+		<h1>Signing in</h1>
 		<p role="status">Signing you in…</p>
 	{/if}
 </main>
