@@ -419,13 +419,25 @@ func TestSettleCountsTheProcessStartLine(t *testing.T) {
 	if res, err := deployer(t, own).Deploy(context.Background(), req); err != nil || len(res.Warnings) != 0 {
 		t.Fatalf("own line once, no platform line: %+v, %v; want a steady pass", res, err)
 	}
+	both := &fakeRailway{statuses: []string{"SUCCESS"}, logs: []string{"Starting Container", "worker starting", "database login verified"}}
+	if res, err := deployer(t, both).Deploy(context.Background(), req); err != nil || len(res.Warnings) != 0 {
+		t.Fatalf("both lines once: %+v, %v; want a steady pass", res, err)
+	}
+	raw := &fakeRailway{statuses: []string{"SUCCESS"}, logs: []string{"Starting Container",
+		`{"time":"2026-11-04T00:00:00Z","level":"INFO","msg":"worker starting"}`, `{"level":"INFO","msg":"worker starting"}`}}
+	if _, err := deployer(t, raw).Deploy(context.Background(), req); err == nil || !strings.Contains(err.Error(), "started 2 times") {
+		t.Fatalf("own line twice as unparsed JSON: %v, want the restart reported", err)
+	}
+	// A named start line that never matches (renamed, or not parsed) must not
+	// leave the check resting silently on Railway's line.
 	partial := &fakeRailway{statuses: []string{"SUCCESS"}, logs: []string{"Starting Container", "worker starting now", "worker starting now"}}
-	if res, err := deployer(t, partial).Deploy(context.Background(), req); err != nil || len(res.Warnings) != 0 {
-		t.Fatalf("lines merely starting with the start line: %+v, %v; want them not counted", res, err)
+	res, err := deployer(t, partial).Deploy(context.Background(), req)
+	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], `start line "worker starting" did not appear`) {
+		t.Fatalf("only lines merely starting with the start line: %+v, %v; want them not counted and an inconclusive warning", res, err)
 	}
 	unnamed := &fakeRailway{statuses: []string{"SUCCESS"}, logs: []string{"worker starting", "worker starting"}}
 	req.StartLine = ""
-	res, err := deployer(t, unnamed).Deploy(context.Background(), req)
+	res, err = deployer(t, unnamed).Deploy(context.Background(), req)
 	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "no start line") {
 		t.Fatalf("start line not named: %+v, %v; want those lines ignored (inconclusive)", res, err)
 	}

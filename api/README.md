@@ -132,9 +132,9 @@ check, stays 503 and logs `database login refused` until its login passes for
 `gk_api`, so a deploy with an administrator, migration or other-service login
 fails and the previous one keeps serving. The worker exits at start (code 2)
 unless its login passes for `gk_worker`, and waits up to 30 seconds for an
-unreachable database (code 1). On staging (2026-11-03) the API had been running with a login other
-than `gk_api_staging` and only failed once the webhook needed a granted
-function.
+unreachable database (code 1). On staging (2026-11-03) the API had been
+running with a login other than `gk_api_staging` and only failed once the
+webhook needed a granted function.
 
 `gk-migrate` applies files once, in order, under an advisory lock. Applied files
 are immutable (checksummed). An older build on a newer database (a rollback)
@@ -176,9 +176,9 @@ get no image and cannot be released. Workflows: `.github/workflows/staging.yml` 
   staging worker, so it is not used. The worker exits at start when its email
   or recovery-journal settings or its database login are wrong. If the token
   cannot read the deployment log (after five consecutive errors, or on every
-  read of the period), or the latest read is inconclusive (no start line, or
-  a full page that may hide an earlier start), the check falls back to the
-  status and prints a GitHub warning. On GitHub Actions every output line with
+  read of the period), or the latest read is inconclusive (no start line, the
+  named `-start-line` missing, or a full page that may hide an earlier start),
+  the check falls back to the status and prints a GitHub warning. On GitHub Actions every output line with
   provider text is escaped, so it cannot inject a workflow command or a step
   output. It is off until
   `STAGING_WORKER_ENABLED` is `true` and is recorded as `staging-worker` (not

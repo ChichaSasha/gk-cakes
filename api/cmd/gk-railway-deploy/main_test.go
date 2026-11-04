@@ -83,3 +83,31 @@ func TestRunKeepsProviderTextOnOneLine(t *testing.T) {
 		}
 	}
 }
+
+// -start-line reaches the settle check: the process's own start line logged
+// twice fails the deploy.
+func TestRunPassesTheStartLine(t *testing.T) {
+	img := "ghcr.io/chichasasha/gk-cakes-api@sha256:" + strings.Repeat("a", 64)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		switch q := string(body); {
+		case strings.Contains(q, "serviceInstanceUpdate"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"serviceInstanceUpdate": true}})
+		case strings.Contains(q, "serviceInstanceDeployV2"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"serviceInstanceDeployV2": "dep-1"}})
+		case strings.Contains(q, "deploymentLogs"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"deploymentLogs": []map[string]string{
+				{"message": "worker starting"}, {"message": "worker starting"}}}})
+		default:
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"deployment": map[string]any{"status": "SUCCESS"}}})
+		}
+	}))
+	defer srv.Close()
+	env := map[string]string{"RAILWAY_TOKEN": "token", "RAILWAY_API_URL": srv.URL}
+	var out bytes.Buffer
+	code := run(context.Background(), []string{"-service", "svc", "-environment", "env", "-image", img,
+		"-settle", "1m", "-start-line", "worker starting"}, func(k string) string { return env[k] }, &out)
+	if code != 1 || !strings.Contains(out.String(), "started 2 times") {
+		t.Fatalf("exit %d, output %q; want the restart reported", code, out.String())
+	}
+}

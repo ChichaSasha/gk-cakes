@@ -183,7 +183,7 @@ func (d *Deployer) starts(ctx context.Context, deploymentID, startLine string) (
 		switch {
 		case strings.EqualFold(msg, containerStart):
 			platform++
-		case startLine != "" && msg == startLine:
+		case startLine != "" && (msg == startLine || jsonMessage(msg) == startLine):
 			own++
 		}
 	}
@@ -193,10 +193,29 @@ func (d *Deployer) starts(ctx context.Context, deploymentID, startLine string) (
 		return startsBad, fmt.Sprintf("it started %d times (restarted)", n), nil
 	case len(out.Logs) >= MaxLogLines:
 		return startsUnknown, "the deployment log page was full, so earlier starts may be missing", nil
+	case startLine != "" && own == 0:
+		// A named start line that never matches must not leave the check
+		// resting silently on Railway's line alone.
+		return startsUnknown, fmt.Sprintf("the process start line %q did not appear in the deployment log", startLine), nil
 	case n == 0:
 		return startsUnknown, "no start line appeared in the deployment log", nil
 	}
 	return startsSteady, "", nil
+}
+
+// jsonMessage returns the "msg" of a structured (slog JSON) log line, for a
+// log that arrives unparsed; "" otherwise.
+func jsonMessage(line string) string {
+	if !strings.HasPrefix(line, "{") {
+		return ""
+	}
+	var v struct {
+		Msg string `json:"msg"`
+	}
+	if json.Unmarshal([]byte(line), &v) != nil {
+		return ""
+	}
+	return v.Msg
 }
 
 var failed = map[string]bool{"FAILED": true, "CRASHED": true, "REMOVED": true, "REMOVING": true, "SKIPPED": true}
