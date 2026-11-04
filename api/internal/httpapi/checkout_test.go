@@ -15,9 +15,11 @@ import (
 )
 
 type fakeCheckout struct {
-	subject string
-	digest  []byte
-	calls   int
+	subject  string
+	digest   []byte
+	calls    int
+	freeErr  error
+	replayed bool
 }
 
 func (f *fakeCheckout) CreateQuote(_ context.Context, subject string, digest []byte, _ string, _ checkout.QuoteInput) (catalog.Result, error) {
@@ -51,7 +53,10 @@ func (f *fakeCheckout) GetOrder(_ context.Context, _, subject string, digest []b
 func (f *fakeCheckout) FreeConfirm(_ context.Context, id, subject string, digest []byte, _ string, _ checkout.FreeConfirmInput) (catalog.Result, error) {
 	f.calls++
 	f.subject, f.digest = subject, digest
-	return catalog.Result{ID: "op-" + id}, nil
+	if f.freeErr != nil {
+		return catalog.Result{}, f.freeErr
+	}
+	return catalog.Result{ID: "op-" + id, Replayed: f.replayed}, nil
 }
 func (f *fakeCheckout) CurrentPolicy(context.Context) (checkout.Policy, error) {
 	return checkout.Policy{ID: "p"}, nil
@@ -234,7 +239,7 @@ func TestCheckoutRoutes(t *testing.T) {
 	fc := &fakeCheckout{}
 	rec = serveCheckout(t, fc, id, http.MethodPost, "/api/v1/orders/o1/free-confirmation", "", "k", `{"expected_version":1}`,
 		map[string]string{OrderCapabilityHeader: testProof})
-	if rec.Code != 202 || rec.Body.String() != `{"order_id":"o1","state":"confirmation_pending","poll_after_seconds":3}`+"\n" ||
+	if rec.Code != 202 || rec.Body.String() != `{"order_id":"o1","operation_id":"op-o1","state":"confirmation_pending","poll_after_seconds":3}`+"\n" ||
 		len(fc.digest) != 32 {
 		t.Fatalf("guest free confirmation: %d %q", rec.Code, rec.Body.String())
 	}
@@ -255,6 +260,18 @@ func TestCheckoutRoutes(t *testing.T) {
 		fc := &fakeCheckout{}
 		if rec := serveCheckout(t, fc, id, http.MethodPost, "/api/v1/orders/o1/free-confirmation", c.auth, "k", c.body, c.hdr); rec.Code != c.status || fc.calls != 0 {
 			t.Errorf("free confirmation %s: %d (calls %d), want %d", name, rec.Code, fc.calls, c.status)
+		}
+	}
+	if rec := serveCheckout(t, &fakeCheckout{replayed: true}, id, http.MethodPost, "/api/v1/orders/o1/free-confirmation", secretToken, "k",
+		`{"expected_version":1}`, nil); rec.Code != 202 || rec.Header().Get("Idempotent-Replayed") != "true" {
+		t.Fatalf("replayed free confirmation: %d %v", rec.Code, rec.Header())
+	}
+	for code, want := range map[string]string{"payment_required": "PAYMENT_REQUIRED", "lead_time": "LEAD_TIME",
+		"quote_expired": "QUOTE_EXPIRED", "stale_version": "STALE_VERSION", "state_conflict": "CONFLICT"} {
+		rec := serveCheckout(t, &fakeCheckout{freeErr: &catalog.ConflictError{Code: code}}, id, http.MethodPost,
+			"/api/v1/orders/o1/free-confirmation", secretToken, "k", `{"expected_version":1}`, nil)
+		if rec.Code != 409 || !strings.Contains(rec.Body.String(), `"`+want+`"`) {
+			t.Errorf("%s: %d %s, want 409 %s", code, rec.Code, rec.Body.String(), want)
 		}
 	}
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/orders/o1/free-confirmation", strings.NewReader(`{"expected_version":1}`))

@@ -37,6 +37,7 @@ func (in FreeConfirmInput) Validate() error {
 // complete; poll the order.
 type Confirming struct {
 	OrderID          string `json:"order_id"`
+	OperationID      string `json:"operation_id"`
 	State            string `json:"state"`
 	PollAfterSeconds int    `json:"poll_after_seconds"`
 }
@@ -116,7 +117,11 @@ func (c *Commands) Handle(ctx context.Context, job jobs.Job) error {
 	if key, err := c.Coordinator.EnvelopeKey(op); err != nil || key != b.EnvelopeKey || !json.Valid(op.Payload) {
 		return jobs.Attention(reasonCommandPayload, err)
 	}
-	log := c.Logger.With("job_id", job.ID, "generation", job.Generation, "order_id", b.OrderID, "operation_id", op.ID)
+	logger := c.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	log := logger.With("job_id", job.ID, "generation", job.Generation, "order_id", b.OrderID, "operation_id", op.ID)
 	outcome, err := c.Coordinator.Command(ctx, store, op, func(ctx context.Context) (recovery.Outcome, recovery.State, error) {
 		return store.apply(ctx, op.ID)
 	})
@@ -149,8 +154,12 @@ var ErrLeaseLost = errors.New("checkout: job lease lost")
 
 func leaseErr(err error) error {
 	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "GK001" {
+	switch {
+	case errors.As(err, &pgErr) && pgErr.Code == "GK001":
 		return fmt.Errorf("%w: %s", ErrLeaseLost, pgErr.Message)
+	case errors.As(err, &pgErr) && pgErr.Code == "GK002":
+		// The commit found a restore freeze under its own lock.
+		return fmt.Errorf("%w (checked at the commit)", recovery.ErrFrozen)
 	}
 	return err
 }

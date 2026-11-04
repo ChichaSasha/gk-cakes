@@ -164,7 +164,7 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 		}
 		res, err := co.FreeConfirm(r.Context(), r.PathValue("id"), a.Subject, digest, key, in)
 		respondCommand(w, r, logger, http.StatusAccepted, res, err, func() (any, error) {
-			return checkout.Confirming{OrderID: r.PathValue("id"), State: "confirmation_pending",
+			return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: "confirmation_pending",
 				PollAfterSeconds: checkout.PollAfterSeconds}, nil
 		})
 	}

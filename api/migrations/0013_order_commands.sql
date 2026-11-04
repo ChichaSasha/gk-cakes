@@ -24,8 +24,12 @@
 -- BO-GK-001.lead_time; no chef-approved shorter lead exists yet). The commit
 -- makes the day allocation committed, sells the reserved ready cakes and
 -- consumes the code use; a refusal (the order changed, or a hold was
--- released meanwhile) is recorded as the outcome and changes nothing. One
--- free confirmation per order.
+-- released meanwhile) is recorded as the outcome and changes nothing but the
+-- order's version (so later commands on the order reserve the next version).
+-- At most one free confirmation per order is pending or confirmed; after a
+-- refusal the customer may ask again. A restore freeze is re-checked inside
+-- the commit's transaction (the freeze row is share-locked), so a freeze
+-- that lands after the worker's last check still stops the commit.
 
 SET LOCAL ROLE gk_owner;
 
@@ -44,6 +48,9 @@ CREATE TABLE business.order_command (
   command          text NOT NULL CHECK (command IN ('free_confirm')),
   actor_kind       text NOT NULL CHECK (actor_kind IN ('customer', 'guest')),
   actor_account_id uuid NULL REFERENCES business.account (id),
+  -- The guest capability that made the request (idempotency is scoped to
+  -- it, K00).
+  guest_capability_id uuid NULL REFERENCES business.order_guest_capability (id),
   idempotency_key  text NOT NULL CHECK (idempotency_key ~ '^[\x21-\x7e]{1,128}$'),
   body_sha256      char(64) NOT NULL CHECK (body_sha256 ~ '^[0-9a-f]{64}$'),
   prior_version    integer NOT NULL CHECK (prior_version >= 1),
@@ -55,10 +62,13 @@ CREATE TABLE business.order_command (
   envelope_key     text NOT NULL UNIQUE CHECK (length(envelope_key) BETWEEN 1 AND 512),
   job_id           uuid NOT NULL UNIQUE REFERENCES business.job (id),
   created_at       timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT order_command_actor CHECK ((actor_kind = 'customer') = (actor_account_id IS NOT NULL))
+  CONSTRAINT order_command_actor CHECK ((actor_kind = 'customer') = (actor_account_id IS NOT NULL)
+                                       AND (actor_kind = 'guest') = (guest_capability_id IS NOT NULL))
 );
 
-CREATE UNIQUE INDEX order_command_one_free_confirm ON business.order_command (order_id) WHERE command = 'free_confirm';
+-- Requests on one order are serialized by the order row lock; the request
+-- function enforces "at most one pending or confirmed free confirmation".
+CREATE INDEX order_command_order_idx ON business.order_command (order_id, command, created_at);
 
 CREATE TRIGGER order_command_immutable BEFORE UPDATE OR DELETE ON business.order_command
   FOR EACH ROW EXECUTE FUNCTION business.catalog_immutable();
@@ -140,6 +150,7 @@ DECLARE
   v_disabled boolean;
   v_o business.orders%ROWTYPE;
   v_prior business.order_command%ROWTYPE;
+  v_capability uuid;
   v_expires timestamptz;
   v_id uuid := pg_catalog.gen_random_uuid();
   v_key text;
@@ -180,16 +191,26 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'order not found' USING ERRCODE = 'GK404';
   END IF;
+  IF v_account IS NULL THEN
+    SELECT g.id INTO v_capability FROM business.order_guest_capability g
+    WHERE g.order_id = p_order AND g.capability_digest = p_guest_digest;
+  END IF;
 
-  SELECT * INTO v_prior FROM business.order_command c WHERE c.order_id = p_order AND c.command = 'free_confirm';
+  -- The same actor (account, or guest capability) and key replays.
+  SELECT * INTO v_prior FROM business.order_command c
+  WHERE c.order_id = p_order AND c.command = 'free_confirm' AND c.idempotency_key = p_key
+    AND c.actor_account_id IS NOT DISTINCT FROM v_account AND c.guest_capability_id IS NOT DISTINCT FROM v_capability;
   IF FOUND THEN
-    IF v_prior.idempotency_key = p_key AND v_prior.actor_account_id IS NOT DISTINCT FROM v_account THEN
-      IF v_prior.body_sha256 <> p_body_sha256 THEN
-        RAISE EXCEPTION 'key_reused' USING ERRCODE = 'GK409';
-      END IF;
-      RETURN QUERY SELECT v_prior.id, true;
-      RETURN;
+    IF v_prior.body_sha256 <> p_body_sha256 THEN
+      RAISE EXCEPTION 'key_reused' USING ERRCODE = 'GK409';
     END IF;
+    RETURN QUERY SELECT v_prior.id, true;
+    RETURN;
+  END IF;
+  -- Another free confirmation that is pending or confirmed (not refused).
+  IF EXISTS (SELECT 1 FROM business.order_command c JOIN business.recovery_operation r ON r.id = c.id
+             WHERE c.order_id = p_order AND c.command = 'free_confirm'
+               AND NOT (r.state = 'secured' AND r.outcome ->> 'status' = 'refused')) THEN
     RAISE EXCEPTION 'state_conflict' USING ERRCODE = 'GK409';
   END IF;
 
@@ -234,10 +255,11 @@ BEGIN
   END IF;
   -- Due at once by the database clock (p_now may be a test clock).
   v_job := business.job_enqueue(v_id, NULL);
-  INSERT INTO business.order_command (id, order_id, command, actor_kind, actor_account_id, idempotency_key, body_sha256,
-                                      prior_version, received_at, payload, payload_sha256, envelope_key, job_id)
+  INSERT INTO business.order_command (id, order_id, command, actor_kind, actor_account_id, guest_capability_id,
+                                      idempotency_key, body_sha256, prior_version, received_at, payload, payload_sha256,
+                                      envelope_key, job_id)
   VALUES (v_id, p_order, 'free_confirm', CASE WHEN v_account IS NULL THEN 'guest' ELSE 'customer' END, v_account,
-          p_key, p_body_sha256, v_o.version, p_now, v_payload, v_hash, v_key, v_job);
+          v_capability, p_key, p_body_sha256, v_o.version, p_now, v_payload, v_hash, v_key, v_job);
   PERFORM business.audit_record(CASE WHEN v_account IS NULL THEN 'system' ELSE 'customer' END, v_account,
                                 'order.free_confirmation_requested', 'order', p_order, NULL,
                                 pg_catalog.json_build_object('operation_id', v_id));
@@ -369,6 +391,7 @@ DECLARE
   v_lot record;
   v_outcome text;
   v_state text;
+  v_frozen boolean;
 BEGIN
   -- Lock order (K00): the order, then its recovery operation, then the day
   -- and lots inside the engines.
@@ -379,6 +402,13 @@ BEGIN
     RETURN;
   ELSIF v_r.state <> 'prepared' THEN
     RAISE EXCEPTION 'recovery operation % is %, not prepared', v.id, v_r.state USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+  -- A restore freeze stops the commit even if it landed after the worker's
+  -- last check: the share lock makes a concurrent freeze wait for this
+  -- commit, or this commit see the freeze.
+  SELECT f.frozen INTO v_frozen FROM business.recovery_freeze f WHERE f.singleton FOR SHARE;
+  IF v_frozen THEN
+    RAISE EXCEPTION 'frozen' USING ERRCODE = 'GK002';
   END IF;
 
   SELECT q.expires_at INTO v_expires FROM business.checkout_quote q WHERE q.id = v_o.quote_id;
@@ -411,6 +441,8 @@ BEGIN
                                   v.actor_account_id, 'order.free_confirmed', 'order', v.order_id, NULL,
                                   pg_catalog.json_build_object('operation_id', v.id));
   ELSE
+    -- Nothing changes but the version: later commands reserve the next one.
+    UPDATE business.orders o SET version = o.version + 1, updated_at = pg_catalog.now() WHERE o.id = v.order_id;
     v_outcome := pg_catalog.format('{"status":"refused","evidence":{"reason":"%s"}}', v_reason);
     PERFORM business.audit_record('system', NULL, 'order.free_confirmation_refused', 'order', v.order_id, NULL,
                                   pg_catalog.json_build_object('operation_id', v.id, 'reason', v_reason));
@@ -462,7 +494,7 @@ $$;
 
 -- Orders as customers see them: an order whose commit is not yet secured in
 -- the independent journal is "confirmation_pending", never confirmed (K11),
--- and free_confirmation reports the customer's command.
+-- and free_confirmation reports the customer's latest command.
 CREATE OR REPLACE FUNCTION business.order_get(p_order uuid, p_owner uuid, p_guest_digest bytea)
 RETURNS json
 LANGUAGE plpgsql
@@ -491,7 +523,8 @@ BEGIN
                                    'requested_at', c.received_at)
                                  FROM business.order_command c
                                  JOIN business.recovery_operation r ON r.id = c.id
-                                 WHERE c.order_id = o.id AND c.command = 'free_confirm'),
+                                 WHERE c.order_id = o.id AND c.command = 'free_confirm'
+                                 ORDER BY c.created_at DESC, c.id DESC LIMIT 1),
            'items', (SELECT pg_catalog.json_agg(pg_catalog.json_build_object(
                        'line_no', i.line_no, 'variant_id', i.variant_id, 'lot_id', i.physical_lot_id,
                        'recipe_version_id', i.recipe_version_id, 'cake_name', c.name, 'flavour', r.flavour_name,

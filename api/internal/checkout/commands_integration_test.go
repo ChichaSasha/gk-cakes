@@ -349,7 +349,7 @@ func TestFreeConfirmationRefusalsAndQuoteWindow(t *testing.T) {
 	}
 	o := h.order(t, order, d)
 	if o.Lifecycle != "awaiting_payment" || o.FreeConfirmation == nil || o.FreeConfirmation.State != "refused" ||
-		o.FreeConfirmation.Reason == nil || *o.FreeConfirmation.Reason != "holds_released" || o.Version != 1 {
+		o.FreeConfirmation.Reason == nil || *o.FreeConfirmation.Reason != "holds_released" || o.Version != 2 {
 		t.Fatalf("refused confirmation: %+v", o)
 	}
 	if got := h.holds(t, order, f.readyLot); got != "released/reserved/reserved 1r0s" {
@@ -419,5 +419,163 @@ func TestOrderCommandsWaitWhileFrozenOrWithoutAJournal(t *testing.T) {
 	h.expire(t, job)
 	if err := h.cmds.Handle(h.ctx, job); !errors.Is(err, checkout.ErrLeaseLost) {
 		t.Fatalf("stale lease: %v, want ErrLeaseLost", err)
+	}
+}
+
+// A freeze that lands after the worker's last check (between prepared and
+// the commit) still stops the commit: the database re-checks it under lock.
+func TestFreezeAfterTheLastCheckStillStopsTheCommit(t *testing.T) {
+	h := newCommandHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d := h.freeOrder(t, f, pol)
+	res, err := h.co.FreeConfirm(h.ctx, order, "", d, "k", checkout.FreeConfirmInput{ExpectedVersion: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The freeze arrives while the prepared envelope is being written.
+	h.journal.Fail = func(op, name string) error {
+		if op == "put" && strings.HasSuffix(name, ".prepared") {
+			h.owner(t, "SELECT business.recovery_set_freeze(true, 'restore drill')")
+		}
+		return nil
+	}
+	job := h.claim(t)
+	var de *jobs.DeferError
+	if err := h.cmds.Handle(h.ctx, job); !errors.As(err, &de) {
+		t.Fatalf("Handle while frozen: %v, want a deferral", err)
+	}
+	if got := h.recoveryState(t, res.ID); got != "prepared" {
+		t.Fatalf("recovery %s, want prepared", got)
+	}
+	// Calling the commit directly (skipping the worker's check) is refused
+	// by the database while frozen.
+	_, err = h.worker.Exec(h.ctx, "SELECT * FROM business.order_command_apply($1::uuid, $2::uuid, $3, $4::uuid)",
+		job.ID, job.Worker, job.Generation, res.ID)
+	if pgMessage(err) != "frozen" || h.order(t, order, d).Lifecycle != "awaiting_payment" {
+		t.Fatalf("direct commit while frozen: %v", err)
+	}
+	h.journal.Fail = nil
+	h.owner(t, "SELECT business.recovery_set_freeze(false, NULL)")
+	h.expire(t, job)
+	if err := h.cmds.Handle(h.ctx, h.claim(t)); err != nil {
+		t.Fatalf("after the freeze: %v", err)
+	}
+	if o := h.order(t, order, d); o.Lifecycle != "confirmed" {
+		t.Fatalf("order %s, want confirmed", o.Lifecycle)
+	}
+}
+
+// A crash after the outcome envelope is written but before the operation is
+// secured: the next lease reuses the envelope (the SQL outcome and Go's
+// encoding agree) and secures it.
+func TestCrashAfterTheOutcomeEnvelopeReusesIt(t *testing.T) {
+	h := newCommandHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d := h.freeOrder(t, f, pol)
+	res, err := h.co.FreeConfirm(h.ctx, order, "", d, "k", checkout.FreeConfirmInput{ExpectedVersion: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := h.claim(t)
+	h.journal.Fail = func(op, name string) error {
+		if op == "put" && strings.HasSuffix(name, ".outcome") {
+			h.expire(t, job) // the lease is lost right after the write
+		}
+		return nil
+	}
+	if err := h.cmds.Handle(h.ctx, job); !errors.Is(err, checkout.ErrLeaseLost) {
+		t.Fatalf("Handle: %v, want the lost lease", err)
+	}
+	if got := h.recoveryState(t, res.ID); got != "committed" || h.order(t, order, d).Lifecycle != "confirmation_pending" {
+		t.Fatalf("recovery %s; want committed and confirmation_pending", got)
+	}
+	h.journal.Fail = nil
+	if err := h.cmds.Handle(h.ctx, h.claim(t)); err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	key, _ := h.coord.EnvelopeKey(recovery.Operation{ID: res.ID, AggregateID: order, PriorVersion: 1})
+	if h.journal.Puts(key+".outcome") != 1 || h.order(t, order, d).Lifecycle != "confirmed" {
+		t.Fatalf("outcome envelope written %d times; want the first reused", h.journal.Puts(key+".outcome"))
+	}
+}
+
+// The signed-in owner: replay is scoped to the account; a disabled account
+// is refused; after a refusal the customer may ask again at the next
+// version.
+func TestOwnerFreeConfirmationAndRetryAfterARefusal(t *testing.T) {
+	h := newCommandHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	const customer = "33333333-4444-4555-8666-777777777777"
+	h.code(t, "c100", checkout.CodeInput{Code: "GIFT100", CodeTerms: checkout.CodeTerms{Kind: checkout.KindPercentage, BasisPoints: ptr(10000)}})
+	q := must[catalog.Result](t)(h.co.CreateQuote(h.ctx, customer, nil, "q", checkout.QuoteInput{Date: "2026-11-14", SlotID: f.slot,
+		FulfillmentMode: schedule.Collection, DiscountCode: "GIFT100", Lines: []checkout.QuoteLine{{VariantID: f.v1001, Quantity: 1}}})).ID
+	order := must[catalog.Result](t)(h.checkout(customer, nil, "k-order", q, pol)).ID
+	confirm := func(key string, version int) (catalog.Result, error) {
+		return h.co.FreeConfirm(h.ctx, order, customer, nil, key, checkout.FreeConfirmInput{ExpectedVersion: version})
+	}
+	first, err := confirm("a", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again, err := confirm("a", 1); err != nil || again.ID != first.ID || !again.Replayed {
+		t.Fatalf("owner replay: %+v %v", again, err)
+	}
+	var actor string
+	if err := h.admin.QueryRow(h.ctx, "SELECT actor_kind FROM business.order_command WHERE id = $1::uuid", first.ID).Scan(&actor); err != nil || actor != "customer" {
+		t.Fatalf("actor %s %v", actor, err)
+	}
+	// The hold is released before the commit: refused, version 2.
+	h.owner(t, "UPDATE business.capacity_allocation SET state = 'released', expires_at = NULL WHERE order_ref = $1::uuid", order)
+	if err := h.cmds.Handle(h.ctx, h.claim(t)); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := h.co.GetOrder(h.ctx, order, customer, nil)
+	var o freeOrderJSON
+	_ = json.Unmarshal(raw, &o)
+	if o.Version != 2 || o.FreeConfirmation == nil || o.FreeConfirmation.State != "refused" {
+		t.Fatalf("after the refusal %+v", o)
+	}
+	// Repaired (test only), the customer asks again with a new key at v2.
+	h.owner(t, "UPDATE business.capacity_allocation SET state = 'tentative', expires_at = now() WHERE order_ref = $1::uuid", order)
+	second, err := confirm("b", 2)
+	if err != nil || second.ID == first.ID {
+		t.Fatalf("retry after a refusal: %+v %v", second, err)
+	}
+	if _, err := confirm("c", 2); conflict(err) != "state_conflict" {
+		t.Fatalf("a third while one is pending: %v", err)
+	}
+	if err := h.cmds.Handle(h.ctx, h.claim(t)); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = h.co.GetOrder(h.ctx, order, customer, nil)
+	_ = json.Unmarshal(raw, &o)
+	if o.Lifecycle != "confirmed" || o.Version != 3 || o.FreeConfirmation.State != "confirmed" {
+		t.Fatalf("after the retry %+v", o)
+	}
+	// A disabled account cannot confirm.
+	h.owner(t, "UPDATE business.account SET disabled_at = now() WHERE provider_subject = $1::uuid", customer)
+	if _, err := confirm("d", 3); !errors.Is(err, catalog.ErrForbidden) {
+		t.Fatalf("disabled account: %v", err)
+	}
+}
+
+// Guest replay is scoped to the capability that made the request.
+func TestGuestReplayIsScopedToTheCapability(t *testing.T) {
+	h := newCommandHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d := h.freeOrder(t, f, pol)
+	if _, err := h.co.FreeConfirm(h.ctx, order, "", d, "k", checkout.FreeConfirmInput{ExpectedVersion: 1}); err != nil {
+		t.Fatal(err)
+	}
+	// A second capability on the same order (for example a rotated one).
+	_, d2 := proof(t)
+	h.owner(t, `INSERT INTO business.order_guest_capability (id, order_id, capability_digest, allowed_commands)
+		VALUES (gen_random_uuid(), $1::uuid, $2, ARRAY['read', 'pay'])`, order, d2)
+	if _, err := h.co.FreeConfirm(h.ctx, order, "", d2, "k", checkout.FreeConfirmInput{ExpectedVersion: 1}); conflict(err) != "state_conflict" {
+		t.Fatalf("another capability's key: %v, want a conflict, not a replay", err)
 	}
 }

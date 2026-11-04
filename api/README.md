@@ -402,6 +402,11 @@ Not yet:
   workers resume: a restored database can re-anchor a notice's window (the
   existing prepared envelope then refuses the resume), and an existing outcome
   envelope should be adopted rather than replayed;
+- K09 retention for order commands: `business.order_command.payload` (and its
+  prepared envelope) is an immutable copy of the order snapshot, including
+  the customer's name and email. Redacting it once the operation is secured,
+  with order anonymisation, belongs to the retention work (GK-034 Milestone B,
+  GK-037 deletion inventory);
 - K09 retention for the journal: it keeps recipients and message bodies (and
   later essential photos) until deleted, and this key cannot delete. Keeping
   only current copies of still-retained records, 30-day restore points and
@@ -430,7 +435,9 @@ order (aggregate = order, prior version = the order's version), run by
 A command has no replay deadline (its commit is local and idempotent for the
 operation forever; the database requires `replay_until` for dispatches only)
 and never goes to `reconcile`. A restore freeze and a missing journal make
-the job wait (`Defer`), never commit without protection. After a primary
+the job wait (`Defer`), never commit without protection: the commit itself
+re-checks the freeze under a share lock on the freeze row (SQLSTATE `GK002`),
+so a freeze that lands after the worker's last check still stops it. After a primary
 database loss `Pending` lists commands as well; restore tooling resumes each
 with `Command` after checking the restored order.
 
@@ -893,15 +900,17 @@ payment row. The persisted receipt instant is the anchor (K04): the quote's
 the handover at least 192 elapsed hours later (equality allowed:
 `LEAD_TIME`); the order must be awaiting payment with its holds intact and
 cost nothing (`PAYMENT_REQUIRED` otherwise). The answer is 202
-`{order_id, state: "confirmation_pending", poll_after_seconds: 3}`; the
+`{order_id, operation_id, state: "confirmation_pending", poll_after_seconds: 3}`; the
 worker commits it under K11 (above): the day allocation becomes committed
 (never refused for capacity), the ready cakes sold, the code use consumed,
 `free_confirmed_at` = the receipt instant. The order reads
 `confirmation_pending` until the outcome is secured, then `confirmed`, and
 `free_confirmation` reports `processing`, `confirmed` or `refused` (with a
 reason: `order_changed`, `holds_released`, `window_closed`; a refusal changes
-nothing). One free confirmation per order: the same key replays, another key
-is a conflict. No confirmation email is sent yet.
+nothing but the order's version). At most one free confirmation per order
+is pending or confirmed: the same actor (account, or guest capability) and
+key replays, another key is a conflict; after a refusal the customer may ask
+again at the new version. No confirmation email is sent yet.
 
 **Switched off by default:** `POST /api/v1/checkouts` and the free
 confirmation are served only with `CHECKOUT_ENABLED=true`. Nothing is charged
