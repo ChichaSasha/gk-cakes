@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApiError, apiGet, safeReturnPath } from './api';
+import { ApiError, apiGet, safeReturnPath, tokenHashDecision } from './api';
 
 const base = 'https://staging-api.gkcake.com';
 
@@ -109,6 +109,17 @@ describe('safeReturnPath', () => {
 			'javascript:alert(1)'
 		]) {
 			expect(safeReturnPath(p)).toBe('/account');
+		}
+	});
+});
+
+describe('tokenHashDecision', () => {
+	it('verifies invitations only, and never over an existing session', () => {
+		expect(tokenHashDecision('invite', false)).toBe('verify');
+		expect(tokenHashDecision('invite', true)).toBe('already-signed-in');
+		for (const type of ['magiclink', 'email', 'signup', 'recovery', 'email_change', '', null]) {
+			expect(tokenHashDecision(type, false)).toBe('refused');
+			expect(tokenHashDecision(type, true)).toBe('refused');
 		}
 	});
 });

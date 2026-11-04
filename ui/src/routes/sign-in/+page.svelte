@@ -74,8 +74,8 @@
 		<p role="alert">Sign-in is not available on this site yet.</p>
 	{:else if linkSent}
 		<p role="status">
-			If an account exists for {email}, we have sent it a sign-in link. It works once, for 30
-			minutes. If nothing arrives within a few minutes, please try again later.
+			If an account exists for {email}, we have sent it a sign-in link. It works once, in this
+			browser, for 30 minutes. If nothing arrives within a few minutes, please try again later.
 		</p>
 		<p><button type="button" onclick={() => (linkSent = false)}>Use a password instead</button></p>
 	{:else}

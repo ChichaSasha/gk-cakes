@@ -27,7 +27,11 @@ const PROVIDER_CODE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 export function scrubbedUrl(href: string): string | null {
 	const url = new URL(href);
 	let changed = false;
-	if (/(^#|&)(access_token|refresh_token|provider_token|error|error_code)=/.test(url.hash)) {
+	if (
+		/(^#|&)(access_token|refresh_token|provider_token|error|error_code|error_description)=/.test(
+			url.hash
+		)
+	) {
 		url.hash = '';
 		changed = true;
 	}

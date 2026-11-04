@@ -2,9 +2,17 @@
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { auth, signInConfigured, takeReturnPath, verifyTokenHash } from '../../../lib/auth';
+	import { tokenHashDecision } from '../../../lib/api';
+	import {
+		auth,
+		currentSession,
+		signInConfigured,
+		takeReturnPath,
+		verifyInvitation
+	} from '../../../lib/auth';
 
 	let failed = $state(false);
+	let alreadySignedIn = $state(false);
 
 	onMount(() => {
 		let active = true;
@@ -23,7 +31,13 @@
 					// was requested (PKCE).
 					ok = !(await auth().auth.exchangeCodeForSession(code)).error;
 				} else if (tokenHash) {
-					ok = await verifyTokenHash(tokenHash, type); // invitation links
+					// Invitations only, and never over an existing session (login CSRF).
+					const decision = tokenHashDecision(type, (await currentSession()) !== null);
+					if (decision === 'already-signed-in') {
+						if (active) alreadySignedIn = true;
+						return;
+					}
+					ok = decision === 'verify' && (await verifyInvitation(tokenHash));
 				}
 			}
 			if (!active) return;
@@ -45,7 +59,13 @@
 </svelte:head>
 
 <main class="narrow">
-	{#if failed}
+	{#if alreadySignedIn}
+		<h1>You're already signed in</h1>
+		<p role="alert">
+			To accept this invitation, sign out first and then open the invitation link again.
+		</p>
+		<p><a href={resolve('/account')}>Go to your account</a></p>
+	{:else if failed}
 		<h1>This sign-in link didn't work</h1>
 		<p role="alert">
 			It may have expired, been used already, or been opened in a different browser from the one

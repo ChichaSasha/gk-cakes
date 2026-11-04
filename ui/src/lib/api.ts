@@ -85,3 +85,17 @@ export function safeReturnPath(path: string | null | undefined): ReturnPath {
 		? (path as ReturnPath)
 		: '/account';
 }
+
+export type TokenHashDecision = 'verify' | 'already-signed-in' | 'refused';
+
+/**
+ * Whether the callback may verify an emailed token hash. Unlike a PKCE code,
+ * a token hash is not bound to the browser that asked for it, so a crafted
+ * link could sign a visitor into someone else's account (login CSRF). Only
+ * invitations use it (sign-in links use PKCE), and never over an existing
+ * session.
+ */
+export function tokenHashDecision(type: string | null, signedIn: boolean): TokenHashDecision {
+	if (type !== 'invite') return 'refused';
+	return signedIn ? 'already-signed-in' : 'verify';
+}

@@ -6,6 +6,7 @@
 	import {
 		authedGet,
 		currentSession,
+		leaveOnSignOut,
 		signInConfigured,
 		signOut,
 		type Me,
@@ -39,6 +40,7 @@
 				if (!active) return;
 				if (e instanceof ApiError && e.signInRequired) {
 					await signOut();
+					if (!active) return;
 					await goto(resolve('/sign-in?next=/admin&ended=1'), { replaceState: true });
 					return;
 				}
@@ -51,8 +53,15 @@
 				}
 			}
 		})();
+		// Signed out in another tab: leave, so no private data stays on screen.
+		const unsubscribe = leaveOnSignOut(() => {
+			me = null;
+			staff = null;
+			void goto(resolve('/sign-in?next=/admin'), { replaceState: true });
+		});
 		return () => {
 			active = false;
+			unsubscribe();
 		};
 	});
 

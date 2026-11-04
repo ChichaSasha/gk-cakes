@@ -1,18 +1,14 @@
 // Browser sign-in (GK-021) with the identity provider's SDK (Supabase).
 // PKCE flow: an email link returns a one-time code to /auth/callback, which
 // is exchanged using a verifier held only in this browser, then removed from
-// the URL. Invitation emails link to /auth/callback with a token hash instead
-// (verified once). The SDK keeps the session in memory and persists it, with
-// its access and refresh tokens, in this origin's localStorage (the
-// provider-supported store, accepted for GK-021 with a strict Content
-// Security Policy). Sign-out ends the provider session when it is reachable
-// and always clears the stored one; other tabs follow (onSignedOut).
-import {
-	createClient,
-	type EmailOtpType,
-	type Session,
-	type SupabaseClient
-} from '@supabase/supabase-js';
+// the URL. Invitation emails link to /auth/callback with a token hash instead,
+// verified once and only when nobody is signed in in this browser. The SDK
+// keeps the session in memory and persists it, with its access and refresh
+// tokens, in this origin's localStorage (the provider-supported store; a
+// GK-021 decision for Creator review, behind a strict Content Security
+// Policy). Sign-out ends the provider session when it is reachable and always
+// clears the stored one; private pages in other tabs follow (leaveOnSignOut).
+import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { browser } from '$app/env';
 import { PUBLIC_API_URL, PUBLIC_AUTH_PUBLISHABLE_KEY, PUBLIC_AUTH_URL } from '$app/env/public';
 import { apiGet, safeReturnPath, type ReturnPath } from './api';
@@ -80,17 +76,22 @@ export function takeReturnPath(): ReturnPath {
 	}
 }
 
-/** Email-link types the callback accepts with a token hash. */
-const TOKEN_HASH_TYPES: EmailOtpType[] = ['invite', 'magiclink', 'email', 'signup'];
-
-/** Signs in with an emailed token hash (invitation links), once. */
-export async function verifyTokenHash(tokenHash: string, type: string): Promise<boolean> {
-	if (!TOKEN_HASH_TYPES.includes(type as EmailOtpType)) return false;
-	const { error } = await auth().auth.verifyOtp({
-		token_hash: tokenHash,
-		type: type as EmailOtpType
-	});
+/**
+ * Signs in with an invitation's token hash, once. The callback decides first
+ * (tokenHashDecision) that it is an invitation and nobody is signed in.
+ */
+export async function verifyInvitation(tokenHash: string): Promise<boolean> {
+	const { error } = await auth().auth.verifyOtp({ token_hash: tokenHash, type: 'invite' });
 	return !error;
+}
+
+/**
+ * Sends the current private page to sign-in when the session ends without
+ * this tab asking (signed out in another tab, or the refresh failed).
+ * Returns an unsubscribe, for onMount.
+ */
+export function leaveOnSignOut(leave: () => void): () => void {
+	return signInConfigured ? onSignedOut(leave) : () => {};
 }
 
 /** The exact email-link callback URL for this site (allowlisted at the provider). */

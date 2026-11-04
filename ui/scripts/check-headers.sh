@@ -21,8 +21,8 @@ headers() {
   curl -fsS -D - -o /dev/null "$base$1" | tr -d '\r'
 }
 
-value() { # value <headers> <name>
-  grep -i "^$2:" <<<"$1" | head -n 1 | cut -d: -f2- | sed 's/^ *//'
+value() { # value <headers> <name>; empty when absent
+  { grep -i "^$2:" <<<"$1" || true; } | head -n 1 | cut -d: -f2- | sed 's/^ *//'
 }
 
 directive() { # directive <policy> <name>

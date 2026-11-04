@@ -20,6 +20,7 @@ describe('scrubbedUrl', () => {
 			'/auth/callback'
 		);
 		expect(scrubbedUrl(`${site}/x#a=1&refresh_token=b`)).toBe('/x');
+		expect(scrubbedUrl(`${site}/#error_description=oops`)).toBe('/');
 	});
 
 	it('leaves the callback its own code and token hash to read', () => {

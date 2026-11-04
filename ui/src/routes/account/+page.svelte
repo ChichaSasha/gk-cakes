@@ -3,7 +3,14 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { ApiError } from '../../lib/api';
-	import { authedGet, currentSession, signInConfigured, signOut, type Me } from '../../lib/auth';
+	import {
+		authedGet,
+		currentSession,
+		leaveOnSignOut,
+		signInConfigured,
+		signOut,
+		type Me
+	} from '../../lib/auth';
 
 	let me = $state<Me | null>(null);
 	let problem = $state('');
@@ -22,6 +29,7 @@
 				if (!active) return;
 				if (e instanceof ApiError && e.signInRequired) {
 					await signOut();
+					if (!active) return;
 					await goto(resolve('/sign-in?next=/account&ended=1'), { replaceState: true });
 					return;
 				}
@@ -31,8 +39,14 @@
 						: 'We could not load your account right now. Please try again.';
 			}
 		})();
+		// Signed out in another tab: leave, so no private data stays on screen.
+		const unsubscribe = leaveOnSignOut(() => {
+			me = null;
+			void goto(resolve('/sign-in?next=/account'), { replaceState: true });
+		});
 		return () => {
 			active = false;
+			unsubscribe();
 		};
 	});
 

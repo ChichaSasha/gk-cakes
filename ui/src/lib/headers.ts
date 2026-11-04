@@ -24,7 +24,9 @@ export function withConnectSources(policy: string, origins: (string | undefined)
  * route SvelteKit matched (not the raw path, which may be percent-encoded).
  */
 export function isPrivateRoute(routeId: string | null): boolean {
-	return routeId !== null && /^\/(account|admin|sign-in|auth)(\/|$)/.test(routeId);
+	// Route groups such as /(app) do not appear in the URL; ignore them.
+	const id = routeId?.replace(/\/\([^)]*\)/g, '') ?? null;
+	return id !== null && /^\/(account|admin|sign-in|auth)(\/|$)/.test(id);
 }
 
 /** Names of the sign-in settings that are missing when only some are set. */
