@@ -464,6 +464,9 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.lot_staff_list(uuid, boolean, uuid)",
 		"business.order_free_confirm_request(uuid, bytea, uuid, text, text, integer, text, timestamp with time zone)",
 		"business.order_get(uuid, uuid, bytea)",
+		// GK-025 A3b payments.
+		"business.payment_event_record(text, text, boolean, text, text, timestamp with time zone, text, text, uuid, text, text)",
+		"business.payment_initiate(uuid, bytea, uuid, text, text, integer, uuid, text, text, text, timestamp with time zone)",
 		"business.policy_current(timestamp with time zone)",
 		"business.policy_record(uuid, text, text, text, text, text, timestamp with time zone, text)",
 		"business.quote_create(uuid, bytea, text, text, date, uuid, text, json, text, timestamp with time zone)",

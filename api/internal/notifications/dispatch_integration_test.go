@@ -848,7 +848,16 @@ func TestRuntimeRolesUseOnlyTheNotificationGateway(t *testing.T) {
 		"business.order_command_apply(uuid, uuid, bigint, uuid)", "business.order_command_begin(uuid, uuid, bigint)",
 		"business.order_command_frozen(uuid, uuid, bigint)", "business.order_command_prepared(uuid, uuid, bigint, uuid)",
 		"business.order_command_reserve(uuid, uuid, bigint, uuid, text, uuid, integer, text, text)",
-		"business.order_command_secured(uuid, uuid, bigint, uuid)"}, worker...)
+		"business.order_command_secured(uuid, uuid, bigint, uuid)",
+		// GK-025 A3b lease-fenced payment gateway.
+		"business.payment_attempt_record(uuid, uuid, bigint, uuid, text, integer, text)",
+		"business.payment_dispatch_admit(uuid, uuid, bigint, uuid)", "business.payment_job_begin(uuid, uuid, bigint)",
+		"business.payment_reconcile_record(uuid, uuid, bigint, uuid, text, text, text, text, text, json, timestamp with time zone, text)",
+		"business.payment_recovery_committed(uuid, uuid, bigint, uuid, json, text)",
+		"business.payment_recovery_frozen(uuid, uuid, bigint)", "business.payment_recovery_prepared(uuid, uuid, bigint, uuid)",
+		"business.payment_recovery_reconcile(uuid, uuid, bigint, uuid, text)",
+		"business.payment_recovery_reserve(uuid, uuid, bigint, uuid, text, uuid, integer, text, text, timestamp with time zone)",
+		"business.payment_recovery_secured(uuid, uuid, bigint, uuid)"}, worker...)
 	slices.Sort(want)
 	if !slices.Equal(got, want) {
 		t.Errorf("gk_worker can execute %v, want exactly %v", got, want)
