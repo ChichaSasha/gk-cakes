@@ -13,8 +13,8 @@
 -- The order shows "confirmation_pending" from the commit until the outcome
 -- envelope is acknowledged; only then is it confirmed (K11: a commit without
 -- the independent outcome acknowledgment is not exposed as confirmed). A
--- command has no provider replay deadline: its commit is local and
--- idempotent for the operation forever.
+-- command has no provider replay deadline (recorded as 'infinity'): its
+-- commit is local and idempotent for the operation forever.
 --
 -- Free confirmation (K03): a zero-amount order is confirmed by the
 -- customer's explicit command, without any payment row. Its anchor is the
@@ -36,10 +36,115 @@ SET LOCAL ROLE gk_owner;
 ALTER TABLE business.recovery_operation DROP CONSTRAINT recovery_operation_kind_check;
 ALTER TABLE business.recovery_operation
   ADD CONSTRAINT recovery_operation_kind_check CHECK (kind IN ('dispatch', 'command'));
-ALTER TABLE business.recovery_operation ALTER COLUMN replay_until DROP NOT NULL;
--- A dispatch has its provider idempotency window; a command has none.
+-- A dispatch has its provider idempotency window; a command has none and
+-- records 'infinity' (the column stays NOT NULL so the running build's
+-- schema is unchanged, K09 expand-only).
 ALTER TABLE business.recovery_operation
-  ADD CONSTRAINT recovery_replay_kind CHECK ((kind = 'dispatch') = (replay_until IS NOT NULL));
+  ADD CONSTRAINT recovery_replay_kind CHECK ((kind = 'command') = (replay_until = 'infinity'::timestamptz));
+
+-- Owner-internal: the recorded replay deadline of an operation: 'infinity'
+-- for a command (callers pass NULL), the provider window for a dispatch.
+CREATE FUNCTION business.recovery_replay_until(p_kind text, p_replay_until timestamptz)
+RETURNS timestamptz
+LANGUAGE plpgsql
+IMMUTABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  IF p_kind = 'command' THEN
+    IF p_replay_until IS NOT NULL THEN
+      RAISE EXCEPTION 'a command has no replay deadline' USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    RETURN 'infinity'::timestamptz;
+  END IF;
+  RETURN p_replay_until;
+END;
+$$;
+
+-- recovery_reserve and recovery_lookup as in 0003, with the command
+-- deadline normalized first.
+CREATE OR REPLACE FUNCTION business.recovery_reserve(
+  p_id uuid, p_kind text, p_aggregate_id uuid, p_prior_version integer,
+  p_payload_hash text, p_envelope_key text, p_replay_until timestamptz)
+RETURNS TABLE (result text, op_state text, op_outcome json, op_outcome_hash text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  r business.recovery_operation;
+BEGIN
+  p_replay_until := business.recovery_replay_until(p_kind, p_replay_until);
+  FOR attempt IN 1..2 LOOP
+    SELECT * INTO r FROM business.recovery_operation o WHERE o.id = p_id FOR UPDATE;
+    IF FOUND THEN
+      IF r.kind <> p_kind OR r.aggregate_id <> p_aggregate_id OR r.prior_version <> p_prior_version
+         OR r.payload_hash <> p_payload_hash OR r.envelope_key <> p_envelope_key
+         OR r.replay_until IS DISTINCT FROM p_replay_until THEN
+        RAISE EXCEPTION 'recovery operation % already exists with a different identity', p_id
+          USING ERRCODE = 'unique_violation';
+      END IF;
+      RETURN QUERY SELECT 'existing'::text, r.state, r.outcome, r.outcome_hash::text;
+      RETURN;
+    END IF;
+    EXIT WHEN attempt = 2;
+    IF EXISTS (SELECT 1 FROM business.recovery_operation o
+               WHERE o.aggregate_id = p_aggregate_id AND o.prior_version >= p_prior_version AND o.id <> p_id) THEN
+      RETURN QUERY SELECT 'stale'::text, NULL::text, NULL::json, NULL::text;
+      RETURN;
+    END IF;
+    INSERT INTO business.recovery_operation
+      (id, kind, aggregate_id, prior_version, payload_hash, envelope_key, replay_until)
+    VALUES (p_id, p_kind, p_aggregate_id, p_prior_version, p_payload_hash, p_envelope_key, p_replay_until)
+    ON CONFLICT DO NOTHING;
+    IF FOUND THEN
+      RETURN QUERY SELECT 'reserved'::text, 'reserved'::text, NULL::json, NULL::text;
+      RETURN;
+    END IF;
+    -- A unique conflict: possibly this same operation inserted concurrently.
+    -- Look again (new snapshot) before classifying it.
+  END LOOP;
+  IF EXISTS (SELECT 1 FROM business.recovery_operation o
+             WHERE o.aggregate_id = p_aggregate_id AND o.prior_version >= p_prior_version AND o.id <> p_id) THEN
+    RETURN QUERY SELECT 'stale'::text, NULL::text, NULL::json, NULL::text;
+    RETURN;
+  END IF;
+  IF EXISTS (SELECT 1 FROM business.recovery_operation o WHERE o.envelope_key = p_envelope_key AND o.id <> p_id) THEN
+    RAISE EXCEPTION 'envelope key % belongs to another recovery operation', p_envelope_key
+      USING ERRCODE = 'unique_violation';
+  END IF;
+  RETURN QUERY SELECT 'busy'::text, NULL::text, NULL::json, NULL::text;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION business.recovery_lookup(
+  p_id uuid, p_kind text, p_aggregate_id uuid, p_prior_version integer,
+  p_payload_hash text, p_envelope_key text, p_replay_until timestamptz)
+RETURNS TABLE (result text, op_state text, op_outcome json, op_outcome_hash text)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  r business.recovery_operation;
+BEGIN
+  p_replay_until := business.recovery_replay_until(p_kind, p_replay_until);
+  SELECT * INTO r FROM business.recovery_operation o WHERE o.id = p_id;
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT 'missing'::text, NULL::text, NULL::json, NULL::text;
+    RETURN;
+  END IF;
+  IF r.kind <> p_kind OR r.aggregate_id <> p_aggregate_id OR r.prior_version <> p_prior_version
+     OR r.payload_hash <> p_payload_hash OR r.envelope_key <> p_envelope_key
+     OR r.replay_until IS DISTINCT FROM p_replay_until THEN
+    RAISE EXCEPTION 'recovery operation % exists with a different identity', p_id
+      USING ERRCODE = 'unique_violation';
+  END IF;
+  RETURN QUERY SELECT 'existing'::text, r.state, r.outcome, r.outcome_hash::text;
+END;
+$$;
 
 CREATE TABLE business.order_command (
   -- The recovery operation's ID.
@@ -549,6 +654,7 @@ END;
 $$;
 
 REVOKE ALL ON TABLE business.order_command FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.recovery_replay_until(text, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.order_recovery_snapshot(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.order_holds_intact(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.order_free_confirm_request(uuid, bytea, uuid, text, text, integer, text, timestamptz) FROM PUBLIC;

@@ -433,7 +433,8 @@ order (aggregate = order, prior version = the order's version), run by
    acknowledgment the order shows `confirmation_pending`, never `confirmed`.
 
 A command has no replay deadline (its commit is local and idempotent for the
-operation forever; the database requires `replay_until` for dispatches only)
+operation forever; the database records `infinity`, keeping the column
+`NOT NULL` for the running build)
 and never goes to `reconcile`. A restore freeze and a missing journal make
 the job wait (`Defer`), never commit without protection: the commit itself
 re-checks the freeze under a share lock on the freeze row (SQLSTATE `GK002`),

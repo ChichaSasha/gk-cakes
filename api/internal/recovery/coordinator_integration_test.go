@@ -980,11 +980,13 @@ func TestRuntimeRolesCannotUseRecoveryInternals(t *testing.T) {
 	}
 }
 
-// Commands have no replay deadline in the database; dispatches must have
-// one; the command is secured with its outcome like a dispatch.
+// Commands have no replay deadline (recorded as 'infinity'); dispatches
+// must have a finite one; the command is secured with its outcome like a
+// dispatch.
 func TestCommandOperationsRecordNoReplayDeadline(t *testing.T) {
 	h := newHarness(t)
 	c := h.coord
+	ctx := context.Background()
 	op := recovery.Operation{ID: uuidAt(901), Kind: recovery.KindCommand, AggregateID: uuidAt(902), PriorVersion: 1,
 		Payload: json.RawMessage(`{"command":"test"}`)}
 	store := h.store()
@@ -995,23 +997,30 @@ func TestCommandOperationsRecordNoReplayDeadline(t *testing.T) {
 		committed = true
 		return o, state, err
 	}
-	if got, err := c.Command(context.Background(), store, op, apply); err != nil || got.Status != "confirmed" || !committed {
+	if got, err := c.Command(ctx, store, op, apply); err != nil || got.Status != "confirmed" || !committed {
 		t.Fatalf("Command = %+v, %v", got, err)
 	}
-	var kind string
-	var replay *time.Time
-	if err := h.owner.QueryRow(context.Background(), "SELECT kind, replay_until, state FROM business.recovery_operation WHERE id = $1::uuid", op.ID).
-		Scan(&kind, &replay, new(string)); err != nil || kind != "command" || replay != nil || h.state(op.ID) != "secured" {
-		t.Fatalf("recorded %s %v %s (%v)", kind, replay, h.state(op.ID), err)
+	var kind, replay string
+	if err := h.owner.QueryRow(ctx, "SELECT kind, replay_until::text FROM business.recovery_operation WHERE id = $1::uuid", op.ID).
+		Scan(&kind, &replay); err != nil || kind != "command" || replay != "infinity" || h.state(op.ID) != "secured" {
+		t.Fatalf("recorded %s %s %s (%v)", kind, replay, h.state(op.ID), err)
 	}
-	for name, sql := range map[string]string{
-		"dispatch without deadline": `INSERT INTO business.recovery_operation (id, kind, aggregate_id, prior_version, payload_hash, envelope_key, replay_until)
-			VALUES (gen_random_uuid(), 'dispatch', gen_random_uuid(), 0, repeat('a', 64), 'k1', NULL)`,
-		"command with deadline": `INSERT INTO business.recovery_operation (id, kind, aggregate_id, prior_version, payload_hash, envelope_key, replay_until)
-			VALUES (gen_random_uuid(), 'command', gen_random_uuid(), 0, repeat('a', 64), 'k2', now())`,
+	// Resuming the secured command (same identity) finds it.
+	if got, err := c.Command(ctx, store, op, apply); err != nil || got.Status != "confirmed" {
+		t.Fatalf("resume = %+v, %v", got, err)
+	}
+	for name, c := range map[string]struct{ sql, state string }{
+		"dispatch without deadline": {`INSERT INTO business.recovery_operation (id, kind, aggregate_id, prior_version, payload_hash, envelope_key, replay_until)
+			VALUES (gen_random_uuid(), 'dispatch', gen_random_uuid(), 0, repeat('a', 64), 'k1', NULL)`, "23502"},
+		"dispatch with infinity": {`INSERT INTO business.recovery_operation (id, kind, aggregate_id, prior_version, payload_hash, envelope_key, replay_until)
+			VALUES (gen_random_uuid(), 'dispatch', gen_random_uuid(), 0, repeat('a', 64), 'k2', 'infinity')`, "23514"},
+		"command with deadline": {`INSERT INTO business.recovery_operation (id, kind, aggregate_id, prior_version, payload_hash, envelope_key, replay_until)
+			VALUES (gen_random_uuid(), 'command', gen_random_uuid(), 0, repeat('a', 64), 'k3', now())`, "23514"},
+		"reserve a command with deadline": {`SELECT * FROM business.recovery_reserve(gen_random_uuid(), 'command', gen_random_uuid(), 0,
+			repeat('a', 64), 'k4', now())`, "22023"},
 	} {
-		if _, err := h.owner.Exec(context.Background(), sql); dbtest.SQLState(err) != "23514" {
-			t.Errorf("%s: %v, want a check violation", name, err)
+		if _, err := h.owner.Exec(ctx, c.sql); dbtest.SQLState(err) != c.state {
+			t.Errorf("%s: %v, want SQLSTATE %s", name, err, c.state)
 		}
 	}
 }

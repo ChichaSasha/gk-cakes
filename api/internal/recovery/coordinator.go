@@ -109,8 +109,8 @@ func (op Operation) replayUntil() *time.Time {
 	return &t
 }
 
-// ReplayUntilArg is the replay deadline as a store records it (nil for a
-// command).
+// ReplayUntilArg is the replay deadline as a store passes it (nil for a
+// command; the database records 'infinity').
 func (op Operation) ReplayUntilArg() *time.Time { return op.replayUntil() }
 
 func hashHex(b []byte) string {
