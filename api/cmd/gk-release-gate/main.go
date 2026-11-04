@@ -1,10 +1,12 @@
 // Command gk-release-gate evaluates the GitHub event of the current workflow
 // run and decides whether a release may deploy. It writes the release manifest
-// and step outputs. With -verify it instead re-checks one artifact (component,
-// commit, digest) before a staging deploy and, given -environment and
-// -version, whether that release is already deployed there.
-// Exit status: 0 deploy, skip or verified; 3 denied or not verified;
-// 4 verified but already deployed; 1 error.
+// and step outputs. With -verify it instead re-checks one release artifact
+// (-component, -commit, -digest; -environment and -version are required)
+// before a deploy: the artifact, then whether that release is already deployed
+// there (replay), then whether a higher release is already recorded there
+// (downgrade).
+// Exit status: 0 deploy, skip or verified; 3 denied, not verified or a
+// downgrade; 4 verified but already deployed; 1 error.
 package main
 
 import (
@@ -38,8 +40,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	component := fs.String("component", "", "with -verify: api or ui")
 	commit := fs.String("commit", "", "with -verify: 40-character commit SHA")
 	digest := fs.String("digest", "", "with -verify: sha256 digest")
-	environment := fs.String("environment", "", "with -verify: deployment record environment for the replay check")
-	version := fs.String("version", "", "with -verify: release tag for the replay check")
+	environment := fs.String("environment", "", "with -verify: deployment record environment for the replay and downgrade checks")
+	version := fs.String("version", "", "with -verify: release tag for the replay and downgrade checks")
 	if err := fs.Parse(args); err != nil {
 		return exitError
 	}
@@ -73,24 +75,18 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		HTTP:        &http.Client{Timeout: 20 * time.Second},
 	}
 	if *verify {
-		err := client.VerifyArtifact(ctx, getenv("GITHUB_REPOSITORY"), getenv("GITHUB_REPOSITORY_OWNER"), *component, *commit, *digest)
-		if err != nil {
-			fmt.Fprintf(stdout, "not verified: %v\n", err)
-			return exitDenied
-		}
-		fmt.Fprintf(stdout, "verified: %s %s for commit %s\n", *component, *digest, *commit)
-		if *environment != "" && *version != "" {
-			released, err := client.AlreadyReleased(ctx, getenv("GITHUB_REPOSITORY"), *environment, *version, *digest)
-			if err != nil {
-				fmt.Fprintf(stdout, "error: replay check: %v\n", err)
-				return exitError
-			}
-			if released {
-				fmt.Fprintf(stdout, "already deployed: %s (%s) in %s\n", *version, *digest, *environment)
-				return exitReleased
-			}
-		}
-		return exitOK
+		res, err := client.Verify(ctx, releasegate.VerifyRequest{
+			Repository:  getenv("GITHUB_REPOSITORY"),
+			Owner:       getenv("GITHUB_REPOSITORY_OWNER"),
+			Component:   *component,
+			CommitSHA:   *commit,
+			Digest:      *digest,
+			Environment: *environment,
+			Tag:         *version,
+		})
+		code, line := verifyExit(res, err)
+		fmt.Fprintln(stdout, line)
+		return code
 	}
 	d, err := releasegate.Evaluate(ctx, releasegate.Input{
 		EventName:  getenv("GITHUB_EVENT_NAME"),
@@ -142,4 +138,21 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		return exitDenied
 	}
 	return exitOK
+}
+
+// verifyExit maps a -verify result to the exit status and output line.
+func verifyExit(res releasegate.VerifyResult, err error) (int, string) {
+	if err != nil {
+		return exitError, "error: " + err.Error()
+	}
+	switch res.Outcome {
+	case releasegate.VerifyDeploy:
+		return exitOK, "verified: " + res.Reason
+	case releasegate.VerifyReplay:
+		return exitReleased, "replay: " + res.Reason
+	case releasegate.VerifyRejected:
+		return exitDenied, "not verified: " + res.Reason
+	default:
+		return exitError, fmt.Sprintf("error: unknown verify outcome %q", res.Outcome)
+	}
 }

@@ -8,10 +8,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/ChichaSasha/gk-cakes/api/internal/notifications"
 )
 
 // RequestDeadline is the proposed overall API request budget (architecture.md).
@@ -24,12 +27,20 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
+// EmailWebhook verifies and stores one email provider webhook delivery
+// (notifications.Webhook).
+type EmailWebhook interface {
+	Receive(ctx context.Context, h http.Header, body []byte) (string, error)
+}
+
 // Options configures the handler.
 type Options struct {
 	// UIOrigin is the single exact browser origin allowed by CORS.
 	UIOrigin string
 	DB       Pinger
 	Logger   *slog.Logger
+	// EmailWebhook serves POST /webhooks/email when set (EMAIL_WEBHOOK_SECRET).
+	EmailWebhook EmailWebhook
 }
 
 // NewHandler returns the API handler with its middleware chain.
@@ -48,6 +59,9 @@ func NewHandler(opts Options) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 	})
+	if opts.EmailWebhook != nil {
+		mux.HandleFunc("POST /webhooks/email", emailWebhook(opts.EmailWebhook))
+	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusNotFound, "NOT_FOUND", "Not found", false)
 	})
@@ -58,6 +72,35 @@ func NewHandler(opts Options) http.Handler {
 	h = withDeadline(h)
 	h = withAccessLog(opts.Logger, h)
 	return withRequestID(h)
+}
+
+// emailWebhook acknowledges a delivery only after it is stored: an invalid
+// signature is 401, an unusable signed event 400, a storage failure 503 (the
+// provider retries with the same svix-id). Bodies are never logged.
+func emailWebhook(rcv EmailWebhook) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, notifications.MaxWebhookBytes))
+		var tooLarge *http.MaxBytesError
+		switch {
+		case errors.As(err, &tooLarge):
+			writeError(w, r, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "Payload too large", false)
+			return
+		case err != nil:
+			writeError(w, r, http.StatusBadRequest, "BAD_REQUEST", "Unreadable request body", false)
+			return
+		}
+		result, err := rcv.Receive(r.Context(), r.Header, body)
+		switch {
+		case errors.Is(err, notifications.ErrInvalidSignature):
+			writeError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid webhook signature", false)
+		case errors.Is(err, notifications.ErrMalformedEvent):
+			writeError(w, r, http.StatusBadRequest, "BAD_REQUEST", "Malformed webhook event", false)
+		case err != nil:
+			writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Service temporarily unavailable", true)
+		default:
+			writeJSON(w, http.StatusOK, map[string]string{"status": result})
+		}
+	}
 }
 
 // Serve runs h on ln until ctx is cancelled, then stops accepting connections

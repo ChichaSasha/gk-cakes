@@ -5,12 +5,18 @@
 // that commit, may deploy; a repeated event for an already deployed artifact
 // is skipped. Full releases target production-<component>; prereleases target
 // staging-<component> only. Artifact digests are read from the container
-// registry (ghcr.io), the same source the publish step resolves. Any GitHub API failure is returned as an error so callers fail
+// registry (ghcr.io), the same source the publish step resolves, and the image
+// must carry its commit in the org.opencontainers.image.revision label. A
+// release older than any release already recorded in the same environment is
+// denied.
+// Any GitHub or registry API failure is returned as an error so callers fail
 // closed.
 package releasegate
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +24,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -147,6 +154,13 @@ func Evaluate(ctx context.Context, in Input, gh *Client) (Decision, error) {
 	if digest == "" {
 		return deny("no artifact %s tagged sha-%s exists", pkg, sha), nil
 	}
+	revision, err := gh.imageRevision(ctx, imagePath(ev.Repository.Owner.Login, component), digest)
+	if err != nil {
+		return Decision{}, err
+	}
+	if revision != sha {
+		return deny("artifact %s@%s was built from commit %q (%s), not %s", pkg, digest, revision, RevisionLabel, sha), nil
+	}
 
 	manifest := &Manifest{
 		Component:      component,
@@ -181,6 +195,13 @@ func Evaluate(ctx context.Context, in Input, gh *Client) (Decision, error) {
 	}
 	if released {
 		return Decision{Action: ActionSkip, Reason: fmt.Sprintf("release %s (%s) is already deployed to %s", tag, digest, manifest.Environment), Manifest: manifest}, nil
+	}
+	newer, err := gh.NewerReleased(ctx, in.Repository, manifest.Environment, tag)
+	if err != nil {
+		return Decision{}, err
+	}
+	if newer != "" {
+		return deny("release %s is older than %s, already recorded in %s; a rollback needs a new, higher tag", tag, newer, manifest.Environment), nil
 	}
 	return Decision{Action: ActionDeploy, Reason: "verified release", Manifest: manifest}, nil
 }
@@ -298,17 +319,9 @@ func imagePath(owner, component string) string {
 }
 
 // registryDigest returns the manifest digest for repo:tag in the registry, or
-// "" when the tag does not exist. It tries an anonymous pull token first
-// (public packages) and then the GitHub token.
+// "" when the tag does not exist.
 func (c *Client) registryDigest(ctx context.Context, repo, tag string) (string, error) {
-	base := strings.TrimRight(c.RegistryURL, "/")
-	if base == "" {
-		base = "https://ghcr.io"
-	}
-	token, err := c.registryToken(ctx, base, repo, false)
-	if err != nil {
-		token, err = c.registryToken(ctx, base, repo, true)
-	}
+	base, token, err := c.registryAuth(ctx, repo)
 	if err != nil {
 		return "", err
 	}
@@ -317,12 +330,7 @@ func (c *Client) registryDigest(ctx context.Context, repo, tag string) (string, 
 		return "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", strings.Join([]string{
-		"application/vnd.oci.image.manifest.v1+json",
-		"application/vnd.oci.image.index.v1+json",
-		"application/vnd.docker.distribution.manifest.v2+json",
-		"application/vnd.docker.distribution.manifest.list.v2+json",
-	}, ", "))
+	req.Header.Set("Accept", manifestAccept)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("registry %s:%s: %w", repo, tag, err)
@@ -339,6 +347,126 @@ func (c *Client) registryDigest(ctx context.Context, repo, tag string) (string, 
 		return "", fmt.Errorf("registry %s:%s: unexpected digest %q", repo, tag, digest)
 	}
 	return digest, nil
+}
+
+const (
+	// RevisionLabel is the image label the publish step sets to the source
+	// commit SHA.
+	RevisionLabel = "org.opencontainers.image.revision"
+
+	dockerManifestType = "application/vnd.docker.distribution.manifest.v2+json"
+	ociManifestType    = "application/vnd.oci.image.manifest.v1+json"
+	maxRegistryObject  = 4 << 20
+)
+
+var manifestAccept = strings.Join([]string{
+	ociManifestType,
+	"application/vnd.oci.image.index.v1+json",
+	dockerManifestType,
+	"application/vnd.docker.distribution.manifest.list.v2+json",
+}, ", ")
+
+// imageRevision returns the RevisionLabel of the single-platform image
+// repo@digest ("" when absent). The manifest and config bytes are checked
+// against their digests, so the label provably belongs to that digest.
+func (c *Client) imageRevision(ctx context.Context, repo, digest string) (string, error) {
+	base, token, err := c.registryAuth(ctx, repo)
+	if err != nil {
+		return "", err
+	}
+	body, contentType, err := c.registryGet(ctx, base+"/v2/"+repo+"/manifests/"+digest, token, manifestAccept)
+	if err != nil {
+		return "", err
+	}
+	if got := sha256Of(body); got != digest {
+		return "", fmt.Errorf("registry %s@%s: manifest does not match its digest (%s)", repo, digest, got)
+	}
+	var manifest struct {
+		MediaType string `json:"mediaType"`
+		Config    struct {
+			Digest string `json:"digest"`
+		} `json:"config"`
+	}
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		return "", fmt.Errorf("registry %s@%s: decode manifest: %w", repo, digest, err)
+	}
+	mediaType := manifest.MediaType
+	if mediaType == "" {
+		mediaType, _, _ = strings.Cut(contentType, ";")
+	}
+	if mediaType != dockerManifestType && mediaType != ociManifestType {
+		return "", fmt.Errorf("registry %s@%s: %q is not a single-platform image manifest", repo, digest, mediaType)
+	}
+	if !digestPattern.MatchString(manifest.Config.Digest) {
+		return "", fmt.Errorf("registry %s@%s: unexpected config digest %q", repo, digest, manifest.Config.Digest)
+	}
+	config, _, err := c.registryGet(ctx, base+"/v2/"+repo+"/blobs/"+manifest.Config.Digest, token, "")
+	if err != nil {
+		return "", err
+	}
+	if got := sha256Of(config); got != manifest.Config.Digest {
+		return "", fmt.Errorf("registry %s@%s: config does not match its digest %s (%s)", repo, digest, manifest.Config.Digest, got)
+	}
+	var image struct {
+		Config struct {
+			Labels map[string]string `json:"Labels"`
+		} `json:"config"`
+	}
+	if err := json.Unmarshal(config, &image); err != nil {
+		return "", fmt.Errorf("registry %s@%s: decode config: %w", repo, digest, err)
+	}
+	return image.Config.Labels[RevisionLabel], nil
+}
+
+func sha256Of(b []byte) string {
+	sum := sha256.Sum256(b)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// registryGet fetches a registry object (bounded size) and its content type.
+// Blob requests may redirect to storage; the client drops the token there.
+func (c *Client) registryGet(ctx context.Context, u, token, accept string) ([]byte, string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	if accept != "" {
+		req.Header.Set("Accept", accept)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("registry GET: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return nil, "", fmt.Errorf("registry GET %s: HTTP %d", req.URL.Path, resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxRegistryObject+1))
+	if err != nil {
+		return nil, "", fmt.Errorf("registry GET %s: %w", req.URL.Path, err)
+	}
+	if len(body) > maxRegistryObject {
+		return nil, "", fmt.Errorf("registry GET %s: object larger than %d bytes", req.URL.Path, maxRegistryObject)
+	}
+	return body, resp.Header.Get("Content-Type"), nil
+}
+
+// registryAuth returns the registry base URL and a pull token for repo. It
+// tries an anonymous token first (public packages), then the GitHub token.
+func (c *Client) registryAuth(ctx context.Context, repo string) (string, string, error) {
+	base := strings.TrimRight(c.RegistryURL, "/")
+	if base == "" {
+		base = "https://ghcr.io"
+	}
+	token, err := c.registryToken(ctx, base, repo, false)
+	if err != nil {
+		token, err = c.registryToken(ctx, base, repo, true)
+	}
+	if err != nil {
+		return "", "", err
+	}
+	return base, token, nil
 }
 
 func (c *Client) registryToken(ctx context.Context, base, repo string, authenticated bool) (string, error) {
@@ -368,8 +496,8 @@ func (c *Client) registryToken(ctx context.Context, base, repo string, authentic
 }
 
 // VerifyArtifact re-checks, outside a release event, that digest is the
-// registry image built for commit sha of component, and that sha is on main
-// with a successful main CI run. Staging uses it before deploying a
+// registry image tagged and labelled for commit sha of component, and that sha
+// is on main with a successful main CI run. Staging uses it before deploying a
 // release-path artifact.
 func (c *Client) VerifyArtifact(ctx context.Context, repo, owner, component, sha, digest string) error {
 	switch {
@@ -401,6 +529,13 @@ func (c *Client) VerifyArtifact(ctx context.Context, repo, owner, component, sha
 	if got != digest {
 		return fmt.Errorf("registry digest for %s sha-%s is %q, not %q", imagePath(owner, component), sha, got, digest)
 	}
+	revision, err := c.imageRevision(ctx, imagePath(owner, component), digest)
+	if err != nil {
+		return err
+	}
+	if revision != sha {
+		return fmt.Errorf("artifact %s@%s was built from commit %q (%s), not %s", imagePath(owner, component), digest, revision, RevisionLabel, sha)
+	}
 	return nil
 }
 
@@ -428,6 +563,13 @@ func (c *Client) latestMigration(ctx context.Context, repo, sha string) (string,
 	return latest, nil
 }
 
+// ReleaseTask is the GitHub deployment task of release-path records (tag
+// versions such as api-v1.2.3). Main-path records use the default "deploy",
+// so replay and downgrade lookups list only release records. Records made
+// before this task existed (the api-v0.0.1 and ui-v0.0.1 staging test
+// prereleases) are not considered.
+const ReleaseTask = "deploy:release"
+
 type deploymentPayload struct {
 	ArtifactDigest string `json:"artifact_digest"`
 	Version        string `json:"version"`
@@ -436,38 +578,199 @@ type deploymentPayload struct {
 type deployment struct {
 	ID      int64             `json:"id"`
 	SHA     string            `json:"sha"`
+	Task    string            `json:"task"`
 	Payload deploymentPayload `json:"payload"`
 }
 
-// AlreadyReleased reports whether environment has a successful deployment
-// record for this exact release (version tag and digest). A replayed release
-// is therefore skipped even after later deploys, while a rollback must use a
-// new release tag and is deployed.
-func (c *Client) AlreadyReleased(ctx context.Context, repo, environment, version, digest string) (bool, error) {
-	const perPage, maxPages = 100, 50
-	for page := 1; page <= maxPages; page++ {
-		var deployments []deployment // newest first
-		q := url.Values{"environment": {environment}, "per_page": {fmt.Sprint(perPage)}, "page": {fmt.Sprint(page)}}
+const (
+	deploymentsPerPage = 100
+	maxDeploymentPages = 50
+)
+
+// releaseRecords calls visit for each release-path deployment record of
+// environment, newest first, until visit returns true. It fails closed when
+// the history exceeds maxDeploymentPages pages.
+func (c *Client) releaseRecords(ctx context.Context, repo, environment string, visit func(deployment) (bool, error)) error {
+	for page := 1; page <= maxDeploymentPages; page++ {
+		var deployments []deployment
+		q := url.Values{
+			"environment": {environment},
+			"task":        {ReleaseTask},
+			"per_page":    {strconv.Itoa(deploymentsPerPage)},
+			"page":        {strconv.Itoa(page)},
+		}
 		if err := c.get(ctx, "/repos/"+repo+"/deployments", q, &deployments); err != nil {
-			return false, err
+			return err
 		}
 		for _, d := range deployments {
-			if d.Payload.Version != version || d.Payload.ArtifactDigest != digest {
-				continue
+			if d.Task != ReleaseTask {
+				continue // defensive: the filter is the API's
 			}
-			var statuses []struct {
-				State string `json:"state"`
-			}
-			if err := c.get(ctx, fmt.Sprintf("/repos/%s/deployments/%d/statuses", repo, d.ID), url.Values{"per_page": {"1"}}, &statuses); err != nil {
-				return false, err
-			}
-			if len(statuses) > 0 && statuses[0].State == "success" {
-				return true, nil
+			stop, err := visit(d)
+			if err != nil || stop {
+				return err
 			}
 		}
-		if len(deployments) < perPage {
-			return false, nil
+		if len(deployments) < deploymentsPerPage {
+			return nil
 		}
 	}
-	return false, fmt.Errorf("environment %s: more than %d pages of deployments", environment, maxPages)
+	return fmt.Errorf("environment %s: more than %d pages of release deployments", environment, maxDeploymentPages)
+}
+
+// AlreadyReleased reports whether environment has a successful release record
+// for this exact release (version tag and digest). A replayed release is
+// therefore skipped even after later deploys, while a failed attempt may be
+// retried.
+func (c *Client) AlreadyReleased(ctx context.Context, repo, environment, version, digest string) (bool, error) {
+	released := false
+	err := c.releaseRecords(ctx, repo, environment, func(d deployment) (bool, error) {
+		if d.Payload.Version != version || d.Payload.ArtifactDigest != digest {
+			return false, nil
+		}
+		ok, err := c.succeeded(ctx, repo, d.ID)
+		if ok {
+			released = true
+		}
+		return ok, err
+	})
+	return released, err
+}
+
+// semver is a parsed X.Y.Z release version.
+type semver [3]int
+
+func (v semver) less(o semver) bool {
+	for i := range v {
+		if v[i] != o[i] {
+			return v[i] < o[i]
+		}
+	}
+	return false
+}
+
+// parseTag splits a ui-vX.Y.Z or api-vX.Y.Z tag into component and version.
+func parseTag(tag string) (string, semver, bool) {
+	m := tagPattern.FindStringSubmatch(tag)
+	if m == nil {
+		return "", semver{}, false
+	}
+	var v semver
+	for i := range v {
+		n, err := strconv.Atoi(m[i+2])
+		if err != nil {
+			return "", semver{}, false // digits overflow int
+		}
+		v[i] = n
+	}
+	return m[1], v, true
+}
+
+// NewerReleased returns the highest release tag of tag's component that has a
+// release record in environment with a version greater than tag's, or "" when
+// there is none; deploying tag would then be a downgrade. Every recorded
+// attempt counts, whatever its status: a record marked failed after Railway
+// already switched traffic (for example a failed smoke check) may be what is
+// live. A deliberate rollback therefore uses a new, higher tag. The release
+// gate calls this early; the staging verify-release job repeats it inside the
+// deploy-staging concurrency group, where concurrent releases are ordered. A
+// production deploy job must likewise re-check inside its serialized section.
+func (c *Client) NewerReleased(ctx context.Context, repo, environment, tag string) (string, error) {
+	component, version, ok := parseTag(tag)
+	if !ok {
+		return "", fmt.Errorf("tag %q is not ui-vX.Y.Z or api-vX.Y.Z", tag)
+	}
+	highest, newest := "", version
+	err := c.releaseRecords(ctx, repo, environment, func(d deployment) (bool, error) {
+		if comp, v, ok := parseTag(d.Payload.Version); ok && comp == component && newest.less(v) {
+			highest, newest = d.Payload.Version, v
+		}
+		return false, nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return highest, nil
+}
+
+// succeeded reports whether a deployment's latest status is success.
+func (c *Client) succeeded(ctx context.Context, repo string, id int64) (bool, error) {
+	var statuses []struct {
+		State string `json:"state"`
+	}
+	if err := c.get(ctx, fmt.Sprintf("/repos/%s/deployments/%d/statuses", repo, id), url.Values{"per_page": {"1"}}, &statuses); err != nil {
+		return false, err
+	}
+	return len(statuses) > 0 && statuses[0].State == "success", nil
+}
+
+// VerifyOutcome is the deploy job's verdict on a release artifact.
+type VerifyOutcome string
+
+// Verify outcomes.
+const (
+	VerifyDeploy   VerifyOutcome = "deploy"   // verified: deploy it
+	VerifyReplay   VerifyOutcome = "replay"   // this release is already deployed: skip
+	VerifyRejected VerifyOutcome = "rejected" // not verified, inconsistent request or a downgrade
+)
+
+// VerifyRequest identifies the release artifact handed to a deploy job. All
+// fields are required: Environment and Tag drive the replay and downgrade
+// checks, which a deploy job must never skip.
+type VerifyRequest struct {
+	Repository  string // owner/name
+	Owner       string // registry namespace owner
+	Component   string // api or ui
+	CommitSHA   string
+	Digest      string
+	Environment string // staging-<component> or production-<component>
+	Tag         string // <component>-vX.Y.Z
+}
+
+// VerifyResult is the outcome and a human-readable reason.
+type VerifyResult struct {
+	Outcome VerifyOutcome
+	Reason  string
+}
+
+func rejected(format string, args ...any) VerifyResult {
+	return VerifyResult{Outcome: VerifyRejected, Reason: fmt.Sprintf(format, args...)}
+}
+
+// Verify re-checks a release artifact inside the deploy job's serialized
+// section: the artifact (VerifyArtifact), then replay (skip), then downgrade
+// (reject). Errors from the replay and downgrade lookups are returned so the
+// caller fails closed; artifact verification failures are rejections.
+func (c *Client) Verify(ctx context.Context, r VerifyRequest) (VerifyResult, error) {
+	if r.Environment == "" || r.Tag == "" {
+		return rejected("environment and tag are required for the replay and downgrade checks"), nil
+	}
+	component, _, ok := parseTag(r.Tag)
+	switch {
+	case !ok:
+		return rejected("tag %q is not ui-vX.Y.Z or api-vX.Y.Z", r.Tag), nil
+	case component != r.Component:
+		return rejected("tag %q is not a %s release", r.Tag, r.Component), nil
+	case r.Environment != "staging-"+r.Component && r.Environment != "production-"+r.Component:
+		return rejected("environment %q is not staging-%s or production-%s", r.Environment, r.Component, r.Component), nil
+	}
+	if err := c.VerifyArtifact(ctx, r.Repository, r.Owner, r.Component, r.CommitSHA, r.Digest); err != nil {
+		return rejected("%v", err), nil
+	}
+	released, err := c.AlreadyReleased(ctx, r.Repository, r.Environment, r.Tag, r.Digest)
+	if err != nil {
+		return VerifyResult{}, fmt.Errorf("replay check: %w", err)
+	}
+	if released {
+		return VerifyResult{Outcome: VerifyReplay, Reason: fmt.Sprintf("%s (%s) is already deployed to %s", r.Tag, r.Digest, r.Environment)}, nil
+	}
+	newer, err := c.NewerReleased(ctx, r.Repository, r.Environment, r.Tag)
+	if err != nil {
+		return VerifyResult{}, fmt.Errorf("downgrade check: %w", err)
+	}
+	if newer != "" {
+		return rejected("%s is older than %s, already recorded in %s; a rollback needs a new, higher tag", r.Tag, newer, r.Environment), nil
+	}
+	return VerifyResult{Outcome: VerifyDeploy, Reason: fmt.Sprintf("%s %s for commit %s; %s not yet deployed to %s",
+		r.Component, r.Digest, r.CommitSHA, r.Tag, r.Environment)}, nil
 }

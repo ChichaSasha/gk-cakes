@@ -1,15 +1,26 @@
 # GK-034: the only path that deploys staging.
 #   workflow_run      a green Components run on a push to main: reuse or build
-#                     the API and UI images for that exact commit, push them to
-#                     ghcr.io and deploy their digests, but only while the commit
-#                     is still the head of main (no accidental downgrade).
+#                     the API and UI images for that exact commit (a reused tag
+#                     must carry that commit in its revision label), push them
+#                     to ghcr.io and deploy their digests, but only while the
+#                     commit is still the head of main (no accidental downgrade).
 #   workflow_dispatch sent by the release workflow for a prerelease that passed
 #                     the release gate: re-verify the artifact (commit on main,
-#                     green main CI, registry digest), skip if that release is
-#                     already deployed, then deploy that component.
+#                     green main CI, registry digest and revision label), skip
+#                     if that release is already deployed, refuse it if a higher
+#                     release of that component is recorded, then deploy it.
 # All staging deploys share one concurrency group and are never cancelled
-# while running. API deploys run migrations first and stay off until the
-# repository variable STAGING_API_ENABLED is true.
+# while running. Before any deploy, the compatibility-matrix job runs the
+# deployed and candidate images against a disposable database (AC2, see
+# .github/scripts/compat-matrix.sh). API deploys run migrations first and stay
+# off until the repository variable STAGING_API_ENABLED is true. Each deploy
+# ends with a public smoke check through STAGING_API_URL / STAGING_UI_URL
+# (environment variables of the staging environment). The worker (GK-024) runs
+# the same API image as its own Railway service (RAILWAY_WORKER_SERVICE_ID,
+# start command gk-worker, no public endpoint); it deploys after a successful
+# API deploy once STAGING_WORKER_ENABLED is true, and must keep running its
+# first instance for a settle period: a crash and restart fails the deploy (it
+# exits at start if its email or recovery-journal settings are bad).
 name: Staging
 run-name: ${{ inputs.version && format('Staging release {0}', inputs.version) || format('Staging {0}', github.event.workflow_run.head_sha) }}
 
@@ -77,6 +88,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -o pipefail
           head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
           if [[ "$head" != "$SHA" ]]; then
             echo "- skipped: commit \`$SHA\` is no longer the head of main (\`$head\`)" | tee -a "$GITHUB_STEP_SUMMARY"
@@ -102,6 +114,13 @@ jobs:
             fi
             if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
               echo "unexpected registry digest for $tag: $digest" >&2
+              exit 1
+            fi
+            # A reused tag must still be the image built from this commit.
+            revision=$(docker buildx imagetools inspect "$registry/gk-cakes-$component@$digest" --format '{{json .Image}}' |
+              jq -r '.config.Labels["org.opencontainers.image.revision"] // ""')
+            if [[ "$revision" != "$SHA" ]]; then
+              echo "$tag ($digest) was built from commit '$revision', not $SHA; refusing to deploy" >&2
               exit 1
             fi
             {
@@ -184,12 +203,42 @@ jobs:
               ;;
           esac
 
+  compat:
+    name: compatibility-matrix
+    needs: [publish, verify]
+    if: >-
+      !cancelled() &&
+      (needs.publish.result == 'success' || needs.verify.result == 'success') &&
+      (needs.publish.outputs.deploy_api == 'true' || needs.verify.outputs.deploy_api == 'true' ||
+       needs.publish.outputs.deploy_ui == 'true' || needs.verify.outputs.deploy_ui == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      deployments: read
+    env:
+      NEW_API: ${{ needs.publish.outputs.api_image || needs.verify.outputs.api_image }}
+      NEW_UI: ${{ needs.publish.outputs.ui_image || needs.verify.outputs.ui_image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+      - name: Resolve deployed and candidate images
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY_OWNER: ${{ github.repository_owner }}
+        run: .github/scripts/resolve-images.sh
+      - name: Previous/current compatibility matrix (AC2)
+        run: .github/scripts/compat-matrix.sh
+
   deploy-api:
     name: deploy-api
-    needs: [publish, verify]
+    needs: [publish, verify, compat]
     if: >-
       !cancelled() && vars.STAGING_API_ENABLED == 'true' &&
       (needs.publish.result == 'success' || needs.verify.result == 'success') &&
+      needs.compat.result == 'success' &&
       (needs.publish.outputs.deploy_api == 'true' || needs.verify.outputs.deploy_api == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -232,6 +281,11 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
         run: go run ./cmd/gk-railway-deploy -service "$SERVICE_ID" -environment "$ENVIRONMENT_ID" -image "$IMAGE" -healthcheck /readyz
+      - name: Public smoke check
+        env:
+          API_URL: ${{ vars.STAGING_API_URL }}
+          UI_URL: ${{ vars.STAGING_UI_URL }}
+        run: .github/scripts/smoke.sh api "$API_URL" "$UI_URL"
       - name: Record result
         if: always() && steps.record.outputs.id != ''
         env:
@@ -240,12 +294,69 @@ jobs:
           DEPLOYMENT: ${{ steps.record.outputs.id }}
         run: .github/scripts/record-deployment.sh status "$DEPLOYMENT" "$STATE" "api ${IMAGE#*@}"
 
+  deploy-worker:
+    name: deploy-worker
+    needs: [publish, verify, deploy-api]
+    if: >-
+      !cancelled() && vars.STAGING_WORKER_ENABLED == 'true' &&
+      needs.deploy-api.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: staging
+    permissions:
+      contents: read
+      deployments: write
+    env:
+      SHA: ${{ needs.publish.outputs.sha || needs.verify.outputs.sha }}
+      VERSION: ${{ needs.publish.outputs.version || needs.verify.outputs.version }}
+      IMAGE: ${{ needs.publish.outputs.api_image || needs.verify.outputs.api_image }}
+      SERVICE_ID: ${{ vars.RAILWAY_WORKER_SERVICE_ID }}
+      ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+      - name: Record deployment
+        id: record
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id=$(.github/scripts/record-deployment.sh create staging-worker "$SHA" "${IMAGE#*@}" "$VERSION")
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+      - name: Deploy worker (API image, gk-worker) and watch it settle
+        working-directory: api
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
+          API_SERVICE_ID: ${{ vars.RAILWAY_API_SERVICE_ID }}
+          UI_SERVICE_ID: ${{ vars.RAILWAY_UI_SERVICE_ID }}
+        run: |
+          # The start command persists on the service: never apply it to the API or UI.
+          if [[ -z "$SERVICE_ID" || "$SERVICE_ID" == "$API_SERVICE_ID" || "$SERVICE_ID" == "$UI_SERVICE_ID" ]]; then
+            echo "RAILWAY_WORKER_SERVICE_ID must be set to the worker's own service" >&2
+            exit 1
+          fi
+          go run ./cmd/gk-railway-deploy -service "$SERVICE_ID" -environment "$ENVIRONMENT_ID" -image "$IMAGE" \
+            -start-command /usr/local/bin/gk-worker -settle 90s
+      - name: Record result
+        if: always() && steps.record.outputs.id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATE: ${{ job.status == 'success' && 'success' || 'failure' }}
+          DEPLOYMENT: ${{ steps.record.outputs.id }}
+        run: .github/scripts/record-deployment.sh status "$DEPLOYMENT" "$STATE" "worker ${IMAGE#*@}"
+
   deploy-ui:
     name: deploy-ui
-    needs: [publish, verify, deploy-api]
+    needs: [publish, verify, compat, deploy-api]
     if: >-
       !cancelled() &&
       (needs.publish.result == 'success' || needs.verify.result == 'success') &&
+      needs.compat.result == 'success' &&
       (needs.publish.outputs.deploy_ui == 'true' || needs.verify.outputs.deploy_ui == 'true') &&
       (needs.deploy-api.result == 'success' || needs.deploy-api.result == 'skipped')
     runs-on: ubuntu-24.04
@@ -281,6 +392,10 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
         run: go run ./cmd/gk-railway-deploy -service "$SERVICE_ID" -environment "$ENVIRONMENT_ID" -image "$IMAGE" -healthcheck /healthz
+      - name: Public smoke check
+        env:
+          UI_URL: ${{ vars.STAGING_UI_URL }}
+        run: .github/scripts/smoke.sh ui "$UI_URL"
       - name: Record result
         if: always() && steps.record.outputs.id != ''
         env:

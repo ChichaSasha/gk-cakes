@@ -224,7 +224,6 @@ func TestHandlerFailureSchedulesRetry(t *testing.T) {
 		Logger:          quietLogger(),
 		ShutdownTimeout: time.Second,
 		PollInterval:    50 * time.Millisecond,
-		RetryAfter:      time.Minute,
 		Handler: func(context.Context, jobs.Job) error {
 			defer close(handled)
 			return errors.New("provider unavailable")
@@ -547,5 +546,149 @@ func TestGatewayRejectsUnboundedLeases(t *testing.T) {
 		if got := dbtest.SQLState(err); got != "22023" {
 			t.Errorf("lease %s: SQLSTATE %q (err=%v), want 22023", lease, got, err)
 		}
+	}
+}
+
+type jobState struct {
+	State    string
+	Failures int
+	Reason   *string
+	Next     time.Duration
+}
+
+func (f *fixture) state(t *testing.T, id string) jobState {
+	t.Helper()
+	var s jobState
+	if err := f.admin.QueryRow(context.Background(), `SELECT state, failures, attention_reason, next_attempt_at - now()
+		FROM business.job WHERE id = $1::uuid`, id).Scan(&s.State, &s.Failures, &s.Reason, &s.Next); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func (f *fixture) due(t *testing.T, id string) {
+	t.Helper()
+	if _, err := f.admin.Exec(context.Background(), "UPDATE business.job SET next_attempt_at = now() WHERE id = $1::uuid", id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func runOnce(t *testing.T, w *jobs.Worker) bool {
+	t.Helper()
+	ok, err := w.RunOnce(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ok
+}
+
+// TestFailuresBackOffThenNeedAttention: retries after 1m, 5m, 15m and 1h;
+// the fifth failure moves the job to attention, where no worker claims it
+// until the owner requeues it with a fresh budget.
+func TestFailuresBackOffThenNeedAttention(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	id := f.enqueue(t)
+	w := jobs.New(f.pool, jobs.Options{Logger: quietLogger(), ShutdownTimeout: time.Second,
+		Handler: func(context.Context, jobs.Job) error { return errors.New("provider unavailable") }})
+	for i, want := range []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute, time.Hour} {
+		if !runOnce(t, w) {
+			t.Fatalf("failure %d: nothing claimed", i+1)
+		}
+		got := f.state(t, id)
+		if got.State != "retry" || got.Failures != i+1 || got.Reason != nil || got.Next < want-10*time.Second || got.Next > want+10*time.Second {
+			t.Fatalf("after failure %d: %+v, want retry about %s ahead", i+1, got, want)
+		}
+		if runOnce(t, w) {
+			t.Fatalf("after failure %d: the job was claimed before its retry time", i+1)
+		}
+		f.due(t, id)
+	}
+	runOnce(t, w)
+	got := f.state(t, id)
+	if got.State != "attention" || got.Failures != 5 || got.Reason == nil || *got.Reason != "provider unavailable" {
+		t.Fatalf("after the fifth failure: %+v, want attention with the reason", got)
+	}
+	f.due(t, id)
+	if runOnce(t, w) {
+		t.Fatal("a job in attention was claimed")
+	}
+	tx, err := f.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	var ok bool
+	if _, err := tx.Exec(ctx, "SET LOCAL ROLE gk_owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.QueryRow(ctx, "SELECT business.job_requeue($1::uuid)", id).Scan(&ok); err != nil || !ok {
+		t.Fatalf("requeue = %v, %v", ok, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.state(t, id); got.State != "queued" || got.Failures != 0 || got.Reason != nil {
+		t.Fatalf("after requeue: %+v, want queued with a fresh budget", got)
+	}
+	if !runOnce(t, w) {
+		t.Fatal("the requeued job was not claimed")
+	}
+}
+
+func TestAttentionErrorEscalatesAtOnce(t *testing.T) {
+	f := newFixture(t)
+	id := f.enqueue(t)
+	w := jobs.New(f.pool, jobs.Options{Logger: quietLogger(), ShutdownTimeout: time.Second,
+		Handler: func(context.Context, jobs.Job) error {
+			return fmt.Errorf("wrapped: %w", jobs.Attention("recipient revoked", errors.New("detail")))
+		}})
+	runOnce(t, w)
+	if got := f.state(t, id); got.State != "attention" || got.Failures != 0 || got.Reason == nil || *got.Reason != "recipient revoked" {
+		t.Fatalf("job = %+v, want attention with the stated reason", got)
+	}
+}
+
+func TestDeferReleasesWithoutCountingAFailure(t *testing.T) {
+	f := newFixture(t)
+	id := f.enqueue(t)
+	w := jobs.New(f.pool, jobs.Options{Logger: quietLogger(), ShutdownTimeout: time.Second,
+		Handler: func(context.Context, jobs.Job) error { return jobs.Defer(5*time.Minute, errors.New("frozen")) }})
+	runOnce(t, w)
+	if got := f.state(t, id); got.State != "retry" || got.Failures != 0 || got.Next < 4*time.Minute || got.Next > 6*time.Minute {
+		t.Fatalf("job = %+v, want retry about 5m ahead without a failure", got)
+	}
+}
+
+// TestStaleLeaseCannotFailOrEscalate: job_fail and job_attention are fenced
+// by the lease generation like the other finalizers, and reasons are bounded.
+func TestStaleLeaseCannotFailOrEscalate(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	id := f.enqueue(t)
+	const worker = "88888888-8888-4888-8888-888888888888"
+	var gen int64
+	if err := f.pool.QueryRow(ctx, "SELECT job_generation FROM business.job_claim($1::uuid, interval '60 seconds')", worker).Scan(&gen); err != nil {
+		t.Fatal(err)
+	}
+	var rows int
+	if err := f.pool.QueryRow(ctx, "SELECT count(*) FROM business.job_fail($1::uuid, $2::uuid, $3, 'x')", id, worker, gen+1).Scan(&rows); err != nil || rows != 0 {
+		t.Errorf("stale job_fail returned %d rows (%v), want fenced", rows, err)
+	}
+	var ok bool
+	if err := f.pool.QueryRow(ctx, "SELECT business.job_attention($1::uuid, $2::uuid, $3, 'x')", id, worker, gen+1).Scan(&ok); err != nil || ok {
+		t.Errorf("stale job_attention = %v (%v), want false", ok, err)
+	}
+	for _, sql := range []string{
+		"SELECT count(*) FROM business.job_fail($1::uuid, $2::uuid, $3, '')",
+		"SELECT count(*) FROM business.job_fail($1::uuid, $2::uuid, $3, repeat('x', 201))",
+		"SELECT business.job_attention($1::uuid, $2::uuid, $3, '')::int",
+	} {
+		if _, err := f.pool.Exec(ctx, sql, id, worker, gen); dbtest.SQLState(err) != "22023" {
+			t.Errorf("%s: %v, want 22023", sql, err)
+		}
+	}
+	if got := f.state(t, id); got.State != "running" || got.Failures != 0 {
+		t.Fatalf("job = %+v, want still running and untouched", got)
 	}
 }

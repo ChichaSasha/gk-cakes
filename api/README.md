@@ -52,23 +52,41 @@ and staging/production reject local hosts and Unix sockets.
 | `PORT`                   | api        | default `8080`                                                                              |
 | `SHUTDOWN_TIMEOUT`       | api, worker | drain budget, default `20s`                                                                |
 | `PAYMENT_SECRET`         | api        | optional until its adapter exists; live keys only in production, test keys only elsewhere   |
-| `PAYMENT_WEBHOOK_SECRET`, `EMAIL_API_KEY`, `EMAIL_WEBHOOK_SECRET`, `STORAGE_WRITE_KEY` | api | optional until their adapters exist; redacted |
+| `PAYMENT_WEBHOOK_SECRET`, `STORAGE_WRITE_KEY` | api | optional until their adapters exist; redacted |
+| `EMAIL_WEBHOOK_SECRET`   | api        | Resend webhook signing secret (`whsec_` + base64), redacted; when set, the API serves `POST /webhooks/email`, otherwise that path is 404 |
+| `EMAIL_API_KEY`          | worker     | Resend sending key (`re_...`), redacted; see email dispatch below                          |
+| `RECOVERY_B2_KEY_ID`, `RECOVERY_B2_KEY` | worker | B2 application key for the recovery journal (key secret redacted); scope enforced at start, see [Recovery journal](#recovery-journal-k11-gk-024) |
+| `RECOVERY_ENCRYPTION_KEYS` | worker   | journal encryption keys `kid:base64(32 bytes)[,...]`, redacted                              |
 
-Not consumed yet: `AUTH_*` issuer/audience/JWKS settings (GK-021) and B2 recovery
-settings (GK-024). They are added, with validation, by the tickets that use them.
+Email dispatch: the four worker variables above are required in staging and
+production; in local and test they are set together or not at all, and a worker
+without them sends no email (notification jobs are retried and then reach
+attention). At start the worker checks the B2 key's scope and reachability and
+exits with status 1 if the journal is not usable: no email is sent without it.
+The API still accepts an `EMAIL_API_KEY` but does not use it.
 
-API endpoints: `GET /healthz` (liveness), `GET /readyz` (database reachable).
+Not consumed yet: `AUTH_*` issuer/audience/JWKS settings (GK-021). They are added,
+with validation, by the ticket that uses them.
 
-### Secret inventory (proposed until GK-013/GK-034 configure the stores)
+API endpoints: `GET /healthz` (liveness), `GET /readyz` (database reachable),
+`POST /webhooks/email` (Resend events, Svix-signed; only with `EMAIL_WEBHOOK_SECRET`).
+
+### Secret inventory
 
 Values never enter Git, Trello, logs or the UI. Owner for every entry: Creator
-(Sasha), who holds the provider accounts.
+(Sasha), who holds the provider accounts. Staging is configured (GK-034);
+production stores wait for the first authorized production release (GK-036).
 
 | Secret                   | Scope                               | Storage location                                  | Rotation                                                        | Revocation                                   |
 | ------------------------ | ----------------------------------- | ------------------------------------------------- | --------------------------------------------------------------- | -------------------------------------------- |
-| `DATABASE_URL` (api)     | `gk_api` login, one per environment | API service variables (Railway, per environment)  | `ALTER ROLE <login> PASSWORD`, update the variable, redeploy    | `ALTER ROLE <login> NOLOGIN` or drop it      |
+| `DATABASE_URL` (api)     | `gk_api` login, one per environment | API service variables (Railway, per environment; staging login `gk_api_staging`; seal the variable) | `ALTER ROLE <login> PASSWORD`, update the variable, deploy the staged change | `ALTER ROLE <login> NOLOGIN` or drop it      |
 | `DATABASE_URL` (worker)  | `gk_worker` login, one per environment | worker/cron service variables                  | as above                                                        | as above                                     |
-| `MIGRATION_DATABASE_URL` | migration credential                | protected CI migration environment only           | rotate the password of the same role (see below)                | rotate; runtime services never hold it       |
+| `EMAIL_API_KEY`          | Resend sending-only key restricted to `gkcake.com`, one per environment | worker service variables (sealed); Bitwarden | create a new key in Resend, update the variable, redeploy, delete the old key | delete the key in Resend |
+| `RECOVERY_B2_KEY_ID`, `RECOVERY_B2_KEY` | B2 key: one bucket, prefix `recovery/`, list/read/write only (no delete) | worker service variables (sealed); Bitwarden | create a new key with the B2 CLI, update the variables, redeploy, delete the old key | delete the key in B2 |
+| `EMAIL_WEBHOOK_SECRET`   | signing secret of the Resend webhook endpoint for this environment's API | API service variables (sealed) | replace the endpoint's secret in Resend, update the variable and redeploy promptly (deliveries signed with a secret the API does not have are refused and retried by Resend) | delete the webhook endpoint in Resend |
+| `RECOVERY_ENCRYPTION_KEYS` | seals journal envelopes; one list per environment | worker service variables (sealed) **and** Bitwarden (envelopes are unreadable without it) | prepend a new `kid:key`, keep the old ones listed (they still open older envelopes) | never drop a key while envelopes sealed with it are retained |
+| `MIGRATION_DATABASE_URL` | migration credential (used by `gk-migrate` in deploys and by the manual Email proof workflow) | GitHub environment secret, staging: `STAGING_MIGRATION_DATABASE_URL` | rotate the password of the same role (see below)                | rotate; runtime services never hold it       |
+| `RAILWAY_STAGING_TOKEN`  | Railway project token, staging environment only | GitHub environment `staging` secret (deployable from `main` only) | regenerate in Railway, update the secret                  | delete the token in Railway                  |
 | Provider secrets         | per provider account and environment | API service variables                            | provider dashboard, update the variable, redeploy               | revoke the key in the provider dashboard     |
 
 The migration credential should stay one stable role (on Supabase, `postgres`)
@@ -84,8 +102,8 @@ are provisioned per environment outside Git and granted exactly one group:
 | Group       | Purpose                       | Privileges                                                  |
 | ----------- | ----------------------------- | ----------------------------------------------------------- |
 | `gk_owner`  | owns business objects         | never granted to runtime; migration credential may `SET ROLE` |
-| `gk_api`    | API runtime                   | schema `USAGE`; gateway functions as features add them      |
-| `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions |
+| `gk_api`    | API runtime                   | schema `USAGE`; `EXECUTE` on `email_event_record` (webhook evidence); more gateway functions as features add them |
+| `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions (`job_claim`, `job_heartbeat`, `job_complete`, `job_release`, `job_fail`, `job_attention`) and the lease-fenced notification gateway (`notification_dispatch_begin`, `notification_attempt_record`, `notification_recovery_*`) |
 | `gk_backup` | backup reader                 | `SELECT` on business tables                                 |
 
 The migration credential needs `CREATEROLE` and `CREATE` on the database.
@@ -106,18 +124,370 @@ FROM pg_roles WHERE rolname = '<login>';
 ```
 
 `gk-migrate` applies files once, in order, under an advisory lock. Applied files
-are immutable (checksummed), and an older build refuses to run against a database
-with newer migrations. Never add destructive down migrations.
+are immutable (checksummed). An older build on a newer database (a rollback)
+checks that its own migrations are all applied unchanged and that every newer
+version sorts after its own, then applies nothing and exits 0 ("database is ahead
+of this build"); any other mismatch is refused as diverged histories. Migrations
+are forward-only: never add down migrations, and keep each one compatible with the
+previous release (expand now, contract only once no supported release needs the
+old shape).
+
+## Releases and deployment (GK-034)
+
+UI and API are built once for each `main` commit that is still the head of
+`main` when its CI passes, as `ghcr.io/chichasasha/gk-cakes-{api,ui}:sha-<commit>`
+(labelled `org.opencontainers.image.revision=<commit>`), and deployed by digest;
+nothing is rebuilt at deploy time. Commits superseded before their CI finished
+get no image and cannot be released. Workflows: `.github/workflows/staging.yml` and
+`release.yml`.
+
+- **Staging, automatic.** A green Components run on a push to `main` publishes
+  (or reuses) both images, runs the compatibility matrix, and deploys them while
+  that commit is still the head of `main`: API first (migrate once, then Railway
+  behind `/readyz`), then UI (behind `/healthz`). Each deploy ends with `.github/scripts/smoke.sh` against the
+  public URLs and is recorded as a GitHub deployment
+  (`staging-api` / `staging-ui`, payload `version` and `artifact_digest`; task
+  `deploy` for main deploys, `deploy:release` for releases).
+- **Worker.** After a successful API deploy (main or release), `deploy-worker`
+  deploys the same API image to the worker's own Railway service with the start
+  command `/usr/local/bin/gk-worker` and no health check or public domain. It
+  refuses a `RAILWAY_WORKER_SERVICE_ID` equal to the API or UI service (the
+  start command persists on a service). It then watches for 90 seconds: the
+  deployment must stay SUCCESS and keep running its first instance. Railway
+  restarts a crashed process under its restart policy without leaving SUCCESS,
+  so a second instance execution, or one that crashed, exited or is restarting,
+  fails the deploy (the service runs one replica, so two running executions
+  mean a restart). The worker exits at start when its email or recovery-journal
+  settings are wrong. If the token cannot read instance executions (after five
+  consecutive errors), or the deployment never appears among them, the check
+  falls back to the status and prints a GitHub warning. It is off until
+  `STAGING_WORKER_ENABLED` is `true` and is recorded as `staging-worker` (not
+  read by the release gate).
+- **Release.** Publish a GitHub release tagged `api-vX.Y.Z` or `ui-vX.Y.Z` on a
+  `main` commit. The gate (`gk-release-gate`) deploys only that component and only
+  if the tag points at a commit on `main` with a successful main CI run, the
+  registry image for that commit exists and carries that commit in its revision
+  label, the same release is not already deployed successfully (replay: skip) and
+  no release record of a higher version of that component exists in the target,
+  whatever its status, since a failed attempt may still be live (downgrade: deny).
+  A **prerelease** goes to staging, where the verify-release job repeats the
+  artifact, replay and downgrade checks; it runs in the `deploy-staging`
+  concurrency group, so it is ordered with every staging deploy. A **full
+  release** targets production, which stays disabled until GK-036; its deploy job
+  must repeat these checks inside its own serialized section.
+- **Queued runs.** GitHub keeps one pending run per concurrency group: a queued
+  staging run can be superseded by a newer one before it starts (never while it
+  runs, so a migration is not cancelled). A superseded release run fails and can
+  be re-run.
+- **Rollback.** Publish a new, higher tag pointing at the older commit (for
+  example `ui-v1.4.1` at the commit of `ui-v1.3.0`). Lower tags are refused. An API
+  rollback keeps the newer schema and data: the older `gk-migrate` applies nothing.
+  Builds from before this behaviour (staging deploys up to `c24c709`, including
+  `api-v0.0.1`/`api-v0.0.2`) still refuse a newer schema, so they are not
+  rollback targets once a migration has been added; while staging runs one, the
+  compatibility matrix blocks deploying a new migration.
+- **Compatibility matrix (AC2).** `.github/scripts/compat-matrix.sh` runs the
+  deployed and candidate images against a disposable PostgreSQL, migrated by a
+  non-superuser database owner as on Supabase, in deploy order:
+  1. deployed `gk-migrate`, runtime logins, a seeded job, deployed API ready;
+  2. candidate `gk-migrate`: business tables keep their rows, and the business
+     schema keeps every column (type, NOT NULL), column default, function
+     (signature, SECURITY DEFINER) and effective runtime-group privilege it had
+     (additions are fine); a run that applies nothing must change nothing; the
+     deployed API stays ready;
+  3. candidate API ready on the result;
+  4. deployed `gk-migrate` again: succeeds and changes nothing (rollback);
+  5. both API builds allow only the UI origin (CORS);
+  6. both `gk-worker` builds claim and release a job freshly enqueued through
+     `job_enqueue` on the result, via `job_claim` / `job_release`, without errors;
+  7. both UI builds serve `/healthz` and the home page.
+
+  In a rollback the candidate is the older build, so the same steps check the
+  other direction. It runs in staging (`compatibility-matrix`, before any
+  deploy; both deploy jobs require it) and on pull requests (`compat` in
+  `components.yml`, the PR's images against what staging runs; not a required
+  check yet). Images are resolved by `.github/scripts/resolve-images.sh`. Limits:
+  - "Deployed" is the newest staging record with a successful status; a deploy
+    marked failed while live is not the baseline. The lookup fails closed when
+    records exist but none of the newest 100 succeeded; recover by deleting the
+    stale failed records (mark them inactive, then delete them).
+  - A release of one component needs a successful record of the other.
+  - API readiness is a database ping, and the UI calls no API endpoint yet:
+    features that add UI→API calls or new runtime database use must extend the
+    script's checks.
+  - Removing or changing any existing line of that schema contract fails the
+    matrix (additions pass), so the first contract migration must add a
+    reviewed exception mechanism.
+
+`gk-release-gate` exit status: `0` deploy, skip or verified; `3` denied, not
+verified or a downgrade; `4` verified but already deployed; `1` error.
+
+Limits of the record-based checks:
+
+- Records created before release records had their own task (the `api-v0.0.1`
+  and `ui-v0.0.1` staging test prereleases) are not considered: re-running those
+  two releases would deploy them again, and `*-v0.0.0` would pass.
+- A mistaken high tag (say `ui-v10.0.0`) that gets recorded forces every later
+  release of that component above it. The only other way out is deleting that
+  deployment record (mark it inactive, then delete it; needs `deployments:write`).
+- Each environment can hold fewer than 5000 release records (50 pages); at
+  5000 the checks fail closed until old records are deleted.
+
+Staging configuration (all nonsecret unless noted):
+
+| Name | Where | Purpose |
+| --- | --- | --- |
+| `STAGING_API_ENABLED` | repository variable | `true` enables API deploys (migrations run first) |
+| `STAGING_WORKER_ENABLED` | repository variable | `true` enables worker deploys and the email proof workflow |
+| `RAILWAY_WORKER_SERVICE_ID` | `staging` environment variable | worker deploy target |
+| `RAILWAY_ENVIRONMENT_ID`, `RAILWAY_API_SERVICE_ID`, `RAILWAY_UI_SERVICE_ID` | `staging` environment variables | deploy targets |
+| `RAILWAY_PROJECT_ID` | `staging` environment variable | reference only; not read by the workflows |
+| `STAGING_API_URL`, `STAGING_UI_URL` | `staging` environment variables | public smoke check, `https://<host>` without a trailing slash |
+| `RAILWAY_STAGING_TOKEN`, `STAGING_MIGRATION_DATABASE_URL` | `staging` environment secrets | see the secret inventory |
+
+Railway and Cloudflare notes from the first staging setup:
+
+- Railway variable edits are staged until **Deploy** is pressed on the
+  staged-changes banner (Option-click commits without a Railway redeploy). The
+  pipeline deploys only committed settings, so an unapplied variable is missing
+  at runtime.
+- A custom domain added before the service's first deploy may target the wrong
+  port; check it under Settings → Networking after the first deploy.
+- The staging hostnames are proxied by Cloudflare; Railway needs the zone's
+  SSL/TLS mode set to **Full** (not Flexible, not Full (Strict)).
+
+## Verified on the Supabase sandbox (staging, 2026-11-03)
+
+- TLS `verify-full` through the IPv4 session pooler with
+  `sslrootcert=/etc/gk/supabase-root-2021.crt` (bundled in the image), for both
+  the migration credential and the `gk_api_staging` runtime login.
+- Migrations `0001` and `0002` applied, which also confirms PostgreSQL 16 or later
+  (`GRANT ... WITH INHERIT FALSE, SET TRUE`).
+
+## Recovery journal (K11, GK-024)
+
+`internal/recovery` implements the minimal confirmed-order recovery protocol
+from [K11](../docs/design/contracts.md#k11--confirmed-order-recovery-contract)
+for outgoing dispatches (email now; payments and refunds later). Accepted
+order commands (confirmation, changes) are designed with GK-025 and are not
+supported yet. Every dispatch runs through `Coordinator.Dispatch`:
+
+1. reserve it in `business.recovery_operation`: one unresolved operation per
+   aggregate (`ErrBusy`), prior versions only increase (`ErrStale`);
+2. write the encrypted **prepared** envelope to B2 (reusing a copy already
+   there) and wait for B2's checksum acknowledgment, then mark it `prepared`;
+3. run the effect, only while outgoing effects are not frozen (checked again
+   right before it); an error means the outcome is unknown and the operation
+   stays `prepared`;
+4. record the outcome (`committed`), write the encrypted **outcome**
+   envelope, then mark it `secured`.
+
+Rules for callers:
+
+- The payload is the exact provider request (account, environment,
+  idempotency key, from, reply-to, recipient, subject, rendered body). After a
+  primary database loss it is the only copy, and the effect must be rebuilt
+  from it alone: Resend rejects a repeated key with a different body.
+- `ReplayUntil` is fixed at the first reservation, below the provider window
+  (for Resend's 24 hours: first dispatch + at most 23 hours), and can never be
+  extended. Until then a resumed dispatch repeats the identical request; from
+  then on an unknown outcome goes to `reconcile`, never to a new send. An
+  effect outcome that cannot be recorded also goes to `reconcile`.
+- Use the dispatch's own intent (for example the notification intent) as the
+  aggregate, not the order, so an unresolved email never blocks order work.
+  A successor resend uses the next prior version after `Coordinator.Resolve`
+  records the manager's outcome for the reconciling one.
+- Store phases on an autocommit connection or pool (`NewSQLStore` refuses a
+  transaction): no lock or transaction is held across B2 or provider calls.
+  Serialize work on one operation with the job lease.
+
+`Coordinator.Pending` lists prepared operations without an outcome from B2
+alone, so after a primary database loss they can be resumed against a
+restored database. A `reconcile` decision is not journalled: after a loss the
+deadline check reproduces an expired one, and an operation sent to `reconcile`
+because its outcome could not be recorded is attempted again with the same
+identity (provider-idempotent within the window) and goes to `reconcile` again
+if its outcome still cannot be recorded. `CopyBlob` stores an essential
+attachment's bytes before its reference is committed.
+
+Envelopes (format version 2) carry the payload as opaque bytes, so a replay
+gets exactly the stored request back; reusing an existing prepared envelope
+requires the same payload and replay deadline, so a resume can never extend the
+provider window.
+
+Objects live under `recovery/<APP_ENV>/` in the sandbox bucket
+`gk-cakes-sandbox-backups-flbgymxjelzexgoxrcss`:
+`op/<aggregate>/<prior version>-<operation>.{prepared,outcome}` and
+`blob/<kid>-<keyed hash>`. Names contain only IDs, versions and keyed hashes.
+Contents are AES-256-GCM sealed in the application and bound to their object
+name, on top of B2's SSE-B2; the bucket keeps all versions, and the journal
+never deletes.
+
+Setup requirements (the code refuses any other key):
+
+- **B2 application key:** restricted to that one bucket and the name prefix
+  `recovery/` (or exactly `recovery/<APP_ENV>/`), with `listFiles`, `readFiles`
+  and `writeFiles` plus at most read-only capabilities: no `deleteFiles`, bucket
+  settings, retention or sharing. The B2 web console's access presets include
+  delete, so create it with the B2 CLI, for example
+  `b2 key create --bucket gk-cakes-sandbox-backups-flbgymxjelzexgoxrcss
+  --name-prefix recovery/ gk-recovery-staging listFiles,readFiles,writeFiles`.
+- **Encryption key:** `kid:base64(32 random bytes)`, for example `k1:` followed
+  by `openssl rand -base64 32`. Keep it in Bitwarden as well as the service
+  variables: without it the envelopes cannot be read. A comma-separated list
+  rotates keys (the first seals, all open).
+
+The tables and functions are owner-internal: domain gateway functions call
+them in the same transaction as their own state change, and no runtime role
+can call them directly (`gk_backup` may read the tables, as every business
+table). Restore tooling (as `gk_owner`) freezes all outgoing effects with
+`business.recovery_set_freeze(true, reason)`.
+
+Not yet:
+
+- B2 Object Lock retention, restore tooling and the restore drill (GK-034
+  Milestone B, GK-035). The restore tooling must replay the journal before
+  workers resume: a restored database can re-anchor a notice's window (the
+  existing prepared envelope then refuses the resume), and an existing outcome
+  envelope should be adopted rather than replayed;
+- K09 retention for the journal: it keeps recipients and message bodies (and
+  later essential photos) until deleted, and this key cannot delete. Keeping
+  only current copies of still-retained records, 30-day restore points and
+  deletion tombstones carried into replay belong to GK-034 Milestone B with
+  the retention work.
+
+## Transactional email (K08, GK-024)
+
+`internal/notifications` sends transactional email through Resend from the
+worker, protected by the recovery journal above. No marketing or bulk sending.
+
+**Enqueue.** A domain gateway function calls the owner-internal
+`business.notification_enqueue` inside the transaction that commits its business
+transition, so the notification intent, its job and a `notification.queued`
+audit event exist exactly when the transition does: a rollback leaves none of
+them, and no enqueue happens after commit. The application builds the notice
+with `notifications.NewNotice`: sender `GK Cakes <orders@gkcake.com>`, Reply-To
+`gk.cake.london@gmail.com`, one bare recipient address, subject at most 200
+characters without CR/LF, text body, optional HTML, and a Resend tag with the
+intent ID. The exact payload (environment, idempotency key and request) is
+stored once with its SHA-256; recipient and content are frozen, so later profile
+changes never retarget it. One intent per transition, recipient and template
+revision (a second is refused).
+
+**Dispatch.** The worker claims the job and calls only the gateway functions.
+Each one that changes state or admits a call checks the live lease (owner,
+generation, unexpired; `GK001` otherwise) and that the recovery operation is
+exactly the intent's (operation = idempotency key, aggregate = intent, payload
+hash = stored payload). The first dispatch fixes `first_dispatch_at` and
+`replay_until` (+23 hours, below Resend's 24-hour idempotency retention). The
+prepared envelope is in B2 before the provider call. Right before each call,
+`notification_dispatch_admit` re-checks the restore freeze, a revocation and the
+window on the database clock; only then are the stored request bytes sent, in
+canonical form, with the `Idempotency-Key` header (5 s timeout). Every call is
+appended to `business.notification_attempt`, even when the worker's lease was
+lost meanwhile (the call happened). A row is one call made by the worker: Go's
+HTTP client may transparently resend a POST that carries an `Idempotency-Key`
+when a reused keep-alive connection drops before any response, which Resend
+deduplicates by key.
+
+| Provider response                                     | Attempt     | Intent                     | Job                          |
+| ----------------------------------------------------- | ----------- | -------------------------- | ---------------------------- |
+| 2xx with message ID                                   | `accepted`  | `accepted` (message ID)    | completed                    |
+| 400/422 with a content error name (`validation_error`, `missing_required_field`, ...) | `rejected` | `failed` (`unknown` after an unknown attempt) | attention (recipient did not get it; not retried) |
+| 429, 409 concurrent request                           | `deferred`  | unchanged                  | retry                        |
+| timeout, connection loss, 5xx, other                  | `unknown`   | `unknown`                  | retry (same key and body)    |
+| 401/403/404/405; 400/422 invalid API key, invalid idempotency key or unrecognised | `refused` | unchanged | attention (fix, then requeue)|
+| 409 key used with a different body                    | `conflict`  | `unknown`                  | attention                    |
+
+Retries come after 1m, 5m, 15m and 1h (`business.job_fail`); the fifth
+failure moves the job to attention for a manager, who can re-admit it with
+`business.job_requeue` (owner tooling). An unknown outcome is replayed with the
+original key until `replay_until`; after that it goes to `reconcile` and
+attention and is never sent again blindly, requeued or not. A restore freeze
+defers dispatch (5 minutes, not a failure) without starting the window. A
+revoked recipient (`business.notification_suspend`, audited with the intent's
+state at that moment) is never sent to, including replays of an unknown
+dispatch and a revocation that lands while the dispatch is being prepared. A
+payload of another environment or sender, or not in canonical form, is refused
+before any call.
+
+**Provider evidence (webhook).** Resend posts email events to
+`POST /webhooks/email` (configure the endpoint `https://<api host>/webhooks/email`
+in Resend with the events `email.sent`, `email.delivered`,
+`email.delivery_delayed`, `email.complained`, `email.bounced`, `email.failed`,
+`email.suppressed`). The API checks the Svix signature over the raw body
+(`svix-id`, `svix-timestamp` within 5 minutes, `v1` HMAC-SHA256 with the
+signing secret; 401 otherwise; bodies over 256 KiB are 413), then
+`business.email_event_record` stores the event and applies it in one
+transaction before the API answers 200; a storage failure is 503, so Resend
+retries with the same `svix-id`, which deduplicates.
+
+- Webhooks are account-wide: every request carries the tags `intent` and `env`,
+  and the API stores only events tagged with its own `APP_ENV`. Untagged events
+  (for example auth emails), opens, clicks and non-email events are acknowledged
+  and ignored.
+- Correlation is by provider message ID, or by the intent tag when the
+  acceptance response was lost. A tag and message ID pointing at different
+  intents or messages is a `conflict`; an unknown intent is `unmatched`
+  (pending correlation). Neither changes an intent.
+- Evidence only moves an intent forward: `sending`/`unknown` < `accepted`
+  (`email.sent`) < `delivered_to_server` (`email.delivered`,
+  `email.complained`) < `failed` (`email.failed`, `email.suppressed`) =
+  `bounced` (`email.bounced`). A later, milder event never overwrites a
+  bounce or failure, the worker's own acceptance never overwrites delivery
+  evidence, and a queued intent is never changed. Every event is kept.
+- The intent row is locked while an event is applied and the update repeats
+  the rank check, so two different events for one email arriving together
+  still apply in turn. A bounce or failure found this way is audited
+  (`notification.adverse_evidence`, no personal data).
+- Parsing is lenient beyond the event type: an unexpected field shape is
+  dropped, not refused, so a signed delivery never fails forever (repeated
+  failures would make Resend disable the endpoint). Only a body that is not a
+  JSON object with a plausible `type` is 400.
+- `business.email_event` keeps the event type, times, IDs, correlation, the
+  applied state, bounce/failure/suppression categories and the payload hash;
+  never recipients, subjects, diagnostic codes or provider messages.
+
+The engine never claims inbox delivery or reading. Logs and stored evidence
+carry IDs, HTTP status and the provider's error name only, never recipients,
+content or provider error messages.
+
+**Sandbox proof (AC3).** The manual workflow `.github/workflows/email-proof.yml`
+(`staging` environment, `main` only, needs `STAGING_WORKER_ENABLED`) runs
+`cmd/gk-email-proof`:
+- with the migration credential, it enqueues controlled notices as a domain
+  transaction would: to `delivered+<run>@resend.dev` and `bounced+<run>@resend.dev`,
+  and optionally to the business mailbox for the display-name check;
+- it waits for `delivered_to_server` and `bounced` evidence from the real
+  worker and webhook;
+- it checks that `/webhooks/email` refuses unsigned, forged and stale (401) and
+  oversized (413) deliveries, none of them stored, and matches each refusal to
+  the reason the API logged (`missing or malformed signature headers`,
+  `no matching signature`, `timestamp outside the tolerance`, and the access
+  log's 413), so the stale probe proves the timestamp check, not just a bad
+  signature;
+- it scans the staging environment's logs (Railway, the window since the run
+  started) for the recipients, their local parts, the subject and the run
+  label (which is also in the body). This run's dispatch and recorded webhook
+  lines, carrying its intent IDs, must be present, so an empty, unrelated or
+  partial log cannot pass. The scan waits for log indexing and retries.
+
+Result **pass** means everything above was shown. **Fail** means some evidence
+contradicts AC3. **Incomplete** (also a failed run) means the logs could not be
+read or the window was truncated; the workflow's `skip_logs` input explicitly
+accepts a run without the log checks. The report in the job summary carries
+IDs, states and counts only. Each run sends two or three emails against the
+Resend Free quota.
+
+Not yet: manager reconcile/resend and custom-message endpoints, and showing or alerting
+managers about adverse evidence beyond the audit trail (GK-024 Milestone B,
+after GK-021 and GK-023/025); after a restore, re-correlating `unmatched`
+events and applying `matched` events that arrived while their intent was
+still `queued` (GK-034 Milestone B).
 
 ## Not yet verified
 
-These need scoped Supabase sandbox access, which the bootstrap did not have:
-
-- TLS `verify-full` against the real sandbox endpoint (CA provisioning via
-  `sslrootcert` if required). The client-side behaviour is tested locally.
 - Runtime-role denial and the gateway on the sandbox. They are proven on
   PostgreSQL 17.11 only.
-- Server major version: migrations need PostgreSQL 16 or later
-  (`GRANT ... WITH INHERIT FALSE, SET TRUE`); 17 is assumed.
 - Whether Supabase's pooler forwards the `statement_timeout`/`lock_timeout`
   startup parameters (direct connections do).

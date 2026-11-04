@@ -12,6 +12,7 @@ import (
 	"github.com/ChichaSasha/gk-cakes/api/internal/config"
 	"github.com/ChichaSasha/gk-cakes/api/internal/database"
 	"github.com/ChichaSasha/gk-cakes/api/internal/httpapi"
+	"github.com/ChichaSasha/gk-cakes/api/internal/notifications"
 )
 
 func main() {
@@ -37,7 +38,21 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("api listening", "addr", ln.Addr().String(), "env", string(cfg.Env))
-	handler := httpapi.NewHandler(httpapi.Options{UIOrigin: cfg.UIOrigin, DB: pool, Logger: logger})
+	opts := httpapi.Options{UIOrigin: cfg.UIOrigin, DB: pool, Logger: logger}
+	if cfg.Providers.EmailWebhookSecret.IsSet() {
+		webhook, err := notifications.NewWebhook(notifications.WebhookConfig{
+			DB: pool, Secret: cfg.Providers.EmailWebhookSecret.Reveal(), Environment: string(cfg.Env), Logger: logger,
+		})
+		if err != nil {
+			logger.Error("email webhook", "error", err.Error())
+			os.Exit(2)
+		}
+		opts.EmailWebhook = webhook
+		logger.Info("email webhook enabled", "path", "/webhooks/email")
+	} else {
+		logger.Info("email webhook not configured; /webhooks/email is not served")
+	}
+	handler := httpapi.NewHandler(opts)
 	if err := httpapi.Serve(ctx, ln, handler, cfg.ShutdownTimeout); err != nil {
 		logger.Error("serve", "error", err.Error())
 		os.Exit(1)

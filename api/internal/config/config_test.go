@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -170,7 +171,7 @@ func TestSecretsNeverFormatOrMarshal(t *testing.T) {
 		"PAYMENT_SECRET":         "sk_test_" + canary,
 		"PAYMENT_WEBHOOK_SECRET": "whsec_" + canary,
 		"EMAIL_API_KEY":          "re_" + canary,
-		"EMAIL_WEBHOOK_SECRET":   "whsec_" + canary,
+		"EMAIL_WEBHOOK_SECRET":   webhookSecret,
 		"STORAGE_WRITE_KEY":      canary,
 	})))
 	if err != nil {
@@ -190,7 +191,7 @@ func TestSecretsNeverFormatOrMarshal(t *testing.T) {
 		"json": string(encoded),
 	}
 	for format, out := range outputs {
-		if strings.Contains(out, canary) || strings.Contains(out, fmt.Sprintf("%x", canary)) {
+		if strings.Contains(out, canary) || strings.Contains(out, fmt.Sprintf("%x", canary)) || strings.Contains(out, webhookSecret[len("whsec_"):]) {
 			t.Errorf("%s output leaks a secret value: %s", format, out)
 		}
 	}
@@ -220,6 +221,82 @@ func TestLoadWorkerUsesOwnDatabaseCredential(t *testing.T) {
 	}))
 	if err == nil || strings.Contains(err.Error(), canary) {
 		t.Fatalf("production worker without TLS verification: err = %v", err)
+	}
+}
+
+var validEmailDispatch = map[string]string{
+	"EMAIL_API_KEY":            "re_" + canary,
+	"RECOVERY_B2_KEY_ID":       "0051a2b3c4d5e6f0000000001",
+	"RECOVERY_B2_KEY":          "K005" + canary,
+	"RECOVERY_ENCRYPTION_KEYS": "k1:" + canary,
+}
+
+var validStagingWorker = map[string]string{
+	"APP_ENV":      "staging",
+	"DATABASE_URL": "postgresql://gk_worker:" + canary + "@db.example.supabase.co:5432/postgres?sslmode=verify-full",
+}
+
+func TestLoadWorkerEmailDispatch(t *testing.T) {
+	cfg, err := LoadWorker(env(merge(validStagingWorker, validEmailDispatch)))
+	if err != nil {
+		t.Fatalf("valid staging worker rejected: %v", err)
+	}
+	if !cfg.Email.Enabled() || cfg.Email.B2KeyID != validEmailDispatch["RECOVERY_B2_KEY_ID"] ||
+		cfg.Email.B2Key.Reveal() != validEmailDispatch["RECOVERY_B2_KEY"] || cfg.Email.EncryptionKeys.Reveal() != validEmailDispatch["RECOVERY_ENCRYPTION_KEYS"] {
+		t.Fatalf("email dispatch not loaded: %+v", cfg.Email)
+	}
+	for _, out := range []string{fmt.Sprintf("%+v", cfg), fmt.Sprintf("%#v", cfg.Email)} {
+		if strings.Contains(out, canary) {
+			t.Errorf("formatted configuration leaks a secret: %s", out)
+		}
+	}
+	local := map[string]string{"APP_ENV": "local", "DATABASE_URL": "postgres://gk_worker:" + canary + "@localhost/gk"}
+	if cfg, err := LoadWorker(env(local)); err != nil || cfg.Email.Enabled() {
+		t.Fatalf("local worker without email: enabled %v, err %v; want accepted and disabled", cfg.Email.Enabled(), err)
+	}
+
+	cases := []struct {
+		name    string
+		env     map[string]string
+		mention string
+	}{
+		{"staging without email dispatch", validStagingWorker, "required in staging"},
+		{"production without email dispatch", merge(validStagingWorker, map[string]string{"APP_ENV": "production"}), "required in production"},
+		{"staging missing the encryption keys", merge(merge(validStagingWorker, validEmailDispatch), map[string]string{"RECOVERY_ENCRYPTION_KEYS": ""}), "RECOVERY_ENCRYPTION_KEYS"},
+		{"local with only the API key", merge(local, map[string]string{"EMAIL_API_KEY": "re_" + canary}), "set together"},
+		{"local with only the journal", merge(local, map[string]string{"RECOVERY_B2_KEY_ID": "005abc", "RECOVERY_B2_KEY": canary, "RECOVERY_ENCRYPTION_KEYS": canary}), "set together"},
+		{"not a Resend key", merge(merge(validStagingWorker, validEmailDispatch), map[string]string{"EMAIL_API_KEY": "sk_" + canary}), "EMAIL_API_KEY"},
+		{"malformed B2 key ID", merge(merge(validStagingWorker, validEmailDispatch), map[string]string{"RECOVERY_B2_KEY_ID": "005/" + canary}), "RECOVERY_B2_KEY_ID"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := LoadWorker(env(tc.env))
+			if err == nil {
+				t.Fatal("invalid worker configuration accepted")
+			}
+			if !strings.Contains(err.Error(), tc.mention) {
+				t.Errorf("error %q does not mention %s", err, tc.mention)
+			}
+			if strings.Contains(err.Error(), canary) {
+				t.Errorf("error leaks a secret value: %q", err)
+			}
+		})
+	}
+}
+
+// webhookSecret is a valid Svix signing secret used as a leak canary.
+var webhookSecret = "whsec_" + base64.StdEncoding.EncodeToString([]byte("c4n4ry-webhook-key-0123"))
+
+func TestLoadAPIWebhookSecret(t *testing.T) {
+	cfg, err := LoadAPI(env(merge(validLocalAPI, map[string]string{"EMAIL_WEBHOOK_SECRET": webhookSecret})))
+	if err != nil || cfg.Providers.EmailWebhookSecret.Reveal() != webhookSecret {
+		t.Fatalf("valid webhook secret: %v", err)
+	}
+	for _, bad := range []string{"whsec_" + canary, "c4n4ry" + webhookSecret, "whsec_" + base64.StdEncoding.EncodeToString([]byte("short"))} {
+		_, err := LoadAPI(env(merge(validLocalAPI, map[string]string{"EMAIL_WEBHOOK_SECRET": bad})))
+		if err == nil || !strings.Contains(err.Error(), "EMAIL_WEBHOOK_SECRET") || strings.Contains(err.Error(), canary) {
+			t.Errorf("invalid webhook secret: err = %v", err)
+		}
 	}
 }
 

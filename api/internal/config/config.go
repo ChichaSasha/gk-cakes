@@ -4,10 +4,12 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -83,7 +85,23 @@ type Worker struct {
 	Env             Env
 	DatabaseURL     Secret
 	ShutdownTimeout time.Duration
+	Email           EmailDispatch
 }
+
+// EmailDispatch configures the worker's email engine: the Resend sending key
+// and the independent recovery journal every dispatch is written to first
+// (a B2 application key restricted to recovery/ and the envelope encryption
+// keys). Required in staging and production; elsewhere all or none are set,
+// and without them the worker dispatches no email.
+type EmailDispatch struct {
+	APIKey         Secret
+	B2KeyID        string
+	B2Key          Secret
+	EncryptionKeys Secret
+}
+
+// Enabled reports whether email dispatch is configured.
+func (e EmailDispatch) Enabled() bool { return e.APIKey.IsSet() }
 
 // Migrate is the configuration of the migration command. It never falls back
 // to the runtime DATABASE_URL.
@@ -107,7 +125,7 @@ func LoadAPI(getenv func(string) string) (API, error) {
 		PaymentSecret:        l.paymentSecret("PAYMENT_SECRET", cfg.Env),
 		PaymentWebhookSecret: l.optionalSecret("PAYMENT_WEBHOOK_SECRET"),
 		EmailAPIKey:          l.optionalSecret("EMAIL_API_KEY"),
-		EmailWebhookSecret:   l.optionalSecret("EMAIL_WEBHOOK_SECRET"),
+		EmailWebhookSecret:   l.webhookSecret("EMAIL_WEBHOOK_SECRET"),
 		StorageWriteKey:      l.optionalSecret("STORAGE_WRITE_KEY"),
 	}
 	return cfg, l.err()
@@ -122,7 +140,39 @@ func LoadWorker(getenv func(string) string) (Worker, error) {
 		ShutdownTimeout: l.duration("SHUTDOWN_TIMEOUT", defaultShutdownTimeout),
 	}
 	cfg.DatabaseURL = l.databaseURL("DATABASE_URL", cfg.Env)
+	cfg.Email = l.emailDispatch(cfg.Env)
 	return cfg, l.err()
+}
+
+var b2KeyIDPattern = regexp.MustCompile(`^[A-Za-z0-9]{1,64}$`)
+
+func (l *loader) emailDispatch(env Env) EmailDispatch {
+	e := EmailDispatch{
+		APIKey:         l.optionalSecret("EMAIL_API_KEY"),
+		B2KeyID:        l.get("RECOVERY_B2_KEY_ID"),
+		B2Key:          l.optionalSecret("RECOVERY_B2_KEY"),
+		EncryptionKeys: l.optionalSecret("RECOVERY_ENCRYPTION_KEYS"),
+	}
+	set := 0
+	for _, ok := range []bool{e.APIKey.IsSet(), e.B2KeyID != "", e.B2Key.IsSet(), e.EncryptionKeys.IsSet()} {
+		if ok {
+			set++
+		}
+	}
+	const names = "EMAIL_API_KEY, RECOVERY_B2_KEY_ID, RECOVERY_B2_KEY and RECOVERY_ENCRYPTION_KEYS"
+	switch {
+	case set < 4 && env.deployed():
+		l.fail("%s are required in %s", names, env)
+	case set > 0 && set < 4:
+		l.fail("%s must be set together", names)
+	}
+	if e.APIKey.IsSet() && !strings.HasPrefix(e.APIKey.value, "re_") {
+		l.fail("EMAIL_API_KEY must be a Resend API key")
+	}
+	if e.B2KeyID != "" && !b2KeyIDPattern.MatchString(e.B2KeyID) {
+		l.fail("RECOVERY_B2_KEY_ID must be a B2 application key ID")
+	}
+	return e
 }
 
 // LoadMigrate reads migration configuration using getenv.
@@ -259,6 +309,20 @@ func (l *loader) origin(name string, env Env) string {
 }
 
 func (l *loader) optionalSecret(name string) Secret { return Secret{value: l.get(name)} }
+
+// webhookSecret checks a Svix signing secret: "whsec_" and at least 16
+// base64-encoded bytes.
+func (l *loader) webhookSecret(name string) Secret {
+	s := l.optionalSecret(name)
+	if !s.IsSet() {
+		return s
+	}
+	encoded, ok := strings.CutPrefix(s.value, "whsec_")
+	if raw, err := base64.StdEncoding.DecodeString(encoded); !ok || err != nil || len(raw) < 16 {
+		l.fail("%s must be a webhook signing secret (whsec_ followed by base64)", name)
+	}
+	return s
+}
 
 // paymentSecret enforces Stripe key mode: live keys only in production, and
 // production only with live keys. Prefixes per Stripe API key conventions.
