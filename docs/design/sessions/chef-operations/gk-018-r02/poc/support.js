@@ -1,0 +1,42 @@
+// GK-018 r02 — Recovery queue (technical support's home): bounced email flow (Creator answer 5),
+// unknown payment/refund/email results with an audited "check again", and Elina's open to-dos (read only).
+'use strict';
+(function(){
+const states=[['new','Bounce: new'],['flagged','Flagged to Elina'],['fixed','Address fixed'],['resent','Resent']];
+const st=stateParam(states.map(s=>s[0]));
+const o=order('GK-1044');const fixedEmail='mia.d@example.com';
+const isSupport=REVIEW.role==='support',isChef=REVIEW.role==='chef';
+const step=(n,label,who,done,now)=>`<li class="${done?'done':now?'now':''}"><strong>${label}</strong><span class="block small muted">${who}</span></li>`;
+const idx={new:0,flagged:1,fixed:2,resent:3}[st];
+let bounceAction='';
+if(st==='new')bounceAction=can('flag')?`<form class="inline-form" data-flag novalidate><label class="field">Note for Elina (optional)<input name="note" value="Looks like a typo: “exmaple.com”." autocomplete="off"></label><button class="btn btn-primary btn-small" type="submit">Flag to Elina</button></form>`:isChef?`<p class="small">Sasha hasn’t flagged it yet; you can fix the address now.</p>`:'';
+if((st==='new'||st==='flagged')&&can('email'))bounceAction+=`<form class="inline-form" data-fix novalidate><label class="field">Correct email address<input name="email" type="email" value="${fixedEmail}" autocomplete="off"></label><button class="btn btn-primary btn-small" type="submit">Save address</button></form><p class="small muted">Saving doesn’t resend anything: the resend is a separate step (Sasha or you).</p>`;
+if(st==='flagged'&&isSupport)bounceAction+=`<button class="btn btn-small" type="button" disabled aria-describedby="wait-fix">Resend</button><p id="wait-fix" class="role-note">Waiting for Elina to fix the address. You can resend after that.</p>`;
+if(st==='fixed'&&(can('resend-fixed')||can('email')))bounceAction=`<p class="small">Elina changed the address to <code>${fixedEmail}</code> at 10:31.</p><button class="btn btn-primary btn-small" type="button" data-resend>Resend order confirmation to ${fixedEmail}</button>`;
+if(st==='resent')bounceAction=`<p class="banner banner-ok small">${icon('check','banner-icon')}<span>Resent by Sasha at 10:40 to <code>${fixedEmail}</code> · delivered to their email server 10:40. Linked to the bounced attempt.</span></p>`;
+if(!bounceAction)bounceAction=`<p class="role-note">${REVIEW.role==='fulfillment'?'Fulfilment helpers don’t handle emails.':'Nothing for you to do at this step.'}</p>`;
+
+const recheck=(id)=>can('recheck')||isChef?`<button class="btn btn-small" type="button" data-recheck="${id}">Check again with the provider</button>`:'';
+const items=[
+ {kind:'email',title:'Email bounced',order:o,body:`<p class="small">“Order confirmation” to <code>${st==='fixed'||st==='resent'?fixedEmail:esc(o.email)}</code> bounced ${when(o.emails[0][2])}. ${st==='fixed'||st==='resent'?'':'The address looks like a typo (“exmaple.com”).'}</p><ol class="stepper small">${step(1,'Sasha flags it to Elina','Technical support',idx>0,idx===0)}${step(2,'Elina checks with the customer and fixes the address','Chef',idx>1,idx===1)}${step(3,'Sasha (or Elina) resends','Technical support or chef',idx>2,idx===2)}</ol>${bounceAction}`},
+ {kind:'unknown',title:'Payment result unknown',order:order('GK-1042'),body:`<p class="small">Started ${when(order('GK-1042').paidAt)}; last checked 10:30. No second payment link can be sent while this one may still succeed. The place on Sat 31 Oct stays held.</p>${recheck('GK-1042')}<p class="small muted">Checking moves no money and sends nothing.</p>`},
+ {kind:'refund',title:'Refund result not confirmed',order:order('GK-1031'),body:`<p class="small">£45 sent to the payment provider ${when('2026-10-21T14:02:00Z')}; last checked 10:30. Nobody can send another refund while this may still succeed.</p>${recheck('GK-1031')}${isSupport?'<p class="role-note">Refunds and money decisions stay with Elina.</p>':''}`},
+ {kind:'email',title:'Email result unknown',order:order('GK-1043'),body:`<p class="small">Message “Collection reminder” timed out ${when('2026-10-22T09:15:00Z')}. We don’t know if it was sent.</p>${recheck('GK-1043-mail')}<p class="small muted">${isChef?'':'Resending might send it twice, so only Elina decides. '}<a href="messages.html?order=GK-1043&state=unknown&show=problems">Open in Messages</a></p>`},
+ {kind:'details',title:'Collection details not sent',order:order('GK-1048'),body:`<p class="small">Handover ${dayShort('2026-10-23')}, 15:00 — in about ${Math.round(hoursBetween(NOW,startOf(order('GK-1048'))))} hours. Usually sent about 48 hours before. It’s on Elina’s “Needs you” list.</p>${isChef?`<a class="btn btn-small" href="order.html?id=GK-1048">Send details</a>`:'<p class="role-note">Elina sends it. You see it here in case a sending job is stuck.</p>'}`},
+ {kind:'refund',title:'Delivery refund still owed',order:order('GK-1029'),body:`<p class="small">£55 delivery refund is Elina’s separate next step after the customer’s cancellation (cake £60 confirmed).</p>${isChef?`<a class="btn btn-small" href="order.html?id=GK-1029">Refund delivery</a>`:'<p class="role-note">Only Elina refunds money.</p>'}`}];
+
+const AUDIT=[['10:40','Sasha','Resent order confirmation for GK-1044 to the corrected address',st==='resent'],['10:31','Elina','Changed GK-1044 email address',idx>=2],['10:30','System','Checked GK-1042 payment and GK-1031 refund with the provider: still unknown',true],['10:12','Sasha','Flagged GK-1044 bounced email to Elina',idx>=1],['10:10','Sasha','Opened GK-1044 contact details',true]].filter(a=>a[3]);
+
+mount(shell(`<header class="page-head"><div><p class="eyebrow">Recovery queue</p><h1>Recovery queue</h1><p class="muted">Problems behind the scenes: emails that didn’t arrive and results we’re still checking. ${isSupport?'You can look, flag, check again and resend a bounced email once Elina has fixed it. Money and content changes stay with Elina.':'Technical support (Sasha) works from this list; money and content changes stay with you.'} Every view and action here is recorded.</p></div></header>
+<section class="queue" aria-label="Items">${items.map(it=>`<article class="card q-item q-${it.kind}"><div class="card-row"><h2 class="card-h"><span class="need-dot" aria-hidden="true"></span>${it.title} <span class="need-id">${it.order.id}</span></h2><a class="small" href="order.html?id=${it.order.id}">View order</a></div><p class="small muted">${esc(it.order.cake)} · ${esc(it.order.customer)} · ${dayShort(it.order.date)}</p>${it.body}</article>`).join('')}</section>
+<section class="card" aria-labelledby="a-h"><h2 id="a-h" class="card-h">Recorded today</h2><ul class="mini-list small">${AUDIT.map(a=>`<li><span class="mono">${a[0]}</span> · <strong>${a[1]}</strong> · ${a[2]}</li>`).join('')}</ul></section>`,'support',states));
+
+const main=document.querySelector('#main');
+main.addEventListener('submit',e=>{e.preventDefault();const f=e.target;
+ if(f.matches('[data-flag]')){f.outerHTML=`<p class="small" tabindex="-1"><strong>Flagged to Elina ✓</strong> (preview). It’s on her “Needs you” list. <a href="support.html?state=flagged">See the next step</a></p>`;toast('Preview: flagged to Elina. Nothing was saved.')}
+ if(f.matches('[data-fix]')){if(!f.email.checkValidity()||!f.email.value.includes('.')){toast('Enter a full email address.');return}f.outerHTML=`<p class="small"><strong>Address saved ✓</strong> (preview). Nothing was resent. <a href="support.html?state=fixed">See the next step</a></p>`;toast('Preview: address not changed.')}});
+main.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+ if(b.hasAttribute('data-recheck')){b.disabled=true;b.textContent='Checked ✓ · still unknown';toast('Preview: checked with the provider (recorded). Still unknown — nothing moved or sent.')}
+ if(b.hasAttribute('data-resend')){b.hidden=true;b.insertAdjacentHTML('afterend',`<div class="confirm-row" role="group" aria-label="Confirm resend"><p class="small"><strong>Resend “Order confirmation” to ${fixedEmail}?</strong> Recorded as ${esc(ROLE.who)}; linked to the bounced attempt.</p><button class="btn btn-primary btn-small" type="button" data-resend-ok>Resend</button><button class="btn btn-quiet btn-small" type="button" data-keep>Not yet</button></div>`);b.nextElementSibling.querySelector('button').focus()}
+ if(b.hasAttribute('data-resend-ok')){b.closest('.confirm-row').innerHTML='<p class="small"><strong>Resent ✓</strong> (preview)</p>';toast('Preview only: nothing was resent.')}});
+})();
