@@ -35,10 +35,11 @@ type fakeRailway struct {
 	// logs is the deployment's runtime log (nil: one container start and a
 	// line of its own output); logFails refuses the first N log queries
 	// (negative: all), logReads counts them.
-	logs     []string
-	logPages [][]string // when set, read i answers logPages[i] (the last repeats)
-	logFails int
-	logReads int
+	logs         []string
+	logPages     [][]string // when set, read i answers logPages[i] (the last repeats)
+	logFails     int
+	logFailAfter int // when > 0, every log query after the first logFailAfter fails
+	logReads     int
 }
 
 func (f *fakeRailway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -63,7 +64,7 @@ func (f *fakeRailway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"serviceInstanceDeployV2": "dep-123"}})
 	case strings.Contains(req.Query, "deploymentLogs"):
 		f.logReads++
-		if f.logFails != 0 {
+		if f.logFails != 0 || (f.logFailAfter > 0 && f.logReads > f.logFailAfter) {
 			if f.logFails > 0 {
 				f.logFails--
 			}
@@ -393,12 +394,33 @@ func TestSettleCatchesACrashLoopBehindASuccessStatus(t *testing.T) {
 	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "inconclusive: the deployment log page was full") {
 		t.Fatalf("a full log page: %+v, %v; want it treated as unknown, not as one start", res, err)
 	}
-	// deploymentLogs returns the newest lines: after one steady read, a full
-	// page may hide the first start, so the latest read decides.
+	// The pages the API returns for a limit are assumed to be the newest lines
+	// (only oldest-first order within a short page was observed): after one
+	// steady read, a full page may hide the first start, so the latest read
+	// decides.
 	later := &fakeRailway{statuses: []string{"SUCCESS"}, logPages: [][]string{{"Starting Container"}, full}}
 	res, err = deployer(t, later).Deploy(context.Background(), req)
 	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "page was full") || later.logReads < 2 {
 		t.Fatalf("steady, then full pages: %+v, %v after %d reads; want a warning, not a silent pass", res, err, later.logReads)
+	}
+}
+
+// A failed read voids an earlier steady one: if the reads fail from some
+// point until the period ends (fewer than the error limit), the decision
+// would otherwise rest on a stale read, possibly before a crash loop began.
+func TestSettleLatestFailedReadIsNotASteadyPass(t *testing.T) {
+	f := &fakeRailway{statuses: []string{"SUCCESS"}, logFailAfter: 1}
+	d := deployer(t, f)
+	// At most 5 reads fit in the period (one at SUCCESS, then every 60 ms
+	// until 200 ms have passed), so the error limit is never reached.
+	d.PollInterval = 60 * time.Millisecond
+	res, err := d.Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage, Settle: 200 * time.Millisecond})
+	if err != nil || f.logReads < 2 || f.logReads > maxPollErrors {
+		t.Fatalf("setup: %v after %d reads; want 2..%d reads", err, f.logReads, maxPollErrors)
+	}
+	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "inconclusive: the latest deployment-log read failed") ||
+		!strings.Contains(res.Warnings[0], "Not Authorized") {
+		t.Fatalf("steady, then failed reads until the end: warnings %q; want one naming the failed read, never a silent pass", res.Warnings)
 	}
 }
 

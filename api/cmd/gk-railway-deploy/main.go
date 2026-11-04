@@ -21,11 +21,12 @@ func main() {
 	os.Exit(run(context.Background(), os.Args[1:], os.Getenv, os.Stdout))
 }
 
-// escapeData encodes a GitHub Actions workflow-command message, so a
-// provider error containing a newline or percent sign can neither end the
-// annotation early nor inject another workflow command.
+// escapeData encodes provider text for a GitHub Actions log line. A newline
+// or percent sign can then neither end an annotation early nor start a
+// "::command::" line, and the legacy "##[command]" form, which the runner
+// also recognises inside a line, is broken up as "# #[".
 func escapeData(s string) string {
-	return strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A").Replace(s)
+	return strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A", "##[", "# #[").Replace(s)
 }
 
 func run(ctx context.Context, args []string, getenv func(string) string, stdout io.Writer) int {
@@ -39,14 +40,19 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	settle := fs.Duration("settle", 0, "after SUCCESS keep watching this long and fail if the deployment crashes")
 	startLine := fs.String("start-line", "", "log message the process writes once at each start, counted during -settle")
 	timeout := fs.Duration("timeout", 10*time.Minute, "how long to wait for the deployment")
+	poll := fs.Duration("poll-interval", 5*time.Second, "time between deployment status queries")
 	if err := fs.Parse(args); err != nil {
+		return 1
+	}
+	if *poll <= 0 {
+		fmt.Fprintln(stdout, "error: -poll-interval must be positive")
 		return 1
 	}
 	d := &railway.Deployer{
 		Endpoint:     getenv("RAILWAY_API_URL"),
 		ProjectToken: getenv("RAILWAY_TOKEN"),
 		HTTP:         &http.Client{Timeout: 30 * time.Second},
-		PollInterval: 5 * time.Second,
+		PollInterval: *poll,
 		Timeout:      *timeout,
 	}
 	res, err := d.Deploy(ctx, railway.Request{

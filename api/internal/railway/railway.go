@@ -272,8 +272,8 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 	deadline := time.Now().Add(d.Timeout)
 	var settleUntil time.Time // set once SUCCESS is first seen
 	startsChecked := req.Settle > 0
-	startsSeen := false // the latest successful read counted exactly one start
-	startsWhy := ""     // why the latest successful read was inconclusive
+	startsSeen := false // the latest read succeeded and counted exactly one start
+	startsWhy := ""     // why the latest read was inconclusive or failed
 	startsRead := false // the deployment log was read at least once
 	var startErr error  // the last failed read
 	startErrors := 0    // consecutive failed reads
@@ -316,7 +316,11 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 					state, why, serr := d.starts(ctx, deployed.ID, req.StartLine)
 					switch {
 					case serr != nil:
-						startErr = serr
+						// The decision rests on the latest attempt: a failed read
+						// voids an earlier steady one, so read errors at the end of
+						// the period give a warning rather than a silent pass.
+						startErr, startsSeen = serr, false
+						startsWhy = "the latest deployment-log read failed: " + serr.Error()
 						if startErrors++; startErrors >= maxPollErrors {
 							startsChecked = false
 							res.Warnings = append(res.Warnings, "deployment log not readable; settle checked the deployment status only: "+serr.Error())

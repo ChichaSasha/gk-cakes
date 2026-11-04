@@ -26,19 +26,33 @@ type Querier interface {
 // roles) for the session's login (session_user, which SET ROLE or a role
 // connection option cannot change): whether the session still acts as that
 // login, any elevated attribute, every role the login is a member of
-// (directly or through another role), and every role whose privileges it can
-// use without SET ROLE (membership with INHERIT, PostgreSQL 16+ semantics).
+// (directly or through another role), every role whose privileges it can use
+// without SET ROLE (membership with INHERIT, PostgreSQL 16+ semantics), and
+// whether the login itself, in this database, owns a table, schema or
+// function, or holds a privilege granted to it directly (on a table, column,
+// schema, function or the database). An owner bypasses grants, and a direct
+// grant bypasses the group, so either would widen what the service can do.
 const loginQuery = `SELECT r.rolname::text, current_user::text,
 	r.rolsuper OR r.rolcreaterole OR r.rolcreatedb OR r.rolreplication OR r.rolbypassrls,
 	ARRAY(SELECT g.rolname::text FROM pg_roles g
 		WHERE g.oid <> r.oid AND pg_has_role(r.oid, g.oid, 'MEMBER') ORDER BY 1),
 	ARRAY(SELECT g.rolname::text FROM pg_roles g
-		WHERE g.oid <> r.oid AND pg_has_role(r.oid, g.oid, 'USAGE') ORDER BY 1)
+		WHERE g.oid <> r.oid AND pg_has_role(r.oid, g.oid, 'USAGE') ORDER BY 1),
+	EXISTS (SELECT 1 FROM pg_class WHERE relowner = r.oid)
+		OR EXISTS (SELECT 1 FROM pg_namespace WHERE nspowner = r.oid)
+		OR EXISTS (SELECT 1 FROM pg_proc WHERE proowner = r.oid)
+		OR EXISTS (SELECT 1 FROM pg_class c, aclexplode(c.relacl) a WHERE a.grantee = r.oid)
+		OR EXISTS (SELECT 1 FROM pg_attribute t, aclexplode(t.attacl) a WHERE a.grantee = r.oid)
+		OR EXISTS (SELECT 1 FROM pg_namespace n, aclexplode(n.nspacl) a WHERE a.grantee = r.oid)
+		OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a WHERE a.grantee = r.oid)
+		OR EXISTS (SELECT 1 FROM pg_database d, aclexplode(d.datacl) a
+			WHERE d.datname = current_database() AND a.grantee = r.oid)
 FROM pg_roles r WHERE r.rolname = session_user`
 
 // CheckLogin verifies that the session's login holds exactly group (for
 // example gk_api), inherits its privileges, has no superuser, createrole,
-// createdb, replication or bypassrls attribute, and has not switched role, so
+// createdb, replication or bypassrls attribute, owns nothing and holds no
+// direct grant in this database, and has not switched role, so
 // a service can never run with an administrator or migration credential, with
 // another service's login, or with a login that cannot use its grants. It
 // returns an ErrLogin-wrapped error naming the login and its roles (never
@@ -48,8 +62,9 @@ func CheckLogin(ctx context.Context, q Querier, group string) error {
 		user, current   string
 		elevated        bool
 		members, usable []string
+		direct          bool
 	)
-	if err := q.QueryRow(ctx, loginQuery).Scan(&user, &current, &elevated, &members, &usable); err != nil {
+	if err := q.QueryRow(ctx, loginQuery).Scan(&user, &current, &elevated, &members, &usable, &direct); err != nil {
 		return fmt.Errorf("database: check login: %w", err)
 	}
 	only := func(roles []string) bool { return len(roles) == 1 && roles[0] == group }
@@ -69,6 +84,9 @@ func CheckLogin(ctx context.Context, q Querier, group string) error {
 			ErrLogin, user, group, held, attr)
 	case !only(usable):
 		return fmt.Errorf("%w: %s is a member of %s but does not inherit its privileges (NOINHERIT, or granted WITH INHERIT FALSE)",
+			ErrLogin, user, group)
+	case direct:
+		return fmt.Errorf("%w: %s owns database objects or holds privileges granted to it directly; its privileges must come only from %s",
 			ErrLogin, user, group)
 	}
 	return nil

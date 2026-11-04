@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -113,6 +114,31 @@ func TestCheckLoginRealRoles(t *testing.T) {
 		"login switched to its group": {switched(t, db.LoginConn(t, "gk_api"), "gk_api"), "gk_api", "acts as role gk_api"},
 		"superuser acting as a login": {switched(t, db.AdminConn(t), "gk_api_acting_"+suffix,
 			"CREATE ROLE gk_api_acting_"+suffix+" LOGIN IN ROLE gk_api"), "gk_api", "acts as role gk_api_acting_"},
+	}
+	// A login that owns an object or holds a direct grant passes every
+	// membership check, yet bypasses its group; each kind is refused.
+	direct := "owns database objects or holds privileges granted to it directly"
+	for name, grant := range map[string]struct{ setup, undo string }{
+		"owns a table":    {"CREATE TABLE business.gk_owned_%[1]s (x int); ALTER TABLE business.gk_owned_%[1]s OWNER TO %[2]s", "DROP TABLE IF EXISTS business.gk_owned_%[1]s"},
+		"owns a schema":   {"CREATE SCHEMA gk_schema_%[1]s AUTHORIZATION %[2]s", "DROP SCHEMA IF EXISTS gk_schema_%[1]s"},
+		"owns a function": {"CREATE FUNCTION business.gk_fn_%[1]s() RETURNS int LANGUAGE sql AS 'SELECT 1'; ALTER FUNCTION business.gk_fn_%[1]s() OWNER TO %[2]s", "DROP FUNCTION IF EXISTS business.gk_fn_%[1]s()"},
+		"table grant":     {"GRANT SELECT ON business.job TO %[2]s", "REVOKE ALL ON business.job FROM %[2]s"},
+		"column grant":    {"GRANT SELECT (id) ON business.job TO %[2]s", "REVOKE ALL (id) ON business.job FROM %[2]s"},
+		"schema grant":    {"GRANT USAGE ON SCHEMA business TO %[2]s", "REVOKE ALL ON SCHEMA business FROM %[2]s"},
+		"function grant":  {"GRANT EXECUTE ON FUNCTION business.job_claim(uuid, interval) TO %[2]s", "REVOKE ALL ON FUNCTION business.job_claim(uuid, interval) FROM %[2]s"},
+		"database grant":  {"GRANT TEMPORARY ON DATABASE " + db.Name + " TO %[2]s", "REVOKE ALL ON DATABASE " + db.Name + " FROM %[2]s"},
+	} {
+		key := strings.ReplaceAll(strings.ReplaceAll(name, " ", ""), "a", "")
+		role := "gk_direct_" + key + "_" + suffix
+		conn := login(t, db, role, "IN ROLE gk_api", fmt.Sprintf(grant.setup, key+suffix, role))
+		t.Cleanup(func() {
+			a := db.AdminConn(t)
+			_, _ = a.Exec(context.Background(), fmt.Sprintf(grant.undo, key+suffix, role))
+		})
+		err := database.CheckLogin(ctx, conn, "gk_api")
+		if !errors.Is(err, database.ErrLogin) || !strings.Contains(err.Error(), direct) {
+			t.Errorf("%s: %v, want ErrLogin mentioning %q", name, err, direct)
+		}
 	}
 	for name, c := range refused {
 		err := database.CheckLogin(ctx, c.conn, c.group)

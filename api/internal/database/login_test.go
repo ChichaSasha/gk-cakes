@@ -18,6 +18,7 @@ type fakeRow struct {
 	user, current  string
 	elevated       bool
 	groups, usable []string
+	direct         bool
 	err            error
 }
 
@@ -32,7 +33,7 @@ func (r fakeRow) Scan(dest ...any) error {
 		r.usable = r.groups
 	}
 	*dest[0].(*string), *dest[1].(*string), *dest[2].(*bool) = r.user, r.current, r.elevated
-	*dest[3].(*[]string), *dest[4].(*[]string) = r.groups, r.usable
+	*dest[3].(*[]string), *dest[4].(*[]string), *dest[5].(*bool) = r.groups, r.usable, r.direct
 	return nil
 }
 
@@ -70,6 +71,8 @@ func TestCheckLoginDecisions(t *testing.T) {
 		"switched role": {fakeRow{user: "postgres", current: "gk_api_staging", groups: []string{"gk_api"}},
 			"the session of postgres acts as role gk_api_staging"},
 		"not inheriting": {fakeRow{user: "x", groups: []string{"gk_api"}, usable: []string{}}, "does not inherit"},
+		"owner or direct grant": {fakeRow{user: "x", groups: []string{"gk_api"}, direct: true},
+			"x owns database objects or holds privileges granted to it directly"},
 	} {
 		err := CheckLogin(ctx, &fakePool{rows: []fakeRow{c.row}}, "gk_api")
 		if !errors.Is(err, ErrLogin) || !strings.Contains(err.Error(), c.want) {

@@ -38,13 +38,7 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("api listening", "addr", ln.Addr().String(), "env", string(cfg.Env))
-	opts := httpapi.Options{UIOrigin: cfg.UIOrigin, DB: pool, Logger: logger}
-	if cfg.Env != config.EnvLocal {
-		// /readyz (the Railway health check) stays unavailable with any login
-		// other than a least-privilege gk_api one, so such a deploy fails.
-		// Only local development may use another login.
-		opts.DB = &database.LoginGate{Pool: pool, Group: "gk_api", Logger: logger}
-	}
+	opts := httpapi.Options{UIOrigin: cfg.UIOrigin, DB: readiness(cfg.Env, pool, logger), Logger: logger}
 	if cfg.Providers.EmailWebhookSecret.IsSet() {
 		webhook, err := notifications.NewWebhook(notifications.WebhookConfig{
 			DB: pool, Secret: cfg.Providers.EmailWebhookSecret.Reveal(), Environment: string(cfg.Env), Logger: logger,
@@ -64,4 +58,18 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("api stopped")
+}
+
+// apiGroup is the only group a deployed API's login may hold.
+const apiGroup = "gk_api"
+
+// readiness is the database check behind /readyz, the Railway health check.
+// Outside local development it stays unavailable with any login other than a
+// least-privilege gk_api one, so such a deploy never becomes ready and the
+// previous deployment keeps serving.
+func readiness(env config.Env, pool database.Pool, logger *slog.Logger) httpapi.Pinger {
+	if env == config.EnvLocal { // only local development may use another login
+		return pool
+	}
+	return &database.LoginGate{Pool: pool, Group: apiGroup, Logger: logger}
 }
