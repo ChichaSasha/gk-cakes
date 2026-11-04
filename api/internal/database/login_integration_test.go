@@ -140,6 +140,17 @@ func TestCheckLoginRealRoles(t *testing.T) {
 			t.Errorf("%s: %v, want ErrLogin mentioning %q", name, err, direct)
 		}
 	}
+	// Only the service's own database counts: a grant on another one is
+	// outside what the service can reach.
+	other := "gk_otherdb_" + suffix
+	conn := login(t, db, other, "IN ROLE gk_api", "GRANT CONNECT ON DATABASE postgres TO "+other)
+	t.Cleanup(func() {
+		a := db.AdminConn(t)
+		_, _ = a.Exec(context.Background(), "REVOKE ALL ON DATABASE postgres FROM "+other)
+	})
+	if err := database.CheckLogin(ctx, conn, "gk_api"); err != nil {
+		t.Errorf("grant on another database: %v, want pass", err)
+	}
 	for name, c := range refused {
 		err := database.CheckLogin(ctx, c.conn, c.group)
 		if !errors.Is(err, database.ErrLogin) || !strings.Contains(err.Error(), c.want) {

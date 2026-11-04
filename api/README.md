@@ -112,8 +112,8 @@ the integration suite proves this with real logins. Migration 0001 refuses to ru
 if a group already inherits `gk_owner` or a predefined data role.
 
 After provisioning a login, check that it holds exactly its one group, inherits
-its privileges and holds no other privileged role (expect a single row, e.g.
-`gk_api | true`):
+its privileges, holds no other privileged role (expect a single row, e.g.
+`gk_api | true`), and owns nothing and holds no direct grant:
 
 ```sql
 SELECT r.rolname, pg_has_role('<login>', r.oid, 'USAGE') AS inherits FROM pg_roles r
@@ -122,6 +122,19 @@ WHERE pg_has_role('<login>', r.oid, 'MEMBER') AND r.rolname <> '<login>';
 -- expect every column false
 SELECT rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls
 FROM pg_roles WHERE rolname = '<login>';
+
+-- expect false (run in the service's database): the login owns nothing and
+-- holds no privilege granted to it directly
+SELECT EXISTS (SELECT 1 FROM pg_class WHERE relowner = r.oid)
+    OR EXISTS (SELECT 1 FROM pg_namespace WHERE nspowner = r.oid)
+    OR EXISTS (SELECT 1 FROM pg_proc WHERE proowner = r.oid)
+    OR EXISTS (SELECT 1 FROM pg_class c, aclexplode(c.relacl) a WHERE a.grantee = r.oid)
+    OR EXISTS (SELECT 1 FROM pg_attribute t, aclexplode(t.attacl) a WHERE a.grantee = r.oid)
+    OR EXISTS (SELECT 1 FROM pg_namespace n, aclexplode(n.nspacl) a WHERE a.grantee = r.oid)
+    OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(p.proacl) a WHERE a.grantee = r.oid)
+    OR EXISTS (SELECT 1 FROM pg_database d, aclexplode(d.datacl) a
+               WHERE d.datname = current_database() AND a.grantee = r.oid)
+FROM pg_roles r WHERE r.rolname = '<login>';
 ```
 
 The services repeat these checks themselves in every environment except
