@@ -16,6 +16,7 @@ import (
 	"github.com/ChichaSasha/gk-cakes/api/internal/database"
 	"github.com/ChichaSasha/gk-cakes/api/internal/jobs"
 	"github.com/ChichaSasha/gk-cakes/api/internal/notifications"
+	"github.com/ChichaSasha/gk-cakes/api/internal/payments"
 	"github.com/ChichaSasha/gk-cakes/api/internal/recovery"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -85,7 +86,21 @@ func main() {
 	}
 	// Order commands share the recovery journal; without it they wait.
 	commands := &checkout.Commands{DB: pool, Coordinator: coord, Logger: logger}
-	handler := jobs.Chain(commands.Handle, emailHandler)
+	// Payment collections need Stripe (and the journal to dispatch);
+	// without them their jobs wait.
+	pay := &payments.Worker{DB: pool, Coordinator: coord, Environment: string(cfg.Env), Account: cfg.Stripe.AccountID, Logger: logger}
+	if cfg.Stripe.Enabled() {
+		client, code, err := stripeClient(ctx, cfg, logger)
+		if err != nil {
+			logger.Error("stripe", "error", err.Error())
+			os.Exit(code)
+		}
+		pay.Provider = client
+		logger.Info("stripe payments enabled", "account", cfg.Stripe.AccountID, "api_version", payments.APIVersion)
+	} else {
+		logger.Warn("stripe not configured; payment jobs wait")
+	}
+	handler := jobs.Chain(commands.Handle, pay.Handle, emailHandler)
 
 	w := jobs.New(pool, jobs.Options{
 		Handler:         handler,
@@ -161,4 +176,26 @@ func emailDispatcher(ctx context.Context, cfg config.Worker, pool *pgxpool.Pool,
 		return nil, nil, 2, err
 	}
 	return d, coord, 0, nil
+}
+
+// stripeClient builds the Stripe client: a test-mode key outside production
+// (refused otherwise, exit 2) whose account must be STRIPE_ACCOUNT_ID (a
+// definite mismatch is exit 2; an unreachable Stripe or a restricted key
+// that cannot read the account is only logged, so email and order commands
+// keep running).
+func stripeClient(ctx context.Context, cfg config.Worker, logger *slog.Logger) (*payments.Client, int, error) {
+	client, err := payments.NewClient(payments.ClientConfig{Key: cfg.Stripe.SecretKey.Reveal(), Live: cfg.Env == config.EnvProduction})
+	if err != nil {
+		return nil, 2, err
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	account, err := client.AccountID(checkCtx)
+	switch {
+	case err != nil:
+		logger.Warn("stripe account not verified at start", "error", err.Error())
+	case account != cfg.Stripe.AccountID:
+		return nil, 2, errors.New("STRIPE_SECRET_KEY belongs to another account than STRIPE_ACCOUNT_ID")
+	}
+	return client, 0, nil
 }

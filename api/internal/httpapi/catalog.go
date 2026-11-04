@@ -402,6 +402,8 @@ var conflictMessages = map[string]string{
 	// Free confirmation.
 	"payment_required": "This order needs payment; it cannot be confirmed free.",
 	"lead_time":        "It is now too close to the handover time to confirm this order.",
+	// Payment.
+	"payment_in_progress": "A payment for this order is already in progress. Do not pay again; check the order.",
 }
 
 // catalogError maps catalog errors to K00 responses without SQL detail.
@@ -444,6 +446,8 @@ func catalogError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, e
 			code = "PAYMENT_REQUIRED"
 		case "lead_time":
 			code = "LEAD_TIME"
+		case "payment_in_progress":
+			code = "PAYMENT_IN_PROGRESS"
 		}
 		writeError(w, r, http.StatusConflict, code, msg, false)
 	case errors.As(err, &inv):

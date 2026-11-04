@@ -417,3 +417,53 @@ func TestCheckoutSwitch(t *testing.T) {
 		t.Error("CHECKOUT_ENABLED=yes accepted")
 	}
 }
+
+func TestLoadStripe(t *testing.T) {
+	const account = "acct_1UNHEgTest"
+	stripeSecret := "whsec_" + canary + "0123456789"
+	cfg, err := LoadAPI(env(merge(validLocalAPI, map[string]string{"STRIPE_ACCOUNT_ID": account, "STRIPE_WEBHOOK_SECRET": stripeSecret})))
+	if err != nil || cfg.Stripe.AccountID != account || cfg.Stripe.WebhookSecret.Reveal() != stripeSecret {
+		t.Fatalf("valid API Stripe configuration: %+v %v", cfg.Stripe, err)
+	}
+	if strings.Contains(fmt.Sprintf("%+v %#v", cfg, cfg.Stripe), canary) {
+		t.Fatal("formatted configuration leaks the webhook secret")
+	}
+	if cfg, err := LoadAPI(env(validLocalAPI)); err != nil || cfg.Stripe.AccountID != "" || cfg.Stripe.WebhookSecret.IsSet() {
+		t.Fatalf("API without Stripe: %+v %v", cfg.Stripe, err)
+	}
+	local := map[string]string{"APP_ENV": "local", "DATABASE_URL": "postgres://gk_worker:" + canary + "@localhost/gk"}
+	w, err := LoadWorker(env(merge(local, map[string]string{"STRIPE_SECRET_KEY": "sk_test_" + canary, "STRIPE_ACCOUNT_ID": account})))
+	if err != nil || !w.Stripe.Enabled() || w.Stripe.AccountID != account || strings.Contains(fmt.Sprintf("%+v", w), canary) {
+		t.Fatalf("valid worker Stripe configuration: %v", err)
+	}
+	if w, err := LoadWorker(env(local)); err != nil || w.Stripe.Enabled() {
+		t.Fatalf("worker without Stripe: %v", err)
+	}
+	cases := []struct {
+		name    string
+		api     bool
+		env     map[string]string
+		mention string
+	}{
+		{"webhook without account", true, merge(validLocalAPI, map[string]string{"STRIPE_WEBHOOK_SECRET": stripeSecret}), "STRIPE_ACCOUNT_ID"},
+		{"malformed webhook secret", true, merge(validLocalAPI, map[string]string{"STRIPE_ACCOUNT_ID": account, "STRIPE_WEBHOOK_SECRET": "sk_" + canary}), "STRIPE_WEBHOOK_SECRET"},
+		{"malformed API account", true, merge(validLocalAPI, map[string]string{"STRIPE_ACCOUNT_ID": "acct-" + canary}), "STRIPE_ACCOUNT_ID"},
+		{"worker key without account", false, merge(local, map[string]string{"STRIPE_SECRET_KEY": "sk_test_" + canary}), "set together"},
+		{"worker account without key", false, merge(local, map[string]string{"STRIPE_ACCOUNT_ID": account}), "set together"},
+		{"live key outside production", false, merge(local, map[string]string{"STRIPE_SECRET_KEY": "sk_live_" + canary, "STRIPE_ACCOUNT_ID": account}), "STRIPE_SECRET_KEY"},
+		{"publishable key", false, merge(local, map[string]string{"STRIPE_SECRET_KEY": "pk_test_" + canary, "STRIPE_ACCOUNT_ID": account}), "STRIPE_SECRET_KEY"},
+		{"test key in production", false, merge(merge(validStagingWorker, validEmailDispatch), map[string]string{"APP_ENV": "production",
+			"STRIPE_SECRET_KEY": "rk_test_" + canary, "STRIPE_ACCOUNT_ID": account}), "STRIPE_SECRET_KEY"},
+	}
+	for _, tc := range cases {
+		var err error
+		if tc.api {
+			_, err = LoadAPI(env(tc.env))
+		} else {
+			_, err = LoadWorker(env(tc.env))
+		}
+		if err == nil || !strings.Contains(err.Error(), tc.mention) || strings.Contains(err.Error(), canary) {
+			t.Errorf("%s: err = %v, want a refusal naming %s without the value", tc.name, err, tc.mention)
+		}
+	}
+}

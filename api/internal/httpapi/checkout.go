@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -22,6 +23,7 @@ type Checkout interface {
 	Checkout(ctx context.Context, subject string, digest []byte, key string, in checkout.CheckoutInput) (catalog.Result, error)
 	GetOrder(ctx context.Context, id, subject string, digest []byte) (checkout.Order, error)
 	FreeConfirm(ctx context.Context, id, subject string, digest []byte, key string, in checkout.FreeConfirmInput) (catalog.Result, error)
+	StartPayment(ctx context.Context, id, subject string, digest []byte, key string, in checkout.PaymentInput) (catalog.Result, error)
 	CurrentPolicy(ctx context.Context) (checkout.Policy, error)
 	RecordPolicy(ctx context.Context, subject, key string, in checkout.PolicyInput) (catalog.Result, error)
 }
@@ -168,9 +170,43 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 				PollAfterSeconds: checkout.PollAfterSeconds}, nil
 		})
 	}
+	// K04 payment: 202 "payment pending" (the Checkout Session is created by
+	// the worker under K11); poll the order for its checkout URL. Never a
+	// paid or accepted order.
+	postPayment := func(w http.ResponseWriter, r *http.Request) {
+		a, signedIn, ok := optionalCustomer(id, w, r, logger)
+		if !ok {
+			return
+		}
+		var digest []byte
+		if !signedIn {
+			d, err := checkout.GuestProofDigest(r.Header.Get(OrderCapabilityHeader))
+			if err != nil {
+				writeError(w, r, http.StatusNotFound, "NOT_FOUND", "Not found", false)
+				return
+			}
+			digest = d
+		}
+		var in checkout.PaymentInput
+		key, ok := readCommand(w, r, &in)
+		if !ok {
+			return
+		}
+		res, err := co.StartPayment(r.Context(), r.PathValue("id"), a.Subject, digest, key, in)
+		if errors.Is(err, checkout.ErrPaymentsUnavailable) {
+			logger.Warn("payment requested but payments are not configured", "request_id", requestID(r.Context()))
+			writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Payments are temporarily unavailable", true)
+			return
+		}
+		respondCommand(w, r, logger, http.StatusAccepted, res, err, func() (any, error) {
+			return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: "payment_pending",
+				PollAfterSeconds: checkout.PollAfterSeconds}, nil
+		})
+	}
 	if checkoutEnabled {
 		mux.HandleFunc("POST /api/v1/checkouts", postCheckout)
 		mux.HandleFunc("POST /api/v1/orders/{id}/free-confirmation", postFreeConfirm)
+		mux.HandleFunc("POST /api/v1/orders/{id}/payment", postPayment)
 	}
 	mux.HandleFunc("GET /api/v1/orders/{id}", func(w http.ResponseWriter, r *http.Request) {
 		a, signedIn, ok := optionalCustomer(id, w, r, logger)

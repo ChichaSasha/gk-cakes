@@ -82,7 +82,29 @@ type API struct {
 	// Off by default until payment and the release of unpaid holds exist
 	// (GK-025 A3): without them a checkout's holds would never be released.
 	CheckoutEnabled bool
+	// Stripe configures payment collection (STRIPE_ACCOUNT_ID) and the
+	// signed webhook (STRIPE_WEBHOOK_SECRET), both optional.
+	Stripe StripeAPI
 }
+
+// StripeAPI is the API's Stripe configuration: the account collections
+// are made in (and whose events the webhook stores), and the webhook
+// signing secret. The webhook needs the account.
+type StripeAPI struct {
+	AccountID     string
+	WebhookSecret Secret
+}
+
+// StripeWorker is the worker's Stripe configuration: the secret key (a
+// test-mode key outside production, a live one only in production) and the
+// account it belongs to. Both or neither; without them payment jobs wait.
+type StripeWorker struct {
+	SecretKey Secret
+	AccountID string
+}
+
+// Enabled reports whether the worker may call Stripe.
+func (s StripeWorker) Enabled() bool { return s.SecretKey.IsSet() }
 
 // Auth configures verification of the identity provider's access tokens
 // (Supabase, contracts K00). Both values are public. Required in staging and
@@ -106,6 +128,7 @@ type Worker struct {
 	DatabaseURL     Secret
 	ShutdownTimeout time.Duration
 	Email           EmailDispatch
+	Stripe          StripeWorker
 }
 
 // EmailDispatch configures the worker's email engine: the Resend sending key
@@ -150,6 +173,10 @@ func LoadAPI(getenv func(string) string) (API, error) {
 	}
 	cfg.Auth = l.auth(cfg.Env)
 	cfg.CheckoutEnabled = l.boolean("CHECKOUT_ENABLED")
+	cfg.Stripe = StripeAPI{AccountID: l.stripeAccount("STRIPE_ACCOUNT_ID"), WebhookSecret: l.stripeWebhookSecret("STRIPE_WEBHOOK_SECRET")}
+	if cfg.Stripe.WebhookSecret.IsSet() && cfg.Stripe.AccountID == "" {
+		l.fail("STRIPE_WEBHOOK_SECRET needs STRIPE_ACCOUNT_ID")
+	}
 	return cfg, l.err()
 }
 
@@ -163,6 +190,10 @@ func LoadWorker(getenv func(string) string) (Worker, error) {
 	}
 	cfg.DatabaseURL = l.databaseURL("DATABASE_URL", cfg.Env)
 	cfg.Email = l.emailDispatch(cfg.Env)
+	cfg.Stripe = StripeWorker{SecretKey: l.paymentSecret("STRIPE_SECRET_KEY", cfg.Env), AccountID: l.stripeAccount("STRIPE_ACCOUNT_ID")}
+	if cfg.Stripe.SecretKey.IsSet() != (cfg.Stripe.AccountID != "") {
+		l.fail("STRIPE_SECRET_KEY and STRIPE_ACCOUNT_ID must be set together")
+	}
 	return cfg, l.err()
 }
 
@@ -468,6 +499,30 @@ func (l *loader) webhookSecret(name string) Secret {
 	encoded, ok := strings.CutPrefix(s.value, "whsec_")
 	if raw, err := base64.StdEncoding.DecodeString(encoded); !ok || err != nil || len(raw) < 16 {
 		l.fail("%s must be a webhook signing secret (whsec_ followed by base64)", name)
+	}
+	return s
+}
+
+var (
+	stripeAccountPattern = regexp.MustCompile(`^acct_[A-Za-z0-9]{1,64}$`)
+	stripeWebhookPattern = regexp.MustCompile(`^whsec_[A-Za-z0-9+/=_-]{16,}$`)
+)
+
+// stripeAccount reads an optional Stripe account ID (acct_...).
+func (l *loader) stripeAccount(name string) string {
+	v := l.get(name)
+	if v != "" && !stripeAccountPattern.MatchString(v) {
+		l.fail("%s must be a Stripe account ID (acct_...)", name)
+		return ""
+	}
+	return v
+}
+
+// stripeWebhookSecret reads an optional Stripe signing secret (whsec_...).
+func (l *loader) stripeWebhookSecret(name string) Secret {
+	s := l.optionalSecret(name)
+	if s.IsSet() && !stripeWebhookPattern.MatchString(s.value) {
+		l.fail("%s must be a Stripe webhook signing secret (whsec_...)", name)
 	}
 	return s
 }
