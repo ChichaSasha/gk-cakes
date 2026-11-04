@@ -391,6 +391,9 @@ var conflictMessages = map[string]string{
 	"key_reused":     "This Idempotency-Key was already used for a different request",
 	"state_conflict": "This change isn't possible in the current state",
 	"duplicate":      "This already exists",
+	// Quotes: what the customer chose changed since it was shown; choose again.
+	"item_unavailable": "A cake in your basket is no longer available as chosen. Please check your basket.",
+	"slot_unavailable": "That time is no longer available. Please choose another time.",
 }
 
 // catalogError maps catalog errors to K00 responses without SQL detail.
@@ -417,6 +420,10 @@ func catalogError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, e
 			code = "KEY_REUSED"
 		case "duplicate":
 			code = "DUPLICATE"
+		case "item_unavailable":
+			code = "ITEM_UNAVAILABLE"
+		case "slot_unavailable":
+			code = "SLOT_UNAVAILABLE"
 		}
 		writeError(w, r, http.StatusConflict, code, msg, false)
 	case errors.As(err, &inv):

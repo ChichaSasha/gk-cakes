@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/catalog"
+	"github.com/ChichaSasha/gk-cakes/api/internal/checkout"
 	"github.com/ChichaSasha/gk-cakes/api/internal/config"
 	"github.com/ChichaSasha/gk-cakes/api/internal/database"
 	"github.com/ChichaSasha/gk-cakes/api/internal/httpapi"
@@ -65,6 +66,7 @@ func main() {
 	}
 	opts.Catalog = &catalog.Store{DB: pool}
 	opts.Schedule = &schedule.Store{DB: pool}
+	opts.Checkout = &checkout.Store{DB: pool}
 	handler := httpapi.NewHandler(opts)
 	if err := httpapi.Serve(ctx, ln, handler, cfg.ShutdownTimeout); err != nil {
 		logger.Error("serve", "error", err.Error())
