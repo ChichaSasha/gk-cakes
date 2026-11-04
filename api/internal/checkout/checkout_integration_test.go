@@ -21,6 +21,7 @@ import (
 	"github.com/ChichaSasha/gk-cakes/api/internal/schedule"
 	"github.com/ChichaSasha/gk-cakes/api/migrations"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -60,6 +61,29 @@ func newHarness(t *testing.T) *harness {
 	h.sch = &schedule.Store{DB: pool, Now: clock}
 	h.owner(t, "SELECT business.staff_grant($1::uuid, 'chef', 'test')", chef)
 	return h
+}
+
+func pgMessage(err error) string {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Message
+	}
+	return ""
+}
+
+// ownerErr is owner without failing the test.
+func (h *harness) ownerErr(t *testing.T, sql string, args ...any) error {
+	t.Helper()
+	tx, err := h.db.MigratorConn(t).Begin(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(h.ctx)
+	if _, err := tx.Exec(h.ctx, "SET LOCAL ROLE gk_owner"); err != nil {
+		t.Fatal(err)
+	}
+	_, err = tx.Exec(h.ctx, sql, args...)
+	return err
 }
 
 func (h *harness) owner(t *testing.T, sql string, args ...any) {
@@ -148,6 +172,7 @@ func proof(t *testing.T) (string, []byte) {
 
 type quoteJSON struct {
 	ID              string
+	Version         int
 	Currency        string
 	SentAt          time.Time `json:"sent_at"`
 	ExpiresAt       time.Time `json:"expires_at"`
@@ -224,8 +249,13 @@ func TestPercentageCodeMoney(t *testing.T) {
 	}
 	if q.SubtotalMinor != 2001 || q.DiscountMinor != 200 || q.TotalMinor != 1801 || q.Currency != "GBP" ||
 		q.Lines[0].DiscountMinor != 100 || q.Lines[1].DiscountMinor != 100 || q.Lines[0].NetMinor != 901 || q.Lines[1].NetMinor != 900 ||
-		q.Discount == nil || q.Discount.Code != "SPRING10" {
+		q.Discount == nil || q.Discount.Code != "SPRING10" || q.Version != 1 {
 		t.Fatalf("quote = %+v", q)
+	}
+	// Commands answer with their own code among several.
+	other := h.code(t, "c20", checkout.CodeInput{Code: "OTHER20", CodeTerms: checkout.CodeTerms{Kind: checkout.KindPercentage, BasisPoints: ptr(2000)}})
+	if c, err := h.co.CodeByID(h.ctx, chef, other); err != nil || c.Code != "OTHER20" || *c.BasisPoints != 2000 {
+		t.Fatalf("code by ID = %+v, %v", c, err)
 	}
 	if !q.ExpiresAt.Equal(q.SentAt.Add(24*time.Hour)) || !q.SentAt.Equal(h.now) {
 		t.Fatalf("validity %s - %s", q.SentAt, q.ExpiresAt)
@@ -485,11 +515,20 @@ func TestQuoteSafetyRules(t *testing.T) {
 		t.Fatalf("resale lot: %v", err)
 	}
 
-	// The gateway caps a basket at 20 cakes even when the API is bypassed.
+	// The gateway caps a basket at 20 cakes even when the API is bypassed,
+	// also for ready cakes, which need no day places.
+	readyV := h.readyVariantOf(t, f)
+	lot := func(key string, q int) string {
+		id := must[catalog.Result](t)(h.sch.CreateLot(h.ctx, chef, key, schedule.LotInput{VariantID: readyV, Kind: schedule.LotReady,
+			Quantity: q, PriceMinor: ptr[int64](5000), ExpiresAt: time.Now().Add(60 * 24 * time.Hour).UTC().Format(time.RFC3339)})).ID
+		must[catalog.Result](t)(h.sch.SetLotState(h.ctx, chef, key+"-rel", id, schedule.LotStateInput{ExpectedVersion: 1, Action: "release"}))
+		return id
+	}
+	l11, l10 := lot("l11", 11), lot("l10", 10)
 	_, d = proof(t)
-	lines := `[{"variant_id":"` + f.v1001 + `","quantity":11},{"variant_id":"` + f.v1000 + `","quantity":10}]`
-	if err := direct("2026-11-05T10:00:00Z", nil, lines, d); dbtest.SQLState(err) != "GK422" {
-		t.Fatalf("21 cakes: %v", err)
+	lines := `[{"lot_id":"` + l11 + `","quantity":11},{"lot_id":"` + l10 + `","quantity":10}]`
+	if err := direct("2026-11-05T10:00:00Z", nil, lines, d); pgMessage(err) != "lines_invalid" {
+		t.Fatalf("21 ready cakes: %v, want GK422 lines_invalid", err)
 	}
 
 	// Code expiry: refused at the expiry instant, accepted a second before.
@@ -535,6 +574,18 @@ func TestQuoteSafetyRules(t *testing.T) {
 	h.owner(t, `INSERT INTO business.checkout_quote_line (quote_id, line_no, variant_id, recipe_version_id, quantity, unit_price_minor,
 		discount_minor, net_minor) SELECT 'aaaaaaaa-0000-4000-8000-000000000001', 1, variant_id, recipe_version_id, quantity,
 		unit_price_minor, discount_minor, net_minor FROM business.checkout_quote_line WHERE quote_id = $1`, first.ID)
+	// A quote that expired 10 days ago is kept; a cutoff newer than 30 days
+	// is refused.
+	h.owner(t, `INSERT INTO business.checkout_quote (id, guest_proof_digest, idempotency_key, body_sha256, handover_day, slot_id,
+		slot_starts_at, slot_ends_at, schedule_revision, fulfillment_mode, subtotal_minor, discount_minor, total_minor, sent_at, expires_at)
+		SELECT 'aaaaaaaa-0000-4000-8000-000000000002', sha256('recent'::bytea), 'recent', body_sha256, handover_day, slot_id,
+		       slot_starts_at, slot_ends_at, schedule_revision, fulfillment_mode, subtotal_minor, discount_minor, total_minor,
+		       now() - interval '11 days', now() - interval '10 days'
+		FROM business.checkout_quote WHERE id = $1`, first.ID)
+	before++
+	if err := h.ownerErr(t, "SELECT business.quote_purge_expired(now() - interval '29 days')"); dbtest.SQLState(err) != "22023" {
+		t.Fatalf("purge cutoff 29 days ago: %v, want 22023", err)
+	}
 	h.owner(t, "SELECT business.quote_purge_expired(now() - interval '31 days')")
 	var n, oldLines int
 	if err := h.admin.QueryRow(h.ctx, `SELECT (SELECT count(*) FROM business.checkout_quote),
