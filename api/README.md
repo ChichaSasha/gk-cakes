@@ -55,6 +55,7 @@ and staging/production reject local hosts and Unix sockets.
 | `PAYMENT_WEBHOOK_SECRET`, `STORAGE_WRITE_KEY` | api | optional until their adapters exist; redacted |
 | `EMAIL_WEBHOOK_SECRET`   | api        | Resend webhook signing secret (`whsec_` + base64), redacted; when set, the API serves `POST /webhooks/email`, otherwise that path is 404 |
 | `AUTH_ISSUER`, `AUTH_PUBLISHABLE_KEY` | api | public identity-provider settings: the exact token issuer `https://<project>.supabase.co/auth/v1` and the publishable key `sb_publishable_...` (a secret key is refused); required in staging/production, otherwise both or neither; without them the authenticated `/api/v1` routes are not served, see [Identity](#identity-k00-gk-021) |
+| `CHECKOUT_ENABLED`       | api        | `true` serves `POST /api/v1/checkouts`; default off (`false`) until payments and the release of unpaid holds exist |
 | `EMAIL_API_KEY`          | worker     | Resend sending key (`re_...`), redacted; see email dispatch below                          |
 | `RECOVERY_B2_KEY_ID`, `RECOVERY_B2_KEY` | worker | B2 application key for the recovery journal (key secret redacted); scope enforced at start, see [Recovery journal](#recovery-journal-k11-gk-024) |
 | `RECOVERY_ENCRYPTION_KEYS` | worker   | journal encryption keys `kid:base64(32 bytes)[,...]`, redacted                              |
@@ -817,6 +818,59 @@ Migration `0011_checkout_quotes.sql`, package `internal/checkout`.
 | `GET /api/v1/admin/discount-codes` | chef, technical support | current terms of each code |
 | `POST /api/v1/admin/discount-codes` | chef | `{code, kind, basis_points?, expires_at?, total_limit?, per_customer_limit?}` |
 | `POST /api/v1/admin/discount-codes/{id}/versions`, `/archive` | chef | new terms `{expected_version, ...}`; archive `{expected_version}` |
+
+## Orders and checkout holds (K02, K04, K05, GK-025 A2)
+
+Migration `0012_orders.sql`. The chef records **policy versions** (refund
+and cancellation terms citing their owner decision and source hash; final
+legal text is reviewed before launch, GK-037); customers consent to the
+newest effective one. `POST /api/v1/checkouts` turns one quote into one order
+awaiting payment, in one transaction:
+
+- the quote's owner (bearer) or guest proof must match (404 otherwise); the
+  quote must not have expired (24 h; equality expires: `QUOTE_EXPIRED`); the
+  consented policy must be the current one (`POLICY_CHANGED`); every recipe
+  version, price, lot price and code version must still be current
+  (`PRICE_CHANGED`: the customer reviews a new quote); the appointment must
+  still be offered (`SLOT_UNAVAILABLE`);
+- it inserts the order (customer full name, a different payer's name only
+  when someone else pays, an email for service notices) and immutable items
+  (unit price, discount share, net paid per line), fixes the refund deadline
+  as the appointment start minus 120 hours (K05), admits the made-to-order
+  cakes to the day (soft capacity: committed cakes plus the quantity within
+  the limit; other orders' holds never own the last place, so two customers
+  can both take it), reserves ready cakes exclusively (`ITEM_UNAVAILABLE`
+  when gone), reserves the code's use within its total and per-customer
+  limits (`CODE_USED_UP`), and binds a guest order to the quote's proof as
+  an order capability (`read`, `pay`, `cancel`, `move_pickup`);
+- a refused checkout leaves nothing behind; a repeated checkout of the same
+  quote returns the same order (`Idempotent-Replayed`), another body is
+  `KEY_REUSED`. The answer is 202 `{order_id, state: "pending",
+  poll_after_seconds: 3}`: never an accepted order.
+
+Quotes now judge day places as admission does (committed cakes only), and
+the quote purge keeps quotes that became orders. Locks follow K00 (day, lots
+by ID, code; rows referencing them only afterwards), so concurrent checkouts
+of the same ready cakes never deadlock; the code is rechecked after its lock.
+A guest replays a checkout only while its order capability is active. Code
+uses move reserved to consumed or released and never back; revoked
+capabilities stay revoked; order snapshots are immutable and terminal orders
+are never reopened.
+
+**Switched off by default:** `POST /api/v1/checkouts` is served only with
+`CHECKOUT_ENABLED=true`. Nothing is charged or confirmed yet, and nothing
+releases unpaid holds: Stripe payment, free confirmation (both behind the K11
+recovery gate) and releasing proven-unpaid holds come next. Recorded
+deviations: the 202 carries the order ID (no payment operation exists yet);
+a 409 `PRICE_CHANGED` asks the client for a new quote (with a fresh guest
+proof) instead of returning one; the appointment is the quote's.
+
+| Route | Who | Notes |
+| --- | --- | --- |
+| `GET /api/v1/policies/current` | anyone | `{id, summary, effective_at, source_decision_id}`; 404 before the first |
+| `POST /api/v1/admin/policies` | chef | `{source_decision_id, source_revision_sha256, summary, effective_at, approver_evidence}` |
+| `POST /api/v1/checkouts` (only with `CHECKOUT_ENABLED=true`) | a guest (`guest_proof` of the quote) or the signed-in owner | `{quote_id, quote_version: 1, consented_policy_version, contact{full_name, email, payer_name?}}` with Idempotency-Key |
+| `GET /api/v1/orders/{id}` | the owner (bearer) or the guest (`X-Order-Capability`: the quote's proof) | the order snapshot; 404 otherwise |
 
 ## Not yet verified
 

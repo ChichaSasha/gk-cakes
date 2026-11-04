@@ -52,6 +52,9 @@ type Options struct {
 	// Checkout serves storefront quotes when set (signed-in quotes and the
 	// chef's discount codes need Identity too).
 	Checkout Checkout
+	// CheckoutEnabled also serves POST /api/v1/checkouts (config
+	// CHECKOUT_ENABLED; off until payments exist).
+	CheckoutEnabled bool
 }
 
 // NewHandler returns the API handler with its middleware chain.
@@ -83,7 +86,7 @@ func NewHandler(opts Options) http.Handler {
 		}
 	}
 	if opts.Checkout != nil {
-		checkoutRoutes(mux, opts.Checkout, opts.Identity, opts.Logger)
+		checkoutRoutes(mux, opts.Checkout, opts.Identity, opts.CheckoutEnabled, opts.Logger)
 	}
 	if opts.Schedule != nil {
 		schedulePublicRoutes(mux, opts.Schedule, opts.Logger)
@@ -201,7 +204,7 @@ func withCORS(origin string, next http.Handler) http.Handler {
 		h.Set("Access-Control-Expose-Headers", "X-Request-Id, Idempotent-Replayed")
 		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 			h.Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE")
-			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, X-Quote-Proof")
+			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, X-Quote-Proof, X-Order-Capability")
 			h.Set("Access-Control-Max-Age", "600")
 			w.WriteHeader(http.StatusNoContent)
 			return

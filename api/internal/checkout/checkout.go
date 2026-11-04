@@ -401,7 +401,8 @@ var invalidFields = map[string]string{
 	"lines_duplicate": "lines", "code_unknown": "discount_code", "code_requires_sign_in": "discount_code",
 	"code_not_applicable": "discount_code", "kind_invalid": "kind", "expires_invalid": "expires_at",
 	"limit_invalid": "total_limit", "per_customer_limit_invalid": "per_customer_limit", "code_invalid": "code",
-	"idempotency_key_invalid": "Idempotency-Key", "proof_reused": "guest_proof",
+	"idempotency_key_invalid": "Idempotency-Key", "proof_reused": "guest_proof", "contact_invalid": "contact",
+	"effective_invalid": "effective_at", "policy_invalid": "policy",
 	"expected_version_required": "expected_version",
 }
 
@@ -415,7 +416,11 @@ var invalidMessages = map[string]string{
 }
 
 var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "state_conflict": true,
-	"duplicate": true, "item_unavailable": true, "slot_unavailable": true}
+	"duplicate": true, "item_unavailable": true, "slot_unavailable": true, "price_changed": true,
+	"quote_expired": true, "policy_changed": true, "code_used_up": true}
+
+// conflictAliases name engine refusals in the customer's terms.
+var conflictAliases = map[string]string{"day_full": "slot_unavailable", "stock_unavailable": "item_unavailable"}
 
 func gatewayError(op string, err error) error {
 	var pgErr *pgconn.PgError
@@ -428,6 +433,9 @@ func gatewayError(op string, err error) error {
 	case "GK404":
 		return catalog.ErrNotFound
 	case "GK409":
+		if alias, ok := conflictAliases[pgErr.Message]; ok {
+			return &catalog.ConflictError{Code: alias}
+		}
 		if conflictCodes[pgErr.Message] {
 			return &catalog.ConflictError{Code: pgErr.Message}
 		}

@@ -394,6 +394,11 @@ var conflictMessages = map[string]string{
 	// Quotes: what the customer chose changed since it was shown; choose again.
 	"item_unavailable": "A cake in your basket is no longer available as chosen. Please check your basket.",
 	"slot_unavailable": "That time is no longer available. Please choose another time.",
+	// Checkout: the reviewed quote can no longer be accepted as it is.
+	"price_changed":  "Something in your quote changed. Please review the new quote.",
+	"quote_expired":  "This quote has expired. Please review a new quote.",
+	"policy_changed": "Our terms changed since you reviewed them. Please review them again.",
+	"code_used_up":   "This code has been used up.",
 }
 
 // catalogError maps catalog errors to K00 responses without SQL detail.
@@ -424,6 +429,14 @@ func catalogError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, e
 			code = "ITEM_UNAVAILABLE"
 		case "slot_unavailable":
 			code = "SLOT_UNAVAILABLE"
+		case "price_changed":
+			code = "PRICE_CHANGED"
+		case "quote_expired":
+			code = "QUOTE_EXPIRED"
+		case "policy_changed":
+			code = "POLICY_CHANGED"
+		case "code_used_up":
+			code = "CODE_USED_UP"
 		}
 		writeError(w, r, http.StatusConflict, code, msg, false)
 	case errors.As(err, &inv):

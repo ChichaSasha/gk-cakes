@@ -67,6 +67,7 @@ func main() {
 	opts.Catalog = &catalog.Store{DB: pool}
 	opts.Schedule = &schedule.Store{DB: pool}
 	opts.Checkout = &checkout.Store{DB: pool}
+	opts.CheckoutEnabled = cfg.CheckoutEnabled
 	handler := httpapi.NewHandler(opts)
 	if err := httpapi.Serve(ctx, ln, handler, cfg.ShutdownTimeout); err != nil {
 		logger.Error("serve", "error", err.Error())
