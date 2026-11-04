@@ -108,7 +108,7 @@ type meResponse struct {
 	SessionExpiresAt string   `json:"session_expires_at"`
 }
 
-func me(_ http.ResponseWriter, a identity.Actor) meResponse {
+func me(a identity.Actor) meResponse {
 	caps := a.Capabilities
 	if caps == nil {
 		caps = []string{}
@@ -119,16 +119,16 @@ func me(_ http.ResponseWriter, a identity.Actor) meResponse {
 // identityRoutes registers the authenticated routes of this milestone.
 func identityRoutes(mux *http.ServeMux, id Identity, logger *slog.Logger) {
 	mux.HandleFunc("GET /api/v1/me", signedIn(id, logger, func(w http.ResponseWriter, _ *http.Request, a identity.Actor) {
-		writeJSON(w, http.StatusOK, me(w, a))
+		writeJSON(w, http.StatusOK, me(a))
 	}))
 	mux.HandleFunc("GET /api/v1/admin/me", staff(id, logger, nil, func(w http.ResponseWriter, _ *http.Request, a identity.Actor) {
-		writeJSON(w, http.StatusOK, me(w, a))
+		writeJSON(w, http.StatusOK, me(a))
 	}))
 	mux.HandleFunc("GET /api/v1/admin/staff", staff(id, logger, []string{identity.Chef}, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
 		list, err := id.ListStaff(r.Context(), a)
 		var pgErr *pgconn.PgError
 		switch {
-		case errors.As(err, &pgErr) && pgErr.Code == "42501":
+		case errors.As(err, &pgErr) && pgErr.Code == "GK403":
 			// The database saw no active chef capability (revoked meanwhile).
 			writeError(w, r, http.StatusForbidden, "FORBIDDEN", "You don't have access to this", false)
 		case err != nil:

@@ -100,7 +100,10 @@ END;
 $$;
 
 -- Active staff and their capabilities, for a chef. The actor's own chef
--- capability is checked here as well as in the API.
+-- capability is checked here as well as in the API (a revocation between the
+-- two is caught). The database trusts the subject the API passes, which the
+-- API has verified; this is not independent authentication. A refusal raises
+-- GK403, so a missing grant (42501) is never mistaken for one.
 CREATE FUNCTION business.identity_staff_list(p_actor_subject uuid)
 RETURNS TABLE (staff_account_id uuid, staff_capability text, staff_granted_at timestamptz)
 LANGUAGE plpgsql
@@ -113,7 +116,7 @@ BEGIN
     JOIN business.staff_capability c ON c.account_id = a.id
     WHERE a.provider_subject = p_actor_subject AND a.disabled_at IS NULL
       AND c.capability = 'chef' AND c.revoked_at IS NULL) THEN
-    RAISE EXCEPTION 'listing staff requires an active chef capability' USING ERRCODE = 'insufficient_privilege';
+    RAISE EXCEPTION 'listing staff requires an active chef capability' USING ERRCODE = 'GK403';
   END IF;
   RETURN QUERY
   SELECT c.account_id, c.capability, c.granted_at
@@ -169,7 +172,7 @@ BEGIN
     RAISE EXCEPTION 'a note of 1 to 200 characters is required' USING ERRCODE = 'invalid_parameter_value';
   END IF;
   UPDATE business.staff_capability c
-  SET revoked_at = pg_catalog.now()
+  SET revoked_at = GREATEST(pg_catalog.now(), c.granted_at)
   FROM business.account a
   WHERE a.id = c.account_id AND a.provider_subject = p_subject
     AND c.capability = p_capability AND c.revoked_at IS NULL
@@ -198,11 +201,13 @@ BEGIN
   IF p_note IS NULL OR length(p_note) NOT BETWEEN 1 AND 200 THEN
     RAISE EXCEPTION 'a note of 1 to 200 characters is required' USING ERRCODE = 'invalid_parameter_value';
   END IF;
+  -- A subject can be disabled before its first sign-in: the account is
+  -- created (audited as an operator action) and disabled.
+  v_account := business.account_ensure(p_subject, true);
   UPDATE business.account a
   SET disabled_at = CASE WHEN p_disabled THEN pg_catalog.now() END, version = a.version + 1
-  WHERE a.provider_subject = p_subject AND (a.disabled_at IS NOT NULL) <> p_disabled
-  RETURNING a.id INTO v_account;
-  IF v_account IS NULL THEN
+  WHERE a.id = v_account AND (a.disabled_at IS NOT NULL) <> p_disabled;
+  IF NOT FOUND THEN
     RETURN false;
   END IF;
   PERFORM business.audit_record('system', NULL,

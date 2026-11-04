@@ -18,6 +18,7 @@ import (
 	"math/big"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -29,7 +30,12 @@ const Audience = "authenticated"
 // MaxTokenBytes bounds an access token before any parsing.
 const MaxTokenBytes = 8 << 10
 
-const maxJWKSBytes = 64 << 10
+const (
+	maxJWKSBytes = 64 << 10
+	// fetchTimeout bounds one key-set fetch; it runs detached from the
+	// request that triggered it, so a cancelled request cannot abort it.
+	fetchTimeout = 5 * time.Second
+)
 
 var (
 	// ErrUnauthenticated: the token is missing, malformed, not signed by a
@@ -46,6 +52,7 @@ var (
 var (
 	uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	kidPattern  = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
+	b64         = base64.RawURLEncoding.Strict()
 )
 
 // Claims are the verified facts of an access token.
@@ -56,20 +63,33 @@ type Claims struct {
 }
 
 // Verifier checks ES256 access tokens against the provider's JWKS, fetched
-// from the fixed configured issuer. Keys are cached; an unknown key ID
-// refetches the set (a key rotation), at most once per RefreshInterval.
+// from the fixed configured issuer.
+//
+// Keys are cached. A token whose key is unknown (a rotation) or whose cached
+// set is older than MaxKeyAge waits for a refresh; refreshes start at most
+// once per RefreshInterval (RetryInterval while no key set was ever
+// fetched), run one at a time in the background with their own timeout, and
+// never block a token whose key is cached and fresh. If a refresh fails, the
+// cached set stays usable until HardKeyAge, then tokens fail closed.
 type Verifier struct {
 	// Issuer is the exact iss claim, e.g. https://<ref>.supabase.co/auth/v1;
 	// the key set is read from Issuer + "/.well-known/jwks.json".
 	Issuer string
-	HTTP   *http.Client
+	// HTTP fetches the key set; it should not follow redirects (NoRedirects).
+	HTTP *http.Client
 	// Leeway tolerates clock skew on exp, nbf and iat (default 30s).
 	Leeway time.Duration
 	// RefreshInterval is the minimum time between key-set fetches (default 30s).
 	RefreshInterval time.Duration
-	// MaxKeyAge refetches the key set when older (default 10m), so a key
+	// RetryInterval replaces RefreshInterval while no key set was ever
+	// fetched (default 5s).
+	RetryInterval time.Duration
+	// MaxKeyAge refreshes the key set when older (default 10m), so a key
 	// withdrawn by the provider stops being accepted.
 	MaxKeyAge time.Duration
+	// HardKeyAge is how long a set that cannot be refreshed stays trusted
+	// (default 1h); after that, tokens fail closed.
+	HardKeyAge time.Duration
 	// Now returns the current time (default time.Now).
 	Now func() time.Time
 
@@ -77,7 +97,13 @@ type Verifier struct {
 	keys        map[string]*ecdsa.PublicKey
 	fetchedAt   time.Time
 	lastAttempt time.Time
+	lastErr     error
+	inflight    chan struct{} // closed when the running refresh ends
 }
+
+// NoRedirects is an http.Client CheckRedirect policy for provider calls: the
+// configured issuer is fixed, so a redirect is answered as an error status.
+func NoRedirects(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
 func (v *Verifier) now() time.Time {
 	if v.Now != nil {
@@ -93,29 +119,9 @@ func orDefault(d, def time.Duration) time.Duration {
 	return def
 }
 
-type tokenHeader struct {
-	Alg  string          `json:"alg"`
-	Kid  string          `json:"kid"`
-	Typ  string          `json:"typ"`
-	Crit json.RawMessage `json:"crit"`
-}
-
-type tokenClaims struct {
-	Iss         *string         `json:"iss"`
-	Aud         json.RawMessage `json:"aud"`
-	Sub         *string         `json:"sub"`
-	Exp         *json.Number    `json:"exp"`
-	Nbf         *json.Number    `json:"nbf"`
-	Iat         *json.Number    `json:"iat"`
-	Role        *string         `json:"role"`
-	SessionID   *string         `json:"session_id"`
-	IsAnonymous *bool           `json:"is_anonymous"`
-}
-
 // Verify checks the token's signature, issuer, audience, time window,
 // subject, session and role. Any failure is ErrUnauthenticated, except an
-// unreachable key set with no cached key, which is ErrUnavailable. Errors
-// never contain the token.
+// unusable key set, which is ErrUnavailable. Errors never contain the token.
 func (v *Verifier) Verify(ctx context.Context, token string) (Claims, error) {
 	if token == "" || len(token) > MaxTokenBytes {
 		return Claims{}, fmt.Errorf("%w: missing or oversized", ErrUnauthenticated)
@@ -124,29 +130,34 @@ func (v *Verifier) Verify(ctx context.Context, token string) (Claims, error) {
 	if len(parts) != 3 {
 		return Claims{}, fmt.Errorf("%w: not a signed token", ErrUnauthenticated)
 	}
-	headerJSON, err1 := base64.RawURLEncoding.DecodeString(parts[0])
-	payload, err2 := base64.RawURLEncoding.DecodeString(parts[1])
-	sig, err3 := base64.RawURLEncoding.DecodeString(parts[2])
+	headerJSON, err1 := b64.DecodeString(parts[0])
+	payload, err2 := b64.DecodeString(parts[1])
+	sig, err3 := b64.DecodeString(parts[2])
 	if err1 != nil || err2 != nil || err3 != nil {
 		return Claims{}, fmt.Errorf("%w: malformed encoding", ErrUnauthenticated)
 	}
-	var h tokenHeader
-	if err := strictJSON(headerJSON, &h); err != nil {
-		return Claims{}, fmt.Errorf("%w: malformed header", ErrUnauthenticated)
+	header, err := object(headerJSON)
+	if err != nil {
+		return Claims{}, fmt.Errorf("%w: malformed header: %v", ErrUnauthenticated, err)
 	}
+	alg, okAlg := str(header, "alg")
+	kid, okKid := str(header, "kid")
+	typ, okTyp := str(header, "typ")
+	_, hasTyp := header["typ"]
+	_, hasCrit := header["crit"]
 	switch {
-	case h.Alg != "ES256":
-		return Claims{}, fmt.Errorf("%w: algorithm %q not accepted", ErrUnauthenticated, h.Alg)
-	case !kidPattern.MatchString(h.Kid):
+	case !okAlg || alg != "ES256":
+		return Claims{}, fmt.Errorf("%w: algorithm not accepted", ErrUnauthenticated)
+	case !okKid || !kidPattern.MatchString(kid):
 		return Claims{}, fmt.Errorf("%w: missing key ID", ErrUnauthenticated)
-	case h.Typ != "" && !strings.EqualFold(h.Typ, "JWT"):
-		return Claims{}, fmt.Errorf("%w: type %q not accepted", ErrUnauthenticated, h.Typ)
-	case h.Crit != nil:
+	case hasTyp && (!okTyp || !strings.EqualFold(typ, "JWT")):
+		return Claims{}, fmt.Errorf("%w: type not accepted", ErrUnauthenticated)
+	case hasCrit:
 		return Claims{}, fmt.Errorf("%w: critical header extensions not supported", ErrUnauthenticated)
 	case len(sig) != 64:
 		return Claims{}, fmt.Errorf("%w: malformed signature", ErrUnauthenticated)
 	}
-	key, err := v.key(ctx, h.Kid)
+	key, err := v.key(ctx, kid)
 	if err != nil {
 		return Claims{}, err
 	}
@@ -159,61 +170,103 @@ func (v *Verifier) Verify(ctx context.Context, token string) (Claims, error) {
 }
 
 func (v *Verifier) claims(payload []byte) (Claims, error) {
-	var c tokenClaims
-	if err := strictJSON(payload, &c); err != nil {
-		return Claims{}, fmt.Errorf("%w: malformed claims", ErrUnauthenticated)
+	c, err := object(payload)
+	if err != nil {
+		return Claims{}, fmt.Errorf("%w: malformed claims: %v", ErrUnauthenticated, err)
 	}
 	now := v.now()
 	leeway := orDefault(v.Leeway, 30*time.Second)
-	exp, okExp := unix(c.Exp)
-	nbf, okNbf := unix(c.Nbf)
-	iat, okIat := unix(c.Iat)
+	iss, okIss := str(c, "iss")
+	sub, okSub := str(c, "sub")
+	sid, okSid := str(c, "session_id")
+	role, okRole := str(c, "role")
+	exp, okExp := unix(c, "exp")
+	nbf, okNbf := unix(c, "nbf")
+	iat, okIat := unix(c, "iat")
+	_, hasNbf := c["nbf"]
+	_, hasIat := c["iat"]
+	anonymous, hasAnon := c["is_anonymous"]
 	switch {
-	case c.Iss == nil || *c.Iss != v.Issuer:
+	case !okIss || iss != v.Issuer:
 		return Claims{}, fmt.Errorf("%w: wrong issuer", ErrUnauthenticated)
-	case !hasAudience(c.Aud, Audience):
+	case !hasAudience(c["aud"], Audience):
 		return Claims{}, fmt.Errorf("%w: wrong audience", ErrUnauthenticated)
 	case !okExp:
-		return Claims{}, fmt.Errorf("%w: no expiry", ErrUnauthenticated)
+		return Claims{}, fmt.Errorf("%w: no valid expiry", ErrUnauthenticated)
 	case !now.Before(exp.Add(leeway)):
 		return Claims{}, fmt.Errorf("%w: expired", ErrUnauthenticated)
-	case c.Nbf != nil && (!okNbf || nbf.After(now.Add(leeway))):
+	case hasNbf && (!okNbf || nbf.After(now.Add(leeway))):
 		return Claims{}, fmt.Errorf("%w: not valid yet", ErrUnauthenticated)
-	case c.Iat != nil && (!okIat || iat.After(now.Add(leeway))):
+	case hasIat && (!okIat || iat.After(now.Add(leeway))):
 		return Claims{}, fmt.Errorf("%w: issued in the future", ErrUnauthenticated)
-	case c.Sub == nil || !uuidPattern.MatchString(*c.Sub):
+	case !okSub || !uuidPattern.MatchString(sub):
 		return Claims{}, fmt.Errorf("%w: no user subject", ErrUnauthenticated)
-	case c.SessionID == nil || !uuidPattern.MatchString(*c.SessionID):
+	case !okSid || !uuidPattern.MatchString(sid):
 		return Claims{}, fmt.Errorf("%w: no session", ErrUnauthenticated)
-	case c.Role == nil || *c.Role != Audience:
+	case !okRole || role != Audience:
 		return Claims{}, fmt.Errorf("%w: not a signed-in user's token", ErrUnauthenticated)
-	case c.IsAnonymous != nil && *c.IsAnonymous:
+	case hasAnon && string(anonymous) != "false":
 		return Claims{}, fmt.Errorf("%w: anonymous session", ErrUnauthenticated)
 	}
-	return Claims{Subject: *c.Sub, SessionID: *c.SessionID, ExpiresAt: exp}, nil
+	return Claims{Subject: sub, SessionID: sid, ExpiresAt: exp}, nil
 }
 
-// strictJSON decodes exactly one JSON object with numbers kept exact.
-// Unknown fields are allowed (providers add claims); duplicates are not
-// rejected by encoding/json, so the last value wins as in every major JWT
-// library.
-func strictJSON(b []byte, v any) error {
+// object decodes exactly one JSON object into its members by exact name,
+// refusing duplicate names and trailing data (RFC 7515 §4, RFC 7519 §4).
+func object(b []byte) (map[string]json.RawMessage, error) {
 	d := json.NewDecoder(bytes.NewReader(b))
-	d.UseNumber()
-	if err := d.Decode(v); err != nil {
-		return err
+	if t, err := d.Token(); err != nil || t != json.Delim('{') {
+		return nil, errors.New("not an object")
+	}
+	members := map[string]json.RawMessage{}
+	for d.More() {
+		t, err := d.Token()
+		if err != nil {
+			return nil, err
+		}
+		name, ok := t.(string)
+		if !ok {
+			return nil, errors.New("bad member name")
+		}
+		if _, dup := members[name]; dup {
+			return nil, fmt.Errorf("duplicate member %q", name)
+		}
+		var raw json.RawMessage
+		if err := d.Decode(&raw); err != nil {
+			return nil, err
+		}
+		members[name] = raw
+	}
+	if _, err := d.Token(); err != nil { // the closing brace
+		return nil, err
 	}
 	if _, err := d.Token(); !errors.Is(err, io.EOF) {
-		return errors.New("trailing data")
+		return nil, errors.New("trailing data")
 	}
-	return nil
+	return members, nil
 }
 
-func unix(n *json.Number) (time.Time, bool) {
-	if n == nil {
+// str returns a member that is a JSON string.
+func str(m map[string]json.RawMessage, name string) (string, bool) {
+	raw, ok := m[name]
+	if !ok || len(raw) == 0 || raw[0] != '"' {
+		return "", false
+	}
+	var s string
+	if json.Unmarshal(raw, &s) != nil {
+		return "", false
+	}
+	return s, true
+}
+
+// unix returns a member that is a JSON number of seconds since the epoch,
+// before year 5138.
+func unix(m map[string]json.RawMessage, name string) (time.Time, bool) {
+	raw, ok := m[name]
+	if !ok || len(raw) == 0 || (raw[0] != '-' && (raw[0] < '0' || raw[0] > '9')) {
 		return time.Time{}, false
 	}
-	f, err := n.Float64()
+	f, err := strconv.ParseFloat(string(raw), 64)
 	if err != nil || f < 0 || f > 1e11 {
 		return time.Time{}, false
 	}
@@ -223,11 +276,11 @@ func unix(n *json.Number) (time.Time, bool) {
 
 func hasAudience(raw json.RawMessage, want string) bool {
 	var one string
-	if json.Unmarshal(raw, &one) == nil {
+	if len(raw) > 0 && raw[0] == '"' && json.Unmarshal(raw, &one) == nil {
 		return one == want
 	}
 	var many []string
-	if json.Unmarshal(raw, &many) == nil {
+	if len(raw) > 0 && raw[0] == '[' && json.Unmarshal(raw, &many) == nil {
 		for _, a := range many {
 			if a == want {
 				return true
@@ -237,37 +290,70 @@ func hasAudience(raw json.RawMessage, want string) bool {
 	return false
 }
 
-// key returns the public key for kid, refreshing the key set when the kid is
-// unknown or the set is older than MaxKeyAge (rate-limited).
+// key returns the public key for kid. See Verifier for the refresh rules.
 func (v *Verifier) key(ctx context.Context, kid string) (*ecdsa.PublicKey, error) {
+	maxAge := orDefault(v.MaxKeyAge, 10*time.Minute)
+	for waited := false; ; waited = true {
+		v.mu.Lock()
+		now := v.now()
+		k, known := v.keys[kid]
+		if known && now.Sub(v.fetchedAt) <= maxAge {
+			v.mu.Unlock()
+			return k, nil
+		}
+		if !waited && v.inflight == nil && v.due(now) {
+			v.lastAttempt = now
+			v.inflight = make(chan struct{})
+			go v.refresh(v.inflight)
+		}
+		wait := v.inflight
+		v.mu.Unlock()
+		if waited || wait == nil {
+			break
+		}
+		select {
+		case <-wait:
+		case <-ctx.Done():
+			return nil, fmt.Errorf("%w: waiting for signing keys: %v", ErrUnavailable, ctx.Err())
+		}
+	}
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	now := v.now()
 	k, known := v.keys[kid]
-	stale := now.Sub(v.fetchedAt) > orDefault(v.MaxKeyAge, 10*time.Minute)
-	if known && !stale {
-		return k, nil
-	}
-	if v.lastAttempt.IsZero() || now.Sub(v.lastAttempt) >= orDefault(v.RefreshInterval, 30*time.Second) {
-		v.lastAttempt = now
-		keys, err := v.fetch(ctx)
-		switch {
-		case err == nil:
-			v.keys, v.fetchedAt = keys, now
-			k, known = keys[kid]
-		case v.keys == nil:
-			return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
-		}
-		// A failed refresh keeps the cached set: a provider outage must not
-		// reject tokens signed with a key that was current.
-	}
 	switch {
-	case v.keys == nil: // never fetched successfully; retried after the interval
-		return nil, fmt.Errorf("%w: signing keys not available yet", ErrUnavailable)
-	case !known:
-		return nil, fmt.Errorf("%w: unknown signing key", ErrUnauthenticated)
+	case v.keys == nil:
+		return nil, fmt.Errorf("%w: signing keys not available: %v", ErrUnavailable, v.lastErr)
+	case known && v.now().Sub(v.fetchedAt) <= orDefault(v.HardKeyAge, time.Hour):
+		return k, nil // stale, and the refresh failed or is not due yet
+	case known:
+		return nil, fmt.Errorf("%w: signing keys too old to trust: %v", ErrUnavailable, v.lastErr)
 	}
-	return k, nil
+	return nil, fmt.Errorf("%w: unknown signing key", ErrUnauthenticated)
+}
+
+// due reports whether a refresh may start now (v.mu held).
+func (v *Verifier) due(now time.Time) bool {
+	interval := orDefault(v.RefreshInterval, 30*time.Second)
+	if v.keys == nil {
+		interval = orDefault(v.RetryInterval, 5*time.Second)
+	}
+	return v.lastAttempt.IsZero() || now.Sub(v.lastAttempt) >= interval
+}
+
+// refresh fetches the key set detached from any request and publishes it;
+// a failed fetch keeps the cached set.
+func (v *Verifier) refresh(done chan struct{}) {
+	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
+	keys, err := v.fetch(ctx)
+	cancel()
+	v.mu.Lock()
+	if err == nil {
+		v.keys, v.fetchedAt = keys, v.now()
+	}
+	v.lastErr = err
+	v.inflight = nil
+	v.mu.Unlock()
+	close(done)
 }
 
 type jwk struct {
@@ -289,7 +375,7 @@ func (v *Verifier) fetch(ctx context.Context) (map[string]*ecdsa.PublicKey, erro
 	}
 	client := v.HTTP
 	if client == nil {
-		client = &http.Client{Timeout: 5 * time.Second}
+		client = &http.Client{Timeout: fetchTimeout, CheckRedirect: NoRedirects}
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -315,8 +401,8 @@ func (v *Verifier) fetch(ctx context.Context) (map[string]*ecdsa.PublicKey, erro
 			(k.Use != "" && k.Use != "sig") || !kidPattern.MatchString(k.Kid) {
 			continue
 		}
-		x, errX := base64.RawURLEncoding.DecodeString(k.X)
-		y, errY := base64.RawURLEncoding.DecodeString(k.Y)
+		x, errX := b64.DecodeString(k.X)
+		y, errY := b64.DecodeString(k.Y)
 		if errX != nil || errY != nil || len(x) != 32 || len(y) != 32 {
 			continue
 		}

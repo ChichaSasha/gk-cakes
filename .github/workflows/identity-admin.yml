@@ -2,9 +2,11 @@
 # Grants or revokes a staff capability, disables or re-enables an account, or
 # shows one, with the migration credential; the database audits each change.
 # Used to bootstrap the first manager approved in GK-010 and to cut off access
-# until chefs manage staff in the application. Only repository admins can run
-# it, from main. Inputs (provider user IDs, capability, note) are visible in
-# the run; never put personal data in the note.
+# until chefs manage staff in the application. Anyone with write access can
+# dispatch it, but only from main, where the staging environment holds the
+# migration credential. Inputs (provider user IDs, capability, note) are
+# visible in the run; never put personal data in the note. The run ID is
+# appended to the audited note, which traces the actor through GitHub.
 name: Identity admin
 run-name: Identity admin ${{ inputs.action }} ${{ inputs.capability }}
 
@@ -72,6 +74,10 @@ jobs:
             args+=(-capability "$CAPABILITY")
           fi
           if [[ "$ACTION" != "show" ]]; then
-            args+=(-note "$NOTE (by $GITHUB_ACTOR, run $GITHUB_RUN_ID)")
+            if [[ -z "${NOTE// /}" ]]; then
+              echo "::error::a note is required for $ACTION"
+              exit 2
+            fi
+            args+=(-note "$NOTE (run $GITHUB_RUN_ID)")
           fi
           go run ./cmd/gk-identity-admin "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"

@@ -87,7 +87,7 @@ func readiness(env config.Env, pool database.Pool, logger *slog.Logger) httpapi.
 // through the gk_api login. Provider calls have their own short budget
 // (proposed provider timeout 5s) inside the request deadline.
 func identityService(a config.Auth, db identity.Querier) *identity.Service {
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: identity.NoRedirects}
 	return &identity.Service{
 		Verifier:  &identity.Verifier{Issuer: a.Issuer, HTTP: client},
 		Sessions:  &identity.SessionChecker{Issuer: a.Issuer, PublishableKey: a.PublishableKey, HTTP: client},

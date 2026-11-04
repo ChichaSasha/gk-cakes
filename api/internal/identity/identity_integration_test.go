@@ -166,15 +166,22 @@ func TestOperatorCommandsGrantRevokeAndDisable(t *testing.T) {
 	if _, err := h.dir.Resolve(h.ctx, claims(chef)); err != nil {
 		t.Fatalf("re-enabled: %v", err)
 	}
+	// A subject can be disabled before its first sign-in.
+	if !h.operator(t, "SELECT business.account_set_disabled($1, true, 'blocked before sign-up')", bob) {
+		t.Fatal("disabling a subject with no account reported no change")
+	}
+	if _, err := h.dir.Resolve(h.ctx, claims(bob)); !errors.Is(err, identity.ErrDisabled) {
+		t.Fatalf("first sign-in of a disabled subject: %v, want ErrDisabled", err)
+	}
 	for action, want := range map[string]int{"staff.capability_granted": 2, "staff.capability_revoked": 1,
-		"account.disabled": 1, "account.enabled": 1, "account.created": 1} {
+		"account.disabled": 2, "account.enabled": 1, "account.created": 2} {
 		if n := h.audits(t, action); n != want {
 			t.Errorf("%s audits = %d, want %d", action, n, want)
 		}
 	}
 	var via string
 	if err := h.admin.QueryRow(h.ctx, `SELECT actor_kind || ':' || (detail->>'via') FROM business.audit_event
-		WHERE action = 'account.created'`).Scan(&via); err != nil || via != "system:operator" {
+		WHERE action = 'account.created' ORDER BY occurred_at LIMIT 1`).Scan(&via); err != nil || via != "system:operator" {
 		t.Errorf("an account created by a grant is audited as %q (%v), want system:operator", via, err)
 	}
 	for name, sql := range map[string]string{
@@ -203,17 +210,22 @@ func TestStaffListNeedsAnActiveChef(t *testing.T) {
 		t.Fatalf("chef lists staff: %+v, %v", list, err)
 	}
 	b, _ := h.dir.Resolve(h.ctx, claims(bob))
-	if _, err := h.dir.ListStaff(h.ctx, b); dbtest.SQLState(err) != "42501" {
-		t.Fatalf("fulfillment lists staff: %v, want 42501", err)
+	if _, err := h.dir.ListStaff(h.ctx, b); dbtest.SQLState(err) != "GK403" {
+		t.Fatalf("fulfillment lists staff: %v, want GK403", err)
+	}
+	// A disabled staff member's grants are not listed.
+	h.operator(t, "SELECT business.account_set_disabled($1, true, 'away')", bob)
+	if list, err := h.dir.ListStaff(h.ctx, c); err != nil || len(list) != 1 || list[0].Capability != identity.Chef {
+		t.Fatalf("staff list with a disabled packer: %+v, %v; want only the chef", list, err)
 	}
 	h.operator(t, "SELECT business.account_set_disabled($1, true, 'away')", chef)
-	if _, err := h.dir.ListStaff(h.ctx, c); dbtest.SQLState(err) != "42501" {
-		t.Fatalf("disabled chef lists staff: %v, want 42501", err)
+	if _, err := h.dir.ListStaff(h.ctx, c); dbtest.SQLState(err) != "GK403" {
+		t.Fatalf("disabled chef lists staff: %v, want GK403", err)
 	}
 	h.operator(t, "SELECT business.account_set_disabled($1, false, 'back')", chef)
 	h.operator(t, "SELECT business.staff_revoke($1, 'chef', 'stepped down')", chef)
-	if _, err := h.dir.ListStaff(h.ctx, c); dbtest.SQLState(err) != "42501" {
-		t.Fatalf("revoked chef lists staff: %v, want 42501", err)
+	if _, err := h.dir.ListStaff(h.ctx, c); dbtest.SQLState(err) != "GK403" {
+		t.Fatalf("revoked chef lists staff: %v, want GK403", err)
 	}
 }
 

@@ -66,11 +66,11 @@ attention). At start the worker checks the B2 key's scope and reachability and
 exits with status 1 if the journal is not usable: no email is sent without it.
 The API still accepts an `EMAIL_API_KEY` but does not use it.
 
-Not consumed yet: `AUTH_*` issuer/audience/JWKS settings (GK-021). They are added,
-with validation, by the ticket that uses them.
-
-API endpoints: `GET /healthz` (liveness), `GET /readyz` (database reachable),
-`POST /webhooks/email` (Resend events, Svix-signed; only with `EMAIL_WEBHOOK_SECRET`).
+API endpoints: `GET /healthz` (liveness), `GET /readyz` (database reachable and,
+outside local, the login check), `POST /webhooks/email` (Resend events,
+Svix-signed; only with `EMAIL_WEBHOOK_SECRET`), and with `AUTH_ISSUER` the
+authenticated `GET /api/v1/me`, `GET /api/v1/admin/me` and
+`GET /api/v1/admin/staff` (see [Identity](#identity-k00-gk-021)).
 
 ### Secret inventory
 
@@ -540,12 +540,17 @@ from the fixed configured issuer's JWKS (`AUTH_ISSUER` + `/.well-known/jwks.json
 when present) within 30 seconds of clock skew; `sub` and `session_id` UUIDs;
 `role` `authenticated`; not an anonymous session. Other algorithms, a missing
 key ID, critical header extensions, other key types and malformed or oversized
-tokens are refused. Keys are cached; an unknown key ID (a rotation) refetches
-the set at most every 30 seconds, and a set older than 10 minutes is refetched
-so a withdrawn key stops working. If the key set cannot be fetched and none is
-cached, requests fail closed (503); a later outage keeps using cached keys.
-Provider metadata (`app_metadata`, `user_metadata`, any role claim) is never
-read for authorization.
+tokens are refused. Claims are read by exact name (duplicates, quoted numbers
+and non-canonical base64 are refused). Keys are cached. A token whose key is
+unknown (a rotation) or whose cached set is older than 10 minutes waits for a
+refresh, so a withdrawn key stops working. Refreshes start at most every 30
+seconds (5 while no set was ever fetched), run one at a time in the background
+with their own 5-second timeout, follow no redirects, and never delay a token
+whose key is cached and fresh; a cancelled request cannot abort one. If a
+refresh fails, the cached set stays usable for up to an hour, then requests
+fail closed (503), as they do when no set was ever fetched. Provider metadata
+(`app_metadata`, `user_metadata`, any role claim) is never read for
+authorization.
 
 **Accounts and capabilities** (migration `0007_identity.sql`): the first
 authenticated request of a subject creates its local account
@@ -558,17 +563,21 @@ future roles grant nothing. A disabled account can do nothing (403
 **Sessions.** Signing out ends the provider session but cannot revoke an
 issued token (1 hour on the sandbox). Staff routes, and later every sensitive
 mutation, ask the provider whether the session is current (`GET
-AUTH_ISSUER/user`): an ended session is 401 `SESSION_ENDED` at once, and an
-unanswered check fails closed (503). Customer reads rely on the verified token
-until it expires. Observed on the sandbox (2026-11-04): after sign-out,
-`/user` answers 403 `session_not_found` for the old token and the refresh
-token is refused.
+AUTH_ISSUER/user`): a refusal naming an ended session or user
+(`session_not_found`, `user_not_found`, `user_banned`, ...) is 401
+`SESSION_ENDED` at once; any other answer, including a wrong publishable key
+(401 without a code), fails closed (503) and is logged with its status and
+code. Customer reads of their own account rely on the verified token until it
+expires (a GK-021 decision, to revisit before order history is served).
+Observed on the sandbox (2026-11-04): after sign-out, `/user` answers 403
+`session_not_found` for the old token and the refresh token is refused; a
+wrong publishable key gets 401 "Invalid API key".
 
 | Route | Who | Responses |
 | --- | --- | --- |
 | `GET /api/v1/me` | any signed-in, enabled account | `{account_id, capabilities, session_expires_at}` |
 | `GET /api/v1/admin/me` | any staff capability, current session | same |
-| `GET /api/v1/admin/staff` | `chef`, current session (checked again by the database) | `{staff: [{account_id, capability, granted_at}]}` |
+| `GET /api/v1/admin/staff` | `chef`, current session (checked again by the database, which trusts the subject the API verified) | `{staff: [{account_id, capability, granted_at}]}` (enabled accounts only) |
 
 Errors: 401 `UNAUTHENTICATED` (no or refused token, with
 `WWW-Authenticate: Bearer`), 401 `SESSION_ENDED`, 403 `FORBIDDEN` (missing
@@ -580,8 +589,10 @@ the token.
 revocations and disabling are operator commands, audited by the database:
 `go run ./cmd/gk-identity-admin -action grant|revoke|disable|enable|show
 -subject <uuid> [-capability ...] -note "..."` with `MIGRATION_DATABASE_URL`, or
-on staging the **Identity admin** workflow (repository admins, from `main`).
-The API login can only resolve accounts and list staff for a chef.
+on staging the **Identity admin** workflow (write access, from `main` only,
+where the staging environment holds the migration credential; the run ID is
+appended to the note). A subject can be disabled before its first sign-in. The
+API login can only resolve accounts and list staff for a chef.
 
 ## Not yet verified
 

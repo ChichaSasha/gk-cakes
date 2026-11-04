@@ -14,13 +14,18 @@ func TestSessionCheckAsksTheProvider(t *testing.T) {
 		body   string
 		want   error
 	}{
-		"current session":     {http.StatusOK, `{"id":"` + testSubject + `"}`, nil},
-		"another user":        {http.StatusOK, `{"id":"22222222-2222-4222-8222-222222222222"}`, ErrSessionEnded},
-		"unreadable user":     {http.StatusOK, `not json`, ErrSessionEnded},
-		"signed out":          {http.StatusForbidden, `{"code":403,"error_code":"session_not_found"}`, ErrSessionEnded},
-		"token rejected":      {http.StatusUnauthorized, `{}`, ErrSessionEnded},
-		"provider error":      {http.StatusInternalServerError, `{}`, ErrUnavailable},
-		"provider overloaded": {http.StatusTooManyRequests, `{}`, ErrUnavailable},
+		"current session":   {http.StatusOK, `{"id":"` + testSubject + `"}`, nil},
+		"another user":      {http.StatusOK, `{"id":"22222222-2222-4222-8222-222222222222"}`, ErrUnavailable},
+		"unreadable 200":    {http.StatusOK, `<html>proxy</html>`, ErrUnavailable},
+		"signed out":        {http.StatusForbidden, `{"code":403,"error_code":"session_not_found","msg":"Session from session_id claim in JWT does not exist"}`, ErrSessionEnded},
+		"user deleted":      {http.StatusForbidden, `{"error_code":"user_not_found"}`, ErrSessionEnded},
+		"user banned":       {http.StatusForbidden, `{"error_code":"user_banned"}`, ErrSessionEnded},
+		"provider bad jwt":  {http.StatusForbidden, `{"code":403,"error_code":"bad_jwt"}`, ErrSessionEnded},
+		"wrong api key":     {http.StatusUnauthorized, `{"message":"Invalid API key","hint":"Double check your API key."}`, ErrUnavailable},
+		"unknown 403 code":  {http.StatusForbidden, `{"error_code":"something_new"}`, ErrUnavailable},
+		"provider error":    {http.StatusInternalServerError, `{}`, ErrUnavailable},
+		"provider overload": {http.StatusTooManyRequests, `{"error_code":"over_request_rate_limit"}`, ErrUnavailable},
+		"redirect":          {http.StatusFound, ``, ErrUnavailable},
 	} {
 		var gotKey, gotAuth, gotPath string
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

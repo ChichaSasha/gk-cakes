@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"slices"
 	"time"
 
@@ -26,9 +27,19 @@ type SessionChecker struct {
 	HTTP           *http.Client
 }
 
+// endedCodes are the provider error codes (Supabase error_code) that mean
+// the session or user is gone. Any other refusal, such as a wrong publishable
+// key, is a configuration or provider fault and fails closed as
+// ErrUnavailable rather than signing the user out.
+var endedCodes = map[string]bool{
+	"session_not_found": true, "session_expired": true, "user_not_found": true,
+	"user_banned": true, "bad_jwt": true, "no_authorization": true,
+}
+
 // Check returns nil when the provider confirms the session of token for
-// subject, ErrSessionEnded when the provider rejects it, and ErrUnavailable
-// when the provider cannot answer (the caller fails closed).
+// subject, ErrSessionEnded when the provider says the session or user is
+// gone, and ErrUnavailable otherwise (the caller fails closed). Errors carry
+// the provider status and code, never the token.
 func (s *SessionChecker) Check(ctx context.Context, token, subject string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.Issuer+"/user", nil)
 	if err != nil {
@@ -38,7 +49,7 @@ func (s *SessionChecker) Check(ctx context.Context, token, subject string) error
 	req.Header.Set("Authorization", "Bearer "+token)
 	client := s.HTTP
 	if client == nil {
-		client = &http.Client{Timeout: 5 * time.Second}
+		client = &http.Client{Timeout: fetchTimeout, CheckRedirect: NoRedirects}
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -46,21 +57,28 @@ func (s *SessionChecker) Check(ctx context.Context, token, subject string) error
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	var answer struct {
+		ID        string `json:"id"`
+		ErrorCode string `json:"error_code"`
+	}
+	readable := json.Unmarshal(body, &answer) == nil
 	switch {
-	case resp.StatusCode == http.StatusOK:
-		var u struct {
-			ID string `json:"id"`
-		}
-		if json.Unmarshal(body, &u) != nil || u.ID != subject {
-			return fmt.Errorf("%w: the provider returned another user", ErrSessionEnded)
-		}
+	case resp.StatusCode == http.StatusOK && readable && answer.ID == subject:
 		return nil
-	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		return fmt.Errorf("%w: provider status %d", ErrSessionEnded, resp.StatusCode)
+	case resp.StatusCode == http.StatusOK:
+		return fmt.Errorf("%w: session check answered 200 without this user", ErrUnavailable)
+	case (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) && endedCodes[answer.ErrorCode]:
+		return fmt.Errorf("%w: provider status %d %s", ErrSessionEnded, resp.StatusCode, answer.ErrorCode)
 	default:
-		return fmt.Errorf("%w: session check status %d", ErrUnavailable, resp.StatusCode)
+		code := answer.ErrorCode
+		if !codePattern.MatchString(code) {
+			code = "-"
+		}
+		return fmt.Errorf("%w: session check status %d code %s", ErrUnavailable, resp.StatusCode, code)
 	}
 }
+
+var codePattern = regexp.MustCompile(`^[a-z_]{1,64}$`)
 
 // Capabilities a staff member can hold (K00). Future roles grant nothing.
 const (
