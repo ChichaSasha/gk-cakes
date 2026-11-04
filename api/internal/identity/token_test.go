@@ -475,6 +475,7 @@ func TestStaleKeyIsServedWithoutWaitingAfterAFailedRefresh(t *testing.T) {
 	if d := time.Since(start); d > 150*time.Millisecond {
 		t.Fatalf("waited %v for a retry after a failed refresh; want the stale key at once", d)
 	}
+	f.idle() // the retry still runs, in the background
 	if n := f.keys.count(); n != 3 {
 		t.Fatalf("fetches = %d, want 3 (the retry still runs)", n)
 	}
