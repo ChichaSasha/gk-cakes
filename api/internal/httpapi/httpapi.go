@@ -49,6 +49,9 @@ type Options struct {
 	// Schedule serves the public schedule and ready cakes when set, and the
 	// staff schedule, day and lot routes when Identity is set too.
 	Schedule Schedule
+	// Checkout serves storefront quotes when set (signed-in quotes and the
+	// chef's discount codes need Identity too).
+	Checkout Checkout
 }
 
 // NewHandler returns the API handler with its middleware chain.
@@ -78,6 +81,9 @@ func NewHandler(opts Options) http.Handler {
 		if opts.Identity != nil {
 			catalogStaffRoutes(mux, opts.Catalog, opts.Identity, opts.Logger)
 		}
+	}
+	if opts.Checkout != nil {
+		checkoutRoutes(mux, opts.Checkout, opts.Identity, opts.Logger)
 	}
 	if opts.Schedule != nil {
 		schedulePublicRoutes(mux, opts.Schedule, opts.Logger)
@@ -195,7 +201,7 @@ func withCORS(origin string, next http.Handler) http.Handler {
 		h.Set("Access-Control-Expose-Headers", "X-Request-Id, Idempotent-Replayed")
 		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 			h.Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE")
-			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key")
+			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, X-Quote-Proof")
 			h.Set("Access-Control-Max-Age", "600")
 			w.WriteHeader(http.StatusNoContent)
 			return

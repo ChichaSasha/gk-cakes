@@ -97,6 +97,9 @@ func catalogIdentity() *fakeIdentity {
 	id := identityFixture()
 	id.actors["chef"] = identity.Actor{AccountID: "acc-chef", Subject: "sub-chef", Capabilities: []string{identity.Chef}}
 	id.actors["support"] = identity.Actor{AccountID: "acc-sup", Subject: "sub-sup", Capabilities: []string{identity.TechnicalSupport}}
+	customer := id.actors[secretToken]
+	customer.Subject = "sub-customer"
+	id.actors[secretToken] = customer
 	return id
 }
 

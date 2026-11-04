@@ -776,6 +776,41 @@ derived from the published starts (stable IDs) instead of stored
 `orders` with GK-025; `pickup_change`, `delivery_agreement` and
 `lead_time_exception` come with orders.
 
+## Discount codes and quotes (K02, K03, K04, GK-025 A1)
+
+Migration `0011_checkout_quotes.sql`, package `internal/checkout`.
+
+- **Discount codes** (chef): a code is stored upper case and matched without
+  regard to case or surrounding spaces (an agent decision; no owner rule
+  exists). Terms are immutable versions: `percentage` (basis points 1-10000
+  of the cake price, never delivery) or `free_delivery` (no cake amount; it
+  waives the chef-quoted GK delivery charge later, after the chef's distance
+  review), an optional expiry, total limit and per-customer limit (which
+  needs a signed-in customer, GK-007). One code per order. Uses are reserved
+  and consumed by checkout (next milestone); quotes count none.
+- **Quotes** price a basket for one appointment on the server: made-to-order
+  variants (the current recipe version's price) or ready-made cake lots (the
+  lot's price), 1-20 lines and at most 20 cakes. The slot must be offered now
+  by the public schedule for the made-to-order quantity (ready cakes need no
+  day places). A percentage code gives `D = round_half_up(subtotal x bps /
+  10000)`, allocated to lines by floor share then largest remainder, ties by
+  line number (K03): 1001p + 1000p at 10% is 200p as 100p + 100p. No VAT is
+  added (GK-005: not registered). GK delivery is quoted later by the chef and
+  paid separately, so a quote covers cakes only. A quote is immutable, valid
+  24 elapsed hours from when it is first returned, reserves nothing and
+  belongs to the signed-in customer or to the holder of a guest proof (32
+  random bytes, unpadded base64url; only the SHA-256 digest is stored). A
+  guessed quote ID gives no access (404). Resale lots and chef-approved
+  shorter lead times are not quotable yet.
+
+| Route | Who | Notes |
+| --- | --- | --- |
+| `POST /api/v1/checkout/quotes` | a guest (`guest_proof` in the body) or a signed-in customer (bearer; a refused token is 401, never a guest) | `{date, slot_id, fulfillment_mode, lines[{variant_id \| lot_id, quantity}], discount_code?}` with Idempotency-Key (scoped to the customer or guest proof); 409 `SLOT_UNAVAILABLE` / `ITEM_UNAVAILABLE` when the choice changed |
+| `GET /api/v1/checkout/quotes/{id}` | the owner (bearer) or the proof holder (`X-Quote-Proof` header) | 404 otherwise |
+| `GET /api/v1/admin/discount-codes` | chef, technical support | current terms of each code |
+| `POST /api/v1/admin/discount-codes` | chef | `{code, kind, basis_points?, expires_at?, total_limit?, per_customer_limit?}` |
+| `POST /api/v1/admin/discount-codes/{id}/versions`, `/archive` | chef | new terms `{expected_version, ...}`; archive `{expected_version}` |
+
 ## Not yet verified
 
 - Runtime-role denial and the gateway on the sandbox. They are proven on

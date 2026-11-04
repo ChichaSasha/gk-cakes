@@ -431,7 +431,7 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	all, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	wantAPI := []string{ // GK-021 adds the identity gateway, GK-022 the catalog, GK-023 schedule and lots
+	wantAPI := []string{ // GK-021 identity, GK-022 catalog, GK-023 schedule and lots, GK-025 codes and quotes
 		"business.capacity_day_limit_set(uuid, text, text, date, integer, integer)",
 		"business.catalog_cake_create(uuid, text, text, text, text)",
 		"business.catalog_cake_set_state(uuid, text, text, uuid, integer, text)",
@@ -450,6 +450,10 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.catalog_staff_variants(uuid, uuid[])",
 		"business.catalog_variant_archive(uuid, text, text, uuid, integer)",
 		"business.catalog_variant_create(uuid, text, text, uuid, uuid, text, text)",
+		"business.discount_code_archive(uuid, text, text, uuid, integer)",
+		"business.discount_code_create(uuid, text, text, text, text, integer, timestamp with time zone, integer, integer)",
+		"business.discount_code_revise(uuid, text, text, uuid, integer, text, integer, timestamp with time zone, integer, integer)",
+		"business.discount_staff_list(uuid)",
 		"business.email_event_record(text, text, timestamp with time zone, text, uuid, json, text)",
 		"business.identity_resolve(uuid)",
 		"business.identity_staff_list(uuid)",
@@ -457,6 +461,8 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.lot_public_list(timestamp with time zone)",
 		"business.lot_set_state(uuid, text, text, uuid, integer, text)",
 		"business.lot_staff_list(uuid, boolean, uuid)",
+		"business.quote_create(uuid, bytea, text, text, date, uuid, text, json, text, timestamp with time zone)",
+		"business.quote_get(uuid, uuid, bytea)",
 		"business.schedule_public_days(date, date, timestamp with time zone, integer)",
 		"business.schedule_public_slots(date, text, timestamp with time zone, integer)",
 		"business.schedule_staff_days(uuid, date, date, timestamp with time zone)",
