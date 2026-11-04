@@ -37,6 +37,24 @@ func (f *fakeCheckout) GetQuote(_ context.Context, _, subject string, digest []b
 func (f *fakeCheckout) Codes(context.Context, string) ([]checkout.Code, error) {
 	return []checkout.Code{{ID: "c1"}}, nil
 }
+func (f *fakeCheckout) Checkout(_ context.Context, subject string, digest []byte, _ string, _ checkout.CheckoutInput) (catalog.Result, error) {
+	f.calls++
+	f.subject, f.digest = subject, digest
+	return catalog.Result{ID: "o"}, nil
+}
+func (f *fakeCheckout) GetOrder(_ context.Context, _, subject string, digest []byte) (checkout.Order, error) {
+	if subject == "" && digest == nil {
+		return nil, catalog.ErrNotFound
+	}
+	return checkout.Order(`{"id":"o"}`), nil
+}
+func (f *fakeCheckout) CurrentPolicy(context.Context) (checkout.Policy, error) {
+	return checkout.Policy{ID: "p"}, nil
+}
+func (f *fakeCheckout) RecordPolicy(context.Context, string, string, checkout.PolicyInput) (catalog.Result, error) {
+	f.calls++
+	return catalog.Result{ID: "p"}, nil
+}
 func (f *fakeCheckout) CodeByID(_ context.Context, _, id string) (checkout.Code, error) {
 	return checkout.Code{ID: id}, nil
 }
@@ -163,5 +181,58 @@ func TestQuoteRefusesClientPrices(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if !strings.Contains(rec.Header().Get("Access-Control-Allow-Headers"), QuoteProofHeader) {
 		t.Fatalf("preflight allows %q", rec.Header().Get("Access-Control-Allow-Headers"))
+	}
+}
+
+func TestCheckoutRoutes(t *testing.T) {
+	id := catalogIdentity()
+	body := `{"quote_id":"aaaaaaaa-1111-4111-8111-11111111111b","quote_version":1,
+		"consented_policy_version":"bbbbbbbb-1111-4111-8111-11111111111b",
+		"contact":{"full_name":"Test Customer","email":"test@example.com"}`
+	co := &fakeCheckout{}
+	rec := serveCheckout(t, co, id, http.MethodPost, "/api/v1/checkouts", "", "k", body+`,"guest_proof":"`+testProof+`"}`, nil)
+	if rec.Code != 202 || !strings.Contains(rec.Body.String(), `"state":"pending"`) || !strings.Contains(rec.Body.String(), `"poll_after_seconds":3`) ||
+		len(co.digest) != 32 {
+		t.Fatalf("guest checkout: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := serveCheckout(t, co, id, http.MethodPost, "/api/v1/checkouts", secretToken, "k", body+`}`, nil); rec.Code != 202 || co.digest != nil {
+		t.Fatalf("signed-in checkout: %d", rec.Code)
+	}
+	for name, c := range map[string]struct {
+		body   string
+		status int
+	}{
+		"no proof":        {body + `}`, 422},
+		"bad email":       {strings.Replace(body, "test@example.com", "Test <test@example.com>", 1) + `,"guest_proof":"` + testProof + `"}`, 422},
+		"padded name":     {strings.Replace(body, `"Test Customer"`, `" Test"`, 1) + `,"guest_proof":"` + testProof + `"}`, 422},
+		"version 2":       {strings.Replace(body, `"quote_version":1`, `"quote_version":2`, 1) + `,"guest_proof":"` + testProof + `"}`, 422},
+		"client total":    {body + `,"total_minor":1,"guest_proof":"` + testProof + `"}`, 400},
+		"unknown contact": {strings.Replace(body, `"email":"test@example.com"`, `"email":"test@example.com","phone":"1"`, 1) + `,"guest_proof":"` + testProof + `"}`, 400},
+	} {
+		co := &fakeCheckout{}
+		if rec := serveCheckout(t, co, id, http.MethodPost, "/api/v1/checkouts", "", "k", c.body, nil); rec.Code != c.status || co.calls != 0 {
+			t.Errorf("%s: %d (calls %d), want %d", name, rec.Code, co.calls, c.status)
+		}
+	}
+	// Order reads: the capability header, a bearer, or 404.
+	if rec := serveCheckout(t, co, id, http.MethodGet, "/api/v1/orders/o", "", "", "", map[string]string{OrderCapabilityHeader: testProof}); rec.Code != 200 {
+		t.Fatalf("read with capability: %d", rec.Code)
+	}
+	if rec := serveCheckout(t, co, id, http.MethodGet, "/api/v1/orders/o", "", "", "", nil); rec.Code != 404 {
+		t.Fatalf("read without capability: %d", rec.Code)
+	}
+	// Policies: public read, chef record.
+	if rec := serveCheckout(t, co, nil, http.MethodGet, "/api/v1/policies/current", "", "", "", nil); rec.Code != 200 {
+		t.Fatalf("public policy: %d", rec.Code)
+	}
+	pol := `{"source_decision_id":"BO-GK-003.refund_policy","source_revision_sha256":"` + strings.Repeat("ab", 32) +
+		`","summary":"Terms","effective_at":"2026-11-04T12:00:00Z"}`
+	for name, c := range map[string]struct {
+		auth   string
+		status int
+	}{"support": {"support", 403}, "customer": {secretToken, 403}, "chef": {"chef", 201}} {
+		if rec := serveCheckout(t, co, id, http.MethodPost, "/api/v1/admin/policies", c.auth, "k", pol, nil); rec.Code != c.status {
+			t.Errorf("record policy by %s: %d, want %d", name, rec.Code, c.status)
+		}
 	}
 }

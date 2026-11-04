@@ -818,6 +818,47 @@ Migration `0011_checkout_quotes.sql`, package `internal/checkout`.
 | `POST /api/v1/admin/discount-codes` | chef | `{code, kind, basis_points?, expires_at?, total_limit?, per_customer_limit?}` |
 | `POST /api/v1/admin/discount-codes/{id}/versions`, `/archive` | chef | new terms `{expected_version, ...}`; archive `{expected_version}` |
 
+## Orders and checkout holds (K02, K04, K05, GK-025 A2)
+
+Migration `0012_orders.sql`. The chef records **policy versions** (refund
+and cancellation terms citing their owner decision and source hash; final
+legal text is reviewed before launch, GK-037); customers consent to the
+newest effective one. `POST /api/v1/checkouts` turns one quote into one order
+awaiting payment, in one transaction:
+
+- the quote's owner (bearer) or guest proof must match (404 otherwise); the
+  quote must not have expired (24 h; equality expires: `QUOTE_EXPIRED`); the
+  consented policy must be the current one (`POLICY_CHANGED`); every recipe
+  version, price, lot price and code version must still be current
+  (`PRICE_CHANGED`: the customer reviews a new quote); the appointment must
+  still be offered (`SLOT_UNAVAILABLE`);
+- it inserts the order (customer full name, a different payer's name only
+  when someone else pays, an email for service notices) and immutable items
+  (unit price, discount share, net paid per line), fixes the refund deadline
+  as the appointment start minus 120 hours (K05), admits the made-to-order
+  cakes to the day (soft capacity: committed cakes plus the quantity within
+  the limit; other orders' holds never own the last place, so two customers
+  can both take it), reserves ready cakes exclusively (`ITEM_UNAVAILABLE`
+  when gone), reserves the code's use within its total and per-customer
+  limits (`CODE_USED_UP`), and binds a guest order to the quote's proof as
+  an order capability (`read`, `pay`, `cancel`, `move_pickup`);
+- a refused checkout leaves nothing behind; a repeated checkout of the same
+  quote returns the same order (`Idempotent-Replayed`), another body is
+  `KEY_REUSED`. The answer is 202 `{order_id, state: "pending",
+  poll_after_seconds: 3}`: never an accepted order.
+
+Quotes now judge day places as admission does (committed cakes only), and
+the quote purge keeps quotes that became orders. Nothing is charged or
+confirmed yet: Stripe payment and free confirmation, both behind the K11
+recovery gate, come next, with releasing proven-unpaid holds.
+
+| Route | Who | Notes |
+| --- | --- | --- |
+| `GET /api/v1/policies/current` | anyone | `{id, summary, effective_at, source_decision_id}`; 404 before the first |
+| `POST /api/v1/admin/policies` | chef | `{source_decision_id, source_revision_sha256, summary, effective_at}` |
+| `POST /api/v1/checkouts` | a guest (`guest_proof` of the quote) or the signed-in owner | `{quote_id, quote_version: 1, consented_policy_version, contact{full_name, email, payer_name?}}` with Idempotency-Key |
+| `GET /api/v1/orders/{id}` | the owner (bearer) or the guest (`X-Order-Capability`: the quote's proof) | the order snapshot; 404 otherwise |
+
 ## Not yet verified
 
 - Runtime-role denial and the gateway on the sandbox. They are proven on

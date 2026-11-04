@@ -201,7 +201,7 @@ func withCORS(origin string, next http.Handler) http.Handler {
 		h.Set("Access-Control-Expose-Headers", "X-Request-Id, Idempotent-Replayed")
 		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 			h.Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE")
-			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, X-Quote-Proof")
+			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, X-Quote-Proof, X-Order-Capability")
 			h.Set("Access-Control-Max-Age", "600")
 			w.WriteHeader(http.StatusNoContent)
 			return
