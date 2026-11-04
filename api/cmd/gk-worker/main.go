@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ChichaSasha/gk-cakes/api/internal/checkout"
 	"github.com/ChichaSasha/gk-cakes/api/internal/config"
 	"github.com/ChichaSasha/gk-cakes/api/internal/database"
 	"github.com/ChichaSasha/gk-cakes/api/internal/jobs"
@@ -69,18 +70,22 @@ func main() {
 		logger.Info("database login verified", "group", workerGroup)
 	}
 
-	handler := jobs.Unhandled
+	emailHandler := jobs.Unhandled
+	var coord *recovery.Coordinator
 	if cfg.Email.Enabled() {
-		d, code, err := emailDispatcher(ctx, cfg, pool, logger)
+		d, c, code, err := emailDispatcher(ctx, cfg, pool, logger)
 		if err != nil {
 			logger.Error("email dispatch", "error", err.Error())
 			os.Exit(code)
 		}
-		handler = d.Handle
+		emailHandler, coord = d.Handle, c
 		logger.Info("email dispatch enabled", "journal_root", journalRoot(cfg.Env))
 	} else {
-		logger.Warn("email dispatch not configured; notification jobs are retried, never sent")
+		logger.Warn("email dispatch not configured; notification jobs are retried, never sent; order commands wait for the recovery journal")
 	}
+	// Order commands share the recovery journal; without it they wait.
+	commands := &checkout.Commands{DB: pool, Coordinator: coord, Logger: logger}
+	handler := jobs.Chain(commands.Handle, emailHandler)
 
 	w := jobs.New(pool, jobs.Options{
 		Handler:         handler,
@@ -126,33 +131,34 @@ func verifyLogin(parent context.Context, q database.Querier, timeout, interval t
 	}
 }
 
-// emailDispatcher wires the Resend client and the B2 recovery journal. It
+// emailDispatcher wires the Resend client and the B2 recovery journal (also
+// returned for order commands). It
 // returns exit code 2 for configuration problems and 1 when the journal is
 // unreachable or its key is wrongly scoped (no email may be sent without it).
-func emailDispatcher(ctx context.Context, cfg config.Worker, pool *pgxpool.Pool, logger *slog.Logger) (*notifications.Dispatcher, int, error) {
+func emailDispatcher(ctx context.Context, cfg config.Worker, pool *pgxpool.Pool, logger *slog.Logger) (*notifications.Dispatcher, *recovery.Coordinator, int, error) {
 	sealer, err := recovery.NewSealer(cfg.Email.EncryptionKeys.Reveal())
 	if err != nil {
-		return nil, 2, errors.New("RECOVERY_ENCRYPTION_KEYS: " + err.Error())
+		return nil, nil, 2, errors.New("RECOVERY_ENCRYPTION_KEYS: " + err.Error())
 	}
 	journal, err := recovery.NewB2(recovery.B2Config{KeyID: cfg.Email.B2KeyID, Key: cfg.Email.B2Key.Reveal(), Root: journalRoot(cfg.Env)})
 	if err != nil {
-		return nil, 2, err
+		return nil, nil, 2, err
 	}
 	coord := &recovery.Coordinator{Journal: journal, Sealer: sealer, Environment: string(cfg.Env)}
 	readyCtx, cancel := context.WithTimeout(ctx, journalReadyTimeout)
 	defer cancel()
 	if err := coord.Ready(readyCtx); err != nil {
-		return nil, 1, errors.New("recovery journal not ready: " + err.Error())
+		return nil, nil, 1, errors.New("recovery journal not ready: " + err.Error())
 	}
 	client, err := notifications.NewResend(notifications.ResendConfig{APIKey: cfg.Email.APIKey.Reveal()})
 	if err != nil {
-		return nil, 2, err
+		return nil, nil, 2, err
 	}
 	d, err := notifications.NewDispatcher(notifications.DispatcherConfig{
 		DB: pool, Coordinator: coord, Sender: client, Environment: string(cfg.Env), Logger: logger,
 	})
 	if err != nil {
-		return nil, 2, err
+		return nil, nil, 2, err
 	}
-	return d, 0, nil
+	return d, coord, 0, nil
 }

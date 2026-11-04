@@ -15,9 +15,11 @@ import (
 )
 
 type fakeCheckout struct {
-	subject string
-	digest  []byte
-	calls   int
+	subject  string
+	digest   []byte
+	calls    int
+	freeErr  error
+	replayed bool
 }
 
 func (f *fakeCheckout) CreateQuote(_ context.Context, subject string, digest []byte, _ string, _ checkout.QuoteInput) (catalog.Result, error) {
@@ -47,6 +49,14 @@ func (f *fakeCheckout) GetOrder(_ context.Context, _, subject string, digest []b
 		return nil, catalog.ErrNotFound
 	}
 	return checkout.Order(`{"id":"o"}`), nil
+}
+func (f *fakeCheckout) FreeConfirm(_ context.Context, id, subject string, digest []byte, _ string, _ checkout.FreeConfirmInput) (catalog.Result, error) {
+	f.calls++
+	f.subject, f.digest = subject, digest
+	if f.freeErr != nil {
+		return catalog.Result{}, f.freeErr
+	}
+	return catalog.Result{ID: "op-" + id, Replayed: f.replayed}, nil
 }
 func (f *fakeCheckout) CurrentPolicy(context.Context) (checkout.Policy, error) {
 	return checkout.Policy{ID: "p"}, nil
@@ -223,6 +233,54 @@ func TestCheckoutRoutes(t *testing.T) {
 	off.ServeHTTP(offRec, req)
 	if offRec.Code != 404 {
 		t.Fatalf("checkout while disabled: %d", offRec.Code)
+	}
+	// Free confirmation: 202 pending (never confirmed here), by capability
+	// or bearer; the expected version is required; off with checkout.
+	fc := &fakeCheckout{}
+	rec = serveCheckout(t, fc, id, http.MethodPost, "/api/v1/orders/o1/free-confirmation", "", "k", `{"expected_version":1}`,
+		map[string]string{OrderCapabilityHeader: testProof})
+	if rec.Code != 202 || rec.Body.String() != `{"order_id":"o1","operation_id":"op-o1","state":"confirmation_pending","poll_after_seconds":3}`+"\n" ||
+		len(fc.digest) != 32 {
+		t.Fatalf("guest free confirmation: %d %q", rec.Code, rec.Body.String())
+	}
+	if rec := serveCheckout(t, fc, id, http.MethodPost, "/api/v1/orders/o1/free-confirmation", secretToken, "k", `{"expected_version":1}`, nil); rec.Code != 202 || fc.digest != nil {
+		t.Fatalf("signed-in free confirmation: %d", rec.Code)
+	}
+	for name, c := range map[string]struct {
+		body, auth string
+		hdr        map[string]string
+		status     int
+	}{
+		"no capability": {`{"expected_version":1}`, "", nil, 404},
+		"no version":    {`{}`, secretToken, nil, 422},
+		"version 0":     {`{"expected_version":0}`, secretToken, nil, 422},
+		"client amount": {`{"expected_version":1,"total_minor":0}`, secretToken, nil, 400},
+		"null version":  {`{"expected_version":null}`, secretToken, nil, 422},
+	} {
+		fc := &fakeCheckout{}
+		if rec := serveCheckout(t, fc, id, http.MethodPost, "/api/v1/orders/o1/free-confirmation", c.auth, "k", c.body, c.hdr); rec.Code != c.status || fc.calls != 0 {
+			t.Errorf("free confirmation %s: %d (calls %d), want %d", name, rec.Code, fc.calls, c.status)
+		}
+	}
+	if rec := serveCheckout(t, &fakeCheckout{replayed: true}, id, http.MethodPost, "/api/v1/orders/o1/free-confirmation", secretToken, "k",
+		`{"expected_version":1}`, nil); rec.Code != 202 || rec.Header().Get("Idempotent-Replayed") != "true" {
+		t.Fatalf("replayed free confirmation: %d %v", rec.Code, rec.Header())
+	}
+	for code, want := range map[string]string{"payment_required": "PAYMENT_REQUIRED", "lead_time": "LEAD_TIME",
+		"quote_expired": "QUOTE_EXPIRED", "stale_version": "STALE_VERSION", "state_conflict": "CONFLICT"} {
+		rec := serveCheckout(t, &fakeCheckout{freeErr: &catalog.ConflictError{Code: code}}, id, http.MethodPost,
+			"/api/v1/orders/o1/free-confirmation", secretToken, "k", `{"expected_version":1}`, nil)
+		if rec.Code != 409 || !strings.Contains(rec.Body.String(), `"`+want+`"`) {
+			t.Errorf("%s: %d %s, want 409 %s", code, rec.Code, rec.Body.String(), want)
+		}
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/orders/o1/free-confirmation", strings.NewReader(`{"expected_version":1}`))
+	req.Header.Set("Idempotency-Key", "k")
+	req.Header.Set(OrderCapabilityHeader, testProof)
+	offRec = httptest.NewRecorder()
+	off.ServeHTTP(offRec, req)
+	if offRec.Code != 404 && offRec.Code != 405 {
+		t.Fatalf("free confirmation while disabled: %d", offRec.Code)
 	}
 	// Order reads: the capability header, a bearer, or 404.
 	if rec := serveCheckout(t, co, id, http.MethodGet, "/api/v1/orders/o", "", "", "", map[string]string{OrderCapabilityHeader: testProof}); rec.Code != 200 {

@@ -112,7 +112,7 @@ are provisioned per environment outside Git and granted exactly one group:
 | ----------- | ----------------------------- | ----------------------------------------------------------- |
 | `gk_owner`  | owns business objects         | never granted to runtime; migration credential may `SET ROLE` |
 | `gk_api`    | API runtime                   | schema `USAGE`; `EXECUTE` on `email_event_record` (webhook evidence), `identity_resolve` and `identity_staff_list` (identity); more gateway functions as features add them |
-| `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions (`job_claim`, `job_heartbeat`, `job_complete`, `job_release`, `job_fail`, `job_attention`) and the lease-fenced notification gateway (`notification_dispatch_begin`, `notification_attempt_record`, `notification_recovery_*`) |
+| `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions (`job_claim`, `job_heartbeat`, `job_complete`, `job_release`, `job_fail`, `job_attention`), the lease-fenced notification gateway (`notification_dispatch_begin`, `notification_attempt_record`, `notification_recovery_*`) and the lease-fenced order-command gateway (`order_command_begin`, `order_command_reserve`, `order_command_prepared`, `order_command_apply`, `order_command_secured`, `order_command_frozen`) |
 | `gk_backup` | backup reader                 | `SELECT` on business tables and future sequences, and on `gk_meta.schema_migration` (migration 0008) |
 
 The migration credential needs `CREATEROLE` and `CREATE` on the database.
@@ -319,9 +319,10 @@ Railway and Cloudflare notes from the first staging setup:
 
 `internal/recovery` implements the minimal confirmed-order recovery protocol
 from [K11](../docs/design/contracts.md#k11--confirmed-order-recovery-contract)
-for outgoing dispatches (email now; payments and refunds later). Accepted
-order commands (confirmation, changes) are designed with GK-025 and are not
-supported yet. Every dispatch runs through `Coordinator.Dispatch`:
+for outgoing dispatches (email now; payments and refunds later) and accepted
+order commands (GK-025: free confirmation now; paid confirmation and changes
+later; see "Accepted order commands" below). Every dispatch runs through
+`Coordinator.Dispatch`:
 
 1. reserve it in `business.recovery_operation`: one unresolved operation per
    aggregate (`ErrBusy`), prior versions only increase (`ErrStale`);
@@ -401,11 +402,45 @@ Not yet:
   workers resume: a restored database can re-anchor a notice's window (the
   existing prepared envelope then refuses the resume), and an existing outcome
   envelope should be adopted rather than replayed;
+- K09 retention for order commands: `business.order_command.payload` (and its
+  prepared envelope) is an immutable copy of the order snapshot, including
+  the customer's name and email. Redacting it once the operation is secured,
+  with order anonymisation, belongs to the retention work (GK-034 Milestone B,
+  GK-037 deletion inventory);
 - K09 retention for the journal: it keeps recipients and message bodies (and
   later essential photos) until deleted, and this key cannot delete. Keeping
   only current copies of still-retained records, 30-day restore points and
   deletion tombstones carried into replay belong to GK-034 Milestone B with
   the retention work.
+
+### Accepted order commands (K11, GK-025 A3a)
+
+An accepted order command is a recovery operation of kind `command` on its
+order (aggregate = order, prior version = the order's version), run by
+`Coordinator.Command`:
+
+1. the API records the command, its exact accepted payload (the full order
+   snapshot: items, holds, code use, guest capability digests, contact) and
+   its receipt instant, reserves the operation and enqueues a worker job in
+   one transaction, and answers 202;
+2. the worker writes the encrypted **prepared** envelope and marks it
+   `prepared`;
+3. the domain commit re-validates the command and changes the order (or
+   records a refusal) in one transaction with the `committed` phase; it is
+   idempotent for the operation;
+4. the worker writes the **outcome** envelope and marks it `secured`; only
+   then is the result visible. Between the commit and the outcome
+   acknowledgment the order shows `confirmation_pending`, never `confirmed`.
+
+A command has no replay deadline (its commit is local and idempotent for the
+operation forever; the database records `infinity`, keeping the column
+`NOT NULL` for the running build)
+and never goes to `reconcile`. A restore freeze and a missing journal make
+the job wait (`Defer`), never commit without protection: the commit itself
+re-checks the freeze under a share lock on the freeze row (SQLSTATE `GK002`),
+so a freeze that lands after the worker's last check still stops it. After a primary
+database loss `Pending` lists commands as well; restore tooling resumes each
+with `Command` after checking the restored order.
 
 ## Transactional email (K08, GK-024)
 
@@ -857,9 +892,30 @@ uses move reserved to consumed or released and never back; revoked
 capabilities stay revoked; order snapshots are immutable and terminal orders
 are never reopened.
 
-**Switched off by default:** `POST /api/v1/checkouts` is served only with
-`CHECKOUT_ENABLED=true`. Nothing is charged or confirmed yet, and nothing
-releases unpaid holds: Stripe payment, free confirmation (both behind the K11
+**Free confirmation (K03, GK-025 A3a, migration `0013_order_commands.sql`).**
+A zero-amount order is confirmed by the customer's explicit
+`POST /api/v1/orders/{id}/free-confirmation` (`{expected_version}` with an
+Idempotency-Key; the owner, or a guest capability with `pay`), without any
+payment row. The persisted receipt instant is the anchor (K04): the quote's
+24 h window must still be open then (equality expires: `QUOTE_EXPIRED`) and
+the handover at least 192 elapsed hours later (equality allowed:
+`LEAD_TIME`); the order must be awaiting payment with its holds intact and
+cost nothing (`PAYMENT_REQUIRED` otherwise). The answer is 202
+`{order_id, operation_id, state: "confirmation_pending", poll_after_seconds: 3}`; the
+worker commits it under K11 (above): the day allocation becomes committed
+(never refused for capacity), the ready cakes sold, the code use consumed,
+`free_confirmed_at` = the receipt instant. The order reads
+`confirmation_pending` until the outcome is secured, then `confirmed`, and
+`free_confirmation` reports `processing`, `confirmed` or `refused` (with a
+reason: `order_changed`, `holds_released`, `window_closed`; a refusal changes
+nothing but the order's version). At most one free confirmation per order
+is pending or confirmed: the same actor (account, or guest capability) and
+key replays, another key is a conflict; after a refusal the customer may ask
+again at the new version. No confirmation email is sent yet.
+
+**Switched off by default:** `POST /api/v1/checkouts` and the free
+confirmation are served only with `CHECKOUT_ENABLED=true`. Nothing is charged
+yet, and nothing releases unpaid holds: Stripe payment (behind the K11
 recovery gate) and releasing proven-unpaid holds come next. Recorded
 deviations: the 202 carries the order ID (no payment operation exists yet);
 a 409 `PRICE_CHANGED` asks the client for a new quote (with a fresh guest
@@ -870,7 +926,8 @@ proof) instead of returning one; the appointment is the quote's.
 | `GET /api/v1/policies/current` | anyone | `{id, summary, effective_at, source_decision_id}`; 404 before the first |
 | `POST /api/v1/admin/policies` | chef | `{source_decision_id, source_revision_sha256, summary, effective_at, approver_evidence}` |
 | `POST /api/v1/checkouts` (only with `CHECKOUT_ENABLED=true`) | a guest (`guest_proof` of the quote) or the signed-in owner | `{quote_id, quote_version: 1, consented_policy_version, contact{full_name, email, payer_name?}}` with Idempotency-Key |
-| `GET /api/v1/orders/{id}` | the owner (bearer) or the guest (`X-Order-Capability`: the quote's proof) | the order snapshot; 404 otherwise |
+| `POST /api/v1/orders/{id}/free-confirmation` (only with `CHECKOUT_ENABLED=true`) | the owner (bearer) or the guest (`X-Order-Capability` with `pay`) | `{expected_version}` with Idempotency-Key; 202 `confirmation_pending` |
+| `GET /api/v1/orders/{id}` | the owner (bearer) or the guest (`X-Order-Capability`: the quote's proof) | the order snapshot (`lifecycle` is `confirmation_pending` until K11 secures a commit); 404 otherwise |
 
 ## Not yet verified
 

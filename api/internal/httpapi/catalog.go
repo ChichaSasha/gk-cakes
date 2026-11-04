@@ -399,6 +399,9 @@ var conflictMessages = map[string]string{
 	"quote_expired":  "This quote has expired. Please review a new quote.",
 	"policy_changed": "Our terms changed since you reviewed them. Please review them again.",
 	"code_used_up":   "This code has been used up.",
+	// Free confirmation.
+	"payment_required": "This order needs payment; it cannot be confirmed free.",
+	"lead_time":        "It is now too close to the handover time to confirm this order.",
 }
 
 // catalogError maps catalog errors to K00 responses without SQL detail.
@@ -437,6 +440,10 @@ func catalogError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, e
 			code = "POLICY_CHANGED"
 		case "code_used_up":
 			code = "CODE_USED_UP"
+		case "payment_required":
+			code = "PAYMENT_REQUIRED"
+		case "lead_time":
+			code = "LEAD_TIME"
 		}
 		writeError(w, r, http.StatusConflict, code, msg, false)
 	case errors.As(err, &inv):
