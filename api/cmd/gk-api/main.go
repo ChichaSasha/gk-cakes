@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ChichaSasha/gk-cakes/api/internal/catalog"
 	"github.com/ChichaSasha/gk-cakes/api/internal/config"
 	"github.com/ChichaSasha/gk-cakes/api/internal/database"
 	"github.com/ChichaSasha/gk-cakes/api/internal/httpapi"
@@ -61,6 +62,7 @@ func main() {
 	} else {
 		logger.Info("identity not configured; authenticated /api/v1 routes are not served")
 	}
+	opts.Catalog = &catalog.Store{DB: pool}
 	handler := httpapi.NewHandler(opts)
 	if err := httpapi.Serve(ctx, ln, handler, cfg.ShutdownTimeout); err != nil {
 		logger.Error("serve", "error", err.Error())

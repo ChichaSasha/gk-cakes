@@ -431,7 +431,24 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	all, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	wantAPI := []string{ // GK-021 adds the identity gateway
+	wantAPI := []string{ // GK-021 adds the identity gateway, GK-022 the catalog gateway
+		"business.catalog_cake_create(uuid, text, text, text, text)",
+		"business.catalog_cake_set_state(uuid, text, text, uuid, integer, text)",
+		"business.catalog_cake_update(uuid, text, text, uuid, integer, text, text)",
+		"business.catalog_flavour_create(uuid, text, text, text)",
+		"business.catalog_notice_create(uuid, text, text, text)",
+		"business.catalog_public_cake(uuid)",
+		"business.catalog_public_cake_page(timestamp with time zone, uuid, integer)",
+		"business.catalog_public_variants(uuid[])",
+		"business.catalog_recipe_version_create(uuid, text, text, uuid, integer, bigint, integer, integer, text, text[], uuid, json, json, text)",
+		"business.catalog_staff_cake(uuid, uuid)",
+		"business.catalog_staff_cake_page(uuid, timestamp with time zone, uuid, integer)",
+		"business.catalog_staff_flavours(uuid)",
+		"business.catalog_staff_notice_current(uuid)",
+		"business.catalog_staff_recipe_version(uuid, uuid)",
+		"business.catalog_staff_variants(uuid, uuid[])",
+		"business.catalog_variant_archive(uuid, text, text, uuid, integer)",
+		"business.catalog_variant_create(uuid, text, text, uuid, uuid, text, text)",
 		"business.email_event_record(text, text, timestamp with time zone, text, uuid, json, text)",
 		"business.identity_resolve(uuid)",
 		"business.identity_staff_list(uuid)",
