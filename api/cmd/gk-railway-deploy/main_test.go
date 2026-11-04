@@ -20,3 +20,15 @@ func TestUnpinnedImageFailsWithoutContactingRailway(t *testing.T) {
 		t.Errorf("output mentions the token: %q", out.String())
 	}
 }
+
+// A provider error inside a warning must stay one annotation: no line break
+// may end it early or start another workflow command.
+func TestWarningIsEscapedForWorkflowCommands(t *testing.T) {
+	got := escapeData("deployment log not readable: 100% denied\r\n::error::forged\nnext")
+	if want := "deployment log not readable: 100%25 denied%0D%0A::error::forged%0Anext"; got != want {
+		t.Fatalf("escapeData = %q, want %q", got, want)
+	}
+	if strings.ContainsAny(got, "\r\n") {
+		t.Fatal("escaped text still contains a line break")
+	}
+}

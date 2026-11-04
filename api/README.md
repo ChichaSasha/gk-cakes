@@ -123,6 +123,17 @@ SELECT rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls
 FROM pg_roles WHERE rolname = '<login>';
 ```
 
+The services repeat these checks themselves in every environment except
+`local` (`database.CheckLogin`): the API's `/readyz`, which is its Railway
+health check, stays 503 and logs `database login refused` until its login
+holds exactly `gk_api` with no elevated attribute, so a deploy with an
+administrator, migration or other-service login fails and the previous one
+keeps serving; the worker exits at start (code 2) unless its login holds
+exactly `gk_worker`, and waits up to 30 seconds for an unreachable database
+(code 1). On staging (2026-11-03) the API had been running with a login other
+than `gk_api_staging` and only failed once the webhook needed a granted
+function.
+
 `gk-migrate` applies files once, in order, under an advisory lock. Applied files
 are immutable (checksummed). An older build on a newer database (a rollback)
 checks that its own migrations are all applied unchanged and that every newer
@@ -153,14 +164,17 @@ get no image and cannot be released. Workflows: `.github/workflows/staging.yml` 
   command `/usr/local/bin/gk-worker` and no health check or public domain. It
   refuses a `RAILWAY_WORKER_SERVICE_ID` equal to the API or UI service (the
   start command persists on a service). It then watches for 90 seconds: the
-  deployment must stay SUCCESS and keep running its first instance. Railway
+  deployment must stay SUCCESS and keep running its first container. Railway
   restarts a crashed process under its restart policy without leaving SUCCESS,
-  so a second instance execution, or one that crashed, exited or is restarting,
-  fails the deploy (the service runs one replica, so two running executions
-  mean a restart). The worker exits at start when its email or recovery-journal
-  settings are wrong. If the token cannot read instance executions (after five
-  consecutive errors), or the deployment never appears among them, the check
-  falls back to the status and prints a GitHub warning. It is off until
+  so the check counts Railway's `Starting Container` lines in the deployment's
+  own log: a second one fails the deploy (the service runs one replica).
+  Railway's `deploymentInstanceExecutions` listed nothing for the running
+  staging worker, so it is not used. The worker exits at start when its email
+  or recovery-journal settings or its database login are wrong. If the token
+  cannot read the deployment log (after five consecutive errors, or on every
+  read of the period), or no single start line appears, the check falls back
+  to the status and prints a GitHub warning (escaped, so a provider message
+  cannot inject a workflow command). It is off until
   `STAGING_WORKER_ENABLED` is `true` and is recorded as `staging-worker` (not
   read by the release gate).
 - **Release.** Publish a GitHub release tagged `api-vX.Y.Z` or `ui-vX.Y.Z` on a

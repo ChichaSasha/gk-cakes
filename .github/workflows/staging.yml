@@ -19,8 +19,9 @@
 # the same API image as its own Railway service (RAILWAY_WORKER_SERVICE_ID,
 # start command gk-worker, no public endpoint); it deploys after a successful
 # API deploy once STAGING_WORKER_ENABLED is true, and must keep running its
-# first instance for a settle period: a crash and restart fails the deploy (it
-# exits at start if its email or recovery-journal settings are bad).
+# first container for a settle period: a crash and restart (a second
+# "Starting Container" in its deployment log) fails the deploy (it exits at
+# start if its email, recovery-journal or database-login settings are bad).
 name: Staging
 run-name: ${{ inputs.version && format('Staging release {0}', inputs.version) || format('Staging {0}', github.event.workflow_run.head_sha) }}
 

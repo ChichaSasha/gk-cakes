@@ -39,6 +39,12 @@ func main() {
 	}
 	logger.Info("api listening", "addr", ln.Addr().String(), "env", string(cfg.Env))
 	opts := httpapi.Options{UIOrigin: cfg.UIOrigin, DB: pool, Logger: logger}
+	if cfg.Env != config.EnvLocal {
+		// /readyz (the Railway health check) stays unavailable with any login
+		// other than a least-privilege gk_api one, so such a deploy fails.
+		// Only local development may use another login.
+		opts.DB = &database.LoginGate{Pool: pool, Group: "gk_api", Logger: logger}
+	}
 	if cfg.Providers.EmailWebhookSecret.IsSet() {
 		webhook, err := notifications.NewWebhook(notifications.WebhookConfig{
 			DB: pool, Secret: cfg.Providers.EmailWebhookSecret.Reveal(), Environment: string(cfg.Env), Logger: logger,

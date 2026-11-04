@@ -42,8 +42,8 @@ type Request struct {
 type Result struct {
 	DeploymentID string
 	Status       string
-	// Warnings note checks that could not be made (for example instance
-	// executions the token cannot read during a settle period).
+	// Warnings note checks that could not be made (for example a deployment
+	// log the token cannot read during a settle period).
 	Warnings []string
 }
 
@@ -83,11 +83,14 @@ const (
   environmentLogs(environmentId: $environmentId, anchorDate: $anchorDate, beforeDate: $beforeDate,
     beforeLimit: $beforeLimit, afterDate: $anchorDate, afterLimit: 0) { timestamp message attributes { key value } }
 }`
-	executionsQuery = `query gkExecutions($input: DeploymentInstanceExecutionListInput!, $after: String) {
-  deploymentInstanceExecutions(input: $input, first: 50, after: $after) {
-    edges { node { deploymentId status } }
-    pageInfo { hasNextPage endCursor }
-  }
+	// startsQuery reads one deployment's runtime log. Railway writes a
+	// "Starting Container" line each time it starts the deployment's container
+	// (seen in the staging logs on 2026-11-03), so a crash and restart under
+	// the restart policy shows a second one while the status stays SUCCESS.
+	// (Railway's deploymentInstanceExecutions listed no execution for a
+	// running staging worker, so it cannot show restarts.)
+	startsQuery = `query gkStarts($deploymentId: String!, $limit: Int!) {
+  deploymentLogs(deploymentId: $deploymentId, limit: $limit) { message }
 }`
 )
 
@@ -142,67 +145,41 @@ func attributeValue(v string) string {
 	return v
 }
 
-var badExecution = map[string]bool{"CRASHED": true, "EXITED": true, "RESTARTING": true, "REMOVED": true, "STOPPED": true}
+// containerStart is the platform log line for one container start.
+const containerStart = "Starting Container"
 
-// maxExecutionPages bounds the instance-execution pages read per check.
-const maxExecutionPages = 10
-
-// Instance-execution check results.
+// Container-start check results.
 const (
-	executionsSteady  = "steady"
-	executionsBad     = "bad"
-	executionsMissing = "missing" // the deployment is not (yet) listed
+	startsSteady  = "steady"
+	startsBad     = "bad"
+	startsUnknown = "unknown" // no start line yet, or the log was truncated
 )
 
-// executions checks whether deploymentID still runs its first and only
-// instance execution: a crash and restart under Railway's restart policy keeps
-// the deployment SUCCESS, so the status alone cannot show a crash loop. (With
-// one replica, two running executions mean a restart.)
-func (d *Deployer) executions(ctx context.Context, req Request, deploymentID string) (string, string, error) {
-	var mine []string
-	var after any
-	for page := 0; page < maxExecutionPages; page++ {
-		var out struct {
-			Executions struct {
-				Edges []struct {
-					Node struct {
-						DeploymentID string `json:"deploymentId"`
-						Status       string `json:"status"`
-					} `json:"node"`
-				} `json:"edges"`
-				PageInfo struct {
-					HasNextPage bool   `json:"hasNextPage"`
-					EndCursor   string `json:"endCursor"`
-				} `json:"pageInfo"`
-			} `json:"deploymentInstanceExecutions"`
-		}
-		if err := d.call(ctx, executionsQuery, map[string]any{
-			"input": map[string]any{"environmentId": req.EnvironmentID, "serviceId": req.ServiceID}, "after": after,
-		}, &out); err != nil {
-			return "", "", err
-		}
-		for _, e := range out.Executions.Edges {
-			if e.Node.DeploymentID == deploymentID {
-				mine = append(mine, e.Node.Status)
-			}
-		}
-		if !out.Executions.PageInfo.HasNextPage || out.Executions.PageInfo.EndCursor == "" {
-			break
-		}
-		after = out.Executions.PageInfo.EndCursor
+// starts counts the container starts in deploymentID's log: one means the
+// first container still runs (the service has one replica), more mean it was
+// restarted.
+func (d *Deployer) starts(ctx context.Context, deploymentID string) (string, string, error) {
+	var out struct {
+		Logs []struct {
+			Message string `json:"message"`
+		} `json:"deploymentLogs"`
 	}
-	for _, st := range mine {
-		if badExecution[st] {
-			return executionsBad, fmt.Sprintf("an instance execution is %s", st), nil
+	if err := d.call(ctx, startsQuery, map[string]any{"deploymentId": deploymentID, "limit": MaxLogLines}, &out); err != nil {
+		return "", "", err
+	}
+	n := 0
+	for _, l := range out.Logs {
+		if strings.EqualFold(strings.TrimSpace(l.Message), containerStart) {
+			n++
 		}
 	}
 	switch {
-	case len(mine) > 1:
-		return executionsBad, fmt.Sprintf("%d instance executions (restarted)", len(mine)), nil
-	case len(mine) == 0:
-		return executionsMissing, "", nil
+	case n > 1:
+		return startsBad, fmt.Sprintf("its container started %d times (restarted)", n), nil
+	case n == 0 || len(out.Logs) >= MaxLogLines:
+		return startsUnknown, "", nil
 	}
-	return executionsSteady, "", nil
+	return startsSteady, "", nil
 }
 
 var failed = map[string]bool{"FAILED": true, "CRASHED": true, "REMOVED": true, "REMOVING": true, "SKIPPED": true}
@@ -258,9 +235,11 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 	res := Result{DeploymentID: deployed.ID}
 	deadline := time.Now().Add(d.Timeout)
 	var settleUntil time.Time // set once SUCCESS is first seen
-	executionsChecked := req.Settle > 0
-	executionsSeen := false // the deployment appeared among the executions
-	executionErrors := 0
+	startsChecked := req.Settle > 0
+	startsSeen := false // one container start was counted
+	startsRead := false // the deployment log was read at least once
+	var startErr error  // the last failed read
+	startErrors := 0    // consecutive failed reads
 	pollErrors := 0
 	for {
 		var st struct {
@@ -296,25 +275,29 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 						deadline = end // a late SUCCESS still gets its full settle period
 					}
 				}
-				if executionsChecked {
-					state, why, xerr := d.executions(ctx, req, deployed.ID)
+				if startsChecked {
+					state, why, serr := d.starts(ctx, deployed.ID)
 					switch {
-					case xerr != nil:
-						if executionErrors++; executionErrors >= maxPollErrors {
-							executionsChecked = false
-							res.Warnings = append(res.Warnings, "instance executions not readable; settle checked the deployment status only: "+xerr.Error())
+					case serr != nil:
+						startErr = serr
+						if startErrors++; startErrors >= maxPollErrors {
+							startsChecked = false
+							res.Warnings = append(res.Warnings, "deployment log not readable; settle checked the deployment status only: "+serr.Error())
 						}
-					case state == executionsBad:
+					case state == startsBad:
 						return res, fmt.Errorf("railway: deployment %s is not running steadily within %s of SUCCESS: %s", deployed.ID, req.Settle, why)
-					case state == executionsSteady:
-						executionErrors, executionsSeen = 0, true
 					default:
-						executionErrors = 0
+						startErrors, startsRead = 0, true
+						startsSeen = startsSeen || state == startsSteady
 					}
 				}
 				if time.Now().After(settleUntil) {
-					if executionsChecked && !executionsSeen {
-						res.Warnings = append(res.Warnings, "the deployment never appeared among the service's instance executions; settle checked the deployment status only")
+					switch {
+					case !startsChecked || startsSeen:
+					case !startsRead && startErr != nil:
+						res.Warnings = append(res.Warnings, "deployment log not readable; settle checked the deployment status only: "+startErr.Error())
+					default:
+						res.Warnings = append(res.Warnings, "no single container start appeared in the deployment log; settle checked the deployment status only")
 					}
 					return res, nil
 				}

@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/railway"
@@ -17,6 +18,13 @@ import (
 
 func main() {
 	os.Exit(run(context.Background(), os.Args[1:], os.Getenv, os.Stdout))
+}
+
+// escapeData encodes a GitHub Actions workflow-command message, so a
+// provider error containing a newline or percent sign can neither end the
+// annotation early nor inject another workflow command.
+func escapeData(s string) string {
+	return strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A").Replace(s)
 }
 
 func run(ctx context.Context, args []string, getenv func(string) string, stdout io.Writer) int {
@@ -46,7 +54,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	fmt.Fprintf(stdout, "service %s image %s deployment %s status %s\n", *service, *image, res.DeploymentID, res.Status)
 	for _, w := range res.Warnings {
 		if getenv("GITHUB_ACTIONS") == "true" {
-			fmt.Fprintf(stdout, "::warning::%s\n", w) // visible on a green run
+			fmt.Fprintf(stdout, "::warning::%s\n", escapeData(w)) // visible on a green run
 		} else {
 			fmt.Fprintf(stdout, "warning: %s\n", w)
 		}

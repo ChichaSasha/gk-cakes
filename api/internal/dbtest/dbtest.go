@@ -100,6 +100,10 @@ func (d *DB) AdminConn(t *testing.T) *pgx.Conn {
 	return d.connect(t, &u)
 }
 
+// UserURL returns this database's connection URL for an existing user, for
+// tests that provision their own roles.
+func (d *DB) UserURL(user, password string) string { return d.urlFor(user, password).String() }
+
 func (d *DB) urlFor(user, password string) *url.URL {
 	u := *d.adminURL
 	u.User = url.UserPassword(user, password)

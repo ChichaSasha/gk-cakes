@@ -32,12 +32,12 @@ type fakeRailway struct {
 	updateErr string
 	pollFails int    // first N status polls answer with a GraphQL error
 	metaImage string // image reported in deployment meta, if any
-	// executions are the instance executions reported for the deployment
-	// ("" for the default single RUNNING one); executionsErr refuses the query.
-	executions      []string
-	executionsFails int  // first N execution queries fail (negative: all)
-	olderPage       bool // our executions come on a second page
-	missing         bool // our deployment is never listed
+	// logs is the deployment's runtime log (nil: one container start and a
+	// line of its own output); logFails refuses the first N log queries
+	// (negative: all), logReads counts them.
+	logs     []string
+	logFails int
+	logReads int
 }
 
 func (f *fakeRailway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -60,41 +60,28 @@ func (f *fakeRailway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"serviceInstanceUpdate": true}})
 	case strings.Contains(req.Query, "serviceInstanceDeployV2"):
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"serviceInstanceDeployV2": "dep-123"}})
-	case strings.Contains(req.Query, "deploymentInstanceExecutions"):
-		if f.executionsFails != 0 {
-			if f.executionsFails > 0 {
-				f.executionsFails--
+	case strings.Contains(req.Query, "deploymentLogs"):
+		f.logReads++
+		if f.logFails != 0 {
+			if f.logFails > 0 {
+				f.logFails--
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"errors": []map[string]string{{"message": "Not Authorized"}}})
 			return
 		}
-		input, _ := req.Variables["input"].(map[string]any)
-		if input["serviceId"] != testService || input["environmentId"] != testEnv {
-			http.Error(w, "unexpected input", http.StatusBadRequest)
+		if req.Variables["deploymentId"] != "dep-123" || req.Variables["limit"] != float64(MaxLogLines) {
+			http.Error(w, "unexpected variables", http.StatusBadRequest)
 			return
 		}
-		statuses := f.executions
-		if statuses == nil {
-			statuses = []string{"RUNNING"}
+		lines := f.logs
+		if lines == nil {
+			lines = []string{"Starting Container", `{"level":"INFO","msg":"worker started"}`}
 		}
-		older := []map[string]any{{"node": map[string]any{"deploymentId": "older-deployment", "status": "REMOVED"}}}
-		var ours []map[string]any
-		for _, st := range statuses {
-			ours = append(ours, map[string]any{"node": map[string]any{"deploymentId": "dep-123", "status": st}})
+		var out []map[string]any
+		for _, l := range lines {
+			out = append(out, map[string]any{"message": l})
 		}
-		if f.missing {
-			ours = nil
-		}
-		edges, next, cursor := append(older, ours...), false, ""
-		if f.olderPage {
-			if req.Variables["after"] == nil {
-				edges, next, cursor = older, true, "cursor-2"
-			} else if req.Variables["after"] == "cursor-2" {
-				edges = ours
-			}
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"deploymentInstanceExecutions": map[string]any{
-			"edges": edges, "pageInfo": map[string]any{"hasNextPage": next, "endCursor": cursor}}}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"deploymentLogs": out}})
 	case strings.Contains(req.Query, "deployment("):
 		if f.pollFails > 0 {
 			f.pollFails--
@@ -350,41 +337,72 @@ func TestEnvironmentLogsReadsTheAnchoredWindow(t *testing.T) {
 }
 
 // Railway restarts a crashed deployment under its restart policy and keeps
-// it SUCCESS, so the settle period also checks the instance executions.
+// it SUCCESS, so the settle period also counts the container starts in the
+// deployment's log.
 func TestSettleCatchesACrashLoopBehindASuccessStatus(t *testing.T) {
 	req := Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage, Settle: 50 * time.Millisecond}
-	for name, executions := range map[string][]string{
-		"restarted":      {"CRASHED", "RUNNING"},
-		"two executions": {"RUNNING", "RUNNING"},
-		"exited":         {"EXITED"},
-		"restarting":     {"RESTARTING"},
+	app := `{"level":"ERROR","msg":"database login","error":"refused"}`
+	for name, logs := range map[string][]string{
+		"restarted":         {"Starting Container", app, "Starting Container"},
+		"restarted, spaced": {"Starting Container", app, "  starting container\n"},
+		"crash loop":        {"Starting Container", app, "Starting Container", app, "Starting Container"},
 	} {
-		f := &fakeRailway{statuses: []string{"SUCCESS"}, executions: executions}
+		f := &fakeRailway{statuses: []string{"SUCCESS"}, logs: logs}
 		if _, err := deployer(t, f).Deploy(context.Background(), req); err == nil || !strings.Contains(err.Error(), "not running steadily") {
-			t.Errorf("%s: err = %v, want the crash loop reported", name, err)
+			t.Errorf("%s: err = %v, want the restart reported", name, err)
 		}
 	}
 	steady := &fakeRailway{statuses: []string{"SUCCESS"}}
-	if res, err := deployer(t, steady).Deploy(context.Background(), req); err != nil || len(res.Warnings) != 0 {
-		t.Fatalf("steady: %+v, %v", res, err)
+	if res, err := deployer(t, steady).Deploy(context.Background(), req); err != nil || len(res.Warnings) != 0 || steady.logReads == 0 {
+		t.Fatalf("steady: %+v, %v after %d log reads", res, err, steady.logReads)
 	}
-	blind := &fakeRailway{statuses: []string{"SUCCESS"}, executionsFails: -1}
+	quoted := &fakeRailway{statuses: []string{"SUCCESS"}, logs: []string{"Starting Container", `{"msg":"Starting Container"}`}}
+	if res, err := deployer(t, quoted).Deploy(context.Background(), req); err != nil || len(res.Warnings) != 0 {
+		t.Fatalf("an application line mentioning the phrase: %+v, %v; want one start counted", res, err)
+	}
+	noSettle := &fakeRailway{statuses: []string{"SUCCESS"}, logs: []string{"Starting Container", "Starting Container"}}
+	if _, err := deployer(t, noSettle).Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage}); err != nil || noSettle.logReads != 0 {
+		t.Fatalf("without a settle period: %v after %d log reads; want no log check", err, noSettle.logReads)
+	}
+
+	blind := &fakeRailway{statuses: []string{"SUCCESS"}, logFails: -1}
 	res, err := deployer(t, blind).Deploy(context.Background(), req)
-	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "not readable") {
-		t.Fatalf("executions unreadable: %+v, %v; want success with a warning", res, err)
+	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "not readable") || !strings.Contains(res.Warnings[0], "Not Authorized") {
+		t.Fatalf("log unreadable: %+v, %v; want success with one warning naming the error", res, err)
 	}
-	transient := &fakeRailway{statuses: []string{"SUCCESS"}, executionsFails: 2}
+	transient := &fakeRailway{statuses: []string{"SUCCESS"}, logFails: 2}
 	if res, err := deployer(t, transient).Deploy(context.Background(), req); err != nil || len(res.Warnings) != 0 {
 		t.Fatalf("two transient errors: %+v, %v; want the check to continue", res, err)
 	}
-	paged := &fakeRailway{statuses: []string{"SUCCESS"}, olderPage: true, executions: []string{"CRASHED", "RUNNING"}}
-	if _, err := deployer(t, paged).Deploy(context.Background(), req); err == nil {
-		t.Fatal("a restart listed on the second page was missed")
-	}
-	absent := &fakeRailway{statuses: []string{"SUCCESS"}, missing: true}
+	absent := &fakeRailway{statuses: []string{"SUCCESS"}, logs: []string{app}}
 	res, err = deployer(t, absent).Deploy(context.Background(), req)
-	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "never appeared") {
-		t.Fatalf("deployment never listed: %+v, %v; want success with a warning, never a silent pass", res, err)
+	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "no single container start") {
+		t.Fatalf("no start line: %+v, %v; want success with a warning, never a silent pass", res, err)
+	}
+	full := make([]string, MaxLogLines)
+	full[0] = "Starting Container"
+	for i := 1; i < len(full); i++ {
+		full[i] = app
+	}
+	truncated := &fakeRailway{statuses: []string{"SUCCESS"}, logs: full}
+	res, err = deployer(t, truncated).Deploy(context.Background(), req)
+	if err != nil || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "no single container start") {
+		t.Fatalf("a full log page: %+v, %v; want it treated as unknown, not as one start", res, err)
+	}
+}
+
+// A settle period whose reads all failed, though fewer than maxPollErrors in a
+// row, names the read error rather than a missing start line.
+func TestSettleWarningNamesReadErrors(t *testing.T) {
+	f := &fakeRailway{statuses: []string{"SUCCESS"}, logFails: -1}
+	d := deployer(t, f)
+	d.PollInterval = 30 * time.Millisecond
+	res, err := d.Deploy(context.Background(), Request{ServiceID: testService, EnvironmentID: testEnv, Image: testImage, Settle: 50 * time.Millisecond})
+	if err != nil || f.logReads >= maxPollErrors {
+		t.Fatalf("setup: %v after %d reads; want fewer than %d reads", err, f.logReads, maxPollErrors)
+	}
+	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "not readable") || !strings.Contains(res.Warnings[0], "Not Authorized") {
+		t.Fatalf("warnings %q; want one naming the read error", res.Warnings)
 	}
 }
 

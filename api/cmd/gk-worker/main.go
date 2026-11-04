@@ -18,7 +18,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const journalReadyTimeout = 30 * time.Second
+const (
+	journalReadyTimeout = 30 * time.Second
+	loginReadyTimeout   = 30 * time.Second
+)
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -36,6 +39,14 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+
+	if cfg.Env != config.EnvLocal { // only local development may use another login
+		if code, err := verifyLogin(ctx, pool); err != nil {
+			logger.Error("database login", "error", err.Error())
+			os.Exit(code)
+		}
+		logger.Info("database login verified", "group", "gk_worker")
+	}
 
 	handler := jobs.Unhandled
 	if cfg.Email.Enabled() {
@@ -62,6 +73,23 @@ func main() {
 }
 
 func journalRoot(env config.Env) string { return "recovery/" + string(env) + "/" }
+
+// verifyLogin refuses to run jobs with any login other than a least-privilege
+// gk_worker one (exit 2: the configuration must change), waiting up to
+// loginReadyTimeout for a briefly unreachable database (exit 1).
+func verifyLogin(ctx context.Context, pool *pgxpool.Pool) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, loginReadyTimeout)
+	defer cancel()
+	err := database.WaitLogin(ctx, pool, "gk_worker", 2*time.Second)
+	switch {
+	case err == nil:
+		return 0, nil
+	case errors.Is(err, database.ErrLogin):
+		return 2, err
+	default:
+		return 1, err
+	}
+}
 
 // emailDispatcher wires the Resend client and the B2 recovery journal. It
 // returns exit code 2 for configuration problems and 1 when the journal is
