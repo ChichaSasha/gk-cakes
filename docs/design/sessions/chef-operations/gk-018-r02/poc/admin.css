@@ -261,3 +261,14 @@ fieldset{border:0;padding:0;margin:0 0 10px;min-width:0}legend{font-size:13px;fo
 .coll{border:1px solid var(--line);border-radius:12px;background:#fff;padding:10px 12px}.coll p{margin:0 0 6px}
 .coll-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:0 0 6px}.coll-facts dt{color:var(--muted);font-size:12px}.coll-facts dd{margin:0;font-weight:600}
 .coll-act:empty{display:none}
+/* r02b: tables become cards on mobile (finished cakes, ingredients) */
+@media (max-width:860px){
+ .cards-mobile thead{display:none}.cards-mobile,.cards-mobile tbody,.cards-mobile tr,.cards-mobile td,.cards-mobile tbody th{display:block;width:100%}
+ .cards-mobile tr{border:1px solid var(--line);border-radius:14px;background:#fff;margin-bottom:8px;padding:6px 4px}
+ .cards-mobile tr[hidden]{display:none}
+ .cards-mobile td,.cards-mobile tbody th{border:0;padding:5px 12px}
+ .cards-mobile td::before,.cards-mobile tbody th::before{content:attr(data-label);display:block;font-size:11.5px;color:var(--muted);font-weight:400;text-transform:uppercase;letter-spacing:.04em}
+ .cards-mobile td.td-action:empty{display:none}
+}
+.confirm-row .btn{white-space:normal}
+.cancel-body .form-grid{grid-template-columns:minmax(0,1fr)}.field input{min-width:0;max-width:100%}

@@ -1,9 +1,10 @@
-// GK-018 r02 — Recovery queue (technical support's home): bounced email flow (Creator answer 5),
+// GK-018 r02b — Recovery queue (technical support's home): bounced email flow (Creator answer 5),
 // unknown payment/refund/email results with an audited "check again", and Elina's open to-dos (read only).
 'use strict';
 (function(){
 const states=[['new','Bounce: new'],['flagged','Flagged to Elina'],['fixed','Address fixed'],['resent','Resent']];
 const st=stateParam(states.map(s=>s[0]));
+if(REVIEW.role==='fulfillment'){mount(shell(`<header class="page-head"><div><p class="eyebrow">Recovery queue</p><h1>Recovery queue</h1></div></header><div class="card"><p class="role-note">The recovery queue is for Elina and technical support: it covers payments, refunds and emails. Fulfilment helpers start, finish and hand over cakes from Today.</p><a class="btn" href="index.html">Back to Today</a></div>`,'support'));return}
 const o=order('GK-1044');const fixedEmail='mia.d@example.com';
 const isSupport=REVIEW.role==='support',isChef=REVIEW.role==='chef';
 const step=(n,label,who,done,now)=>`<li class="${done?'done':now?'now':''}"><strong>${label}</strong><span class="block small muted">${who}</span></li>`;

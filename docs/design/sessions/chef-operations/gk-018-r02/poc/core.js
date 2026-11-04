@@ -1,4 +1,4 @@
-// GK-018 r02 — chef workspace design prototype: shared data, helpers and page shell.
+// GK-018 r02b — chef workspace design prototype: shared data, helpers and page shell.
 // Example data only. Nothing is saved, sent, refunded or charged. No network calls.
 // r02 builds on the reviewed r01b (Today + order detail) and adds cancel and refund,
 // manual orders, calendar and capacity, delivery, stock warnings, messages, the
@@ -36,6 +36,13 @@ const ROLES={chef:{label:'Chef',who:'Elina',initial:'E',caps:['capacity','schedu
 const REVIEW=(()=>{let r={};try{r=JSON.parse(sessionStorage.getItem('gk018r02-review')||'{}')||{}}catch{}const ok=['chef','fulfillment','support'];if(ok.includes(q.get('role')))r.role=q.get('role');if(!ok.includes(r.role))r.role='chef';try{sessionStorage.setItem('gk018r02-review',JSON.stringify(r))}catch{}return r})();
 const ROLE=ROLES[REVIEW.role];
 const can=cap=>ROLE.caps.includes(cap);
+// K00 minimal access: fulfilment helpers see no money (prices, payments, refunds).
+const seesMoney=REVIEW.role!=='fulfillment';
+const mm=n=>seesMoney?money(n):'';
+// Proposed set point (open question): a short-notice payment must be complete this many hours before handover.
+const PAY_BEFORE_H=2;
+const localInput=t=>{const p=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/London',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(t)).map(x=>[x.type,x.value]));return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`};
+const fromLocalInput=v=>/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v||'')?london(v.slice(0,10),v.slice(11,16)):null;
 const ONLY_CHEF='Only Elina (chef) can do this.';
 const stateParam=(allowed)=>allowed.includes(q.get('state'))?q.get('state'):allowed[0];
 
@@ -51,7 +58,7 @@ const SCHEDULE={version:3,revision:3,publishedAt:'2026-10-01T08:00:00Z',standard
   5:{name:'Friday',opens:'10:00',closes:'17:00',starts:['10:00','11:00','12:00','13:00','14:00','15:00','16:00']},
   6:{name:'Saturday',opens:'12:30',closes:'15:00',starts:['12:30','13:00','13:30','14:00']},
   0:{name:'Sunday',opens:'11:00',closes:'12:00',starts:['11:00']}},
- closed:['2026-11-08']};
+ closed:['2026-11-08']}; // Sun 8 Nov is example data: GK-001 schedule_admin has no closed dates currently.
 // Day limit overrides (soft capacity). Thu 29 Oct: lowered 7 -> 5 with 7 accepted; all 7 stay.
 const DAY_OVERRIDES={'2026-10-29':{limit:5,version:2,changedAt:'2026-10-21T18:05:00Z'}};
 // Tentative holds: a customer paying now (15-minute hold, counts until reconciled).
@@ -80,14 +87,14 @@ const ORDERS=[
  {id:'GK-1045',img:'raspberry',cake:'Raspberry ribbons',flavour:'Chocolate Raspberry',size:'M · 7 inches · 12–14 servings',recipe:'CR-7 v1',cakes:1,price:10500,extra:true,source:'instagram',customer:'Hannah W.',email:'hannah.w@example.com',date:TODAY,slot:'16:00–17:00',mode:'courier',stage:'preparing',paidAt:'2026-10-13T12:00:00Z',autoAt:'2026-10-15T12:00:00Z',deadlineAt:'2026-10-17T15:00:00Z',version:'2026-10-20T09:00:00Z',
   emails:[['Order confirmation','delivered','2026-10-13T12:01:00Z'],['Collection details','delivered','2026-10-20T09:00:00Z']]},
  {id:'GK-1031',img:'chocolate',cake:'Chocolate swirl',flavour:'Snickers',size:'S · 6 inches · 7–10 servings',recipe:'SN-6 v1',cakes:1,price:9000,peanuts:true,customer:'Ethan M.',email:'ethan.m@example.com',date:'2026-10-24',slot:'12:30–13:30',mode:'collection',stage:'cancelled',paidAt:'2026-10-10T09:00:00Z',autoAt:'2026-10-12T09:00:00Z',deadlineAt:'2026-10-19T11:30:00Z',version:'2026-10-21T14:02:00Z',
-  cancel:{by:'customer',at:'2026-10-21T13:58:00Z',rule:50,goodwill:0,reason:'The customer asked to cancel (Instagram message)'},
+  cancel:{by:'customer',at:'2026-10-21T13:58:00Z',rule:50,goodwill:0,reason:'The customer asked to cancel (Instagram message)',confirmed:{channel:'Instagram message',at:'2026-10-21T13:50:00Z',evidence:'“Yes please cancel, £45 back is fine” (DM 14:50)'}},
   collections:[{kind:'cake',paid:9000,refunds:[{amount:4500,status:'unknown',at:'2026-10-21T14:02:00Z'}]}],
   emails:[['Order confirmation','delivered','2026-10-10T09:01:00Z'],['Cancellation and refund started','delivered','2026-10-21T14:03:00Z']]},
  {id:'GK-1044',img:'raspberry',cake:'Raspberry ribbons',flavour:'Chocolate Raspberry',size:'M · 7 inches · 12–14 servings',recipe:'CR-7 v1',cakes:1,price:10500,customer:'Mia D.',email:'mia.d@exmaple.com',date:'2026-10-25',slot:'11:00–12:00',mode:'collection',stage:'preparing',paidAt:'2026-10-16T20:15:00Z',autoAt:'2026-10-18T20:15:00Z',deadlineAt:'2026-10-20T11:00:00Z',version:'2026-10-16T20:16:00Z',
   emails:[['Order confirmation','bounced','2026-10-16T20:16:00Z']]},
  // A customer-requested late cancellation on a delivery order: cake refund confirmed, delivery refund still owed.
  {id:'GK-1029',img:'garden',cake:'Garden bloom',flavour:'White Chocolate Raspberry',size:'M · 7 inches · 12–14 servings',recipe:'WCR-7 v1',cakes:1,price:12000,customer:'Sofia P.',email:'sofia.p@example.com',date:'2026-10-24',slot:'13:00–14:00',mode:'delivery',address:'22 Example Road, London E14 3XX',delivery:{state:'paid',quote:11000,distance:'4.8 miles (Google Maps, measured by Elina)',sentAt:'2026-10-14T16:00:00Z',paidAt:'2026-10-15T10:00:00Z'},stage:'cancelled',paidAt:'2026-10-13T18:30:00Z',autoAt:'2026-10-15T18:30:00Z',deadlineAt:'2026-10-19T12:00:00Z',version:'2026-10-21T09:02:00Z',
-  cancel:{by:'customer',at:'2026-10-20T16:10:00Z',rule:50,goodwill:0,reason:'The customer asked to cancel (email)'},
+  cancel:{by:'customer',at:'2026-10-20T16:10:00Z',rule:50,goodwill:0,reason:'The customer asked to cancel (email)',confirmed:{channel:'Email',at:'2026-10-20T16:05:00Z',evidence:'Reply “Agreed: £115 back in total” (email 17:05)'}},
   collections:[{kind:'cake',paid:12000,refunds:[{amount:6000,status:'succeeded',at:'2026-10-20T16:12:00Z',confirmedAt:'2026-10-21T09:02:00Z'}]},{kind:'delivery',paid:11000,refunds:[]}],
   emails:[['Order confirmation','delivered','2026-10-13T18:31:00Z'],['Delivery quote','delivered','2026-10-14T16:00:00Z'],['Delivery payment received','delivered','2026-10-15T10:01:00Z'],['Cancellation and refund started','delivered','2026-10-20T16:13:00Z'],['Cake refund confirmed','delivered','2026-10-21T09:03:00Z']]},
 ];
@@ -163,18 +170,20 @@ const ACTIONS={preparing:['Start making','start'],making:['Mark ready','ready'],
 const nextAction=o=>{if(o.stage==='ready'&&o.mode==='delivery')return o.delivery&&o.delivery.state==='paid'?['Out for delivery','dispatch']:null;if(o.stage==='out')return ['Delivered · hand over','handover'];return ACTIONS[o.stage]||null};
 
 // Needs you: 48-hour collection-details alert is computed (Creator answer 7); the rest are example cases.
+function stockTitle(){const n=BATCHES.filter(b=>['negative','expired','today'].includes(batchState(b))).length;return `${n} ingredient warnings`}
+function stockDetail(){const by=k=>BATCHES.filter(b=>batchState(b)===k);const neg=by('negative'),exp=by('expired'),td=by('today');return [neg.length?`Below zero: ${neg.map(b=>`${b.item} ${b.id} (${qtyText(b.qty,b.unit)})`).join(', ')}.`:'',exp.length?`Expired, still on the shelf: ${exp.map(b=>`${b.item} ${b.id}`).join(', ')}.`:'',td.length?`Last usable day today: ${td.map(b=>`${b.item} ${b.id}`).join(', ')}.`:''].filter(Boolean).join(' ')}
 function needs(){const list=ORDERS.filter(detailsOverdue).map(o=>({kind:'details',order:o.id,title:`${detailsLabel(o)} not sent`,detail:`${o.cake} · ${dayShort(o.date)}, ${o.slot}. Handover in about ${Math.round(hoursBetween(NOW,startOf(o)))} hours; these usually go out about 48 hours before.`,action:'Send details',cap:'details'}));
  return list.concat([
- {kind:'late',order:'GK-1039',title:'Paid late · decide',detail:'Pink piping · Thu 29 Oct, 12:00. £90 arrived Thu 22 Oct, 09:20 — less than 8 days before handover. Make it if the customer agrees, or return the full £90.',action:'Decide',cap:'decide'},
- {kind:'delivery',order:'GK-1047',title:'Delivery quote requested',detail:'Raspberry ribbons · Sat 31 Oct · London SE16. Check the address and send a delivery price (from £100).',action:'Send quote',cap:'quote'},
- {kind:'refund',order:'GK-1029',title:'Delivery refund is your next step',detail:'Customer cancelled: £115 owed in total. The cake refund of £60 is confirmed; £55 for delivery is still owed.',action:'Refund delivery',cap:'refund'},
+ {kind:'late',order:'GK-1039',title:'Paid late · decide',detail:'Pink piping · Thu 29 Oct, 12:00. £90 arrived Thu 22 Oct, 09:20 — less than 8 days before handover. Make it if the customer agrees, or return the full £90.',action:'Decide',cap:'decide',fdetail:'Pink piping · Thu 29 Oct, 12:00. Paid late: waiting for Elina’s decision. Don’t start this cake.'},
+ {kind:'delivery',order:'GK-1047',title:'Delivery quote requested',detail:'Raspberry ribbons · Sat 31 Oct · London SE16. Check the address and send a delivery price (from £100).',action:'Send quote',cap:'quote',fdetail:'Raspberry ribbons · Sat 31 Oct · London SE16. Elina prices the delivery; the cake can’t go out until delivery is paid.'},
+ {kind:'refund',order:'GK-1029',title:'Delivery refund is your next step',detail:'Customer cancelled: £115 owed in total. The cake refund of £60 is confirmed; £55 for delivery is still owed.',action:'Refund delivery',cap:'refund',fdetail:'Cancelled by the customer. Refunds are handled by Elina.'},
  {kind:'unknown',order:'GK-1042',title:'Payment result unknown',detail:'Chocolate swirl · Sat 31 Oct. We’re checking with the payment provider. Don’t ask the customer to pay again.',action:'View order',cap:null},
- {kind:'refund',order:'GK-1031',title:'Refund result not confirmed',detail:'£45 sent to the payment provider on Wed 21 Oct, 15:02. We’re checking with them. Don’t send another refund.',action:'View refund',cap:null},
+ {kind:'refund',order:'GK-1031',title:'Refund result not confirmed',detail:'£45 sent to the payment provider on Wed 21 Oct, 15:02. We’re checking with them. Don’t send another refund.',action:'View refund',cap:null,fdetail:'Cancelled. Elina is waiting for the refund result; nothing to make.'},
  {kind:'email',order:'GK-1044',title:'Email bounced · flagged by Sasha',detail:'Order confirmation for Mia D. was not delivered. The address may have a typo. Fix it, then Sasha can resend.',action:'Fix address',cap:'email',href:'support.html?state=flagged'},
- {kind:'stock',order:null,title:'2 ingredient warnings',detail:'Butter batch I-1012 is below zero (−200 g). Raspberry compote C-0302 expired yesterday (350 g still on the shelf).',action:'View ingredients',cap:null,href:'stock.html?filter=warnings'}])}
+ {kind:'stock',order:null,title:stockTitle(),detail:stockDetail(),action:'View ingredients',cap:null,href:'stock.html?filter=warnings'}])}
 
 function reviewBar(states){const link=(k,v,l)=>{const u=new URL(location.href);u.searchParams.set(k,v);if(k==='role')u.searchParams.delete('x');const cur=k==='role'?REVIEW.role===v:(q.get('state')||states[0][0])===v;return `<a href="${esc(u.pathname.split('/').pop()+u.search)}" ${cur?'aria-current="true"':''}>${l}</a>`};
- return `<div class="review-bar" role="region" aria-label="Design preview controls"><span><strong>Design preview r02</strong> · example data · nothing is saved, sent, charged or refunded</span><span class="review-group"><span class="review-label">Role</span>${link('role','chef','Chef')}${link('role','fulfillment','Fulfilment')}${link('role','support','Technical support')}</span>${states&&states.length>1?`<span class="review-group"><span class="review-label">State</span>${states.map(([v,l])=>link('state',v,l)).join('')}</span>`:''}</div>`}
+ return `<div class="review-bar" role="region" aria-label="Design preview controls"><span><strong>Design preview r02b</strong> · example data · nothing is saved, sent, charged or refunded</span><span class="review-group"><span class="review-label">Role</span>${link('role','chef','Chef')}${link('role','fulfillment','Fulfilment')}${link('role','support','Technical support')}</span>${states&&states.length>1?`<span class="review-group"><span class="review-label">State</span>${states.map(([v,l])=>link('state',v,l)).join('')}</span>`:''}</div>`}
 function shell(main,active,states){const nav=[['today','Today','index.html'],['orders','Orders','orders.html'],['plus','New order','new-order.html'],['calendar','Calendar & capacity','calendar.html'],['stock','Ingredients','stock.html'],['mail','Messages','messages.html'],['support','Recovery queue','support.html'],['basket','Groceries',''],['money','Money','']];
  return `<a class="skip" href="#main">Skip to content</a>${reviewBar(states)}<div class="layout"><aside class="sidebar" aria-label="Chef workspace"><a class="brand" href="index.html" aria-label="GK Cake London chef workspace, Today"><img src="assets/chrome-emblem.png" alt="" width="40" height="40"><span><strong>GK Cake London</strong><small>Chef workspace</small></span></a><nav aria-label="Sections"><ul>${nav.map(([i,l,h])=>h?`<li><a href="${h}" ${active===i?'aria-current="page"':''}>${icon(i)}<span>${l}</span></a></li>`:`<li><span class="nav-later" title="Designed in a later revision">${icon(i)}<span>${l}</span><small>later</small></span></li>`).join('')}</ul></nav><div class="who"><span class="avatar" aria-hidden="true">${ROLE.initial}</span><span><strong>${ROLE.who}</strong><small>${ROLE.label}</small></span></div></aside><main id="main" class="main" tabindex="-1">${main}</main></div><div id="toast" class="toast" role="status" aria-live="polite"></div>`}
 const stagePill=o=>`<span class="pill pill-${o.stage}">${o.stage==='ready'||o.stage==='done'?icon('check','pill-icon'):''}${STAGES[o.stage]}</span>`;
