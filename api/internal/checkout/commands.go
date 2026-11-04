@@ -87,6 +87,8 @@ const CommandFreezeRecheck = 5 * time.Minute
 const JournalRetry = 15 * time.Minute
 
 const (
+	reasonPaidRefused      = "payment succeeded for an order that can no longer accept it (changed or holds released): the money is kept; full return is needed (K04, A3c)"
+	reasonPaidLate         = "payment succeeded after the lead time (paid_awaiting_agreement): the chef agrees a handover with the customer or the payment is fully returned (K04 Q2)"
 	reasonCommandPayload   = "order command payload does not match its operation"
 	reasonCommandRecovery  = "recovery operation conflict for this order command"
 	reasonCommandReconcile = "order command needs manager reconciliation"
@@ -128,7 +130,7 @@ func (c *Commands) Handle(ctx context.Context, job jobs.Job) error {
 	switch {
 	case err == nil:
 		log.Info("order command secured", "outcome", outcome.Status)
-		return nil
+		return paidAttention(outcome)
 	case errors.Is(err, recovery.ErrFrozen):
 		return jobs.Defer(CommandFreezeRecheck, err)
 	case errors.Is(err, recovery.ErrNeedsReconcile):
@@ -284,4 +286,24 @@ func (s commandStore) apply(ctx context.Context, opID string) (recovery.Outcome,
 		return recovery.Outcome{}, "", fmt.Errorf("checkout: command %s has no recorded outcome after its commit", opID)
 	}
 	return *o, recovery.State(state), nil
+}
+
+// paidAttention keeps a secured paid confirmation that needs a person from
+// being silent: a refusal (real money on an order that cannot accept it)
+// and a late success (K04 Q2) move the job to manager attention. The
+// chef's case handling and full return are A3c/GK-026.
+func paidAttention(o recovery.Outcome) error {
+	var ev struct {
+		CollectionID string `json:"collection_id"`
+	}
+	if json.Unmarshal(o.Evidence, &ev) != nil || ev.CollectionID == "" {
+		return nil
+	}
+	switch o.Status {
+	case "refused":
+		return jobs.Attention(reasonPaidRefused, nil)
+	case "paid_awaiting_agreement":
+		return jobs.Attention(reasonPaidLate, nil)
+	}
+	return nil
 }

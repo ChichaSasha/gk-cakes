@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/catalog"
 	"github.com/ChichaSasha/gk-cakes/api/internal/checkout"
+	"github.com/ChichaSasha/gk-cakes/api/internal/payments"
 )
 
 type fakeCheckout struct {
@@ -57,6 +59,14 @@ func (f *fakeCheckout) FreeConfirm(_ context.Context, id, subject string, digest
 		return catalog.Result{}, f.freeErr
 	}
 	return catalog.Result{ID: "op-" + id, Replayed: f.replayed}, nil
+}
+func (f *fakeCheckout) StartPayment(_ context.Context, id, subject string, digest []byte, _ string, _ checkout.PaymentInput) (catalog.Result, error) {
+	f.calls++
+	f.subject, f.digest = subject, digest
+	if f.freeErr != nil {
+		return catalog.Result{}, f.freeErr
+	}
+	return catalog.Result{ID: "pay-" + id, Replayed: f.replayed}, nil
 }
 func (f *fakeCheckout) CurrentPolicy(context.Context) (checkout.Policy, error) {
 	return checkout.Policy{ID: "p"}, nil
@@ -302,5 +312,109 @@ func TestCheckoutRoutes(t *testing.T) {
 		if rec := serveCheckout(t, co, id, http.MethodPost, "/api/v1/admin/policies", c.auth, "k", pol, nil); rec.Code != c.status {
 			t.Errorf("record policy by %s: %d, want %d", name, rec.Code, c.status)
 		}
+	}
+}
+
+func TestPaymentRoute(t *testing.T) {
+	id := catalogIdentity()
+	const path = "/api/v1/orders/o1/payment"
+	fc := &fakeCheckout{}
+	rec := serveCheckout(t, fc, id, http.MethodPost, path, "", "k", `{"expected_version":1}`, map[string]string{OrderCapabilityHeader: testProof})
+	if rec.Code != 202 || rec.Body.String() != `{"order_id":"o1","operation_id":"pay-o1","state":"payment_pending","poll_after_seconds":3}`+"\n" ||
+		len(fc.digest) != 32 || fc.subject != "" {
+		t.Fatalf("guest payment: %d %q", rec.Code, rec.Body.String())
+	}
+	if rec := serveCheckout(t, fc, id, http.MethodPost, path, secretToken, "k", `{"expected_version":1}`, nil); rec.Code != 202 || fc.digest != nil || fc.subject == "" {
+		t.Fatalf("signed-in payment: %d", rec.Code)
+	}
+	for name, c := range map[string]struct {
+		body, auth, key string
+		hdr             map[string]string
+		status          int
+	}{
+		"no capability":  {`{"expected_version":1}`, "", "k", nil, 404},
+		"bad capability": {`{"expected_version":1}`, "", "k", map[string]string{OrderCapabilityHeader: "short"}, 404},
+		"no key":         {`{"expected_version":1}`, secretToken, "", nil, 400},
+		"no version":     {`{}`, secretToken, "k", nil, 422},
+		"client amount":  {`{"expected_version":1,"amount_minor":1}`, secretToken, "k", nil, 400},
+		"not an object":  {`[1]`, secretToken, "k", nil, 400},
+	} {
+		fc := &fakeCheckout{}
+		if rec := serveCheckout(t, fc, id, http.MethodPost, path, c.auth, c.key, c.body, c.hdr); rec.Code != c.status || fc.calls != 0 {
+			t.Errorf("payment %s: %d (calls %d), want %d", name, rec.Code, fc.calls, c.status)
+		}
+	}
+	if rec := serveCheckout(t, &fakeCheckout{replayed: true}, id, http.MethodPost, path, secretToken, "k", `{"expected_version":1}`, nil); rec.Code != 202 ||
+		rec.Header().Get("Idempotent-Replayed") != "true" {
+		t.Fatalf("replayed payment: %d %v", rec.Code, rec.Header())
+	}
+	for code, want := range map[string]string{"payment_in_progress": "PAYMENT_IN_PROGRESS", "lead_time": "LEAD_TIME",
+		"quote_expired": "QUOTE_EXPIRED", "stale_version": "STALE_VERSION", "state_conflict": "CONFLICT", "key_reused": "KEY_REUSED"} {
+		rec := serveCheckout(t, &fakeCheckout{freeErr: &catalog.ConflictError{Code: code}}, id, http.MethodPost, path, secretToken, "k",
+			`{"expected_version":1}`, nil)
+		if rec.Code != 409 || !strings.Contains(rec.Body.String(), `"`+want+`"`) {
+			t.Errorf("%s: %d %s, want 409 %s", code, rec.Code, rec.Body.String(), want)
+		}
+	}
+	if rec := serveCheckout(t, &fakeCheckout{freeErr: checkout.ErrPaymentsUnavailable}, id, http.MethodPost, path, secretToken, "k",
+		`{"expected_version":1}`, nil); rec.Code != 503 {
+		t.Fatalf("payments not configured: %d", rec.Code)
+	}
+	if rec := serveCheckout(t, &fakeCheckout{freeErr: checkout.ErrRecoveryFrozen}, id, http.MethodPost, path, secretToken, "k",
+		`{"expected_version":1}`, nil); rec.Code != 503 || !strings.Contains(rec.Body.String(), `"retryable":true`) {
+		t.Fatalf("restore freeze: %d %s", rec.Code, rec.Body.String())
+	}
+	off := NewHandler(Options{UIOrigin: "https://gkcake.com", DB: fakePinger{}, Identity: id, Checkout: &fakeCheckout{},
+		Logger: slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))})
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"expected_version":1}`))
+	req.Header.Set("Idempotency-Key", "k")
+	req.Header.Set(OrderCapabilityHeader, testProof)
+	offRec := httptest.NewRecorder()
+	off.ServeHTTP(offRec, req)
+	if offRec.Code != 404 && offRec.Code != 405 {
+		t.Fatalf("payment while checkout is disabled: %d", offRec.Code)
+	}
+}
+
+type fakeStripeWebhook struct {
+	err   error
+	calls int
+}
+
+func (f *fakeStripeWebhook) Receive(context.Context, http.Header, []byte) (string, error) {
+	f.calls++
+	return "recorded", f.err
+}
+
+func TestStripeWebhookRoute(t *testing.T) {
+	serve := func(rcv StripeWebhook, body string) *httptest.ResponseRecorder {
+		var logs bytes.Buffer
+		h := NewHandler(Options{UIOrigin: "https://gkcake.com", DB: fakePinger{}, StripeWebhook: rcv, Logger: slog.New(slog.NewJSONHandler(&logs, nil))})
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/webhooks/stripe", strings.NewReader(body)))
+		if strings.Contains(logs.String(), "evt_secret_body") {
+			t.Fatalf("body logged: %s", logs.String())
+		}
+		return rec
+	}
+	for name, c := range map[string]struct {
+		err    error
+		status int
+	}{
+		"stored":        {nil, 200},
+		"bad signature": {payments.ErrInvalidSignature, 400},
+		"malformed":     {payments.ErrMalformedEvent, 400},
+		"database down": {errors.New("db"), 503},
+	} {
+		if rec := serve(&fakeStripeWebhook{err: c.err}, `{"id":"evt_secret_body"}`); rec.Code != c.status {
+			t.Errorf("%s: %d, want %d", name, rec.Code, c.status)
+		}
+	}
+	rcv := &fakeStripeWebhook{}
+	if rec := serve(rcv, strings.Repeat("x", payments.MaxWebhookBytes+1)); rec.Code != 413 || rcv.calls != 0 {
+		t.Fatalf("oversized: %d (calls %d)", rec.Code, rcv.calls)
+	}
+	if rec := serve(nil, `{}`); rec.Code != 404 {
+		t.Fatalf("without a secret: %d, want 404", rec.Code)
 	}
 }
