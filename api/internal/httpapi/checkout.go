@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -38,6 +39,10 @@ type Checkout interface {
 	ClearPaymentMismatch(ctx context.Context, subject, key, orderID, collectionID string, in checkout.NoteInput) (catalog.Result, error)
 	ReserveRemainder(ctx context.Context, subject, key, orderID, operationID string, in checkout.RemainderInput) (catalog.Result, error)
 	AttentionList(ctx context.Context, subject string) (checkout.Attention, error)
+	PreviewManualPayout(ctx context.Context, subject, orderID string, in checkout.ManualPayoutPreviewInput) (json.RawMessage, error)
+	RequestManualPayout(ctx context.Context, subject, key, orderID string, in checkout.ManualPayoutInput) (catalog.Result, error)
+	RecordManualPayoutOutcome(ctx context.Context, subject, key, orderID, operationID string, in checkout.ManualPayoutOutcomeInput) (catalog.Result, error)
+	ManualPayouts(ctx context.Context, subject, orderID string) (json.RawMessage, error)
 	PayDeliveryRefund(ctx context.Context, subject, key, id string, in checkout.DeliveryRefundInput) (catalog.Result, error)
 	CurrentPolicy(ctx context.Context) (checkout.Policy, error)
 	RecordPolicy(ctx context.Context, subject, key string, in checkout.PolicyInput) (catalog.Result, error)
@@ -440,6 +445,48 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 				res, err := co.ReserveRemainder(r.Context(), a.Subject, key, r.PathValue("id"), r.PathValue("sub"), in)
 				chefRefund(w, r, res, err)
 			}))
+		// Q5 manual alternative payout (chef): preview, reservation and
+		// outcomes as K11 order commands (202), and the protected list.
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/manual-payouts/preview", staff(id, logger, chef,
+			func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+				var in checkout.ManualPayoutPreviewInput
+				if !readBody(w, r, &in) {
+					return
+				}
+				p, err := co.PreviewManualPayout(r.Context(), a.Subject, r.PathValue("id"), in)
+				respond(w, r, logger, http.StatusOK, p, err)
+			}))
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/manual-payouts", staff(id, logger, chef,
+			func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+				var in checkout.ManualPayoutInput
+				key, ok := readCommand(w, r, &in)
+				if !ok {
+					return
+				}
+				res, err := co.RequestManualPayout(r.Context(), a.Subject, key, r.PathValue("id"), in)
+				respondCommand(w, r, logger, http.StatusAccepted, res, err, func() (any, error) {
+					return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: "payout_pending",
+						PollAfterSeconds: checkout.PollAfterSeconds}, nil
+				})
+			}))
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/manual-payouts/{sub}/outcome", staff(id, logger, chef,
+			func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+				var in checkout.ManualPayoutOutcomeInput
+				key, ok := readCommand(w, r, &in)
+				if !ok {
+					return
+				}
+				res, err := co.RecordManualPayoutOutcome(r.Context(), a.Subject, key, r.PathValue("id"), r.PathValue("sub"), in)
+				respondCommand(w, r, logger, http.StatusAccepted, res, err, func() (any, error) {
+					return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: "outcome_pending",
+						PollAfterSeconds: checkout.PollAfterSeconds}, nil
+				})
+			}))
+		mux.HandleFunc("GET /api/v1/admin/orders/{id}/manual-payouts", staff(id, logger, chef,
+			func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+				items, err := co.ManualPayouts(r.Context(), a.Subject, r.PathValue("id"))
+				respond(w, r, logger, http.StatusOK, map[string]any{"items": items}, err)
+			}))
 		// The manager attention list: chef, or technical support read-only
 		// without amounts (K00); fulfillment has no access.
 		mux.HandleFunc("GET /api/v1/admin/attention", staff(id, logger, readers, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
@@ -504,6 +551,26 @@ func emptyBody(w http.ResponseWriter, r *http.Request) bool {
 	var none struct{}
 	if err != nil || decodeStrict(body, &none) != nil {
 		writeError(w, r, http.StatusBadRequest, "BAD_REQUEST", "This request takes no body other than {}", false)
+		return false
+	}
+	return true
+}
+
+// readBody decodes a strict JSON command body without an Idempotency-Key (a
+// read-like POST such as a preview) and validates it; it answers the error.
+func readBody(w http.ResponseWriter, r *http.Request, in validator) bool {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxCommandBytes))
+	if err != nil || decodeStrict(body, in) != nil {
+		writeError(w, r, http.StatusBadRequest, "BAD_REQUEST", "The request body must be one JSON object with known fields", false)
+		return false
+	}
+	if err := in.Validate(); err != nil {
+		var inv *catalog.InvalidError
+		if errors.As(err, &inv) {
+			writeError(w, r, http.StatusUnprocessableEntity, "INVALID_INPUT", inv.Field+" "+inv.Message, false)
+			return false
+		}
+		writeError(w, r, http.StatusBadRequest, "BAD_REQUEST", "The request body is not valid", false)
 		return false
 	}
 	return true

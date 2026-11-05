@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -156,6 +157,25 @@ func (f *fakeCheckout) ReserveRemainder(_ context.Context, subject, _, _, _ stri
 func (f *fakeCheckout) AttentionList(_ context.Context, subject string) (checkout.Attention, error) {
 	f.subject = subject
 	return checkout.Attention(`[{"kind":"delivery_pending"}]`), nil
+}
+
+func (f *fakeCheckout) PreviewManualPayout(_ context.Context, subject, _ string, _ checkout.ManualPayoutPreviewInput) (json.RawMessage, error) {
+	f.calls++
+	f.subject = subject
+	return json.RawMessage(`{"preview_id":"p1"}`), f.freeErr
+}
+
+func (f *fakeCheckout) RequestManualPayout(_ context.Context, subject, _, _ string, _ checkout.ManualPayoutInput) (catalog.Result, error) {
+	return f.decision(subject)
+}
+
+func (f *fakeCheckout) RecordManualPayoutOutcome(_ context.Context, subject, _, _, _ string, _ checkout.ManualPayoutOutcomeInput) (catalog.Result, error) {
+	return f.decision(subject)
+}
+
+func (f *fakeCheckout) ManualPayouts(_ context.Context, subject, _ string) (json.RawMessage, error) {
+	f.subject = subject
+	return json.RawMessage(`[]`), nil
 }
 
 func (f *fakeCheckout) PayDeliveryRefund(_ context.Context, subject, _, id string, _ checkout.DeliveryRefundInput) (catalog.Result, error) {
@@ -783,6 +803,50 @@ func TestRecoveryToolRoutes(t *testing.T) {
 		}
 		if c.status == 200 && rec.Body.String() != `{"items":[{"kind":"delivery_pending"}]}`+"\n" {
 			t.Errorf("attention body %q", rec.Body.String())
+		}
+	}
+}
+
+func TestManualPayoutRoutes(t *testing.T) {
+	id := catalogIdentity()
+	id.actors["fulfil"] = identity.Actor{AccountID: "acc-ful", Subject: "sub-ful", Capabilities: []string{identity.Fulfillment}}
+	const coll = "cccccccc-1111-4111-8111-11111111111d"
+	const hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	base := "/api/v1/admin/orders/o1/manual-payouts"
+	preview := `{"collection_id":"` + coll + `","unavailable_evidence_ref":"stripe-failure/case-1","recipient_evidence_ref":"recipient/case-1"}`
+	success := `{"expected_version":4,"outcome":"succeeded","transfer_identity":"bank-statement/line-3","evidence_ref":"evidence/1","amount_minor":5000,"currency":"GBP"}`
+	for name, c := range map[string]struct {
+		path, auth, key, body string
+		status                int
+	}{
+		"preview":          {"/preview", "chef", "", preview, 200},
+		"preview support":  {"/preview", "support", "", preview, 403},
+		"bank details":     {"/preview", "chef", "", strings.Replace(preview, "recipient/case-1", "12-34-56 12345678", 1), 422},
+		"iban":             {"/preview", "chef", "", strings.Replace(preview, "recipient/case-1", "GB33BUKB20201555555555", 1), 422},
+		"preview extra":    {"/preview", "chef", "", strings.Replace(preview, `"collection_id"`, `"iban":"x","collection_id"`, 1), 400},
+		"reserve":          {"", "chef", "k", `{"expected_version":4,"preview_id":"` + coll + `","preview_hash":"` + hash + `"}`, 202},
+		"reserve no key":   {"", "chef", "", `{"expected_version":4,"preview_id":"` + coll + `","preview_hash":"` + hash + `"}`, 400},
+		"reserve bad hash": {"", "chef", "k", `{"expected_version":4,"preview_id":"` + coll + `","preview_hash":"x"}`, 422},
+		"reserve fulfil":   {"", "fulfil", "k", `{"expected_version":4,"preview_id":"` + coll + `","preview_hash":"` + hash + `"}`, 403},
+		"submitted":        {"/op1/outcome", "chef", "k", `{"expected_version":4,"outcome":"submitted"}`, 202},
+		"succeeded":        {"/op1/outcome", "chef", "k", success, 202},
+		"success no id":    {"/op1/outcome", "chef", "k", strings.Replace(success, `"transfer_identity":"bank-statement/line-3",`, "", 1), 422},
+		"success euro":     {"/op1/outcome", "chef", "k", strings.Replace(success, `"GBP"`, `"EUR"`, 1), 422},
+		"account number":   {"/op1/outcome", "chef", "k", strings.Replace(success, "bank-statement/line-3", "acct 12345678", 1), 422},
+		"failed no proof":  {"/op1/outcome", "chef", "k", `{"expected_version":4,"outcome":"failed"}`, 422},
+		"submitted amount": {"/op1/outcome", "chef", "k", `{"expected_version":4,"outcome":"submitted","amount_minor":5000}`, 422},
+		"paid":             {"/op1/outcome", "chef", "k", `{"expected_version":4,"outcome":"paid"}`, 422},
+	} {
+		if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, base+c.path, c.auth, c.key, c.body, nil); rec.Code != c.status {
+			t.Errorf("%s: %d %s, want %d", name, rec.Code, rec.Body.String(), c.status)
+		}
+	}
+	for name, c := range map[string]struct {
+		auth   string
+		status int
+	}{"chef": {"chef", 200}, "support": {"support", 403}, "fulfillment": {"fulfil", 403}} {
+		if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodGet, base, c.auth, "", "", nil); rec.Code != c.status {
+			t.Errorf("list by %s: %d", name, rec.Code)
 		}
 	}
 }
