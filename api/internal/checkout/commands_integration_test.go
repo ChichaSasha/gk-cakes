@@ -4,6 +4,7 @@ package checkout_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"github.com/ChichaSasha/gk-cakes/api/internal/jobs"
 	"github.com/ChichaSasha/gk-cakes/api/internal/recovery"
 	"github.com/ChichaSasha/gk-cakes/api/internal/schedule"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -456,6 +458,82 @@ func TestFreezeAfterTheLastCheckStillStopsTheCommit(t *testing.T) {
 		t.Fatalf("direct commit while frozen: %v", err)
 	}
 	h.journal.Fail = nil
+	h.owner(t, "SELECT business.recovery_set_freeze(false, NULL)")
+	h.expire(t, job)
+	if err := h.cmds.Handle(h.ctx, h.claim(t)); err != nil {
+		t.Fatalf("after the freeze: %v", err)
+	}
+	if o := h.order(t, order, d); o.Lifecycle != "confirmed" {
+		t.Fatalf("order %s, want confirmed", o.Lifecycle)
+	}
+}
+
+// freezeAfterFrozenCheck is the worker's gk_worker pool with one twist: the
+// restore freeze is set right after the n-th order_command_frozen answer
+// (the worker's last check before the commit), so only the database's own
+// check at the commit can stop it.
+type freezeAfterFrozenCheck struct {
+	checkout.Querier
+	n, calls int
+	freeze   func()
+}
+
+func (q *freezeAfterFrozenCheck) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	row := q.Querier.QueryRow(ctx, sql, args...)
+	if !strings.Contains(sql, "business.order_command_frozen(") {
+		return row
+	}
+	q.calls++
+	if q.calls != q.n {
+		return row
+	}
+	return afterScan{Row: row, then: q.freeze}
+}
+
+type afterScan struct {
+	pgx.Row
+	then func()
+}
+
+func (r afterScan) Scan(dest ...any) error {
+	err := r.Row.Scan(dest...)
+	r.then()
+	return err
+}
+
+// The GK002 path through Commands.Handle: the freeze lands after the
+// worker's second (last) check, the commit's own check refuses it (GK002),
+// and Handle defers with recovery.ErrFrozen; nothing is committed.
+func TestHandleDefersWhenTheCommitFindsTheFreeze(t *testing.T) {
+	h := newCommandHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d := h.freeOrder(t, f, pol)
+	res, err := h.co.FreeConfirm(h.ctx, order, "", d, "k", checkout.FreeConfirmInput{ExpectedVersion: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := &freezeAfterFrozenCheck{Querier: h.worker, n: 2, freeze: func() {
+		h.owner(t, "SELECT business.recovery_set_freeze(true, 'restore drill')")
+	}}
+	cmds := &checkout.Commands{DB: q, Coordinator: h.coord, Logger: slog.New(slog.NewJSONHandler(h.logs, nil))}
+	job := h.claim(t)
+	err = cmds.Handle(h.ctx, job)
+	var de *jobs.DeferError
+	if !errors.As(err, &de) || de.After != checkout.CommandFreezeRecheck || !errors.Is(err, recovery.ErrFrozen) {
+		t.Fatalf("Handle: %v, want a freeze deferral", err)
+	}
+	if !strings.Contains(err.Error(), "checked at the commit") {
+		t.Fatalf("Handle: %v, want the commit's own check (GK002)", err)
+	}
+	if q.calls != 2 {
+		t.Fatalf("%d frozen checks, want 2", q.calls)
+	}
+	key, _ := h.coord.EnvelopeKey(recovery.Operation{ID: res.ID, AggregateID: order, PriorVersion: 1})
+	if got := h.recoveryState(t, res.ID); got != "prepared" || h.journal.Puts(key+".outcome") != 0 ||
+		h.order(t, order, d).Lifecycle != "awaiting_payment" {
+		t.Fatalf("recovery %s, outcome envelopes %d; want prepared and nothing committed", got, h.journal.Puts(key+".outcome"))
+	}
 	h.owner(t, "SELECT business.recovery_set_freeze(false, NULL)")
 	h.expire(t, job)
 	if err := h.cmds.Handle(h.ctx, h.claim(t)); err != nil {

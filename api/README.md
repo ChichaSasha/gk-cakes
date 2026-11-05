@@ -1017,6 +1017,9 @@ and the job goes to attention. Every call is appended to
 | 409, 429 | `deferred` | unchanged | retry with the same key and body |
 | timeout, connection loss, 5xx | `unknown` | `unknown` | retry with the same key and body (Stripe returns the same session) |
 
+A rejected dispatch is audited once as `payment.failed` on the order, the
+collection ID and reason in its data like every other payment audit (migration
+`0017_followups.sql`; earlier events keep subject kind `payment_collection`).
 A session created in the wrong mode makes the collection `unknown` (attention).
 After the window, an unknown dispatch goes to reconciliation, never to a new
 send. Without `STRIPE_SECRET_KEY` (or the journal) payment jobs wait (15
@@ -1059,7 +1062,15 @@ created session, or one a verified event named) and decides:
   refunded (in any part) or disputed, the session is not found in this
   account, or an expired session has a succeeded payment. On a collection
   that already succeeded the state and paid evidence stay; the contradicting
-  observation is kept beside them (`mismatch_reason`, `mismatch_evidence`);
+  observation is kept beside them (`mismatch_reason`, `mismatch_evidence`).
+  A stale mismatch on a `cancelled` collection (migration
+  `0017_followups.sql`) likewise keeps `cancelled` and its evidence and
+  records only the mismatch (audit `payment.mismatch`, job in attention); the
+  money it may show is never hidden: a collection under reconciliation
+  (`mismatch_reason` set, not succeeded) keeps the order's holds in the hold
+  review exactly as `unknown` does, refuses a second collection
+  (`payment_in_progress`) and reads `unknown` in the order view. An order
+  released before the mismatch stays cancelled; a manager reconciles it;
 - **paid** only when all hold: session `payment_status = paid`; payment
   intent `succeeded`, `amount_received` = the amount, GBP; latest charge
   `paid`, `captured`, `succeeded`, `amount_captured` = the amount, not
@@ -1118,7 +1129,9 @@ them.
 - **Expire request at 15 minutes.** The collection's reconcile (the one the
   dispatch schedules 15 minutes after the session is created, or any later
   one) first calls `payment_expire_admit`: when the collection is `pending`,
-  its session was last seen `open`, the first admitted call
+  its session was last seen `open`, Stripe's own `expires_at`
+  (`provider_expires_at`) has not passed (after it Stripe has expired the
+  session itself; migration `0017_followups.sql`), the first admitted call
   (`dispatch_started_at`) is at least 15 minutes old and no expire request was
   answered yet, it records `expire_requested_at` (a concurrent reconcile
   within 30 seconds skips) and the worker posts
@@ -1167,7 +1180,8 @@ them.
   collection ends it too (the money is real: confirmation or a full return
   decide, never a release); a restore freeze defers it (5 minutes); before
   `hold_until` it waits; it closes never-dispatched collections; while a
-  collection is `created` (admitted), `pending` or `unknown`, or a protected
+  collection is `created` (admitted), `pending` or `unknown` or under
+  reconciliation (`mismatch_reason` set), or a protected
   operation on the order (a free or paid confirmation) is not yet secured, it
   keeps the holds and looks again in 15 minutes (or when a young
   never-admitted collection reaches 15 minutes). Otherwise every collection

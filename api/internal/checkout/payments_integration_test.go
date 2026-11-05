@@ -1387,3 +1387,97 @@ func TestDecidedCollectionsKeepTheirDecisionAndEvidence(t *testing.T) {
 		t.Fatalf("evidence %s -> %s, mismatch %s", before, after, mismatch)
 	}
 }
+
+// A stale mismatch verdict on a cancelled collection keeps it cancelled and
+// records only the mismatch (the worker sends the job to attention); the
+// money it may show is never hidden: the holds stay, no second collection
+// is allowed and the customer reads unknown ("still checking payment").
+func TestStaleMismatchKeepsACancelledCollectionCancelled(t *testing.T) {
+	cancelled := func(t *testing.T) (*payHarness, fixture, string, []byte, string, string) {
+		h := newPayHarness(t)
+		f := h.setup(t)
+		pol := h.policy(t, "p1")
+		order, d := h.paidOrder(t, f, pol)
+		coll, session := h.started(t, order, d)
+		h.stripe.session(session).status = "expired"
+		h.deliver(t, "evt_expired", "checkout.session.expired", "checkout.session", session, coll, order)
+		if errs := h.drain(t); len(errs) != 0 || h.collection(t, coll).State != "cancelled" {
+			t.Fatalf("expired: %v %+v", errs, h.collection(t, coll))
+		}
+		return h, f, order, d, coll, session
+	}
+	mismatch := func(t *testing.T, h *payHarness, coll, session string) {
+		t.Helper()
+		var before string
+		if err := h.admin.QueryRow(h.ctx, "SELECT evidence::text FROM business.payment_collection WHERE id = $1::uuid", coll).Scan(&before); err != nil {
+			t.Fatal(err)
+		}
+		reason := "amount does not match the collection"
+		ev := `{"session_id":"` + session + `","charge_status":"succeeded","amount_minor":100}`
+		if got := h.recordDirect(t, coll, session, "mismatch", ev, nil, &reason); got != "cancelled" {
+			t.Fatalf("stale mismatch moved a cancelled collection to %s", got)
+		}
+		var after, mismatchEv string
+		var mismatchReason *string
+		if err := h.admin.QueryRow(h.ctx, `SELECT evidence::text, mismatch_evidence::text, mismatch_reason
+			FROM business.payment_collection WHERE id = $1::uuid`, coll).Scan(&after, &mismatchEv, &mismatchReason); err != nil {
+			t.Fatal(err)
+		}
+		if after != before || !strings.Contains(mismatchEv, `"charge_status":"succeeded"`) || mismatchReason == nil || *mismatchReason != reason {
+			t.Fatalf("evidence %s -> %s, mismatch %v %s", before, after, mismatchReason, mismatchEv)
+		}
+		if got := h.count(t, `SELECT count(*) FROM business.audit_event WHERE action = 'payment.mismatch' AND subject_kind = 'order'
+			AND detail ->> 'collection_id' = $1::text`, coll); got != 1 {
+			t.Fatalf("%d payment.mismatch audits", got)
+		}
+	}
+	t.Run("before the release", func(t *testing.T) {
+		h, f, order, d, coll, session := cancelled(t)
+		mismatch(t, h, coll, session)
+		v, raw := h.view(t, order, d)
+		if v.Lifecycle != "awaiting_payment" || v.Payment == nil || v.Payment.State != "unknown" || v.Payment.CheckoutURL != nil {
+			t.Fatalf("customer view %s", raw)
+		}
+		if _, err := h.start(order, d, "pay-2", 1); conflict(err) != "payment_in_progress" {
+			t.Fatalf("new collection beside a mismatch: %v", err)
+		}
+		// The hold ends: the review keeps the holds and keeps looking.
+		h.endHold(t, order)
+		for range 3 {
+			h.due(t)
+			if errs := h.drain(t); len(withoutRefundDispatch(errs)) != 0 {
+				t.Fatal(errs)
+			}
+		}
+		if o := h.orderRow(t, order); o.Lifecycle != "awaiting_payment" {
+			t.Fatalf("order %+v", o)
+		}
+		if got := h.paidHolds(t, order, f.readyLot); got != "tentative/reserved 1r0s" {
+			t.Fatalf("holds %s", got)
+		}
+		if id, _ := h.reviewJob(t, order); id == "" {
+			t.Fatal("the review stopped looking at a collection under reconciliation")
+		}
+		if c := h.collection(t, coll); c.State != "cancelled" {
+			t.Fatalf("collection %+v", c)
+		}
+	})
+	t.Run("after the release", func(t *testing.T) {
+		h, f, order, d, coll, session := cancelled(t)
+		h.endHold(t, order)
+		h.due(t)
+		if errs := h.drain(t); len(errs) != 0 || h.orderRow(t, order).Lifecycle != "cancelled" {
+			t.Fatalf("release: %v %+v", errs, h.orderRow(t, order))
+		}
+		mismatch(t, h, coll, session)
+		if o := h.orderRow(t, order); o.Lifecycle != "cancelled" || o.CancelReason != "payment_not_completed" {
+			t.Fatalf("order %+v", o)
+		}
+		if got := h.paidHolds(t, order, f.readyLot); got != "released/returned 0r0s" {
+			t.Fatalf("holds %s", got)
+		}
+		if v, raw := h.view(t, order, d); v.Payment == nil || v.Payment.State != "unknown" {
+			t.Fatalf("customer view %s", raw)
+		}
+	})
+}
