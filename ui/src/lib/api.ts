@@ -39,18 +39,53 @@ export interface ApiOptions {
 	fetch?: typeof fetch;
 }
 
+/** Request headers a caller may add (besides Accept, Content-Type, Authorization). */
+export type ExtraHeader = 'Idempotency-Key' | 'X-Order-Capability' | 'X-Quote-Proof';
+
+export interface ApiRequest {
+	method?: 'GET' | 'POST';
+	/** Query parameters, appended to the path. */
+	query?: Record<string, string | number | undefined>;
+	/** JSON body (POST). */
+	body?: unknown;
+	headers?: Partial<Record<ExtraHeader, string>>;
+}
+
 /** GETs an /api/v1 path and returns its JSON body, or throws ApiError. */
 export async function apiGet<T>(path: string, opts: ApiOptions): Promise<T> {
+	return apiRequest<T>(path, {}, opts);
+}
+
+/**
+ * Calls an /api/v1 path and returns its JSON body, or throws ApiError.
+ * Credentials travel only in headers (never cookies or the URL).
+ */
+export async function apiRequest<T>(path: string, req: ApiRequest, opts: ApiOptions): Promise<T> {
 	if (!/^\/api\/v1\/[a-z0-9/_-]+$/.test(path)) {
 		throw new Error(`not an API path: ${path}`);
 	}
+	const method = req.method ?? 'GET';
 	const headers: Record<string, string> = { Accept: 'application/json' };
 	if (opts.token) headers.Authorization = `Bearer ${opts.token}`;
+	for (const [name, value] of Object.entries(req.headers ?? {})) {
+		if (value) headers[name] = value;
+	}
+	let body: string | undefined;
+	if (req.body !== undefined) {
+		headers['Content-Type'] = 'application/json';
+		body = JSON.stringify(req.body);
+	}
+	const query = new URLSearchParams();
+	for (const [name, value] of Object.entries(req.query ?? {})) {
+		if (value !== undefined) query.set(name, String(value));
+	}
+	const url = opts.baseUrl + path + (query.size > 0 ? `?${query}` : '');
 	let response: Response;
 	try {
-		response = await (opts.fetch ?? fetch)(opts.baseUrl + path, {
-			method: 'GET',
+		response = await (opts.fetch ?? fetch)(url, {
+			method,
 			headers,
+			body,
 			credentials: 'omit',
 			cache: 'no-store',
 			referrerPolicy: 'no-referrer'
@@ -62,17 +97,17 @@ export async function apiGet<T>(path: string, opts: ApiOptions): Promise<T> {
 			retryable: true
 		});
 	}
-	let body: unknown;
+	let parsed: unknown;
 	try {
-		body = await response.json();
+		parsed = await response.json();
 	} catch {
-		body = undefined;
+		parsed = undefined;
 	}
 	if (!response.ok) {
-		const error = (body as { error?: Partial<ApiErrorBody> } | undefined)?.error ?? {};
+		const error = (parsed as { error?: Partial<ApiErrorBody> } | undefined)?.error ?? {};
 		throw new ApiError(response.status, error);
 	}
-	return body as T;
+	return parsed as T;
 }
 
 /** Pages a sign-in may return to; anything else goes to /account. */

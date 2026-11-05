@@ -24,9 +24,16 @@ describe('withConnectSources', () => {
 
 describe('isPrivateRoute', () => {
 	it('marks sign-in and private routes by route ID', () => {
-		for (const r of ['/account', '/admin', '/sign-in', '/auth/callback'])
+		for (const r of [
+			'/account',
+			'/admin',
+			'/sign-in',
+			'/auth/callback',
+			'/checkout',
+			'/orders/[id]'
+		])
 			expect(isPrivateRoute(r)).toBe(true);
-		for (const r of [null, '/', '/healthz', '/accounting', '/administer'])
+		for (const r of [null, '/', '/healthz', '/accounting', '/administer', '/ordersx'])
 			expect(isPrivateRoute(r)).toBe(false);
 	});
 });
