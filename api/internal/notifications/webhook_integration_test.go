@@ -477,6 +477,9 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.quote_create(uuid, bytea, text, text, date, uuid, text, json, text, timestamp with time zone)",
 		"business.quote_get(uuid, uuid, bytea)",
 		"business.refund_delivery_failure_record(uuid, text, text, uuid, uuid)",
+		// GK-026 B2 chef refunds.
+		"business.refund_delivery_pay(uuid, text, text, uuid, integer, uuid)",
+		"business.refund_exception_record(uuid, text, text, uuid, integer, bigint, text, uuid[], bigint[], text)",
 		"business.schedule_public_days(date, date, timestamp with time zone, integer)",
 		"business.schedule_public_slots(date, text, timestamp with time zone, integer)",
 		"business.schedule_staff_days(uuid, date, date, timestamp with time zone)",

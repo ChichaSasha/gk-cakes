@@ -1712,9 +1712,8 @@ Migration `0022_production_late_payment.sql`.
   the integration harness claims them only when a test runs them
   (`holdProduction`).
 
-Not yet: a chef action that pays the pending delivery share of an ordinary
-cancellation; admin partial refunds with allocations (the agreed exception goal)
-and chef-confirmed revised allocations after skewed prior actuals; the
+Not yet (the delivery share action and the agreed exception goal: GK-026 B2
+below): chef-confirmed revised allocations after skewed prior actuals; the
 completed/no-show chef request that creates a financial case while
 preserving fulfillment history (K05); gating refund dispatch on the
 cancellation being secured (refunds are reserved and dispatched from the
@@ -1726,6 +1725,76 @@ unchanged goal); an HTTP route for the delivery failure and delivery
 collections from checkout; returning a sold ready cake to stock on
 cancellation; staff order reads; cancellation, production and refund emails;
 the UI (B2/B3).
+
+## Chef refunds and recovery (K05, GK-026 B2)
+
+Part 1: migrations `0023_b1_followups.sql` and `0024_chef_refunds.sql`.
+Both routes reuse the A3c2 ledger (`refund_goal`, `refund_operation`, the
+dispatch worker and its K11 protection per operation); there is no second
+refund ledger.
+
+| Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
+| --- | --- | --- |
+| `POST /api/v1/admin/orders/{id}/refunds` | chef | `{expected_version, amount_minor, currency: "GBP", allocations: [{collection_id, amount_minor}], reason}` with Idempotency-Key; 202 `{order_id, operation_id (the exception), state: "refund_pending", poll_after_seconds}` |
+| `POST /api/v1/admin/orders/{id}/delivery-refund` | chef | `{expected_version, collection_id}` with Idempotency-Key; 202 `{order_id, operation_id (the refund operation), state: "refund_pending", poll_after_seconds}` |
+
+- **Agreed exception (partial refund goal).** `amount_minor` 1–100000000
+  pence; 1–10 allocations, each a distinct succeeded collection of the order
+  (lower-case UUID), at least 1p, adding up to the amount (otherwise 422
+  `allocations`); reason 1–500 characters on one line (kept in
+  `business.refund_exception`, never in the audit detail or logs). Under the
+  order lock: 409 `RECONCILIATION_REQUIRED` while the order has an
+  unresolved quarantined refund observation, contradicting evidence on a
+  refund operation or payment collection, a refund in `requires_action`, an
+  unresolved refund whose dispatch is in K11 `reconcile`, or a payment
+  collection in `unknown`; 409 `REFUND_IN_PROGRESS` while any refund of the
+  order is unresolved (the explicit allocation is reserved against settled
+  balances, so no automatic reservation splits it); 409 `REFUND_LIMIT` when
+  the amount exceeds paid − S − R over the order or an allocation exceeds
+  its collection's room (C − S − R). Then the goal target becomes
+  min(paid, max(target, S + R) + amount), version + 1 (a new goal has reason
+  `chef_exception`), exactly the allocations are reserved as refund
+  operations under that version, the order version is bumped and the
+  exception is stored immutably. It is an obligation on top of what is owed:
+  a pending ordinary share stays pending. A later cancellation nets it (K05:
+  the policy target is cumulative): exceptions of 9500p on a 12000p order
+  cover a 50% cancellation (6000p), which then raises only the policy target
+  (audited `refund.policy_target_raised`) and sends nothing.
+- **Pending delivery share.** Reserves, for one unfloored succeeded delivery
+  collection, what `delivery_pending_minor` reports for it: min(its share −
+  its S + R, its room, what the goal still needs after everything returned,
+  reserved or automatically reservable). 404 for a collection of another
+  order, 409 `CONFLICT` for a cake or unpaid collection, 409
+  `NO_REFUND_PENDING` when nothing is pending, `REFUND_IN_PROGRESS` while
+  that collection has an unresolved refund, `RECONCILIATION_REQUIRED` as
+  above. Cake 9501p + delivery 2000p at 50%: the cancellation sends 4751p,
+  the chef's delivery refund 1000p once, and the refund reads `returned`.
+- **Both:** chef only (403 otherwise); 409 `STALE_VERSION`; the same key and
+  body replays (`Idempotent-Replayed: true`, also during a restore freeze),
+  another body is `KEY_REUSED`; a new request during a restore freeze is 503
+  and records nothing; 409 `CONFLICT` while a K11 command of the order is
+  not secured or a cancellation/late-payment decision is unresolved. Not
+  K11 order commands themselves (no customer commitment changes); each
+  reserved operation is protected under K11 before its first Stripe call.
+  Audited: `refund.exception_recorded` / `refund.delivery_paid`,
+  `refund.goal_recorded` / `refund.goal_raised`, `refund.reserved`.
+- **B1 follow-ups (0023).** After a failed refund the order's refund reads
+  `needs_attention` only when the goal lacks money beyond what is returned,
+  reserved and `delivery_pending_minor` (a pending chef delivery action is
+  not a failure); a policy target raised without raising the goal is audited
+  `refund.policy_target_raised`; the commit-time `honour_too_late` refusal
+  is audited `order.late_payment_refused`.
+- **Tests:** `internal/checkout/recovery_integration_test.go` (real
+  PostgreSQL, fake Stripe), `internal/httpapi` `TestChefRefundRoutes`.
+
+Not yet (B2 part 2): manager recovery tools (resolving quarantined
+observations by `match` or `accept_external`, deciding `unknown` refunds past
+their window with complete-list evidence or a provider refund ID, clearing
+contradictions, re-reserving a failed remainder; re-reserving a failed
+exception operation must return to the same collection, since automatic
+allocation follows policy shares), `GET /api/v1/admin/attention`, the Q5
+manual alternative payout, staff order reads (the chef needs the order's
+`expected_version`, as for the chef cancellation), refund emails, the UI.
 
 ## Not yet verified
 

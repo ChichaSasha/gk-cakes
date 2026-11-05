@@ -31,6 +31,8 @@ type Checkout interface {
 	ChefCancel(ctx context.Context, subject, key, id string, in checkout.ChefCancelInput) (catalog.Result, error)
 	StartProduction(ctx context.Context, subject, key, id string, in checkout.ProductionInput) (checkout.Started, error)
 	LatePayment(ctx context.Context, subject, key, id string, in checkout.LatePaymentInput) (catalog.Result, error)
+	RecordRefund(ctx context.Context, subject, key, id string, in checkout.RefundInput) (catalog.Result, error)
+	PayDeliveryRefund(ctx context.Context, subject, key, id string, in checkout.DeliveryRefundInput) (catalog.Result, error)
 	CurrentPolicy(ctx context.Context) (checkout.Policy, error)
 	RecordPolicy(ctx context.Context, subject, key string, in checkout.PolicyInput) (catalog.Result, error)
 }
@@ -338,6 +340,38 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 				return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: "decision_pending",
 					PollAfterSeconds: checkout.PollAfterSeconds}, nil
 			})
+		}))
+		// K05 chef refunds: an agreed partial refund with allocations, and
+		// the pending delivery share of a cancellation (chef-only). 202 while
+		// the reserved refunds are dispatched; operation_id is the exception
+		// or the refund operation.
+		chefRefund := func(w http.ResponseWriter, r *http.Request, res catalog.Result, err error) {
+			if errors.Is(err, checkout.ErrOrdersFrozen) {
+				writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Order changes are temporarily unavailable", true)
+				return
+			}
+			respondCommand(w, r, logger, http.StatusAccepted, res, err, func() (any, error) {
+				return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: "refund_pending",
+					PollAfterSeconds: checkout.PollAfterSeconds}, nil
+			})
+		}
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/refunds", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+			var in checkout.RefundInput
+			key, ok := readCommand(w, r, &in)
+			if !ok {
+				return
+			}
+			res, err := co.RecordRefund(r.Context(), a.Subject, key, r.PathValue("id"), in)
+			chefRefund(w, r, res, err)
+		}))
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/delivery-refund", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+			var in checkout.DeliveryRefundInput
+			key, ok := readCommand(w, r, &in)
+			if !ok {
+				return
+			}
+			res, err := co.PayDeliveryRefund(r.Context(), a.Subject, key, r.PathValue("id"), in)
+			chefRefund(w, r, res, err)
 		}))
 	}
 	mux.HandleFunc("POST /api/v1/admin/policies", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {

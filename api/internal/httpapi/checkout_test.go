@@ -115,6 +115,24 @@ func (f *fakeCheckout) LatePayment(_ context.Context, subject, _, id string, _ c
 	return catalog.Result{ID: "late-" + id, Replayed: f.replayed}, nil
 }
 
+func (f *fakeCheckout) RecordRefund(_ context.Context, subject, _, id string, _ checkout.RefundInput) (catalog.Result, error) {
+	f.calls++
+	f.subject = subject
+	if f.freeErr != nil {
+		return catalog.Result{}, f.freeErr
+	}
+	return catalog.Result{ID: "exc-" + id, Replayed: f.replayed}, nil
+}
+
+func (f *fakeCheckout) PayDeliveryRefund(_ context.Context, subject, _, id string, _ checkout.DeliveryRefundInput) (catalog.Result, error) {
+	f.calls++
+	f.subject = subject
+	if f.freeErr != nil {
+		return catalog.Result{}, f.freeErr
+	}
+	return catalog.Result{ID: "op-" + id, Replayed: f.replayed}, nil
+}
+
 func (f *fakeCheckout) CurrentPolicy(context.Context) (checkout.Policy, error) {
 	return checkout.Policy{ID: "p"}, nil
 }
@@ -595,5 +613,78 @@ func TestProductionAndLatePaymentRoutes(t *testing.T) {
 		if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, late, c.auth, "k", c.body, nil); rec.Code != c.status {
 			t.Errorf("late payment %s: %d %s, want %d", name, rec.Code, rec.Body.String(), c.status)
 		}
+	}
+}
+
+func TestChefRefundRoutes(t *testing.T) {
+	id := catalogIdentity()
+	id.actors["fulfil"] = identity.Actor{AccountID: "acc-ful", Subject: "sub-ful", Capabilities: []string{identity.Fulfillment}}
+	const refunds = "/api/v1/admin/orders/o1/refunds"
+	const c1, c2 = "aaaaaaaa-1111-4111-8111-11111111111b", "22222222-2222-4222-8222-222222222222"
+	good := `{"expected_version":3,"amount_minor":2500,"currency":"GBP","allocations":[{"collection_id":"` + c1 +
+		`","amount_minor":2000},{"collection_id":"` + c2 + `","amount_minor":500}],"reason":"Agreed adjustment"}`
+	for name, c := range map[string]struct {
+		auth, body string
+		status     int
+	}{
+		"support":        {"support", good, 403},
+		"fulfillment":    {"fulfil", good, 403},
+		"customer":       {secretToken, good, 403},
+		"chef":           {"chef", good, 202},
+		"no version":     {"chef", strings.Replace(good, `"expected_version":3`, `"expected_version":0`, 1), 422},
+		"zero":           {"chef", strings.Replace(good, `"amount_minor":2500`, `"amount_minor":0`, 1), 422},
+		"euro":           {"chef", strings.Replace(good, `"GBP"`, `"EUR"`, 1), 422},
+		"wrong sum":      {"chef", strings.Replace(good, `"amount_minor":2500`, `"amount_minor":2400`, 1), 422},
+		"duplicate":      {"chef", strings.Replace(good, c2, c1, 1), 422},
+		"upper case":     {"chef", strings.Replace(good, c1, strings.ToUpper(c1), 1), 422},
+		"no allocations": {"chef", `{"expected_version":3,"amount_minor":2500,"currency":"GBP","allocations":[],"reason":"x"}`, 422},
+		"no reason":      {"chef", strings.Replace(good, `"Agreed adjustment"`, `""`, 1), 422},
+		"two lines":      {"chef", strings.Replace(good, `"Agreed adjustment"`, `"Agreed\nadjustment"`, 1), 422},
+		"unknown field":  {"chef", strings.Replace(good, `"currency"`, `"note":"x","currency"`, 1), 400},
+		"null reason":    {"chef", strings.Replace(good, `"Agreed adjustment"`, `null`, 1), 422},
+	} {
+		if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, refunds, c.auth, "k", c.body, nil); rec.Code != c.status {
+			t.Errorf("refund %s: %d %s, want %d", name, rec.Code, rec.Body.String(), c.status)
+		}
+	}
+	rec := serveCheckout(t, &fakeCheckout{replayed: true}, id, http.MethodPost, refunds, "chef", "k", good, nil)
+	if rec.Code != 202 || rec.Header().Get("Idempotent-Replayed") != "true" ||
+		rec.Body.String() != `{"order_id":"o1","operation_id":"exc-o1","state":"refund_pending","poll_after_seconds":3}`+"\n" {
+		t.Fatalf("replayed refund: %d %q", rec.Code, rec.Body.String())
+	}
+	if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, refunds, "chef", "", good, nil); rec.Code != 400 {
+		t.Fatalf("no key: %d", rec.Code)
+	}
+	for code, want := range map[string]string{"refund_limit": "REFUND_LIMIT", "reconciliation_required": "RECONCILIATION_REQUIRED",
+		"refund_in_progress": "REFUND_IN_PROGRESS", "no_refund_pending": "NO_REFUND_PENDING"} {
+		rec := serveCheckout(t, &fakeCheckout{freeErr: &catalog.ConflictError{Code: code}}, id, http.MethodPost, refunds, "chef", "k", good, nil)
+		if rec.Code != 409 || !strings.Contains(rec.Body.String(), `"code":"`+want+`"`) {
+			t.Errorf("%s: %d %s", code, rec.Code, rec.Body.String())
+		}
+	}
+	if rec := serveCheckout(t, &fakeCheckout{freeErr: checkout.ErrOrdersFrozen}, id, http.MethodPost, refunds, "chef", "k", good, nil); rec.Code != 503 {
+		t.Fatalf("frozen refund: %d", rec.Code)
+	}
+	const delivery = "/api/v1/admin/orders/o1/delivery-refund"
+	body := `{"expected_version":3,"collection_id":"` + c2 + `"}`
+	for name, c := range map[string]struct {
+		auth, body string
+		status     int
+	}{
+		"support":       {"support", body, 403},
+		"fulfillment":   {"fulfil", body, 403},
+		"chef":          {"chef", body, 202},
+		"no collection": {"chef", `{"expected_version":3}`, 422},
+		"bad id":        {"chef", `{"expected_version":3,"collection_id":"c2"}`, 422},
+		"no version":    {"chef", `{"collection_id":"` + c2 + `"}`, 422},
+		"extra":         {"chef", `{"expected_version":3,"collection_id":"` + c2 + `","amount_minor":1}`, 400},
+	} {
+		if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, delivery, c.auth, "k", c.body, nil); rec.Code != c.status {
+			t.Errorf("delivery refund %s: %d %s, want %d", name, rec.Code, rec.Body.String(), c.status)
+		}
+	}
+	if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, delivery, "chef", "k", body, nil); rec.Body.String() !=
+		`{"order_id":"o1","operation_id":"op-o1","state":"refund_pending","poll_after_seconds":3}`+"\n" {
+		t.Fatalf("delivery refund answer %q", rec.Body.String())
 	}
 }
