@@ -280,3 +280,4 @@ fieldset{border:0;padding:0;margin:0 0 10px;min-width:0}legend{font-size:13px;fo
 .q-facts{margin:8px 0}.q-blocked{margin:6px 0 0}
 .q-facts dt{flex:0 0 auto;max-width:45%;overflow-wrap:normal}.q-facts dd{text-align:right;margin:0}
 @media (max-width:480px){.q-facts div{flex-direction:column;gap:2px}.q-facts dt{max-width:none}.q-facts dd{text-align:left}}
+.q-tech .need-dot{background:#6b7280}

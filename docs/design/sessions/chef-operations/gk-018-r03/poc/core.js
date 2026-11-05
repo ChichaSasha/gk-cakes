@@ -62,7 +62,7 @@ const SCHEDULE={version:3,revision:3,publishedAt:'2026-10-01T08:00:00Z',standard
   6:{name:'Saturday',opens:'12:30',closes:'15:00',starts:['12:30','13:00','13:30','14:00']},
   0:{name:'Sunday',opens:'11:00',closes:'12:00',starts:['11:00']}},
  closed:['2026-11-08']}; // Sun 8 Nov is example data: GK-001 schedule_admin has no closed dates currently.
-// Day limit overrides (soft capacity). Thu 29 Oct: lowered 7 -> 5 with 7 accepted; all 7 stay.
+// Day limit overrides (soft capacity). Thu 29 Oct: lowered 7 -> 5 with 7 accepted; all 7 stay (r03b: plus GK-1039, paid late, also counted).
 const DAY_OVERRIDES={'2026-10-29':{limit:5,version:2,changedAt:'2026-10-21T18:05:00Z'}};
 // Tentative holds: a customer paying now (15-minute hold, counts until reconciled).
 const TENTATIVE={}; // r03: customers paying now are real example orders (GK-1078 on Fri 30 Oct).
@@ -143,7 +143,7 @@ ORDERS.push(
  stub('GK-1076','2026-11-13','12:00','rasp','Gwen J.','collection','2026-10-22T07:50:00Z'),
  stub('GK-1068','2026-11-15','11:00','pink','Hugo K.','collection','2026-10-20T11:25:00Z'),
  // r03: states that are live in the backend (api/README.md, Payments and Full return).
- // Ordinary chef link, 194 hours before handover when sent: start paying until 192 h before (sooner than 24 h).
+ // Ordinary chef link, about 213 hours before handover when sent: start (and finish) paying by 192 h before, sooner than 24 h.
  stub('GK-1078','2026-10-30','14:00','rasp','Kai B.','collection','2026-10-22T09:20:00Z',{stage:'awaiting',paidAt:null,source:'instagram',link:{sentAt:'2026-10-21T17:00:00Z',startBy:'2026-10-22T14:00:00Z',completeBy:'2026-10-22T14:00:00Z'},payment:{state:'pending',amount:10500,startedAt:'2026-10-22T09:20:00Z'},emails:[]}),
  // Payment succeeded a moment ago; the order is being confirmed (confirmation_pending).
  stub('GK-1079','2026-11-01','11:00','pink','Lara N.','collection','2026-10-22T09:43:00Z',{stage:'confirming',payment:{state:'succeeded',amount:9000},emails:[]}),
@@ -160,6 +160,17 @@ ORDERS.push(
  stub('GK-1084','2026-10-31','14:00','pink','Iris P.','collection','2026-10-12T10:00:00Z',{stage:'cancelled',attention:'contradiction',
   cancel:{by:'chef',at:'2026-10-19T09:00:00Z',rule:100,goodwill:0,reason:'You cancelled: oven repair that weekend'},collections:[{kind:'cake',paid:9000,refunds:[{amount:9000,status:'succeeded',at:'2026-10-19T09:01:00Z',confirmedAt:'2026-10-19T09:20:00Z',changedAt:'2026-10-21T15:05:00Z',contradiction:'Confirmed Mon 19 Oct, 10:20; the provider reported it as failed Wed 21 Oct, 16:05.'}]}],
   emails:[['Order confirmation','delivered','2026-10-12T10:01:00Z'],['Cancellation and refund started','delivered','2026-10-19T09:02:00Z']]}),
+ // r03b: a refund waiting for an action the provider requires (requires_action → attention; still counts as in progress).
+ stub('GK-1085','2026-10-30','16:00','rasp','Jude A.','collection','2026-10-14T12:00:00Z',{stage:'cancelled',attention:'requires_action',
+  cancel:{by:'chef',at:'2026-10-21T09:30:00Z',rule:100,goodwill:0,reason:'You cancelled: double-booked tasting'},collections:[{kind:'cake',paid:10500,refunds:[{amount:10500,status:'requires_action',at:'2026-10-21T09:31:00Z'}]}],
+  emails:[['Order confirmation','delivered','2026-10-14T12:01:00Z'],['Cancellation and refund started','delivered','2026-10-21T09:32:00Z']]}),
+ // r03b: a definitively failed refund — never resent automatically; the remainder reopens for a manager.
+ stub('GK-1087','2026-10-31','13:30','choc','Noor E.','collection','2026-10-13T08:00:00Z',{stage:'cancelled',attention:'failed',
+  cancel:{by:'chef',at:'2026-10-20T08:00:00Z',rule:100,goodwill:0,reason:'You cancelled: allergy we can’t cater for'},collections:[{kind:'cake',paid:9000,refunds:[{amount:9000,status:'failed',at:'2026-10-20T08:01:00Z',why:'The provider said the original card is closed and can’t receive refunds.',definitive:true}]}],
+  emails:[['Order confirmation','delivered','2026-10-13T08:01:00Z'],['Cancellation and refund started','delivered','2026-10-20T08:02:00Z']]}),
+ // r03b: a payment page that was never created: the journal was down too long, so the first call wasn't made
+ // (dispatch rejected expired_before_dispatch; collection failed; job in attention). The customer may start again.
+ stub('GK-1086','2026-11-07','12:30','pink','Ruth C.','collection','2026-10-22T07:05:00Z',{stage:'awaiting',paidAt:null,payment:{state:'failed',amount:9000,startedAt:'2026-10-22T07:05:00Z',reason:'expired_before_dispatch'},emails:[]}),
 );
 const order=id=>ORDERS.find(o=>o.id===id);
 const startOf=o=>london(o.date,o.slot.slice(0,5));
@@ -171,7 +182,10 @@ const detailsDue=o=>addH(startOf(o),-48);
 const detailsSent=o=>o.emails.some(e=>e[0]===detailsLabel(o)&&e[1]!=='bounced'&&e[1]!=='failed');
 const detailsOverdue=o=>['confirmed','preparing','making','ready'].includes(o.stage)&&!detailsSent(o)&&before(detailsDue(o),NOW)&&before(NOW,startOf(o));
 
-const COMMITTED=new Set(['confirmed','preparing','making','ready','out','done']);
+// r03b: paid late (paid_awaiting_agreement) is committed too: the backend commits the day place, sells lots and consumes
+// the code for it exactly as for confirmed. It's labelled "paid late · decision pending" and isn't started. A full return
+// releases the place (GK-026 defines the release).
+const COMMITTED=new Set(['confirmed','agreement','preparing','making','ready','out','done']);
 // Holds kept while a payment may still succeed or is being confirmed (hold review, api/README.md step 7).
 const HELD=o=>o.stage==='confirming'||o.stage==='awaiting'&&o.payment&&['created','pending','unknown'].includes(o.payment.state);
 function dayStats(date){const hours=SCHEDULE.weekdays[weekdayNum(date)];const ov=DAY_OVERRIDES[date];const limit=ov?ov.limit:SCHEDULE.standardLimit;
@@ -185,7 +199,7 @@ function dayStats(date){const hours=SCHEDULE.weekdays[weekdayNum(date)];const ov
  return {date,hours,limit,override:ov,committed,extras,tentative,awaitingDecision,workload:committed+extras,remaining:Math.max(0,limit-committed-tentative),unused:Math.max(0,limit-committed),status,list}}
 const DAY_STATUS={open:['Open online','ok'],full:['Full online','warn'],lead_time:['closed online','info'],closed:['Closed date','bad'],outside_horizon:['Beyond bookable-until','neutral'],no_times:['Not a working day','neutral'],past:['Past','neutral']};
 
-const STAGES={awaiting:'Waiting for payment',confirming:'Paid · confirming the order',agreement:'Paid late · your decision',confirmed:'Paid · automatic start later',preparing:'In production (automatic) · not started by you',making:'You started making',ready:'Ready for handover',out:'Out for delivery',done:'Handed over',cancelled:'Cancelled'};
+const STAGES={awaiting:'Waiting for payment',confirming:'Paid · confirming the order',agreement:'Paid late · decision pending',confirmed:'Paid · automatic start later',preparing:'In production (automatic) · not started by you',making:'You started making',ready:'Ready for handover',out:'Out for delivery',done:'Handed over',cancelled:'Cancelled'};
 const EMAIL={queued:['Waiting to send','neutral'],sending:['Sending','neutral'],accepted:['Accepted by our email service','neutral'],delivered:['Delivered to their email server','ok'],bounced:['Bounced · not delivered','bad'],failed:['Failed to send','bad'],unknown:['Result unknown','warn'],due:['Not sent yet','neutral'],overdue:['Not sent · due about 48 h before','bad']};
 const ICON={today:'<path d="M3 10h18M7 3v4M17 3v4"/><rect x="3" y="5" width="18" height="16" rx="3"/>',orders:'<path d="M5 4h14v16H5z"/><path d="M9 9h6M9 13h6M9 17h3"/>',plus:'<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',calendar:'<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 14h2M14 14h2M8 17h2"/>',stock:'<path d="M4 8l8-4 8 4-8 4-8-4Z"/><path d="M4 8v8l8 4 8-4V8"/>',basket:'<path d="M4 9h16l-2 11H6L4 9Z"/><path d="M9 9l3-5 3 5"/>',mail:'<rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 7 8 6 8-6"/>',support:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/><path d="m5.6 5.6 3.9 3.9M14.5 14.5l3.9 3.9M18.4 5.6l-3.9 3.9M9.5 14.5l-3.9 3.9"/>',money:'<rect x="3" y="6" width="18" height="12" rx="3"/><circle cx="12" cy="12" r="2.5"/>',arrow:'<path d="M5 12h14m-5-5 5 5-5 5"/>',back:'<path d="M19 12H5m5-5-5 5 5 5"/>',check:'<path d="m5 12 4 4 10-10"/>',alert:'<path d="M12 4 2 20h20L12 4Z"/><path d="M12 10v4M12 17h.01"/>',clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',truck:'<path d="M3 6h11v10H3zM14 10h4l3 3v3h-7z"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/>'};
 const icon=(n,c='icon')=>`<svg class="${c}" viewBox="0 0 24 24" aria-hidden="true">${ICON[n]||ICON.arrow}</svg>`;
@@ -196,13 +210,17 @@ const CANCEL_REASON={payment_not_completed:'Not paid · released',free_not_confi
 const REFUND_STATE={requested:['Refund owed · nothing sent yet','info'],pending:['Refund in progress · not confirmed','info'],partly_returned:['Partly refunded','warn'],returned:['Refunded','ok'],needs_attention:['Refund needs attention','bad']};
 const OPEN_REFUND=['reserved','submitting','pending','unknown','requires_action'];
 const stageText=o=>{if(o.stage==='awaiting'){const p=o.payment;if(p&&p.mismatch)return 'Payment doesn’t match · held';return p?{created:'Waiting for payment · page being prepared',pending:'Waiting for payment · in progress',unknown:'Payment result unknown',failed:'Waiting for payment · last try failed',cancelled:'Waiting for payment · last try not completed'}[p.state]:'Waiting for payment · link sent'}
- if(o.stage==='cancelled'&&o.cancelReason&&!o.collections)return CANCEL_REASON[o.cancelReason];if(o.stage==='cancelled'&&o.cancel&&o.cancel.by==='system')return 'Cancelled · full return';return STAGES[o.stage]};
+ if(o.stage==='cancelled'&&o.cancelReason&&!o.collections)return CANCEL_REASON[o.cancelReason];if(o.stage==='cancelled'&&o.cancel&&o.cancel.by==='system')return 'Cancelled · full return';if(o.stage==='agreement')return LATE_LABEL();return STAGES[o.stage]};
+// Role-dependent: Elina decides; everyone else is told who does.
+const LATE_LABEL=()=>REVIEW.role==='chef'?'Paid late · your decision':'Paid late · Elina decides';
 // Order-level refund state, as the backend's order view reports it (never "returned" while anything is unresolved).
-function refundState(o){const C=o.collections||[];if(!C.length)return null;const all=C.flatMap(c=>c.refunds);if(all.some(r=>r.contradiction)||o.attention==='quarantine')return 'needs_attention';
+function refundState(o){const C=o.collections||[];if(!C.length)return null;const all=C.flatMap(c=>c.refunds);if(all.some(r=>r.contradiction)||['quarantine','failed'].includes(o.attention))return 'needs_attention';
  const T=refundTarget(o),S=all.filter(r=>r.status==='succeeded').reduce((n,r)=>n+r.amount,0);if(all.some(r=>OPEN_REFUND.includes(r.status)))return 'pending';if(S>=T)return 'returned';return S?'partly_returned':'requested'}
 function refundTarget(o){const C=o.collections||[];const P=C.reduce((n,c)=>n+c.paid,0);const c0=o.cancel;if(!c0)return 0;if(c0.goal)return c0.goal.target;return Math.min(P,halfUp(P,c0.rule)+(c0.goodwill||0))}
 // Manager cases the worker raises (job attention); the resolving tools are GK-026 / manager tooling (not built yet).
-const ATTENTION={refused:'Payment arrived after the order was released',mismatch:'Payment doesn’t match the order',contradiction:'Refund changed after it was confirmed',quarantine:'Refund made outside GK Cakes'};
+const ATTENTION={refused:'Payment arrived after the order was released',mismatch:'Payment doesn’t match the order',contradiction:'Refund changed after it was confirmed',quarantine:'Refund made outside GK Cakes',failed:'Refund failed · won’t be resent automatically',requires_action:'Refund needs an action at the provider'};
+// One list for Today's count and the queue's Money group.
+const moneyCases=()=>ORDERS.filter(o=>o.attention);
 const nextAction=o=>{if(o.stage==='ready'&&o.mode==='delivery')return o.delivery&&o.delivery.state==='paid'?['Out for delivery','dispatch']:null;if(o.stage==='out')return ['Delivered · hand over','handover'];return ACTIONS[o.stage]||null};
 
 // Needs you: 48-hour collection-details alert is computed (Creator answer 7); the rest are example cases.
@@ -210,17 +228,17 @@ function stockTitle(){const n=BATCHES.filter(b=>['negative','expired','today'].i
 function stockDetail(){const by=k=>BATCHES.filter(b=>batchState(b)===k);const neg=by('negative'),exp=by('expired'),td=by('today');return [neg.length?`Below zero: ${neg.map(b=>`${b.item} ${b.id} (${qtyText(b.qty,b.unit)})`).join(', ')}.`:'',exp.length?`Expired, still on the shelf: ${exp.map(b=>`${b.item} ${b.id}`).join(', ')}.`:'',td.length?`Last usable day today: ${td.map(b=>`${b.item} ${b.id}`).join(', ')}.`:''].filter(Boolean).join(' ')}
 function needs(){const list=ORDERS.filter(detailsOverdue).map(o=>({kind:'details',order:o.id,title:`${detailsLabel(o)} not sent`,detail:`${o.cake} · ${dayShort(o.date)}, ${o.slot}. Handover in about ${Math.round(hoursBetween(NOW,startOf(o)))} hours; these usually go out about 48 hours before.`,action:'Send details',cap:'details'}));
  return list.concat([
- {kind:'late',order:'GK-1039',title:'Paid late · decide',detail:'Pink piping · Thu 29 Oct, 12:00. The customer started paying in time, but the £90 completed Thu 22 Oct, 09:20 — after the 192-hour point. Not accepted automatically: make it if you can and the customer agrees, or return the full £90.',action:'Decide',cap:'decide',fdetail:'Pink piping · Thu 29 Oct, 12:00. Paid late: waiting for Elina’s decision. Don’t start this cake.'},
+ {kind:'late',order:'GK-1039',title:REVIEW.role==='chef'?'Paid late · decide':'Paid late · Elina decides',detail:'Pink piping · Thu 29 Oct, 12:00. The customer started paying in time, but the £90 completed Thu 22 Oct, 09:20 — after the 192-hour point. Not accepted automatically: make it if you can and the customer agrees, or return the full £90.',action:'Decide',cap:'decide',fdetail:'Pink piping · Thu 29 Oct, 12:00. Paid late: waiting for Elina’s decision. Don’t start this cake.'},
  {kind:'delivery',order:'GK-1047',title:'Delivery quote requested',detail:'Raspberry ribbons · Sat 31 Oct · London SE16. Check the address and send a delivery price (from £100).',action:'Send quote',cap:'quote',fdetail:'Raspberry ribbons · Sat 31 Oct · London SE16. Elina prices the delivery; the cake can’t go out until delivery is paid.'},
  {kind:'refund',order:'GK-1029',title:'Delivery refund is your next step',detail:'Customer cancelled: £115 owed in total. The cake refund of £60 is confirmed; £55 for delivery is still owed.',action:'Refund delivery',cap:'refund',fdetail:'Cancelled by the customer. Refunds are handled by Elina.'},
  {kind:'unknown',order:'GK-1042',title:'Payment result unknown',detail:'Chocolate swirl · Sat 31 Oct. We’re checking with the payment provider. Don’t ask the customer to pay again.',action:'View order',cap:null,fdetail:'Chocolate swirl · Sat 31 Oct. Not paid yet as far as we know: don’t start this cake.'},
  {kind:'refund',order:'GK-1031',title:'Refund result not confirmed',detail:'£45 sent to the payment provider on Wed 21 Oct, 15:02. We’re checking with them. Don’t send another refund.',action:'View refund',cap:null,fdetail:'Cancelled. Elina is waiting for the refund result; nothing to make.'},
  {kind:'email',order:'GK-1044',title:'Email bounced · flagged by Sasha',detail:'Order confirmation for Mia D. was not delivered. The address may have a typo. Fix it, then Sasha can resend.',action:'Fix address',cap:'email',href:'support.html?state=flagged'},
- ...(seesMoney?[{kind:'attention',order:null,title:`${ORDERS.filter(o=>o.attention).length} money cases need a manager`,detail:ORDERS.filter(o=>o.attention).map(o=>`${o.id}: ${ATTENTION[o.attention].toLowerCase()}`).join(' · ')+'. Nothing is sent or refunded automatically for these.',action:'Needs attention',cap:null,href:'support.html'}]:[]),
+ ...(seesMoney?[{kind:'attention',order:null,title:`${moneyCases().length} money cases need a manager`,detail:moneyCases().map(o=>`${o.id}: ${ATTENTION[o.attention].charAt(0).toLowerCase()+ATTENTION[o.attention].slice(1)}`).join(' · ')+'. Only a full return of money that arrived after release starts by itself; nothing else is sent or refunded automatically.',action:'Needs attention',cap:null,href:'support.html'}]:[]),
  {kind:'stock',order:null,title:stockTitle(),detail:stockDetail(),action:'View ingredients',cap:null,href:'stock.html?filter=warnings'}])}
 
 function reviewBar(states){const link=(k,v,l)=>{const u=new URL(location.href);u.searchParams.set(k,v);if(k==='role')u.searchParams.delete('x');const cur=k==='role'?REVIEW.role===v:(q.get('state')||states[0][0])===v;return `<a href="${esc(u.pathname.split('/').pop()+u.search)}" ${cur?'aria-current="true"':''}>${l}</a>`};
- return `<div class="review-bar" role="region" aria-label="Design preview controls"><span><strong>Design preview r03</strong> · example data · nothing is saved, sent, charged or refunded</span><span class="review-group"><span class="review-label">Role</span>${link('role','chef','Chef')}${link('role','fulfillment','Fulfilment')}${link('role','support','Technical support')}</span>${states&&states.length>1?`<span class="review-group"><span class="review-label">State</span>${states.map(([v,l])=>link('state',v,l)).join('')}</span>`:''}</div>`}
+ return `<div class="review-bar" role="region" aria-label="Design preview controls"><span><strong>Design preview r03b</strong> · example data · nothing is saved, sent, charged or refunded</span><span class="review-group"><span class="review-label">Role</span>${link('role','chef','Chef')}${link('role','fulfillment','Fulfilment')}${link('role','support','Technical support')}</span>${states&&states.length>1?`<span class="review-group"><span class="review-label">State</span>${states.map(([v,l])=>link('state',v,l)).join('')}</span>`:''}</div>`}
 function shell(main,active,states){const nav=[['today','Today','index.html'],['orders','Orders','orders.html'],['plus','New order','new-order.html'],['calendar','Calendar & capacity','calendar.html'],['stock','Ingredients','stock.html'],['mail','Messages','messages.html'],['support','Needs attention','support.html'],['basket','Groceries',''],['money','Money','']];
  return `<a class="skip" href="#main">Skip to content</a>${reviewBar(states)}<div class="layout"><aside class="sidebar" aria-label="Chef workspace"><a class="brand" href="index.html" aria-label="GK Cake London chef workspace, Today"><img src="assets/chrome-emblem.png" alt="" width="40" height="40"><span><strong>GK Cake London</strong><small>Chef workspace</small></span></a><nav aria-label="Sections"><ul>${nav.map(([i,l,h])=>h?`<li><a href="${h}" ${active===i?'aria-current="page"':''}>${icon(i)}<span>${l}</span></a></li>`:`<li><span class="nav-later" title="Designed in a later revision">${icon(i)}<span>${l}</span><small>later</small></span></li>`).join('')}</ul></nav><div class="who"><span class="avatar" aria-hidden="true">${ROLE.initial}</span><span><strong>${ROLE.who}</strong><small>${ROLE.label}</small></span></div></aside><main id="main" class="main" tabindex="-1">${main}</main></div><div id="toast" class="toast" role="status" aria-live="polite"></div>`}
 const stagePill=o=>`<span class="pill pill-${o.stage}${o.cancelReason&&!o.collections?' pill-released':''}">${o.stage==='ready'||o.stage==='done'?icon('check','pill-icon'):''}${stageText(o)}</span>`;
