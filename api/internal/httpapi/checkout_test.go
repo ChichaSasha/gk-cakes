@@ -68,6 +68,30 @@ func (f *fakeCheckout) StartPayment(_ context.Context, id, subject string, diges
 	}
 	return catalog.Result{ID: "pay-" + id, Replayed: f.replayed}, nil
 }
+func (f *fakeCheckout) PreviewCancellation(_ context.Context, _, subject string, digest []byte) (checkout.CancellationPreview, error) {
+	f.calls++
+	f.subject, f.digest = subject, digest
+	return checkout.CancellationPreview(`{"rate":100}`), f.freeErr
+}
+
+func (f *fakeCheckout) Cancel(_ context.Context, id, subject string, digest []byte, _ string, _ checkout.CancelInput) (catalog.Result, error) {
+	f.calls++
+	f.subject, f.digest = subject, digest
+	if f.freeErr != nil {
+		return catalog.Result{}, f.freeErr
+	}
+	return catalog.Result{ID: "cancel-" + id, Replayed: f.replayed}, nil
+}
+
+func (f *fakeCheckout) ChefCancel(_ context.Context, subject, _, _ string, _ checkout.ChefCancelInput) (catalog.Result, error) {
+	f.calls++
+	f.subject, f.digest = subject, nil
+	if f.freeErr != nil {
+		return catalog.Result{}, f.freeErr
+	}
+	return catalog.Result{ID: "chef-cancel", Replayed: f.replayed}, nil
+}
+
 func (f *fakeCheckout) CurrentPolicy(context.Context) (checkout.Policy, error) {
 	return checkout.Policy{ID: "p"}, nil
 }
@@ -424,5 +448,86 @@ func TestStripeWebhookRoute(t *testing.T) {
 	}
 	if rec := serve(nil, `{}`); rec.Code != 404 {
 		t.Fatalf("without a secret: %d, want 404", rec.Code)
+	}
+}
+
+func TestCancellationRoutes(t *testing.T) {
+	id := catalogIdentity()
+	guest := map[string]string{OrderCapabilityHeader: testProof}
+	const preview = "/api/v1/orders/o1/cancellation-preview"
+	const cancel = "/api/v1/orders/o1/cancel"
+	body := `{"expected_version":2,"preview_id":"00000000-0000-4000-8000-000000000001","preview_hash":"` + strings.Repeat("ab", 32) + `"}`
+	fc := &fakeCheckout{}
+	if rec := serveCheckout(t, fc, id, http.MethodPost, preview, "", "", "", guest); rec.Code != 200 || len(fc.digest) != 32 ||
+		rec.Body.String() != `{"rate":100}`+"\n" {
+		t.Fatalf("guest preview: %d %q", rec.Code, rec.Body.String())
+	}
+	if rec := serveCheckout(t, fc, id, http.MethodPost, preview, secretToken, "", "{}", nil); rec.Code != 200 || fc.digest != nil || fc.subject == "" {
+		t.Fatalf("signed-in preview: %d", rec.Code)
+	}
+	for name, c := range map[string]struct {
+		body string
+		hdr  map[string]string
+	}{"no capability": {"", nil}, "a body": {`{"rate":100}`, guest}} {
+		fc := &fakeCheckout{}
+		if rec := serveCheckout(t, fc, id, http.MethodPost, preview, "", "", c.body, c.hdr); rec.Code/100 != 4 || fc.calls != 0 {
+			t.Errorf("preview %s: %d (calls %d)", name, rec.Code, fc.calls)
+		}
+	}
+	fc = &fakeCheckout{}
+	rec := serveCheckout(t, fc, id, http.MethodPost, cancel, "", "k", body, guest)
+	if rec.Code != 202 || rec.Body.String() != `{"order_id":"o1","operation_id":"cancel-o1","state":"cancellation_pending","poll_after_seconds":3}`+"\n" {
+		t.Fatalf("guest cancel: %d %q", rec.Code, rec.Body.String())
+	}
+	for name, c := range map[string]struct {
+		body, key string
+		hdr       map[string]string
+		status    int
+	}{
+		"no capability": {body, "k", nil, 404},
+		"no key":        {body, "", guest, 400},
+		"no preview":    {`{"expected_version":2}`, "k", guest, 422},
+		"bad hash":      {`{"expected_version":2,"preview_id":"00000000-0000-4000-8000-000000000001","preview_hash":"x"}`, "k", guest, 422},
+		"client amount": {`{"expected_version":2,"amount_minor":1}`, "k", guest, 400},
+	} {
+		fc := &fakeCheckout{}
+		if rec := serveCheckout(t, fc, id, http.MethodPost, cancel, "", c.key, c.body, c.hdr); rec.Code != c.status || fc.calls != 0 {
+			t.Errorf("cancel %s: %d (calls %d), want %d", name, rec.Code, fc.calls, c.status)
+		}
+	}
+	for code, want := range map[string]string{"preview_stale": "PREVIEW_STALE", "cancellation_not_eligible": "CANCELLATION_NOT_ELIGIBLE",
+		"stale_version": "STALE_VERSION", "key_reused": "KEY_REUSED"} {
+		rec := serveCheckout(t, &fakeCheckout{freeErr: &catalog.ConflictError{Code: code}}, id, http.MethodPost, cancel, "", "k", body, guest)
+		if rec.Code != 409 || !strings.Contains(rec.Body.String(), `"`+want+`"`) {
+			t.Errorf("%s: %d %s, want 409 %s", code, rec.Code, rec.Body.String(), want)
+		}
+	}
+	// Chef cancellation: the chef only.
+	const chefPath = "/api/v1/admin/orders/o1/cancel"
+	chefBody := `{"expected_version":2,"reason":"Oven failure"}`
+	for name, c := range map[string]struct {
+		auth   string
+		status int
+	}{"support": {"support", 403}, "customer": {secretToken, 403}, "guest": {"", 401}, "chef": {"chef", 202}} {
+		fc := &fakeCheckout{}
+		if rec := serveCheckout(t, fc, id, http.MethodPost, chefPath, c.auth, "k", chefBody, nil); rec.Code != c.status {
+			t.Errorf("chef cancel by %s: %d, want %d", name, rec.Code, c.status)
+		}
+	}
+	if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, chefPath, "chef", "k", `{"expected_version":2,"reason":" x"}`, nil); rec.Code != 422 {
+		t.Fatalf("untrimmed reason: %d", rec.Code)
+	}
+	// Disabled checkout: no cancellation routes.
+	off := NewHandler(Options{UIOrigin: "https://gkcake.com", DB: fakePinger{}, Identity: id, Checkout: &fakeCheckout{},
+		Logger: slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))})
+	for _, p := range []string{preview, cancel, chefPath} {
+		req := httptest.NewRequest(http.MethodPost, p, strings.NewReader(chefBody))
+		req.Header.Set("Idempotency-Key", "k")
+		req.Header.Set("Authorization", "Bearer chef")
+		rec := httptest.NewRecorder()
+		off.ServeHTTP(rec, req)
+		if rec.Code != 404 && rec.Code != 405 {
+			t.Errorf("%s while disabled: %d", p, rec.Code)
+		}
 	}
 }

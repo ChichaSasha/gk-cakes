@@ -462,6 +462,9 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.lot_public_list(timestamp with time zone)",
 		"business.lot_set_state(uuid, text, text, uuid, integer, text)",
 		"business.lot_staff_list(uuid, boolean, uuid)",
+		"business.order_cancel_request(uuid, bytea, uuid, text, text, integer, uuid, text, text, timestamp with time zone)",
+		"business.order_cancellation_preview(uuid, bytea, uuid, timestamp with time zone)",
+		"business.order_chef_cancel_request(uuid, uuid, text, text, integer, text, text, timestamp with time zone)",
 		"business.order_free_confirm_request(uuid, bytea, uuid, text, text, integer, text, timestamp with time zone)",
 		"business.order_get(uuid, uuid, bytea)",
 		// GK-025 A3b payments.

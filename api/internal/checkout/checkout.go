@@ -412,6 +412,7 @@ var invalidFields = map[string]string{
 	"idempotency_key_invalid": "Idempotency-Key", "proof_reused": "guest_proof", "contact_invalid": "contact",
 	"effective_invalid": "effective_at", "policy_invalid": "policy",
 	"expected_version_required": "expected_version",
+	"preview_invalid":           "preview_id", "reason_invalid": "reason",
 }
 
 var invalidMessages = map[string]string{
@@ -421,12 +422,14 @@ var invalidMessages = map[string]string{
 	"expires_invalid":       "must be in the future",
 	"lines_duplicate":       "must not repeat a cake",
 	"proof_reused":          "must be fresh for each new quote",
+	"preview_invalid":       "must be a cancellation preview you requested for this order, with its preview_hash",
+	"reason_invalid":        "must be 1 to 500 characters on one line without surrounding spaces",
 }
 
 var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "state_conflict": true,
 	"duplicate": true, "item_unavailable": true, "slot_unavailable": true, "price_changed": true,
 	"quote_expired": true, "policy_changed": true, "code_used_up": true, "payment_required": true, "lead_time": true,
-	"payment_in_progress": true}
+	"payment_in_progress": true, "preview_stale": true, "cancellation_not_eligible": true}
 
 // conflictAliases name engine refusals in the customer's terms.
 var conflictAliases = map[string]string{"day_full": "slot_unavailable", "stock_unavailable": "item_unavailable"}

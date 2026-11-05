@@ -428,6 +428,9 @@ var conflictMessages = map[string]string{
 	"lead_time":        "It is now too close to the handover time to confirm this order.",
 	// Payment.
 	"payment_in_progress": "A payment for this order is already in progress. Do not pay again; check the order.",
+	// Cancellation.
+	"preview_stale":             "The refund amount changed since you reviewed it. Please review the new amount and confirm again.",
+	"cancellation_not_eligible": "This order can't be cancelled in its current state.",
 }
 
 // catalogError maps catalog errors to K00 responses without SQL detail.
@@ -472,6 +475,10 @@ func catalogError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, e
 			code = "LEAD_TIME"
 		case "payment_in_progress":
 			code = "PAYMENT_IN_PROGRESS"
+		case "preview_stale":
+			code = "PREVIEW_STALE"
+		case "cancellation_not_eligible":
+			code = "CANCELLATION_NOT_ELIGIBLE"
 		}
 		writeError(w, r, http.StatusConflict, code, msg, false)
 	case errors.As(err, &inv):

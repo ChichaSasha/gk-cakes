@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 
@@ -24,6 +26,9 @@ type Checkout interface {
 	GetOrder(ctx context.Context, id, subject string, digest []byte) (checkout.Order, error)
 	FreeConfirm(ctx context.Context, id, subject string, digest []byte, key string, in checkout.FreeConfirmInput) (catalog.Result, error)
 	StartPayment(ctx context.Context, id, subject string, digest []byte, key string, in checkout.PaymentInput) (catalog.Result, error)
+	PreviewCancellation(ctx context.Context, id, subject string, digest []byte) (checkout.CancellationPreview, error)
+	Cancel(ctx context.Context, id, subject string, digest []byte, key string, in checkout.CancelInput) (catalog.Result, error)
+	ChefCancel(ctx context.Context, subject, key, id string, in checkout.ChefCancelInput) (catalog.Result, error)
 	CurrentPolicy(ctx context.Context) (checkout.Policy, error)
 	RecordPolicy(ctx context.Context, subject, key string, in checkout.PolicyInput) (catalog.Result, error)
 }
@@ -207,10 +212,60 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 				PollAfterSeconds: checkout.PollAfterSeconds}, nil
 		})
 	}
+	// orderActor is the order's owner (bearer) or a guest with the order
+	// capability; a missing or malformed capability is a 404 like a wrong one.
+	orderActor := func(w http.ResponseWriter, r *http.Request) (identity.Actor, []byte, bool) {
+		a, signedIn, ok := optionalCustomer(id, w, r, logger)
+		if !ok {
+			return identity.Actor{}, nil, false
+		}
+		if signedIn {
+			return a, nil, true
+		}
+		d, err := checkout.GuestProofDigest(r.Header.Get(OrderCapabilityHeader))
+		if err != nil {
+			writeError(w, r, http.StatusNotFound, "NOT_FOUND", "Not found", false)
+			return identity.Actor{}, nil, false
+		}
+		return a, d, true
+	}
+	// K05 cancellation preview: the server-computed amount the customer
+	// confirms (owner, or a guest capability with "cancel").
+	postCancellationPreview := func(w http.ResponseWriter, r *http.Request) {
+		a, digest, ok := orderActor(w, r)
+		if !ok {
+			return
+		}
+		if !emptyBody(w, r) {
+			return
+		}
+		p, err := co.PreviewCancellation(r.Context(), r.PathValue("id"), a.Subject, digest)
+		respond(w, r, logger, http.StatusOK, p, err)
+	}
+	// K05 cancellation: 202 "cancellation pending" (K11 protection runs in
+	// the worker); poll the order. Never "refunded" until the money is back.
+	postCancel := func(w http.ResponseWriter, r *http.Request) {
+		a, digest, ok := orderActor(w, r)
+		if !ok {
+			return
+		}
+		var in checkout.CancelInput
+		key, ok := readCommand(w, r, &in)
+		if !ok {
+			return
+		}
+		res, err := co.Cancel(r.Context(), r.PathValue("id"), a.Subject, digest, key, in)
+		respondCommand(w, r, logger, http.StatusAccepted, res, err, func() (any, error) {
+			return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: "cancellation_pending",
+				PollAfterSeconds: checkout.PollAfterSeconds}, nil
+		})
+	}
 	if checkoutEnabled {
 		mux.HandleFunc("POST /api/v1/checkouts", postCheckout)
 		mux.HandleFunc("POST /api/v1/orders/{id}/free-confirmation", postFreeConfirm)
 		mux.HandleFunc("POST /api/v1/orders/{id}/payment", postPayment)
+		mux.HandleFunc("POST /api/v1/orders/{id}/cancellation-preview", postCancellationPreview)
+		mux.HandleFunc("POST /api/v1/orders/{id}/cancel", postCancel)
 	}
 	mux.HandleFunc("GET /api/v1/orders/{id}", func(w http.ResponseWriter, r *http.Request) {
 		a, signedIn, ok := optionalCustomer(id, w, r, logger)
@@ -234,6 +289,21 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 	}
 	readers := []string{identity.Chef, identity.TechnicalSupport}
 	chef := []string{identity.Chef}
+	if checkoutEnabled {
+		// K05 chef cancellation (100%), the same K11 command path.
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/cancel", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+			var in checkout.ChefCancelInput
+			key, ok := readCommand(w, r, &in)
+			if !ok {
+				return
+			}
+			res, err := co.ChefCancel(r.Context(), a.Subject, key, r.PathValue("id"), in)
+			respondCommand(w, r, logger, http.StatusAccepted, res, err, func() (any, error) {
+				return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: "cancellation_pending",
+					PollAfterSeconds: checkout.PollAfterSeconds}, nil
+			})
+		}))
+	}
 	mux.HandleFunc("POST /api/v1/admin/policies", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
 		var in checkout.PolicyInput
 		key, ok := readCommand(w, r, &in)
@@ -279,4 +349,19 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 		res, err := co.ArchiveCode(r.Context(), a.Subject, key, r.PathValue("id"), in)
 		respondCommand(w, r, logger, http.StatusOK, res, err, func() (any, error) { return codeAfter(r.Context(), a.Subject, res.ID) })
 	}))
+}
+
+// emptyBody accepts a request without a body or with an empty JSON object
+// (a read-like POST with no input); anything else is a 400.
+func emptyBody(w http.ResponseWriter, r *http.Request) bool {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1024))
+	if err == nil && len(bytes.TrimSpace(body)) == 0 {
+		return true
+	}
+	var none struct{}
+	if err != nil || decodeStrict(body, &none) != nil {
+		writeError(w, r, http.StatusBadRequest, "BAD_REQUEST", "This request takes no body other than {}", false)
+		return false
+	}
+	return true
 }
