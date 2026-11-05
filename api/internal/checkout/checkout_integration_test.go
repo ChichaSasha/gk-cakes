@@ -44,9 +44,15 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	return newHarnessAt(t, "")
+}
+
+// newHarnessAt migrates up to and including version target (all when "").
+func newHarnessAt(t *testing.T, target string) *harness {
+	t.Helper()
 	ctx := context.Background()
 	db := dbtest.New(t)
-	if _, err := migrate.Run(ctx, db.MigratorConn(t), migrations.FS); err != nil {
+	if _, err := migrate.RunTo(ctx, db.MigratorConn(t), migrations.FS, target); err != nil {
 		t.Fatal(err)
 	}
 	pool, err := pgxpool.New(ctx, db.LoginURL(t, "gk_api"))
@@ -564,13 +570,16 @@ func TestQuoteSafetyRules(t *testing.T) {
 	if err := h.admin.QueryRow(h.ctx, "SELECT count(*) FROM business.checkout_quote").Scan(&before); err != nil {
 		t.Fatal(err)
 	}
-	// An old quote (sent 40 days ago) with one line.
+	// An old quote (sent 40 days before the test clock) with one line. The
+	// quotes created above expire at the test clock + 24 h, so the purge
+	// cutoff below is also bounded by the test clock: neither depends on the
+	// real date the test runs.
 	h.owner(t, `INSERT INTO business.checkout_quote (id, guest_proof_digest, idempotency_key, body_sha256, handover_day, slot_id,
 		slot_starts_at, slot_ends_at, schedule_revision, fulfillment_mode, subtotal_minor, discount_minor, total_minor, sent_at, expires_at)
 		SELECT 'aaaaaaaa-0000-4000-8000-000000000001', sha256('old'::bytea), 'old', body_sha256, handover_day, slot_id, slot_starts_at,
 		       slot_ends_at, schedule_revision, fulfillment_mode, subtotal_minor, discount_minor, total_minor,
-		       now() - interval '40 days', now() - interval '39 days'
-		FROM business.checkout_quote WHERE id = $1`, first.ID)
+		       $2::timestamptz - interval '40 days', $2::timestamptz - interval '39 days'
+		FROM business.checkout_quote WHERE id = $1`, first.ID, h.now)
 	h.owner(t, `INSERT INTO business.checkout_quote_line (quote_id, line_no, variant_id, recipe_version_id, quantity, unit_price_minor,
 		discount_minor, net_minor) SELECT 'aaaaaaaa-0000-4000-8000-000000000001', 1, variant_id, recipe_version_id, quantity,
 		unit_price_minor, discount_minor, net_minor FROM business.checkout_quote_line WHERE quote_id = $1`, first.ID)
@@ -586,7 +595,7 @@ func TestQuoteSafetyRules(t *testing.T) {
 	if err := h.ownerErr(t, "SELECT business.quote_purge_expired(now() - interval '29 days')"); dbtest.SQLState(err) != "22023" {
 		t.Fatalf("purge cutoff 29 days ago: %v, want 22023", err)
 	}
-	h.owner(t, "SELECT business.quote_purge_expired(now() - interval '31 days')")
+	h.owner(t, "SELECT business.quote_purge_expired(LEAST(now(), $1::timestamptz) - interval '31 days')", h.now)
 	var n, oldLines int
 	if err := h.admin.QueryRow(h.ctx, `SELECT (SELECT count(*) FROM business.checkout_quote),
 		(SELECT count(*) FROM business.checkout_quote_line WHERE quote_id = 'aaaaaaaa-0000-4000-8000-000000000001')`).Scan(&n, &oldLines); err != nil ||

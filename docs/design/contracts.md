@@ -113,6 +113,12 @@ chef may approve shorter lead for a specific ready-made/resale cake. Preserve th
 original resale handover date, safe expiry and exclusive physical stock; base amount
 is explicitly entered by chef. This does not shorten ordinary made-to-order lead.
 
+Amendment 2026-11-05 (additive; source: Creator-approved GK-016 r01c shop sketch,
+Colour filter): cakes carry one optional public colour from a chef-managed list
+(code slug, unique incl. archived, immutable; label; position; reversible archive).
+Public reads return `colour: {code,label,position}` or null (none or archived).
+Catalogue content only; no personal data.
+
 ## K02 — requests, agreement, history and Instagram
 
 POST /custom-requests requires desired_date, servings OR size, flavour/filling,

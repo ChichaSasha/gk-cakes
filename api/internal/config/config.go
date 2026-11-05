@@ -78,7 +78,38 @@ type API struct {
 	ShutdownTimeout time.Duration
 	Providers       Providers
 	Auth            Auth
+	// CheckoutEnabled serves POST /api/v1/checkouts (CHECKOUT_ENABLED=true).
+	// Off by default until payment and the release of unpaid holds exist
+	// (GK-025 A3): without them a checkout's holds would never be released.
+	CheckoutEnabled bool
+	// Stripe configures payment collection (STRIPE_ACCOUNT_ID) and the
+	// signed webhook (STRIPE_WEBHOOK_SECRET), both optional.
+	Stripe StripeAPI
+	// EmailRecipientAllowlist is EMAIL_RECIPIENT_ALLOWLIST (required in
+	// staging, refused in production). The API records it with the notice
+	// settings: outside production a notice to any other recipient is never
+	// queued (migration 0030), whichever worker build runs.
+	EmailRecipientAllowlist []string
 }
+
+// StripeAPI is the API's Stripe configuration: the account collections
+// are made in (and whose events the webhook stores), and the webhook
+// signing secret. The webhook needs the account.
+type StripeAPI struct {
+	AccountID     string
+	WebhookSecret Secret
+}
+
+// StripeWorker is the worker's Stripe configuration: the secret key (a
+// test-mode key outside production, a live one only in production) and the
+// account it belongs to. Both or neither; without them payment jobs wait.
+type StripeWorker struct {
+	SecretKey Secret
+	AccountID string
+}
+
+// Enabled reports whether the worker may call Stripe.
+func (s StripeWorker) Enabled() bool { return s.SecretKey.IsSet() }
 
 // Auth configures verification of the identity provider's access tokens
 // (Supabase, contracts K00). Both values are public. Required in staging and
@@ -102,6 +133,13 @@ type Worker struct {
 	DatabaseURL     Secret
 	ShutdownTimeout time.Duration
 	Email           EmailDispatch
+	Stripe          StripeWorker
+	// EmailRecipientAllowlist is EMAIL_RECIPIENT_ALLOWLIST: lower-case
+	// exact addresses and "@domain" entries. Outside production, when set,
+	// a notice to any other recipient is suppressed by the dispatcher (the
+	// second layer after the database) and never sent. Required in staging,
+	// refused in production, optional elsewhere.
+	EmailRecipientAllowlist []string
 }
 
 // EmailDispatch configures the worker's email engine: the Resend sending key
@@ -145,6 +183,12 @@ func LoadAPI(getenv func(string) string) (API, error) {
 		StorageWriteKey:      l.optionalSecret("STORAGE_WRITE_KEY"),
 	}
 	cfg.Auth = l.auth(cfg.Env)
+	cfg.CheckoutEnabled = l.boolean("CHECKOUT_ENABLED")
+	cfg.Stripe = StripeAPI{AccountID: l.stripeAccount("STRIPE_ACCOUNT_ID"), WebhookSecret: l.stripeWebhookSecret("STRIPE_WEBHOOK_SECRET")}
+	if cfg.Stripe.WebhookSecret.IsSet() && cfg.Stripe.AccountID == "" {
+		l.fail("STRIPE_WEBHOOK_SECRET needs STRIPE_ACCOUNT_ID")
+	}
+	cfg.EmailRecipientAllowlist = l.recipientAllowlist(cfg.Env)
 	return cfg, l.err()
 }
 
@@ -158,7 +202,52 @@ func LoadWorker(getenv func(string) string) (Worker, error) {
 	}
 	cfg.DatabaseURL = l.databaseURL("DATABASE_URL", cfg.Env)
 	cfg.Email = l.emailDispatch(cfg.Env)
+	cfg.Stripe = StripeWorker{SecretKey: l.paymentSecret("STRIPE_SECRET_KEY", cfg.Env), AccountID: l.stripeAccount("STRIPE_ACCOUNT_ID")}
+	if cfg.Stripe.SecretKey.IsSet() != (cfg.Stripe.AccountID != "") {
+		l.fail("STRIPE_SECRET_KEY and STRIPE_ACCOUNT_ID must be set together")
+	}
+	cfg.EmailRecipientAllowlist = l.recipientAllowlist(cfg.Env)
 	return cfg, l.err()
+}
+
+// Allowlist entries: an exact address (local@domain, a conservative
+// character set with no wildcard look-alikes) or "@domain"; the domain
+// needs a dot. Compared lower-case.
+var (
+	allowlistAddress = regexp.MustCompile(`^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)+$`)
+	allowlistDomain  = regexp.MustCompile(`^@[a-z0-9-]+(\.[a-z0-9-]+)+$`)
+)
+
+// recipientAllowlist reads EMAIL_RECIPIENT_ALLOWLIST: comma-separated exact
+// addresses or "@domain" entries. Staging requires it (fails closed:
+// "@gkcake.com"); production must leave it unset (real customers are never
+// filtered there); elsewhere it is optional.
+func (l *loader) recipientAllowlist(env Env) []string {
+	raw := l.get("EMAIL_RECIPIENT_ALLOWLIST")
+	if raw == "" {
+		if env == EnvStaging {
+			l.fail("EMAIL_RECIPIENT_ALLOWLIST is required in staging (for example @gkcake.com)")
+		}
+		return nil
+	}
+	if env == EnvProduction {
+		l.fail("EMAIL_RECIPIENT_ALLOWLIST must be unset in production")
+		return nil
+	}
+	var out []string
+	for _, entry := range strings.Split(raw, ",") {
+		entry = strings.ToLower(strings.TrimSpace(entry))
+		if !allowlistAddress.MatchString(entry) && !allowlistDomain.MatchString(entry) {
+			l.fail("EMAIL_RECIPIENT_ALLOWLIST must list exact addresses or @domain entries, separated by commas")
+			return nil
+		}
+		out = append(out, entry)
+	}
+	if len(out) > 50 {
+		l.fail("EMAIL_RECIPIENT_ALLOWLIST must have at most 50 entries")
+		return nil
+	}
+	return out
 }
 
 var b2KeyIDPattern = regexp.MustCompile(`^[A-Za-z0-9]{1,64}$`)
@@ -222,12 +311,59 @@ func LoadBackup(getenv func(string) string, restore bool) (Backup, error) {
 		cfg.DatabaseURL = l.databaseURL("BACKUP_DATABASE_URL", cfg.Env)
 		l.plainConnection("BACKUP_DATABASE_URL", cfg.DatabaseURL)
 	}
+	l.backupKeys(cfg)
+	return cfg, l.err()
+}
+
+func (l *loader) backupKeys(cfg Backup) {
 	switch {
 	case cfg.B2KeyID == "" || !cfg.B2Key.IsSet() || !cfg.EncryptionKeys.IsSet():
 		l.fail("BACKUP_B2_KEY_ID, BACKUP_B2_KEY and BACKUP_ENCRYPTION_KEYS are required")
 	case !b2KeyIDPattern.MatchString(cfg.B2KeyID):
 		l.fail("BACKUP_B2_KEY_ID must be a B2 application key ID")
 	}
+}
+
+// Restore is the configuration of gk-backup restore (GK-034): the backups
+// of APP_ENV are read with the backup key and restored into the isolated
+// restore database, reached with its migration credential.
+type Restore struct {
+	Backup
+	// TargetURL is RESTORE_TARGET_DATABASE_URL: the migration credential of
+	// the isolated restore database (same rules as MIGRATION_DATABASE_URL).
+	TargetURL Secret
+	// Name is RESTORE_BACKUP, a backup's UTC stamp (yyyymmdd-hhmmssz);
+	// empty selects the newest complete backup.
+	Name string
+}
+
+var backupStampPattern = regexp.MustCompile(`^[0-9]{8}-[0-9]{6}z$`)
+
+// LoadRestore reads the restore configuration. Production backups cannot be
+// restored with it yet: the complete domain restore is GK-035's.
+func LoadRestore(getenv func(string) string) (Restore, error) {
+	var l loader
+	l.getenv = getenv
+	cfg := Restore{Backup: Backup{
+		Env:            l.env(),
+		B2KeyID:        l.get("BACKUP_B2_KEY_ID"),
+		B2Key:          l.optionalSecret("BACKUP_B2_KEY"),
+		EncryptionKeys: l.optionalSecret("BACKUP_ENCRYPTION_KEYS"),
+	}}
+	if cfg.Env == EnvProduction {
+		l.fail("gk-backup restore does not restore production backups yet (GK-035)")
+	}
+	cfg.TargetURL = l.databaseURL("RESTORE_TARGET_DATABASE_URL", cfg.Env)
+	l.plainConnection("RESTORE_TARGET_DATABASE_URL", cfg.TargetURL)
+	// The synthetic dispatch check derives its temporary login's URL from
+	// the target's userinfo (user:password@host).
+	if u, err := url.Parse(cfg.TargetURL.value); cfg.TargetURL.IsSet() && (err != nil || u.User == nil || u.User.Username() == "" || u.Query().Has("user")) {
+		l.fail("RESTORE_TARGET_DATABASE_URL must name its user in the URL (postgres://user:password@host/db), not in the query")
+	}
+	if cfg.Name = l.get("RESTORE_BACKUP"); cfg.Name != "" && !backupStampPattern.MatchString(cfg.Name) {
+		l.fail("RESTORE_BACKUP must be a backup time such as 20261105-023000z")
+	}
+	l.backupKeys(cfg.Backup)
 	return cfg, l.err()
 }
 
@@ -381,8 +517,14 @@ func (l *loader) databaseURL(name string, env Env) Secret {
 	return Secret{value: raw}
 }
 
+// originPattern is the form order notices link to (business.notice_settings,
+// migration 0030), compared lower-case: a DNS name or IPv4 address, an
+// optional port, at most 200 bytes.
+var originPattern = regexp.MustCompile(`^https?://[a-z0-9.-]+(:[0-9]{1,5})?$`)
+
 // origin validates an exact browser origin: scheme://host[:port], no wildcard,
-// path, query or fragment. Deployed environments require public HTTPS origins.
+// path, query or fragment, in the form order notices accept. Deployed
+// environments require public HTTPS origins.
 func (l *loader) origin(name string, env Env) string {
 	raw := l.get(name)
 	if raw == "" {
@@ -393,6 +535,10 @@ func (l *loader) origin(name string, env Env) string {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
 		strings.Contains(u.Host, "*") || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
 		l.fail("%s must be an exact origin such as https://example.com", name)
+		return ""
+	}
+	if len(raw) > 200 || !originPattern.MatchString(strings.ToLower(raw)) {
+		l.fail("%s must be an origin with a plain host name and optional port, at most 200 characters", name)
 		return ""
 	}
 	if env.deployed() && (u.Scheme != "https" || isLoopback(u.Hostname())) {
@@ -439,6 +585,18 @@ func (l *loader) auth(env Env) Auth {
 	return a
 }
 
+// boolean reads an optional true/false switch (default false).
+func (l *loader) boolean(name string) bool {
+	switch l.get(name) {
+	case "", "false":
+		return false
+	case "true":
+		return true
+	}
+	l.fail("%s must be true or false", name)
+	return false
+}
+
 func (l *loader) optionalSecret(name string) Secret { return Secret{value: l.get(name)} }
 
 // webhookSecret checks a Svix signing secret: "whsec_" and at least 16
@@ -451,6 +609,30 @@ func (l *loader) webhookSecret(name string) Secret {
 	encoded, ok := strings.CutPrefix(s.value, "whsec_")
 	if raw, err := base64.StdEncoding.DecodeString(encoded); !ok || err != nil || len(raw) < 16 {
 		l.fail("%s must be a webhook signing secret (whsec_ followed by base64)", name)
+	}
+	return s
+}
+
+var (
+	stripeAccountPattern = regexp.MustCompile(`^acct_[A-Za-z0-9]{1,64}$`)
+	stripeWebhookPattern = regexp.MustCompile(`^whsec_[A-Za-z0-9+/=_-]{16,}$`)
+)
+
+// stripeAccount reads an optional Stripe account ID (acct_...).
+func (l *loader) stripeAccount(name string) string {
+	v := l.get(name)
+	if v != "" && !stripeAccountPattern.MatchString(v) {
+		l.fail("%s must be a Stripe account ID (acct_...)", name)
+		return ""
+	}
+	return v
+}
+
+// stripeWebhookSecret reads an optional Stripe signing secret (whsec_...).
+func (l *loader) stripeWebhookSecret(name string) Secret {
+	s := l.optionalSecret(name)
+	if s.IsSet() && !stripeWebhookPattern.MatchString(s.value) {
+		l.fail("%s must be a Stripe webhook signing secret (whsec_...)", name)
 	}
 	return s
 }

@@ -33,6 +33,10 @@ type Catalog interface {
 	CreateVariant(ctx context.Context, subject, key, cakeID string, in catalog.VariantInput) (catalog.Result, error)
 	ArchiveVariant(ctx context.Context, subject, key, variantID string, in catalog.VersionInput) (catalog.Result, error)
 	CreateRecipeVersion(ctx context.Context, subject, key string, in catalog.RecipeVersionInput) (catalog.Result, error)
+	Colours(ctx context.Context, subject string) ([]catalog.Colour, error)
+	Colour(ctx context.Context, subject, id string) (catalog.Colour, error)
+	CreateColour(ctx context.Context, subject, key string, in catalog.ColourInput) (catalog.Result, error)
+	UpdateColour(ctx context.Context, subject, key, colourID string, in catalog.ColourPatch) (catalog.Result, error)
 }
 
 // maxCommandBytes bounds a catalog command body.
@@ -93,6 +97,10 @@ func catalogStaffRoutes(mux *http.ServeMux, cat Catalog, id Identity, logger *sl
 		n, err := cat.CurrentNotice(r.Context(), a.Subject)
 		respond(w, r, logger, http.StatusOK, n, err)
 	}))
+	mux.HandleFunc("GET /api/v1/admin/colours", staff(id, logger, readers, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+		list, err := cat.Colours(r.Context(), a.Subject)
+		respond(w, r, logger, http.StatusOK, map[string]any{"colours": list}, err)
+	}))
 	mux.HandleFunc("GET /api/v1/admin/sizes", staff(id, logger, readers, func(w http.ResponseWriter, _ *http.Request, _ identity.Actor) {
 		writeJSON(w, http.StatusOK, map[string]any{"sizes": catalog.Sizes, "allergen_codes": catalog.AllergenCodes, "units": catalog.Units})
 	}))
@@ -117,6 +125,28 @@ func catalogStaffRoutes(mux *http.ServeMux, cat Catalog, id Identity, logger *sl
 		res, err := cat.CreateNotice(r.Context(), a.Subject, key, in)
 		respondCommand(w, r, logger, http.StatusCreated, res, err, func() (any, error) {
 			return catalog.Notice{ID: res.ID, Text: in.Body}, nil
+		})
+	}))
+	mux.HandleFunc("POST /api/v1/admin/colours", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+		var in catalog.ColourInput
+		key, ok := readCommand(w, r, &in)
+		if !ok {
+			return
+		}
+		res, err := cat.CreateColour(r.Context(), a.Subject, key, in)
+		respondCommand(w, r, logger, http.StatusCreated, res, err, func() (any, error) {
+			return cat.Colour(r.Context(), a.Subject, res.ID)
+		})
+	}))
+	mux.HandleFunc("PATCH /api/v1/admin/colours/{id}", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+		var in catalog.ColourPatch
+		key, ok := readCommand(w, r, &in)
+		if !ok {
+			return
+		}
+		res, err := cat.UpdateColour(r.Context(), a.Subject, key, r.PathValue("id"), in)
+		respondCommand(w, r, logger, http.StatusOK, res, err, func() (any, error) {
+			return cat.Colour(r.Context(), a.Subject, res.ID)
 		})
 	}))
 	mux.HandleFunc("POST /api/v1/admin/cakes", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
@@ -236,8 +266,8 @@ func readCommand(w http.ResponseWriter, r *http.Request, in validator) (string, 
 	if err := decodeStrict(body, in); err != nil {
 		var null *nullError
 		if errors.As(err, &null) {
-			// K00: explicit null clears only named nullable fields; no
-			// catalog command has one.
+			// K00: explicit null clears only named nullable fields
+			// (nullableFields); any other null is invalid.
 			writeError(w, r, http.StatusUnprocessableEntity, "INVALID_INPUT", null.field+" cannot be null", false)
 			return "", false
 		}
@@ -256,12 +286,29 @@ func readCommand(w http.ResponseWriter, r *http.Request, in validator) (string, 
 	return key, true
 }
 
+// nullableFields is a command input with top-level fields that may be an
+// explicit null (K00: null clears a named nullable field).
+type nullableFields interface{ NullableFields() []string }
+
 // decodeStrict decodes exactly one JSON object with no unknown fields, no
-// repeated keys at any depth, no null value and nothing after it. Keys must
+// repeated keys at any depth, no null value (except a top-level field v names
+// as nullable) and nothing after it. Keys must
 // be lower_snake_case ASCII (K00): encoding/json matches field names without
 // regard to case, so "NAME" would otherwise reach the "name" field.
+//
+// A null is reported only after the structural and unknown-field checks
+// pass: a null on an unknown field is an unknown field (400), not an invalid
+// value (422).
 func decodeStrict(body []byte, v any) error {
-	if err := noDuplicateKeys(body); err != nil {
+	var nullable map[string]bool
+	if n, ok := v.(nullableFields); ok {
+		nullable = map[string]bool{}
+		for _, f := range n.NullableFields() {
+			nullable[f] = true
+		}
+	}
+	null, err := noDuplicateKeys(body, nullable)
+	if err != nil {
 		return err
 	}
 	dec := json.NewDecoder(bytes.NewReader(body))
@@ -271,6 +318,9 @@ func decodeStrict(body []byte, v any) error {
 	}
 	if _, err := dec.Token(); err != io.EOF {
 		return errors.New("trailing data after the JSON object")
+	}
+	if null != nil {
+		return null
 	}
 	return nil
 }
@@ -283,29 +333,44 @@ func (e *nullError) Error() string { return "null value for " + e.field }
 var wireKey = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 
 // noDuplicateKeys rejects a JSON document that is not an object, repeats a
-// key in any object, uses a key that is not lower_snake_case or holds a null.
-func noDuplicateKeys(body []byte) error {
+// key in any object or uses a key that is not lower_snake_case. It walks the
+// whole document and returns the first explicit null it saw (nil if none),
+// other than on a top-level field in nullable, for decodeStrict to report
+// after the unknown-field check.
+func noDuplicateKeys(body []byte, nullable map[string]bool) (*nullError, error) {
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.UseNumber()
 	first, err := dec.Token()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if d, ok := first.(json.Delim); !ok || d != '{' {
-		return errors.New("not a JSON object")
+		return nil, errors.New("not a JSON object")
 	}
-	return walkObject(dec, 1, "")
+	w := walker{dec: dec, nullable: nullable}
+	if err := w.object(1); err != nil {
+		return nil, err
+	}
+	return w.null, nil
 }
 
 const maxJSONDepth = 16
 
-func walkObject(dec *json.Decoder, depth int, _ string) error {
+// walker checks one JSON document token by token and remembers its first
+// null that is not on a nullable top-level field.
+type walker struct {
+	dec      *json.Decoder
+	null     *nullError
+	nullable map[string]bool
+}
+
+func (w *walker) object(depth int) error {
 	if depth > maxJSONDepth {
 		return errors.New("JSON nested too deeply")
 	}
 	seen := map[string]bool{}
-	for dec.More() {
-		t, err := dec.Token()
+	for w.dec.More() {
+		t, err := w.dec.Token()
 		if err != nil {
 			return err
 		}
@@ -320,21 +385,27 @@ func walkObject(dec *json.Decoder, depth int, _ string) error {
 			return errors.New("repeated key " + strconv.Quote(k))
 		}
 		seen[k] = true
-		if err := walkValue(dec, depth, k); err != nil {
+		if err := w.value(depth, k); err != nil {
 			return err
 		}
 	}
-	_, err := dec.Token() // '}'
+	_, err := w.dec.Token() // '}'
 	return err
 }
 
-func walkValue(dec *json.Decoder, depth int, field string) error {
-	t, err := dec.Token()
+func (w *walker) value(depth int, field string) error {
+	t, err := w.dec.Token()
 	if err != nil {
 		return err
 	}
 	if t == nil {
-		return &nullError{field: field}
+		if depth == 1 && w.nullable[field] {
+			return nil
+		}
+		if w.null == nil {
+			w.null = &nullError{field: field}
+		}
+		return nil
 	}
 	d, ok := t.(json.Delim)
 	if !ok {
@@ -342,17 +413,17 @@ func walkValue(dec *json.Decoder, depth int, field string) error {
 	}
 	switch d {
 	case '{':
-		return walkObject(dec, depth+1, field)
+		return w.object(depth + 1)
 	case '[':
 		if depth+1 > maxJSONDepth {
 			return errors.New("JSON nested too deeply")
 		}
-		for dec.More() {
-			if err := walkValue(dec, depth+1, field); err != nil {
+		for w.dec.More() {
+			if err := w.value(depth+1, field); err != nil {
 				return err
 			}
 		}
-		_, err := dec.Token() // ']'
+		_, err := w.dec.Token() // ']'
 		return err
 	}
 	return errors.New("unexpected JSON delimiter")
@@ -394,6 +465,29 @@ var conflictMessages = map[string]string{
 	// Quotes: what the customer chose changed since it was shown; choose again.
 	"item_unavailable": "A cake in your basket is no longer available as chosen. Please check your basket.",
 	"slot_unavailable": "That time is no longer available. Please choose another time.",
+	// Checkout: the reviewed quote can no longer be accepted as it is.
+	"price_changed":  "Something in your quote changed. Please review the new quote.",
+	"quote_expired":  "This quote has expired. Please review a new quote.",
+	"policy_changed": "Our terms changed since you reviewed them. Please review them again.",
+	"code_used_up":   "This code has been used up.",
+	// Free confirmation.
+	"payment_required": "This order needs payment; it cannot be confirmed free.",
+	"lead_time":        "It is now too close to the handover time to confirm this order.",
+	// Payment.
+	"payment_in_progress": "A payment for this order is already in progress. Do not pay again; check the order.",
+	// Cancellation.
+	"preview_stale":             "The refund amount changed since you reviewed it. Please review the new amount and confirm again.",
+	"cancellation_not_eligible": "This order can't be cancelled in its current state.",
+	"honour_too_late":           "The original handover time has passed; the late payment can only be fully returned.",
+	// Chef refunds.
+	"refund_limit":               "This refund is more than the money still held for this order or one of its payments.",
+	"reconciliation_required":    "A refund or payment on this order needs reconciliation before more money is returned.",
+	"refund_in_progress":         "A refund for this order is still in progress. Wait for its outcome and try again.",
+	"no_refund_pending":          "No refund is waiting for this order.",
+	"identity_unproven":          "The provider refund and the refund operation are not proven to be the same.",
+	"window_open":                "The refund's provider retry window has not ended yet.",
+	"evidence_required":          "This decision needs complete provider evidence that is not recorded yet.",
+	"manual_payout_not_eligible": "A manual payout needs a definitive provider refund failure on this payment first.",
 }
 
 // catalogError maps catalog errors to K00 responses without SQL detail.
@@ -424,6 +518,42 @@ func catalogError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, e
 			code = "ITEM_UNAVAILABLE"
 		case "slot_unavailable":
 			code = "SLOT_UNAVAILABLE"
+		case "price_changed":
+			code = "PRICE_CHANGED"
+		case "quote_expired":
+			code = "QUOTE_EXPIRED"
+		case "policy_changed":
+			code = "POLICY_CHANGED"
+		case "code_used_up":
+			code = "CODE_USED_UP"
+		case "payment_required":
+			code = "PAYMENT_REQUIRED"
+		case "lead_time":
+			code = "LEAD_TIME"
+		case "payment_in_progress":
+			code = "PAYMENT_IN_PROGRESS"
+		case "preview_stale":
+			code = "PREVIEW_STALE"
+		case "cancellation_not_eligible":
+			code = "CANCELLATION_NOT_ELIGIBLE"
+		case "honour_too_late":
+			code = "HONOUR_TOO_LATE"
+		case "refund_limit":
+			code = "REFUND_LIMIT"
+		case "reconciliation_required":
+			code = "RECONCILIATION_REQUIRED"
+		case "refund_in_progress":
+			code = "REFUND_IN_PROGRESS"
+		case "no_refund_pending":
+			code = "NO_REFUND_PENDING"
+		case "identity_unproven":
+			code = "IDENTITY_UNPROVEN"
+		case "window_open":
+			code = "WINDOW_OPEN"
+		case "evidence_required":
+			code = "EVIDENCE_REQUIRED"
+		case "manual_payout_not_eligible":
+			code = "MANUAL_PAYOUT_NOT_ELIGIBLE"
 		}
 		writeError(w, r, http.StatusConflict, code, msg, false)
 	case errors.As(err, &inv):

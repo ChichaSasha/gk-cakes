@@ -1,6 +1,8 @@
-// API client (GK-021): calls the GK Cakes API with the signed-in user's
-// access token. Contracts K00: JSON over HTTPS, error body
-// {error:{code,message,request_id,retryable}}; tokens never in URLs or logs.
+// API client (GK-021, GK-025): calls the GK Cakes API with the signed-in
+// user's access token or a guest's quote/order secret. Contracts K00: JSON
+// over HTTPS, error body {error:{code,message,request_id,retryable}},
+// commands with an Idempotency-Key; tokens and secrets only in headers, never
+// in URLs or logs; no cookies.
 
 export interface ApiErrorBody {
 	code: string;
@@ -36,21 +38,57 @@ export interface ApiOptions {
 	baseUrl: string;
 	/** Access token for authenticated routes. */
 	token?: string;
+	/**
+	 * A guest's secret for this quote or order (32 random bytes, base64url),
+	 * sent only as a header (X-Quote-Proof or X-Order-Capability), never in
+	 * the URL. Ignored when a token is sent: the API judges a request with a
+	 * token as the signed-in customer's.
+	 */
+	guestSecret?: { header: 'X-Quote-Proof' | 'X-Order-Capability'; value: string };
+	/** Query parameters, appended to the path (values are encoded). */
+	query?: Record<string, string | number | undefined>;
 	fetch?: typeof fetch;
 }
 
-/** GETs an /api/v1 path and returns its JSON body, or throws ApiError. */
-export async function apiGet<T>(path: string, opts: ApiOptions): Promise<T> {
-	if (!/^\/api\/v1\/[a-z0-9/_-]+$/.test(path)) {
+export interface PostOptions extends ApiOptions {
+	/**
+	 * K00 command key: one per user action, reused when the same action is
+	 * retried so the API answers with the original result.
+	 */
+	idempotencyKey: string;
+}
+
+const API_PATH = /^\/api\/v1\/[a-z0-9/_-]+$/;
+const SECRET = /^[A-Za-z0-9_-]{43}$/;
+
+function url(path: string, opts: ApiOptions): string {
+	if (!API_PATH.test(path) || path.includes('//')) {
 		throw new Error(`not an API path: ${path}`);
 	}
-	const headers: Record<string, string> = { Accept: 'application/json' };
-	if (opts.token) headers.Authorization = `Bearer ${opts.token}`;
+	const params = new URLSearchParams();
+	for (const [k, v] of Object.entries(opts.query ?? {})) {
+		if (v !== undefined) params.set(k, String(v));
+	}
+	const q = params.toString();
+	return opts.baseUrl + path + (q ? `?${q}` : '');
+}
+
+function headers(opts: ApiOptions): Record<string, string> {
+	const h: Record<string, string> = { Accept: 'application/json' };
+	if (opts.token) {
+		h.Authorization = `Bearer ${opts.token}`;
+	} else if (opts.guestSecret) {
+		if (!SECRET.test(opts.guestSecret.value)) throw new Error('not a guest secret');
+		h[opts.guestSecret.header] = opts.guestSecret.value;
+	}
+	return h;
+}
+
+async function send<T>(target: string, init: RequestInit, opts: ApiOptions): Promise<T> {
 	let response: Response;
 	try {
-		response = await (opts.fetch ?? fetch)(opts.baseUrl + path, {
-			method: 'GET',
-			headers,
+		response = await (opts.fetch ?? fetch)(target, {
+			...init,
 			credentials: 'omit',
 			cache: 'no-store',
 			referrerPolicy: 'no-referrer'
@@ -73,6 +111,50 @@ export async function apiGet<T>(path: string, opts: ApiOptions): Promise<T> {
 		throw new ApiError(response.status, error);
 	}
 	return body as T;
+}
+
+/** GETs an /api/v1 path and returns its JSON body, or throws ApiError. */
+export async function apiGet<T>(path: string, opts: ApiOptions): Promise<T> {
+	return send<T>(url(path, opts), { method: 'GET', headers: headers(opts) }, opts);
+}
+
+/**
+ * POSTs a JSON command to an /api/v1 path with its Idempotency-Key and
+ * returns the JSON answer, or throws ApiError. The body is sent exactly as
+ * given: the API refuses unknown fields and nulls (strict JSON).
+ */
+export async function apiPost<T>(path: string, body: object, opts: PostOptions): Promise<T> {
+	if (!/^[\x21-\x7e]{1,128}$/.test(opts.idempotencyKey)) {
+		throw new Error('not an Idempotency-Key');
+	}
+	const h = headers(opts);
+	h['Content-Type'] = 'application/json';
+	h['Idempotency-Key'] = opts.idempotencyKey;
+	return send<T>(url(path, opts), { method: 'POST', headers: h, body: JSON.stringify(body) }, opts);
+}
+
+/**
+ * PATCHes an /api/v1 path with a JSON command and its Idempotency-Key (the
+ * staff catalogue's partial updates; body sent exactly as given), or throws
+ * ApiError.
+ */
+export async function apiPatch<T>(path: string, body: object, opts: PostOptions): Promise<T> {
+	if (!/^[\x21-\x7e]{1,128}$/.test(opts.idempotencyKey)) {
+		throw new Error('not an Idempotency-Key');
+	}
+	const h = headers(opts);
+	h['Content-Type'] = 'application/json';
+	h['Idempotency-Key'] = opts.idempotencyKey;
+	return send<T>(
+		url(path, opts),
+		{ method: 'PATCH', headers: h, body: JSON.stringify(body) },
+		opts
+	);
+}
+
+/** A new Idempotency-Key for one user action. */
+export function newIdempotencyKey(): string {
+	return crypto.randomUUID();
 }
 
 /** Pages a sign-in may return to; anything else goes to /account. */

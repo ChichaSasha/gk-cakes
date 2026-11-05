@@ -18,6 +18,7 @@ import (
 	"github.com/ChichaSasha/gk-cakes/api/internal/httpapi"
 	"github.com/ChichaSasha/gk-cakes/api/internal/identity"
 	"github.com/ChichaSasha/gk-cakes/api/internal/notifications"
+	"github.com/ChichaSasha/gk-cakes/api/internal/payments"
 	"github.com/ChichaSasha/gk-cakes/api/internal/schedule"
 )
 
@@ -44,7 +45,14 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("api listening", "addr", ln.Addr().String(), "env", string(cfg.Env))
-	opts := httpapi.Options{UIOrigin: cfg.UIOrigin, DB: readiness(cfg.Env, pool, logger), Logger: logger}
+	// Order notices link to the UI: the settings are recorded now when
+	// possible, and readiness waits until they are (migration 0030).
+	if err := notifications.RecordSettings(ctx, pool, string(cfg.Env), cfg.UIOrigin, cfg.EmailRecipientAllowlist); err != nil {
+		logger.Warn("notice settings not recorded yet; readiness retries", "error", err.Error())
+	}
+	opts := httpapi.Options{UIOrigin: cfg.UIOrigin, Logger: logger, DB: &notifications.SettingsGate{
+		Pinger: readiness(cfg.Env, pool, logger), DB: pool, Environment: string(cfg.Env), UIOrigin: cfg.UIOrigin,
+		Allowlist: cfg.EmailRecipientAllowlist}}
 	if cfg.Providers.EmailWebhookSecret.IsSet() {
 		webhook, err := notifications.NewWebhook(notifications.WebhookConfig{
 			DB: pool, Secret: cfg.Providers.EmailWebhookSecret.Reveal(), Environment: string(cfg.Env), Logger: logger,
@@ -58,6 +66,23 @@ func main() {
 	} else {
 		logger.Info("email webhook not configured; /webhooks/email is not served")
 	}
+	if cfg.Stripe.WebhookSecret.IsSet() {
+		webhook, err := payments.NewWebhook(payments.WebhookConfig{
+			DB: pool, Secret: cfg.Stripe.WebhookSecret.Reveal(), Environment: string(cfg.Env), Account: cfg.Stripe.AccountID,
+			Logger: logger,
+		})
+		if err != nil {
+			logger.Error("stripe webhook", "error", err.Error())
+			os.Exit(2)
+		}
+		opts.StripeWebhook = webhook
+		logger.Info("stripe webhook enabled", "path", "/webhooks/stripe")
+	} else {
+		logger.Info("stripe webhook not configured; /webhooks/stripe is not served")
+	}
+	if cfg.CheckoutEnabled && cfg.Stripe.AccountID == "" {
+		logger.Warn("checkout enabled without STRIPE_ACCOUNT_ID; payment requests answer 503")
+	}
 	if cfg.Auth.Enabled() {
 		opts.Identity = identityService(cfg.Auth, pool)
 		logger.Info("identity enabled", "issuer", cfg.Auth.Issuer)
@@ -66,7 +91,8 @@ func main() {
 	}
 	opts.Catalog = &catalog.Store{DB: pool}
 	opts.Schedule = &schedule.Store{DB: pool}
-	opts.Checkout = &checkout.Store{DB: pool}
+	opts.Checkout = &checkout.Store{DB: pool, Env: string(cfg.Env), StripeAccount: cfg.Stripe.AccountID, UIOrigin: cfg.UIOrigin}
+	opts.CheckoutEnabled = cfg.CheckoutEnabled
 	handler := httpapi.NewHandler(opts)
 	if err := httpapi.Serve(ctx, ln, handler, cfg.ShutdownTimeout); err != nil {
 		logger.Error("serve", "error", err.Error())

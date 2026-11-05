@@ -84,6 +84,19 @@ type Handler func(ctx context.Context, job Job) error
 // Unhandled is the bootstrap handler: no job kinds exist yet.
 func Unhandled(context.Context, Job) error { return ErrNoHandler }
 
+// Chain returns a handler that offers each job to handlers in order: the
+// first that does not answer ErrNoHandler owns it.
+func Chain(handlers ...Handler) Handler {
+	return func(ctx context.Context, job Job) error {
+		for _, h := range handlers {
+			if err := h(ctx, job); !errors.Is(err, ErrNoHandler) {
+				return err
+			}
+		}
+		return ErrNoHandler
+	}
+}
+
 // Options configures a worker.
 type Options struct {
 	Handler         Handler

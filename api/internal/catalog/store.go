@@ -64,18 +64,41 @@ type Variant struct {
 	ArchivedAt  *time.Time `json:"archived_at,omitempty"` // staff only
 }
 
+// CakeColour is a cake's colour. Customers see only an active colour's
+// code, label and position (an archived colour reads as no colour); staff
+// also see its ID and archive time.
+type CakeColour struct {
+	ID         string     `json:"id,omitempty"` // staff only
+	Code       string     `json:"code"`
+	Label      string     `json:"label"`
+	Position   int        `json:"position"`
+	ArchivedAt *time.Time `json:"archived_at,omitempty"` // staff only
+}
+
+// Colour is one entry of the chef's colour list.
+type Colour struct {
+	ID         string     `json:"id"`
+	Code       string     `json:"code"`
+	Label      string     `json:"label"`
+	Position   int        `json:"position"`
+	ArchivedAt *time.Time `json:"archived_at"`
+	Version    int        `json:"version"`
+}
+
 // Cake is a listing with its variants. State, Version and the timestamps
-// other than PublishedAt are staff only.
+// other than PublishedAt are staff only. Colour is always present (null
+// when the cake has none).
 type Cake struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	PublishedAt *time.Time `json:"published_at,omitempty"`
-	State       string     `json:"state,omitempty"`
-	CreatedAt   *time.Time `json:"created_at,omitempty"`
-	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
-	Version     int        `json:"version,omitempty"`
-	Variants    []Variant  `json:"variants"`
+	ID          string      `json:"id"`
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	Colour      *CakeColour `json:"colour"`
+	PublishedAt *time.Time  `json:"published_at,omitempty"`
+	State       string      `json:"state,omitempty"`
+	CreatedAt   *time.Time  `json:"created_at,omitempty"`
+	UpdatedAt   *time.Time  `json:"updated_at,omitempty"`
+	Version     int         `json:"version,omitempty"`
+	Variants    []Variant   `json:"variants"`
 }
 
 // Page is one page of cakes; NextCursor is empty on the last page.
@@ -172,6 +195,9 @@ func (s *Store) PublicPage(ctx context.Context, cursor string, limit int) (Page,
 	if err := s.attachVariants(ctx, page.Cakes, `SELECT `+variantColumns+` FROM business.catalog_public_variants($1::uuid[])`, false); err != nil {
 		return Page{}, err
 	}
+	if err := s.attachPublicColours(ctx, page.Cakes); err != nil {
+		return Page{}, err
+	}
 	return page, nil
 }
 
@@ -194,6 +220,9 @@ func (s *Store) PublicCake(ctx context.Context, id string) (Cake, error) {
 		return Cake{}, ErrNotFound
 	}
 	if err := s.attachVariants(ctx, cakes, `SELECT `+variantColumns+` FROM business.catalog_public_variants($1::uuid[])`, false); err != nil {
+		return Cake{}, err
+	}
+	if err := s.attachPublicColours(ctx, cakes); err != nil {
 		return Cake{}, err
 	}
 	return cakes[0], nil
@@ -224,6 +253,9 @@ func (s *Store) StaffPage(ctx context.Context, subject, cursor string, limit int
 	if err := s.attachStaffVariants(ctx, subject, page.Cakes); err != nil {
 		return Page{}, err
 	}
+	if err := s.attachStaffColours(ctx, subject, page.Cakes); err != nil {
+		return Page{}, err
+	}
 	return page, nil
 }
 
@@ -244,6 +276,9 @@ func (s *Store) StaffCake(ctx context.Context, subject, id string) (Cake, error)
 		return Cake{}, ErrNotFound
 	}
 	if err := s.attachStaffVariants(ctx, subject, cakes); err != nil {
+		return Cake{}, err
+	}
+	if err := s.attachStaffColours(ctx, subject, cakes); err != nil {
 		return Cake{}, err
 	}
 	return cakes[0], nil
@@ -327,6 +362,106 @@ func (s *Store) CurrentNotice(ctx context.Context, subject string) (Notice, erro
 		return Notice{}, ErrNotFound
 	}
 	return list[0], nil
+}
+
+// Colours lists every colour, archived ones included, in the filter order
+// (position, then label).
+func (s *Store) Colours(ctx context.Context, subject string) ([]Colour, error) {
+	return s.colours(ctx, subject, nil)
+}
+
+// Colour returns one colour, or ErrNotFound.
+func (s *Store) Colour(ctx context.Context, subject, id string) (Colour, error) {
+	if !ValidUUID(id) {
+		return Colour{}, ErrNotFound
+	}
+	list, err := s.colours(ctx, subject, &id)
+	if err != nil {
+		return Colour{}, err
+	}
+	if len(list) == 0 {
+		return Colour{}, ErrNotFound
+	}
+	return list[0], nil
+}
+
+func (s *Store) colours(ctx context.Context, subject string, id *string) ([]Colour, error) {
+	rows, err := s.DB.Query(ctx, `SELECT colour_id::text, colour_code, colour_label, colour_position, colour_archived_at,
+		colour_version FROM business.catalog_staff_colours($1::uuid, $2::uuid)`, subject, id)
+	if err != nil {
+		return nil, gatewayError("colours", err)
+	}
+	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Colour, error) {
+		var c Colour
+		return c, r.Scan(&c.ID, &c.Code, &c.Label, &c.Position, &c.ArchivedAt, &c.Version)
+	})
+	if err != nil {
+		return nil, gatewayError("colours", err)
+	}
+	if list == nil {
+		list = []Colour{}
+	}
+	return list, nil
+}
+
+func cakeIDs(cakes []Cake) []string {
+	ids := make([]string, len(cakes))
+	for i, c := range cakes {
+		ids[i] = c.ID
+	}
+	return ids
+}
+
+// attachPublicColours sets each active cake's active colour; the rest stay
+// nil (no colour).
+func (s *Store) attachPublicColours(ctx context.Context, cakes []Cake) error {
+	if len(cakes) == 0 {
+		return nil
+	}
+	rows, err := s.DB.Query(ctx, `SELECT cake_id::text, colour_code, colour_label, colour_position
+		FROM business.catalog_public_cake_colours($1::uuid[])`, cakeIDs(cakes))
+	if err != nil {
+		return fmt.Errorf("catalog: colours: %w", err)
+	}
+	return collectColours(rows, cakes, func(r pgx.Rows, cakeID *string, c *CakeColour) error {
+		return r.Scan(cakeID, &c.Code, &c.Label, &c.Position)
+	})
+}
+
+func (s *Store) attachStaffColours(ctx context.Context, subject string, cakes []Cake) error {
+	if len(cakes) == 0 {
+		return nil
+	}
+	rows, err := s.DB.Query(ctx, `SELECT cake_id::text, colour_id::text, colour_code, colour_label, colour_position,
+		colour_archived_at FROM business.catalog_staff_cake_colours($1::uuid, $2::uuid[])`, subject, cakeIDs(cakes))
+	if err != nil {
+		return gatewayError("staff colours", err)
+	}
+	return collectColours(rows, cakes, func(r pgx.Rows, cakeID *string, c *CakeColour) error {
+		return r.Scan(cakeID, &c.ID, &c.Code, &c.Label, &c.Position, &c.ArchivedAt)
+	})
+}
+
+func collectColours(rows pgx.Rows, cakes []Cake, scan func(pgx.Rows, *string, *CakeColour) error) error {
+	index := make(map[string]int, len(cakes))
+	for i, c := range cakes {
+		index[c.ID] = i
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cakeID string
+		c := &CakeColour{}
+		if err := scan(rows, &cakeID, c); err != nil {
+			return gatewayError("colours", err)
+		}
+		if i, ok := index[cakeID]; ok {
+			cakes[i].Colour = c
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return gatewayError("colours", err)
+	}
+	return nil
 }
 
 const staffCakeColumns = `cake_id::text, cake_name, cake_description, cake_state, cake_published_at,
@@ -449,14 +584,22 @@ func (s *Store) CreateNotice(ctx context.Context, subject, key string, in Notice
 		subject, key, BodyHash(CmdNoticeCreate, "", in), in.Body)
 }
 
-// CreateCake creates a draft cake.
+// CreateCake creates a draft cake, with a colour when ColourID is set. A
+// cake without a colour goes through the 0009 function (same command
+// identity and effect), so it needs no later schema.
 func (s *Store) CreateCake(ctx context.Context, subject, key string, in CakeInput) (Result, error) {
+	hash := BodyHash(CmdCakeCreate, "", in)
+	if in.ColourID == nil {
+		return s.command(ctx, CmdCakeCreate, `SELECT result_id::text, replayed
+			FROM business.catalog_cake_create($1::uuid, $2, $3, $4, $5)`,
+			subject, key, hash, in.Name, in.Description)
+	}
 	return s.command(ctx, CmdCakeCreate, `SELECT result_id::text, replayed
-		FROM business.catalog_cake_create($1::uuid, $2, $3, $4, $5)`,
-		subject, key, BodyHash(CmdCakeCreate, "", in), in.Name, in.Description)
+		FROM business.catalog_cake_create($1::uuid, $2, $3, $4, $5, $6::uuid)`,
+		subject, key, hash, in.Name, in.Description, *in.ColourID)
 }
 
-// UpdateCake changes a cake's name and/or description.
+// UpdateCake changes a cake's name, description and/or colour.
 func (s *Store) UpdateCake(ctx context.Context, subject, key, cakeID string, in CakePatch) (Result, error) {
 	if !ValidUUID(cakeID) {
 		return Result{}, ErrNotFound
@@ -468,9 +611,50 @@ func (s *Store) UpdateCake(ctx context.Context, subject, key, cakeID string, in 
 	if in.Description.Set {
 		description = &in.Description.Value
 	}
+	hash := BodyHash(CmdCakeUpdate, cakeID, in)
+	if !in.ColourID.Set {
+		// No colour change: the 0009 function leaves the colour as it is.
+		return s.command(ctx, CmdCakeUpdate, `SELECT result_id::text, replayed
+			FROM business.catalog_cake_update($1::uuid, $2, $3, $4::uuid, $5, $6, $7)`,
+			subject, key, hash, cakeID, in.ExpectedVersion, name, description)
+	}
+	var colour *string
+	if !in.ColourID.Null {
+		colour = &in.ColourID.Value
+	}
 	return s.command(ctx, CmdCakeUpdate, `SELECT result_id::text, replayed
-		FROM business.catalog_cake_update($1::uuid, $2, $3, $4::uuid, $5, $6, $7)`,
-		subject, key, BodyHash(CmdCakeUpdate, cakeID, in), cakeID, in.ExpectedVersion, name, description)
+		FROM business.catalog_cake_update($1::uuid, $2, $3, $4::uuid, $5, $6, $7, true, $8::uuid)`,
+		subject, key, hash, cakeID, in.ExpectedVersion, name, description, colour)
+}
+
+// CreateColour adds a colour to the chef's list.
+func (s *Store) CreateColour(ctx context.Context, subject, key string, in ColourInput) (Result, error) {
+	return s.command(ctx, CmdColourCreate, `SELECT result_id::text, replayed
+		FROM business.catalog_colour_create($1::uuid, $2, $3, $4, $5, $6)`,
+		subject, key, BodyHash(CmdColourCreate, "", in), in.Code, in.Label, in.Position)
+}
+
+// UpdateColour changes a colour's label or position, or archives or
+// restores it.
+func (s *Store) UpdateColour(ctx context.Context, subject, key, colourID string, in ColourPatch) (Result, error) {
+	if !ValidUUID(colourID) {
+		return Result{}, ErrNotFound
+	}
+	var label *string
+	var position *int
+	var archived *bool
+	if in.Label.Set {
+		label = &in.Label.Value
+	}
+	if in.Position.Set {
+		position = &in.Position.Value
+	}
+	if in.Archived.Set {
+		archived = &in.Archived.Value
+	}
+	return s.command(ctx, CmdColourUpdate, `SELECT result_id::text, replayed
+		FROM business.catalog_colour_update($1::uuid, $2, $3, $4::uuid, $5, $6, $7, $8)`,
+		subject, key, BodyHash(CmdColourUpdate, colourID, in), colourID, in.ExpectedVersion, label, position, archived)
 }
 
 // SetCakeState publishes, archives or restores a cake.
@@ -540,13 +724,15 @@ var invalidFields = map[string]string{
 	"flavour_unknown": "flavour_id", "variant_invalid": "size_code", "notice_unknown": "allergen_notice_id",
 	"allergens_required": "allergens", "allergens_duplicate": "allergens", "allergens_invalid": "allergens", "lines_invalid": "lines",
 	"composition_invalid": "composition", "recipe_invalid": "lines", "idempotency_key_invalid": "Idempotency-Key",
-	"expected_version_required": "expected_version",
+	"expected_version_required": "expected_version", "colour_unknown": "colour_id", "code_invalid": "code",
+	"label_invalid": "label", "position_invalid": "position",
 }
 
 var invalidMessages = map[string]string{
 	"flavour_unknown": "is not an active flavour", "notice_unknown": "is not a recorded allergen notice",
 	"allergens_required": "must declare at least one allergen", "allergens_duplicate": "must not repeat an allergen",
 	"expected_version_required": "is required",
+	"colour_unknown":            "is not an active colour",
 }
 
 var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "state_conflict": true, "duplicate": true}

@@ -407,6 +407,112 @@ func TestGatewayRefusesInvalidRecipes(t *testing.T) {
 	}
 }
 
+// The database refuses what the API refuses in catalog text whatever the
+// locale (migration 0018): C0 and C1 controls and U+2028/U+2029; multi-line
+// fields allow only the line feed.
+func TestGatewayRefusesSeparatorsInCatalogText(t *testing.T) {
+	h := newHarness(t)
+	f := h.seed(t)
+	sha := strings.Repeat("a", 64)
+	scan := func(sql string, args ...any) error {
+		var id string
+		var replayed bool
+		return h.api.QueryRow(h.ctx, sql, args...).Scan(&id, &replayed)
+	}
+	flavour := func(key, name string) error {
+		return scan(`SELECT result_id::text, replayed FROM business.catalog_flavour_create($1::uuid, $2, $3, $4)`, chefSubject, key, sha, name)
+	}
+	notice := func(key, body string) error {
+		return scan(`SELECT result_id::text, replayed FROM business.catalog_notice_create($1::uuid, $2, $3, $4)`, chefSubject, key, sha, body)
+	}
+	cake := func(key, name, description string) error {
+		return scan(`SELECT result_id::text, replayed FROM business.catalog_cake_create($1::uuid, $2, $3, $4, $5)`, chefSubject, key, sha, name, description)
+	}
+	update := func(key, name, description string) error {
+		var n, d any
+		if name != "" {
+			n = name
+		}
+		if description != "" {
+			d = description
+		}
+		return scan(`SELECT result_id::text, replayed FROM business.catalog_cake_update($1::uuid, $2, $3, $4::uuid, 1, $5, $6)`,
+			chefSubject, key, sha, f.cake, n, d)
+	}
+	recipe := func(key, coating, composition, label, component string) error {
+		allergens, _ := json.Marshal([]map[string]any{{"code": "eggs", "label": label}})
+		lines, _ := json.Marshal([]map[string]any{{"component": component, "quantity": "300.00", "unit": "g"}})
+		return scan(`SELECT result_id::text, replayed FROM business.catalog_recipe_version_create(
+			$1::uuid, $2, $3, $4::uuid, 1, 9000, 7, 10, $5, ARRAY[$6]::text[], $7::uuid, $8::json, $9::json, $10)`,
+			chefSubject, key, sha, f.variant, coating, composition, f.notice, string(allergens), string(lines), strings.Repeat("b", 64))
+	}
+	for _, bad := range []string{"\u2028", "\u2029", "\u0085", "\u009f", "\x7f", "\r"} {
+		q := fmt.Sprintf("%U", []rune(bad)[0])
+		for name, err := range map[string]error{
+			"flavour name":     flavour("f"+q, "Vanilla"+bad+"Raspberry"),
+			"notice body":      notice("n"+q, "Allergens"+bad+"apply"),
+			"cake name":        cake("c"+q, "Pink"+bad+"piping", ""),
+			"cake description": cake("d"+q, "Pink piping 2", "Vanilla"+bad+"sponge"),
+			"updated name":     update("un"+q, "Pink"+bad+"piping", ""),
+			"updated text":     update("ud"+q, "", "Vanilla"+bad+"sponge"),
+			"coating":          recipe("rc"+q, "Swiss"+bad+"meringue", "Vanilla sponge", "EGGS", "Sponge"),
+			"composition item": recipe("ri"+q, "Swiss meringue", "Vanilla"+bad+"sponge", "EGGS", "Sponge"),
+			"allergen label":   recipe("rl"+q, "Swiss meringue", "Vanilla sponge", "EG"+bad+"GS", "Sponge"),
+			"line component":   recipe("rp"+q, "Swiss meringue", "Vanilla sponge", "EGGS", "Spo"+bad+"nge"),
+		} {
+			if dbtest.SQLState(err) != "GK422" {
+				t.Errorf("%s with %s: %v, want GK422", name, q, err)
+			}
+		}
+	}
+	// Multi-line fields keep the line feed.
+	if err := notice("n-lf", "Allergens\napply"); err != nil {
+		t.Fatalf("notice with a line feed: %v", err)
+	}
+	if err := cake("c-lf", "Pink piping 3", "Vanilla\nsponge"); err != nil {
+		t.Fatalf("description with a line feed: %v", err)
+	}
+	var versions int
+	if err := h.admin.QueryRow(h.ctx, "SELECT count(*) FROM business.recipe_version").Scan(&versions); err != nil || versions != 0 {
+		t.Fatalf("recipe versions = %d, %v; want 0", versions, err)
+	}
+}
+
+// A recipe version's copied snapshot columns keep their source rules even
+// for a direct insert (migration 0018).
+func TestRecipeSnapshotColumnsAreChecked(t *testing.T) {
+	h := newHarness(t)
+	f := h.seed(t)
+	h.version(t, f, "k-v1", 1, 9000, commonAllergens)
+	insert := func(revision int, flavour, size, stock, composition string) error {
+		_, err := h.admin.Exec(h.ctx, `INSERT INTO business.recipe_version (id, variant_id, revision, flavour_name, size_code,
+			stock_mode, price_minor, servings_min, servings_max, coating, composition, allergen_notice_id, source_sha256, created_by)
+			SELECT gen_random_uuid(), r.variant_id, $1, $2, $3, $4, r.price_minor, r.servings_min, r.servings_max, r.coating,
+			       $5::text[], r.allergen_notice_id, r.source_sha256, r.created_by
+			FROM business.recipe_version r WHERE r.revision = 1`, revision, flavour, size, stock, composition)
+		return err
+	}
+	for name, err := range map[string]error{
+		"empty flavour":      insert(10, "", "s", "made_to_order", "{Vanilla sponge}"),
+		"padded flavour":     insert(11, " Vanilla", "s", "made_to_order", "{Vanilla sponge}"),
+		"long flavour":       insert(12, strings.Repeat("v", 81), "s", "made_to_order", "{Vanilla sponge}"),
+		"separator flavour":  insert(13, "Vanilla\u2028Raspberry", "s", "made_to_order", "{Vanilla sponge}"),
+		"unknown size":       insert(14, "Vanilla", "huge", "made_to_order", "{Vanilla sponge}"),
+		"unknown stock mode": insert(15, "Vanilla", "s", "frozen", "{Vanilla sponge}"),
+		"NULL item":          insert(16, "Vanilla", "s", "made_to_order", "{Vanilla sponge,NULL}"),
+		"2-D composition":    insert(17, "Vanilla", "s", "made_to_order", "{{a,b},{c,d}}"),
+		"separator item":     insert(18, "Vanilla", "s", "made_to_order", "{\"Vanilla\u2029sponge\"}"),
+	} {
+		if dbtest.SQLState(err) != "23514" {
+			t.Errorf("%s: %v, want check_violation", name, err)
+		}
+	}
+	// The same statement with valid values succeeds.
+	if err := insert(20, "Vanilla Raspberry", "tiers_6_9_11", "ready_stock", "{Vanilla sponge}"); err != nil {
+		t.Fatalf("valid snapshot: %v", err)
+	}
+}
+
 // AC3 (API part): the public page uses its keyset index on a 500-product
 // fixture and every cake appears exactly once across the pages.
 func TestPublicPagesOn500Products(t *testing.T) {
