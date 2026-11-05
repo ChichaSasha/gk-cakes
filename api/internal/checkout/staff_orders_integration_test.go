@@ -193,8 +193,8 @@ func TestStaffOrderViewsAreRedactedByRole(t *testing.T) {
 		}
 	}
 	fulfilRows, _ := h.staffList(t, fulfilment, november)
-	wantFulfil := []string{"cancel_reason", "customer_full_name", "date", "fulfillment_mode", "id", "items", "lifecycle", "placed_at",
-		"production", "raw_lifecycle", "slot", "version"}
+	wantFulfil := []string{"cancel_reason", "customer_full_name", "date", "fulfillment_mode", "fulfillment_state", "id", "items",
+		"lifecycle", "placed_at", "production", "raw_lifecycle", "slot", "version"}
 	if len(fulfilRows) != 1 || fulfilRows[0]["id"] != paid || !slices.Equal(keys(fulfilRows[0]), wantFulfil) {
 		t.Fatalf("fulfillment list %v", fulfilRows)
 	}
@@ -282,7 +282,8 @@ func TestStaffOrderViewsAreRedactedByRole(t *testing.T) {
 	}
 	fv := h.staffGet(t, fulfilment, paid)
 	wantFulfil = []string{"appointment_change", "appointment_history", "cancel_reason", "cancelled_at", "customer_full_name", "date",
-		"fulfillment_mode", "id", "items", "lifecycle", "placed_at", "production", "raw_lifecycle", "slot", "version"}
+		"fulfillment", "fulfillment_history", "fulfillment_mode", "id", "items", "lifecycle", "placed_at", "production", "raw_lifecycle",
+		"slot", "version"}
 	if !slices.Equal(keys(fv), wantFulfil) || fv["version"] != v["version"] {
 		t.Fatalf("fulfillment detail %v", fv)
 	}

@@ -117,6 +117,19 @@ func (f *fakeCheckout) ChangeAppointment(_ context.Context, subject, _, id strin
 	return checkout.Moved{Result: catalog.Result{ID: "appointment-" + id, Replayed: f.replayed}, Unchanged: f.unchanged}, nil
 }
 
+func (f *fakeCheckout) Transition(_ context.Context, subject, _, id string, in checkout.TransitionInput) (checkout.Transitioned, error) {
+	f.calls++
+	f.subject, f.orderID = subject, id
+	if f.freeErr != nil {
+		return checkout.Transitioned{}, f.freeErr
+	}
+	if in.Protected() {
+		return checkout.Transitioned{Result: catalog.Result{ID: in.Action + "-" + id, Replayed: f.replayed}}, nil
+	}
+	return checkout.Transitioned{Result: catalog.Result{ID: id, Replayed: f.replayed}, Lifecycle: "ready",
+		FulfillmentState: "awaiting_handover"}, nil
+}
+
 func (f *fakeCheckout) StartProduction(_ context.Context, subject, _, id string, _ checkout.ProductionInput) (checkout.Started, error) {
 	f.calls++
 	f.subject = subject
@@ -1084,5 +1097,65 @@ func TestAppointmentRoutes(t *testing.T) {
 		if rec.Code != 404 && rec.Code != 405 {
 			t.Errorf("%s while disabled: %d", p, rec.Code)
 		}
+	}
+}
+
+// GK-031 B1 part 2: fulfilment steps (chef or fulfilment; handover and
+// no_show are K11 commands answered 202).
+func TestTransitionRoutes(t *testing.T) {
+	id := catalogIdentity()
+	id.actors["fulfil"] = identity.Actor{AccountID: "acc-ful", Subject: "sub-ful", Capabilities: []string{identity.Fulfillment}}
+	const path = "/api/v1/admin/orders/o1/transitions"
+	for name, c := range map[string]struct {
+		auth   string
+		status int
+	}{"support": {"support", 403}, "customer": {secretToken, 403}, "guest": {"", 401}, "chef": {"chef", 200}, "fulfillment": {"fulfil", 200}} {
+		if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, path, c.auth, "k", `{"action":"ready","expected_version":3}`, nil); rec.Code != c.status {
+			t.Errorf("ready by %s: %d, want %d", name, rec.Code, c.status)
+		}
+	}
+	rec := serveCheckout(t, &fakeCheckout{replayed: true}, id, http.MethodPost, path, "fulfil", "k", `{"action":"ready","expected_version":3}`, nil)
+	if rec.Code != 200 || rec.Header().Get("Idempotent-Replayed") != "true" ||
+		rec.Body.String() != `{"fulfillment_state":"awaiting_handover","lifecycle":"ready","order_id":"o1"}`+"\n" {
+		t.Fatalf("ready: %d %q", rec.Code, rec.Body.String())
+	}
+	for action, state := range map[string]string{"handover": "handover_pending", "no_show": "no_show_pending"} {
+		rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, path, "chef", "k", `{"action":"`+action+`","expected_version":3}`, nil)
+		if rec.Code != 202 || rec.Body.String() != `{"order_id":"o1","operation_id":"`+action+`-o1","state":"`+state+`","poll_after_seconds":3}`+"\n" {
+			t.Errorf("%s: %d %q", action, rec.Code, rec.Body.String())
+		}
+	}
+	for name, b := range map[string]string{
+		"unknown action":        `{"action":"refund","expected_version":3}`,
+		"no version":            `{"action":"ready"}`,
+		"exception no reason":   `{"action":"delivery_exception","expected_version":3}`,
+		"reason on ready":       `{"action":"ready","expected_version":3,"reason":"x"}`,
+		"reason on no_show":     `{"action":"no_show","expected_version":3,"reason":"x"}`,
+		"two-line reason":       `{"action":"delivery_exception","expected_version":3,"reason":"a\nb"}`,
+		"untrimmed courier ref": `{"action":"dispatch","expected_version":3,"reason":" ref"}`,
+	} {
+		fc := &fakeCheckout{}
+		if rec := serveCheckout(t, fc, id, http.MethodPost, path, "chef", "k", b, nil); rec.Code != 422 || fc.calls != 0 {
+			t.Errorf("%s: %d %s", name, rec.Code, rec.Body.String())
+		}
+	}
+	if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, path, "chef", "k", `{"action":"ready","expected_version":3,"amount_minor":1}`, nil); rec.Code != 400 {
+		t.Fatalf("unknown field: %d", rec.Code)
+	}
+	for code, want := range map[string]string{"delivery_not_paid": "DELIVERY_NOT_PAID", "handover_not_due": "HANDOVER_NOT_DUE",
+		"transition_not_allowed": "TRANSITION_NOT_ALLOWED", "stale_version": "STALE_VERSION"} {
+		rec := serveCheckout(t, &fakeCheckout{freeErr: &catalog.ConflictError{Code: code}}, id, http.MethodPost, path, "fulfil", "k",
+			`{"action":"dispatch","expected_version":3,"reason":"Courier GK-1"}`, nil)
+		if rec.Code != 409 || !strings.Contains(rec.Body.String(), `"code":"`+want+`"`) {
+			t.Errorf("%s: %d %s", code, rec.Code, rec.Body.String())
+		}
+	}
+	if rec := serveCheckout(t, &fakeCheckout{freeErr: catalog.ErrForbidden}, id, http.MethodPost, path, "fulfil", "k",
+		`{"action":"no_show","expected_version":3}`, nil); rec.Code != 403 {
+		t.Fatalf("no_show refused by the database for fulfilment: %d", rec.Code)
+	}
+	if rec := serveCheckout(t, &fakeCheckout{freeErr: checkout.ErrOrdersFrozen}, id, http.MethodPost, path, "chef", "k",
+		`{"action":"handover","expected_version":3}`, nil); rec.Code != 503 {
+		t.Fatalf("frozen: %d", rec.Code)
 	}
 }

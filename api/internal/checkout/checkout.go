@@ -420,6 +420,7 @@ var invalidFields = map[string]string{
 	"range_invalid": "to", "page_limit_invalid": "limit", "lifecycle_invalid": "lifecycle", "cursor_invalid": "cursor",
 	"slot_invalid": "target_slot_id", "date_invalid": "target_date", "feasibility_invalid": "feasibility_note",
 	"appointment_agreement_invalid": "customer_agreement",
+	"action_invalid":                "action",
 }
 
 var invalidMessages = map[string]string{
@@ -456,7 +457,8 @@ var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "
 	"payment_in_progress": true, "preview_stale": true, "cancellation_not_eligible": true, "honour_too_late": true,
 	"refund_limit": true, "reconciliation_required": true, "refund_in_progress": true, "no_refund_pending": true,
 	"identity_unproven": true, "window_open": true, "evidence_required": true, "manual_payout_not_eligible": true,
-	"move_too_late": true, "move_not_eligible": true}
+	"move_too_late": true, "move_not_eligible": true, "delivery_not_paid": true, "handover_not_due": true,
+	"transition_not_allowed": true}
 
 // conflictAliases name engine refusals in the customer's terms.
 var conflictAliases = map[string]string{"day_full": "slot_unavailable", "stock_unavailable": "item_unavailable"}

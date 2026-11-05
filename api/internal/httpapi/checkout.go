@@ -35,6 +35,7 @@ type Checkout interface {
 	StartProduction(ctx context.Context, subject, key, id string, in checkout.ProductionInput) (checkout.Started, error)
 	MovePickup(ctx context.Context, id, subject string, digest []byte, key string, in checkout.PickupMoveInput) (checkout.Moved, error)
 	ChangeAppointment(ctx context.Context, subject, key, id string, in checkout.AppointmentInput) (checkout.Moved, error)
+	Transition(ctx context.Context, subject, key, id string, in checkout.TransitionInput) (checkout.Transitioned, error)
 	LatePayment(ctx context.Context, subject, key, id string, in checkout.LatePaymentInput) (catalog.Result, error)
 	RecordRefund(ctx context.Context, subject, key, id string, in checkout.RefundInput) (catalog.Result, error)
 	ResolveObservation(ctx context.Context, subject, key, orderID, observationID string, in checkout.ResolveObservationInput) (catalog.Result, error)
@@ -389,6 +390,33 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 			res, err := co.ChangeAppointment(r.Context(), a.Subject, key, r.PathValue("id"), in)
 			respondMove(w, r, logger, res, err, "appointment_change_pending")
 		}))
+		// K05/K06 fulfilment steps (chef or fulfilment; the database keeps
+		// no_show to the chef): ready, dispatch and delivery_exception answer
+		// 200 with the order's state; handover and no_show are K11 commands,
+		// 202 while protected.
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/transitions", staff(id, logger, []string{identity.Chef, identity.Fulfillment},
+			func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+				var in checkout.TransitionInput
+				key, ok := readCommand(w, r, &in)
+				if !ok {
+					return
+				}
+				res, err := co.Transition(r.Context(), a.Subject, key, r.PathValue("id"), in)
+				if errors.Is(err, checkout.ErrOrdersFrozen) {
+					writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Order changes are temporarily unavailable", true)
+					return
+				}
+				if in.Protected() {
+					respondCommand(w, r, logger, http.StatusAccepted, res.Result, err, func() (any, error) {
+						return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: in.Action + "_pending",
+							PollAfterSeconds: checkout.PollAfterSeconds}, nil
+					})
+					return
+				}
+				respondCommand(w, r, logger, http.StatusOK, res.Result, err, func() (any, error) {
+					return map[string]string{"order_id": res.ID, "lifecycle": res.Lifecycle, "fulfillment_state": res.FulfillmentState}, nil
+				})
+			}))
 		// K04 Q2 late payment: honour (with the customer's agreement) or full
 		// return; 202 while its K11 protection runs.
 		mux.HandleFunc("POST /api/v1/admin/orders/{id}/late-payment", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
