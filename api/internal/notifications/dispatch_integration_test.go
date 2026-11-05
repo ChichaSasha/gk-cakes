@@ -864,6 +864,8 @@ func TestRuntimeRolesUseOnlyTheNotificationGateway(t *testing.T) {
 		"business.order_hold_review_run(uuid, uuid, bigint)",
 		"business.payment_expire_admit(uuid, uuid, bigint, uuid)",
 		"business.payment_expire_record(uuid, uuid, bigint, uuid, text, integer, text)",
+		// GK-025 follow-ups: a collection under manager reconciliation.
+		"business.payment_under_reconciliation(uuid, uuid, bigint, uuid)",
 		// GK-025 A3c2 lease-fenced refund gateway.
 		"business.refund_attempt_record(uuid, uuid, bigint, uuid, text, integer, text)",
 		"business.refund_dispatch_admit(uuid, uuid, bigint, uuid)",

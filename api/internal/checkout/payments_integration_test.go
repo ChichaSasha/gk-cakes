@@ -23,6 +23,7 @@ import (
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/catalog"
 	"github.com/ChichaSasha/gk-cakes/api/internal/checkout"
+	"github.com/ChichaSasha/gk-cakes/api/internal/dbtest"
 	"github.com/ChichaSasha/gk-cakes/api/internal/jobs"
 	"github.com/ChichaSasha/gk-cakes/api/internal/payments"
 	"github.com/ChichaSasha/gk-cakes/api/internal/recovery"
@@ -856,6 +857,7 @@ func TestWrongAmountGoesToAttentionAndProcessingStaysPending(t *testing.T) {
 	if len(errs) != 1 || !errors.As(errs[0], &de) || h.collection(t, coll).State != "pending" {
 		t.Fatalf("processing: %v %+v", errs, h.collection(t, coll))
 	}
+	amount := h.stripe.session(session).amount
 	h.stripe.pay(session, time.Date(2026, 11, 5, 10, 9, 0, 0, time.UTC))
 	h.stripe.session(session).amount = 100
 	h.deliver(t, "evt_completed", "checkout.session.completed", "checkout.session", session, coll, order)
@@ -873,6 +875,17 @@ func TestWrongAmountGoesToAttentionAndProcessingStaysPending(t *testing.T) {
 	// A new collection is not allowed while this one is unknown.
 	if _, err := h.start(order, d, "pay-2", 1); conflict(err) != "payment_in_progress" {
 		t.Fatalf("new collection while unknown: %v", err)
+	}
+	// A manager retry that now sees a matching paid session changes nothing
+	// and is never silent: attention again, nothing confirmed.
+	h.stripe.session(session).amount = amount
+	h.stripe.pay(session, time.Date(2026, 11, 5, 10, 9, 0, 0, time.UTC))
+	h.owner(t, "SELECT business.payment_schedule_reconcile($1::uuid, now())", coll)
+	if got := attention(h.drain(t)); len(got) != 1 || !strings.Contains(got[0], "under manager reconciliation") {
+		t.Fatalf("retry under reconciliation: %v", got)
+	}
+	if c := h.collection(t, coll); c.State != "unknown" || h.count(t, "SELECT count(*) FROM business.order_command WHERE order_id = $1::uuid", order) != 0 {
+		t.Fatalf("collection %+v; want unknown and no confirmation", c)
 	}
 }
 
@@ -1460,6 +1473,22 @@ func TestStaleMismatchKeepsACancelledCollectionCancelled(t *testing.T) {
 		}
 		if c := h.collection(t, coll); c.State != "cancelled" {
 			t.Fatalf("collection %+v", c)
+		}
+		// A manager retry (the collection is settled: nothing to retrieve)
+		// is never silent while the mismatch stands.
+		h.owner(t, "SELECT business.payment_schedule_reconcile($1::uuid, now())", coll)
+		if got := attention(h.drain(t)); len(got) != 1 || !strings.Contains(got[0], "under manager reconciliation") {
+			t.Fatalf("retry under reconciliation: %v", got)
+		}
+		// The gateway is lease-fenced.
+		var recID string
+		if err := h.admin.QueryRow(h.ctx, `SELECT j.id::text FROM business.payment_job pj JOIN business.job j ON j.id = pj.job_id
+			WHERE pj.collection_id = $1::uuid AND pj.purpose = 'reconcile' ORDER BY j.created_at DESC LIMIT 1`, coll).Scan(&recID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.worker.Exec(h.ctx, "SELECT business.payment_under_reconciliation($1::uuid, gen_random_uuid(), 1, $2::uuid)",
+			recID, coll); dbtest.SQLState(err) != "GK001" {
+			t.Fatalf("without the lease: %v, want GK001", err)
 		}
 	})
 	t.Run("after the release", func(t *testing.T) {

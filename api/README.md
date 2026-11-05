@@ -118,7 +118,7 @@ are provisioned per environment outside Git and granted exactly one group:
 | ----------- | ----------------------------- | ----------------------------------------------------------- |
 | `gk_owner`  | owns business objects         | never granted to runtime; migration credential may `SET ROLE` |
 | `gk_api`    | API runtime                   | schema `USAGE`; `EXECUTE` on `email_event_record` (webhook evidence), `identity_resolve` and `identity_staff_list` (identity), the catalog, schedule, checkout and order gateway functions, and `payment_initiate` and `payment_event_record` (payments); the exact list is tested |
-| `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions (`job_claim`, `job_heartbeat`, `job_complete`, `job_release`, `job_fail`, `job_attention`), the lease-fenced notification gateway (`notification_dispatch_begin`, `notification_attempt_record`, `notification_recovery_*`) and the lease-fenced order-command gateway (`order_command_begin`, `order_command_reserve`, `order_command_prepared`, `order_command_apply`, `order_command_secured`, `order_command_frozen`) and the lease-fenced payment gateway (`payment_job_begin`, `payment_dispatch_admit`, `payment_attempt_record`, `payment_reconcile_record`, `payment_recovery_*`, `payment_expire_admit`, `payment_expire_record`) and the order hold review (`order_hold_review_run`); the exact list is tested |
+| `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions (`job_claim`, `job_heartbeat`, `job_complete`, `job_release`, `job_fail`, `job_attention`), the lease-fenced notification gateway (`notification_dispatch_begin`, `notification_attempt_record`, `notification_recovery_*`) and the lease-fenced order-command gateway (`order_command_begin`, `order_command_reserve`, `order_command_prepared`, `order_command_apply`, `order_command_secured`, `order_command_frozen`) and the lease-fenced payment gateway (`payment_job_begin`, `payment_dispatch_admit`, `payment_attempt_record`, `payment_reconcile_record`, `payment_recovery_*`, `payment_expire_admit`, `payment_expire_record`, `payment_under_reconciliation`) and the order hold review (`order_hold_review_run`); the exact list is tested |
 | `gk_backup` | backup reader                 | `SELECT` on business tables and future sequences, and on `gk_meta.schema_migration` (migration 0008) |
 
 The migration credential needs `CREATEROLE` and `CREATE` on the database.
@@ -1070,7 +1070,11 @@ created session, or one a verified event named) and decides:
   (`mismatch_reason` set, not succeeded) keeps the order's holds in the hold
   review exactly as `unknown` does, refuses a second collection
   (`payment_in_progress`) and reads `unknown` in the order view. An order
-  released before the mismatch stays cancelled; a manager reconciles it;
+  released before the mismatch stays cancelled; a manager reconciles it. A
+  reconcile of a collection under reconciliation that ends without a new
+  mismatch (its paid, cancelled or pending verdict ignored, or the collection
+  already settled; asked through `payment_under_reconciliation`) goes to
+  attention, never completing or waiting quietly while the holds stay;
 - **paid** only when all hold: session `payment_status = paid`; payment
   intent `succeeded`, `amount_received` = the amount, GBP; latest charge
   `paid`, `captured`, `succeeded`, `amount_captured` = the amount, not

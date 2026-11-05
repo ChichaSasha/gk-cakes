@@ -251,9 +251,31 @@ describe('orderView: after payment', () => {
 		);
 		expect(v.lines.join(' ')).toMatch(/payment recorded.*don’t pay again/);
 	});
+
+	it('cancelled with a payment still being checked: do not pay again, never "not completed"', () => {
+		for (const state of ['unknown', 'pending', 'created'] as const) {
+			const v = orderView(
+				order({
+					lifecycle: 'cancelled',
+					cancel_reason: 'payment_not_completed',
+					payment: payment({ state, checkout_url: null })
+				})
+			);
+			expect(v.title).toBe('Still checking payment; do not pay again');
+			expect(v.doNotPayAgain).toBe(true);
+			expect(v.action).toBe('none');
+			expect(v.poll).toBe(true);
+			const text = `${v.title} ${v.lines.join(' ')}`;
+			expect(text).toMatch(/don’t pay again/);
+			expect(text).not.toMatch(/wasn’t completed/);
+			expect(text).not.toMatch(/new order/i);
+			// A dead end handed over never replaces it either.
+			expect(withOrderProblem(v, 'new_order')).toEqual(v);
+		}
+	});
 });
 
-describe('withOrderProblem: a dead end handed over from checkout', () => {
+describe('withOrderProblem: a dead end (lead time or price window passed)', () => {
 	const handed = (code: string) => orderProblemFor(new ApiError(409, { code })).next;
 
 	it('offers a new order instead of paying for LEAD_TIME and QUOTE_EXPIRED', () => {
@@ -261,8 +283,7 @@ describe('withOrderProblem: a dead end handed over from checkout', () => {
 			for (const o of [
 				order(),
 				order({ payment: payment({ state: 'cancelled', checkout_url: null }) }),
-				order({ payment: payment({ state: 'failed', checkout_url: null }) }),
-				order({ payment: payment() }) // an open page that was never used
+				order({ payment: payment({ state: 'failed', checkout_url: null }) })
 			]) {
 				const v = withOrderProblem(orderView(o), handed(code));
 				expect(v.action).toBe('new_order');
@@ -288,6 +309,11 @@ describe('withOrderProblem: a dead end handed over from checkout', () => {
 	});
 
 	it('never replaces a payment under way or a decided order', () => {
+		// An open payment page that was never used is a payment under way (K03).
+		const open = orderView(order({ payment: payment() }));
+		expect(open.action).toBe('open_payment');
+		expect(open.actionLabel).toBe('Continue to secure payment');
+		expect(withOrderProblem(open, handed('LEAD_TIME'))).toEqual(open);
 		for (const o of [
 			order({ payment: payment({ state: 'pending' }) }),
 			order({ payment: payment({ state: 'unknown', checkout_url: null }) }),

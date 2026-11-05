@@ -21,8 +21,16 @@
 -- ("still checking payment; do not pay again"). An order already released
 -- before the mismatch stays cancelled; the manager reconciles it.
 --
--- Expand-only (K09): the replaced functions keep their signatures and
--- grants.
+-- Never silent under reconciliation. payment_under_reconciliation (worker,
+-- lease-fenced to the collection's reconcile job) says whether the
+-- collection carries a recorded mismatch. The worker asks it whenever a
+-- reconcile ends without a new mismatch verdict (its verdict recorded, or
+-- the collection already settled): a manager retry that sees paid,
+-- cancelled or pending goes to attention instead of completing or waiting
+-- quietly while the hold review keeps the holds.
+--
+-- Expand-only (K09): one new function; the replaced functions keep their
+-- signatures and grants.
 
 SET LOCAL ROLE gk_owner;
 
@@ -588,3 +596,23 @@ BEGIN
   RETURN v_result;
 END;
 $$;
+
+-- Worker: does the leased reconcile's collection carry a recorded mismatch
+-- (manager reconciliation; see the header)?
+CREATE FUNCTION business.payment_under_reconciliation(p_job_id uuid, p_worker uuid, p_generation bigint,
+                                                      p_collection uuid)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v business.payment_job := business.payment_leased_reconcile(p_job_id, p_worker, p_generation, p_collection);
+BEGIN
+  RETURN EXISTS (SELECT 1 FROM business.payment_collection pc
+                 WHERE pc.id = v.collection_id AND pc.mismatch_reason IS NOT NULL);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION business.payment_under_reconciliation(uuid, uuid, bigint, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION business.payment_under_reconciliation(uuid, uuid, bigint, uuid) TO gk_worker;

@@ -38,8 +38,15 @@
 
 	let order = $state<Order | null>(null);
 	let unavailable = $state('');
+	/** A refusal of this page's own action (kept until the next action). */
 	let actionProblem = $state('');
-	/** A problem from checkout after this order was created (shown until the next action). */
+	/** A failed read of the order (cleared by the next successful read). */
+	let loadProblem = $state('');
+	/**
+	 * A problem after this order was created: handed over from checkout, or a
+	 * dead end (lead time missed, price expired) answered to this page's own
+	 * action. Shown until the next action.
+	 */
 	let handoff = $state<Problem | null>(null);
 	let busy = $state(false);
 	let busyText = $state('');
@@ -50,7 +57,7 @@
 	let pollStarted = 0;
 	let active = true;
 
-	// A dead-end handoff (lead time missed, price expired) offers a new order
+	// A dead end (lead time missed, price expired) offers a new order
 	// instead of paying or confirming this one.
 	const view = $derived(
 		order ? withOrderProblem(orderView(order, { returned }), handoff?.next) : null
@@ -110,7 +117,7 @@
 			const o = await api.order(orderId, who);
 			if (!active) return;
 			order = o;
-			actionProblem = '';
+			loadProblem = '';
 		} catch (e) {
 			if (!active) return;
 			if (e instanceof ApiError && (e.status === 404 || e.status === 401)) {
@@ -120,7 +127,7 @@
 						: 'We can’t find this order. If you ordered as a guest, open it in the tab where you ordered.';
 				return;
 			}
-			actionProblem = orderProblemFor(e).message;
+			loadProblem = orderProblemFor(e).message;
 		}
 		schedule();
 	}
@@ -185,7 +192,10 @@
 				);
 			}
 		} catch (e) {
-			actionProblem = orderProblemFor(e).message;
+			const problem = orderProblemFor(e);
+			// A dead end stays shown and swaps the action for a new order.
+			if (problem.next === 'new_order') handoff = problem;
+			else actionProblem = problem.message;
 		}
 		busy = false;
 		busyText = '';
@@ -223,6 +233,9 @@
 				{/if}
 				{#if actionProblem}
 					<p class="co-errors" role="alert">{actionProblem}</p>
+				{/if}
+				{#if loadProblem}
+					<p class="co-errors" role="alert">{loadProblem}</p>
 				{/if}
 				{#if view.action !== 'none' || pollStopped}
 					<div class="order-actions">

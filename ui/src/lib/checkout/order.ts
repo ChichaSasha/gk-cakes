@@ -147,6 +147,19 @@ type Base = Pick<
 >;
 
 function cancelled(order: Order, base: Base): OrderView {
+	const state = order.payment?.state;
+	if (state === 'created' || state === 'pending' || state === 'unknown') {
+		// A payment whose result is not known yet (for example one under
+		// review): never "not completed", never "start a new order".
+		return {
+			...base,
+			tone: 'info',
+			title: 'Still checking payment; do not pay again',
+			lines: ['This order was cancelled, but we’re still checking a payment for it.', DO_NOT_PAY],
+			poll: true,
+			doNotPayAgain: true
+		};
+	}
 	const lines: string[] = [];
 	if (order.cancel_reason === 'payment_not_completed') {
 		lines.push(
@@ -286,21 +299,17 @@ function awaitingPayment(order: Order, base: Base, returned: boolean): OrderView
 
 /**
  * The view while a dead-end problem is shown (a missed lead time or an
- * expired price handed over from checkout: next 'new_order'). Nothing that
- * would ask the API about this order again (pay, open the payment page,
- * confirm) is offered: "Start a new order" instead. A payment already under
- * way keeps its own wording and action ("do not pay again"): money may be
- * moving, so it is never replaced.
+ * expired price, handed over from checkout or answered to this page's own
+ * action: next 'new_order'). Nothing that would ask the API about this order
+ * again (start a payment, confirm) is offered: "Start a new order" instead.
+ * A payment already under way (an open payment page, or "do not pay again")
+ * keeps its own wording and action: money may be moving, so it is never
+ * replaced.
  */
 export function withOrderProblem(view: OrderView, next: Next | undefined): OrderView {
 	if (next !== 'new_order' || view.doNotPayAgain) return view;
-	if (
-		view.action !== 'start_payment' &&
-		view.action !== 'open_payment' &&
-		view.action !== 'confirm_free'
-	) {
-		return view;
-	}
+	// An open payment page is a payment already under way (K03): kept.
+	if (view.action !== 'start_payment' && view.action !== 'confirm_free') return view;
 	return {
 		...view,
 		action: 'new_order',
