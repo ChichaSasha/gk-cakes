@@ -506,3 +506,46 @@ func TestLoadStripe(t *testing.T) {
 		}
 	}
 }
+
+func TestEmailRecipientAllowlist(t *testing.T) {
+	staging := merge(validStagingWorker, validEmailDispatch)
+	cfg, err := LoadWorker(env(merge(staging, map[string]string{"EMAIL_RECIPIENT_ALLOWLIST": " @GKcake.com , Tester+1@Example.org"})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(cfg.EmailRecipientAllowlist) != "[@gkcake.com tester+1@example.org]" {
+		t.Fatalf("allowlist %v", cfg.EmailRecipientAllowlist)
+	}
+	if cfg, err := LoadWorker(env(staging)); err != nil || cfg.EmailRecipientAllowlist != nil {
+		t.Fatalf("unset allowlist: %v %v", cfg.EmailRecipientAllowlist, err)
+	}
+	api, err := LoadAPI(env(merge(validLocalAPI, map[string]string{"EMAIL_RECIPIENT_ALLOWLIST": "@gkcake.com"})))
+	if err != nil || len(api.EmailRecipientAllowlist) != 1 {
+		t.Fatalf("API allowlist %v %v", api.EmailRecipientAllowlist, err)
+	}
+	production := merge(staging, map[string]string{"APP_ENV": "production"})
+	for name, c := range map[string]struct {
+		load func(map[string]string) error
+		env  map[string]string
+	}{
+		"production worker": {func(m map[string]string) error { _, err := LoadWorker(env(m)); return err },
+			merge(production, map[string]string{"EMAIL_RECIPIENT_ALLOWLIST": "@gkcake.com"})},
+		"production API": {func(m map[string]string) error { _, err := LoadAPI(env(m)); return err },
+			merge(validProductionAPI, map[string]string{"EMAIL_RECIPIENT_ALLOWLIST": "@gkcake.com"})},
+		"empty entry":     {func(m map[string]string) error { _, err := LoadWorker(env(m)); return err }, merge(staging, map[string]string{"EMAIL_RECIPIENT_ALLOWLIST": "@gkcake.com,,a@b.co"})},
+		"bare domain":     {func(m map[string]string) error { _, err := LoadWorker(env(m)); return err }, merge(staging, map[string]string{"EMAIL_RECIPIENT_ALLOWLIST": "gkcake.com"})},
+		"wildcard":        {func(m map[string]string) error { _, err := LoadWorker(env(m)); return err }, merge(staging, map[string]string{"EMAIL_RECIPIENT_ALLOWLIST": "*@gkcake.com"})},
+		"display name":    {func(m map[string]string) error { _, err := LoadWorker(env(m)); return err }, merge(staging, map[string]string{"EMAIL_RECIPIENT_ALLOWLIST": "Tester <t@gkcake.com>"})},
+		"domain no dot":   {func(m map[string]string) error { _, err := LoadWorker(env(m)); return err }, merge(staging, map[string]string{"EMAIL_RECIPIENT_ALLOWLIST": "@localhost"})},
+		"two at signs":    {func(m map[string]string) error { _, err := LoadWorker(env(m)); return err }, merge(staging, map[string]string{"EMAIL_RECIPIENT_ALLOWLIST": "a@b@gkcake.com"})},
+		"space in a name": {func(m map[string]string) error { _, err := LoadWorker(env(m)); return err }, merge(staging, map[string]string{"EMAIL_RECIPIENT_ALLOWLIST": "a b@gkcake.com"})},
+	} {
+		err := c.load(c.env)
+		if err == nil || !strings.Contains(err.Error(), "EMAIL_RECIPIENT_ALLOWLIST") {
+			t.Errorf("%s: err = %v, want EMAIL_RECIPIENT_ALLOWLIST refused", name, err)
+		}
+		if err != nil && strings.Contains(err.Error(), canary) {
+			t.Errorf("%s: error leaks a secret: %v", name, err)
+		}
+	}
+}

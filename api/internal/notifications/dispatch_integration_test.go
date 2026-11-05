@@ -798,6 +798,8 @@ func TestRuntimeRolesUseOnlyTheNotificationGateway(t *testing.T) {
 		"business.notification_recovery_secured(uuid, uuid, bigint, uuid)",
 		"business.notification_recovery_reconcile(uuid, uuid, bigint, uuid, text)",
 		"business.notification_recovery_frozen(uuid, uuid, bigint)",
+		// Order notices (0030): the staging allowlist suppression.
+		"business.notification_dispatch_suppress(uuid, uuid, bigint)",
 	}
 	ownerOnly := []string{
 		"business.audit_record(text, uuid, text, text, uuid, uuid, json)",
