@@ -2342,10 +2342,14 @@ get 403 `ACCOUNT_DISABLED`, deleted ones 403 `ACCOUNT_DELETED`.
   sign-in activity (`account.last_active_at`) at most once an hour for the
   inactivity rule. Any authenticated request counts as activity, a
   conservative reading of K09 "since login": an account in use is never
-  warned. The token's sign-in instant is read from Supabase's `amr` claim
-  (latest `timestamp`), which survives refreshes; `iat` is renewed by every
-  refresh, so it is never used. Without a usable `amr` the instant is unknown
-  and deletion asks for a fresh sign-in.
+  warned. The token's sign-in instant is read from Supabase's `amr` claim:
+  the latest `timestamp` of an `otp`, `magiclink` or `oauth` entry (email
+  link or Google, answer 3), which survives refreshes. `password` (staff
+  only), `recovery`, `invite`, `email_change` and `token_refresh` never
+  count, and `iat` is renewed by every refresh, so it is never used. Without
+  such an entry deletion asks for a fresh sign-in. SETUP.md records the
+  Creator's provider settings this relies on (Secure password change on,
+  manual identity linking off).
 - **My orders (K02).** Rows are built from `order_view`, the renderer of
   `GET /orders/{id}`, so the list and the order page agree: `id`, `version`,
   visible `lifecycle`, `cancel_reason`, `cancelled_at`,
@@ -2398,6 +2402,9 @@ get 403 `ACCOUNT_DISABLED`, deleted ones 403 `ACCOUNT_DELETED`.
   staff attention flag), `payment_recorded` (cancelled with a payment and no
   refund goal). A confirmed, in-production or ready order is listed in
   `upcoming` (the warning and extra tick are the UI's) and does not block.
+  An account with an active staff capability is refused (409
+  `STAFF_ACCOUNT`, `can_delete` false): the operator revokes the grants with
+  gk-identity-admin first, then the person may delete it as a customer.
   The preview stores the facts (order IDs and reasons only) and their hash
   for 15 minutes; deletion recomputes them after locking the account, its
   claims and its orders: changed is 409 `PREVIEW_STALE`, expired too, another
@@ -2408,20 +2415,36 @@ get 403 `ACCOUNT_DISABLED`, deleted ones 403 `ACCOUNT_DELETED`.
   max_age="600"` (RFC 9470). Effects in one transaction: every order is
   unlinked (order details keep their own retention: 2 years after handover
   or cancellation, K09) with an `unlinked` association event; the orders'
-  guest capabilities are revoked; staff grants are revoked; pending claims
+  guest capabilities are revoked; pending claims
   are closed and every claim's reference, note, date and chef note erased;
   the chef's evidence notes about the account erased; the profile cleared;
   the account disabled and marked deleted (`account_deleted_*` checks);
   `account_tombstone` (account, instant, reason, orders unlinked: no
   personal data) and `account_provider_deletion` (pending) recorded; audit
-  `account.deleted` with counts only. The same key replays the result even
-  though the account is deleted (the deletion route accepts a deleted
-  account for that); a new key is 403 `ACCOUNT_DELETED`.
+  `account.deleted` with counts only. The same key and body read the result
+  back before any other check (no fresh sign-in needed, also during a
+  restore freeze and although the account is deleted: the deletion route
+  accepts a deleted account for that); a new key is 403 `ACCOUNT_DELETED`.
+  Previews expired more than a day ago are removed (100 at a time) whenever
+  a new preview is made.
+- **Concurrency.** The account's own commands and its deletion lock it `FOR
+  NO KEY UPDATE`, so order commands that hold an order and write rows that
+  merely reference the account (KEY SHARE) never deadlock with a deletion
+  waiting for that order. Triggers `account_owner_guard` on `orders`
+  (`owner_account_id`), `checkout_quote` (`owner_account_id`) and
+  `code_application` (`account_id`) take the account `FOR SHARE` before
+  attaching anything to it: they wait for a deletion in progress and then
+  refuse with GK403 `account_deleted` (checkout answers 403). This is in the
+  database, so it protects every API build, including checkouts that read
+  the account before the deletion committed.
 - **Provider user.** The API never calls Supabase admin APIs. The provider
   subject stays on the deleted account so a still-valid token resolves to it
   and is refused; until the provider user is removed (operator or a later
   worker step reading `account_provider_deletion`), the same address cannot
-  create a new account (sign-in reaches the deleted account).
+  sign up again: the provider still signs the person in to the same subject,
+  and every API call answers 403 `ACCOUNT_DELETED` (the UI should say the
+  account was deleted and the address becomes free once the provider
+  deletion is done).
 - **Inactivity (K09, answer 9).** For the worker (`gk_worker` only):
   `account_retention_due(now, limit)` lists `warning` (24 London calendar
   months after the last activity: sign-in or a new order on the account;
@@ -2438,9 +2461,13 @@ get 403 `ACCOUNT_DISABLED`, deleted ones 403 `ACCOUNT_DELETED`.
   isolation and paging against `GET /orders/{id}`, profile validation,
   versions, replay and audit, claims path c and a, chef approve/decline/no
   leak/limits/withdraw, chef direct add, freeze),
-  `accounts_deletion_integration_test.go` (blocked reasons, warning, fresh
-  sign-in, preview binding and expiry, effects, replay, retention steps),
-  `internal/identity` (`amr`, activity, deleted state), `internal/httpapi`
+  `accounts_deletion_integration_test.go` (blocked reasons, warning, staff
+  refused, fresh sign-in, preview binding, expiry and cleanup, effects,
+  replay without a fresh sign-in and during a freeze, retention steps; two
+  connections: a checkout racing an open deletion is refused and never
+  linked, an order command holding the order does not deadlock with a
+  deletion),
+  `internal/identity` (`amr` methods, activity, deleted state), `internal/httpapi`
   `TestMyOrdersRoute`, `TestProfileRoute`, `TestClaimRoutes`,
   `TestDeletionRoutes`, and the exact `gk_api`/`gk_worker` allowlists in
   `internal/notifications`.
@@ -2464,10 +2491,13 @@ Not yet (next steps):
   (0030 notice machinery needs an account recipient, not an order one) and
   the worker that deletes due accounts (reason `inactivity`) are not
   implemented; the data model and the due query are.
-- **Restore replay of tombstones.** `account_tombstone` is in the business
-  schema and backups, but a restore from a point before a deletion would
-  bring the account back; K09 requires the recovery replay to carry
-  tombstones (GK-034 follow-up).
+- **Restore replay of tombstones (K09, GK-034/GK-035 follow-up).**
+  `account_tombstone` is in the business schema and backups, but a restore
+  from a point before a deletion would bring the account, its profile and
+  its order links back. K09 requires restore/recovery replay to carry
+  tombstones: until GK-034/GK-035 re-apply tombstones after a restore (and
+  the restore check proves it), a restore must be followed by re-running
+  the recorded deletions by hand. Not implemented here.
 - **Provider deletion and sessions.** Removing the Supabase user, and
   signing out everywhere (GK-021), are outside the API.
 - **Favourites and requests** (`/me/favourites`, `/me/custom-requests`) and

@@ -40,15 +40,20 @@
 --    directly (with an evidence note). Chef only (K00 "chef manages ...
 --    claims").
 -- 5. Deletion (K09): a preview binds the facts the customer saw (orders with
---    unsettled money block; confirmed upcoming orders warn); deletion needs
---    a sign-in within the last 10 minutes (the API passes the provider's
---    authentication instant), the unchanged preview, no blocking order after
---    the locks; it unlinks every order (order details keep their own
---    retention), revokes the orders' guest capabilities and the account's
---    staff grants, closes and erases claims, anonymises the profile, records
+--    unsettled money block; confirmed upcoming orders warn; active staff
+--    accounts are refused: the operator revokes their grants first);
+--    deletion needs an email-link or Google sign-in within the last 10
+--    minutes (the API passes that instant from the token), the unchanged
+--    preview, no blocking order after the locks; it unlinks every order
+--    (order details keep their own retention), revokes the orders' guest
+--    capabilities, closes and erases claims, anonymises the profile, records
 --    a tombstone and a pending provider deletion (the auth user is removed
 --    by a later operator/worker step, never by the API), and audits counts
---    only.
+--    only. The same key reads a lost answer back before any other check.
+--    account_owner_guard (triggers on orders, checkout_quote and
+--    code_application) refuses attaching anything to a deleted account, so
+--    a checkout racing a deletion (any API build) cannot link its order to
+--    the deleted account.
 -- 6. Inactivity (K09): account_retention_due lists, for the worker, accounts
 --    due a warning (24 London months after the last activity: sign-in or a
 --    new order), a reminder (7 days before deletion) or deletion (30 days
@@ -59,7 +64,10 @@
 -- Lock order (K00, extended): the actor's account, then the claimant/owner
 -- account, then claim rows, then orders by UUID, then history/audit. Order
 -- changes (claim approval, chef add, deletion) take the restore freeze first
--- (GK503), as other order commands.
+-- (GK503), as other order commands. An account's own commands and its
+-- deletion lock it FOR NO KEY UPDATE (rows that only reference it take KEY
+-- SHARE and pass, so order commands never deadlock with a deletion);
+-- attaching an order, quote or code use to it takes FOR SHARE and waits.
 
 SET LOCAL ROLE gk_owner;
 
@@ -165,6 +173,7 @@ CREATE TABLE business.account_deletion_preview (
 );
 
 CREATE INDEX account_deletion_preview_account_idx ON business.account_deletion_preview (account_id);
+CREATE INDEX account_deletion_preview_expires_idx ON business.account_deletion_preview (expires_at);
 
 -- K09 tombstone: that an account was deleted, when and why, without
 -- personal data; restore/recovery replay must carry it (README gap).
@@ -214,6 +223,52 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+-- Nothing is attached to a deleted account (K09). Every writer of an
+-- account reference that means ownership or a customer's use (orders and
+-- quotes owned by it, code uses counted for it) takes the account FOR
+-- SHARE here, so it waits for a deletion in progress (FOR NO KEY UPDATE)
+-- and then sees deleted_at: GK403 account_deleted. This protects every API
+-- build, including one that reads the account without a lock (checkout).
+CREATE FUNCTION business.account_owner_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_account uuid;
+  v_old uuid;
+  v_deleted timestamptz;
+BEGIN
+  IF TG_TABLE_NAME = 'code_application' THEN
+    v_account := NEW.account_id;
+    IF TG_OP = 'UPDATE' THEN
+      v_old := OLD.account_id;
+    END IF;
+  ELSE
+    v_account := NEW.owner_account_id;
+    IF TG_OP = 'UPDATE' THEN
+      v_old := OLD.owner_account_id;
+    END IF;
+  END IF;
+  IF v_account IS NULL OR v_account IS NOT DISTINCT FROM v_old THEN
+    RETURN NEW;
+  END IF;
+  SELECT a.deleted_at INTO v_deleted FROM business.account a WHERE a.id = v_account FOR SHARE;
+  IF v_deleted IS NOT NULL THEN
+    RAISE EXCEPTION 'account_deleted' USING ERRCODE = 'GK403';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER orders_account_owner_guard BEFORE INSERT OR UPDATE OF owner_account_id ON business.orders
+  FOR EACH ROW EXECUTE FUNCTION business.account_owner_guard();
+CREATE TRIGGER checkout_quote_account_owner_guard BEFORE INSERT OR UPDATE OF owner_account_id ON business.checkout_quote
+  FOR EACH ROW EXECUTE FUNCTION business.account_owner_guard();
+CREATE TRIGGER code_application_account_owner_guard BEFORE INSERT OR UPDATE OF account_id ON business.code_application
+  FOR EACH ROW EXECUTE FUNCTION business.account_owner_guard();
 
 CREATE TRIGGER order_owner_event_guard BEFORE UPDATE OR DELETE ON business.order_owner_event
   FOR EACH ROW EXECUTE FUNCTION business.order_owner_event_guard();
@@ -283,7 +338,12 @@ BEGIN
 END;
 $$;
 
--- Owner-internal: the same, locked for update (commands of the account).
+-- Owner-internal: the same, locked for the account's own commands. FOR NO
+-- KEY UPDATE, not FOR UPDATE: rows that merely reference the account (order
+-- commands, receipts, audit) take KEY SHARE, which this lock lets through,
+-- so a command that locked an order first never deadlocks with it; writers
+-- that attach something to the account take FOR SHARE (account_owner_guard),
+-- which waits.
 CREATE FUNCTION business.account_customer_lock(p_subject uuid)
 RETURNS business.account
 LANGUAGE plpgsql
@@ -293,7 +353,7 @@ AS $$
 DECLARE
   a business.account%ROWTYPE;
 BEGIN
-  SELECT * INTO a FROM business.account x WHERE x.provider_subject = p_subject FOR UPDATE;
+  SELECT * INTO a FROM business.account x WHERE x.provider_subject = p_subject FOR NO KEY UPDATE;
   IF NOT FOUND OR a.disabled_at IS NOT NULL OR a.deleted_at IS NOT NULL THEN
     RAISE EXCEPTION 'account_unavailable' USING ERRCODE = 'GK403';
   END IF;
@@ -962,13 +1022,19 @@ BEGIN
   IF p_now IS NULL THEN
     RAISE EXCEPTION 'a receipt instant is required' USING ERRCODE = 'invalid_parameter_value';
   END IF;
+  -- Bounded retention of previews: expired more than a day ago, a few at a
+  -- time (they hold order IDs and reasons only).
+  DELETE FROM business.account_deletion_preview x
+  WHERE x.id IN (SELECT y.id FROM business.account_deletion_preview y
+                 WHERE y.expires_at < p_now - interval '1 day' ORDER BY y.expires_at LIMIT 100);
   v_facts := business.account_deletion_facts(v_account);
   v_hash := pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(v_facts::text, 'UTF8')), 'hex');
   INSERT INTO business.account_deletion_preview (id, account_id, facts, facts_sha256, created_at, expires_at)
   VALUES (v_id, v_account, v_facts, v_hash, p_now, p_now + interval '15 minutes');
   RETURN pg_catalog.json_build_object(
            'preview_id', v_id, 'preview_hash', v_hash, 'expires_at', p_now + interval '15 minutes',
-           'can_delete', pg_catalog.jsonb_array_length(v_facts -> 'blocked') = 0,
+           'can_delete', pg_catalog.jsonb_array_length(v_facts -> 'blocked') = 0
+                         AND pg_catalog.jsonb_array_length(v_facts -> 'staff_capabilities') = 0,
            'blocked', v_facts -> 'blocked', 'upcoming', v_facts -> 'upcoming',
            'linked_orders', pg_catalog.jsonb_array_length(v_facts -> 'orders'),
            'pending_claims', v_facts -> 'pending_claims',
@@ -976,10 +1042,13 @@ BEGIN
 END;
 $$;
 
--- POST /me/deletion. p_authenticated_at is the provider's authentication
--- instant of the token (the API reads it from the token): it must be within
--- 10 minutes before the receipt (GK403 reauthentication_required). The
--- same key replays the deletion, also once the account is deleted.
+-- POST /me/deletion. p_authenticated_at is the token's latest email-link or
+-- Google sign-in instant (the API reads it from the amr claim; password
+-- sign-ins do not count): it must be within 10 minutes before the receipt
+-- (GK403 reauthentication_required). The same key and body read the
+-- deletion back first, without a fresh sign-in, also once the account is
+-- deleted and during a freeze. An active staff account is 409
+-- staff_account (operator path).
 CREATE FUNCTION business.account_delete(p_subject uuid, p_key text, p_body_sha256 text, p_preview uuid,
                                         p_preview_hash text, p_authenticated_at timestamptz, p_now timestamptz)
 RETURNS TABLE (result_id uuid, replayed boolean, deleted_at timestamptz, orders_unlinked integer)
@@ -994,21 +1063,20 @@ DECLARE
   v_facts jsonb;
   v_unlinked integer;
   v_capabilities integer;
-  v_staff integer;
   v_claims integer;
+  v_frozen boolean;
 BEGIN
   IF p_now IS NULL THEN
     RAISE EXCEPTION 'a receipt instant is required' USING ERRCODE = 'invalid_parameter_value';
   END IF;
-  IF p_authenticated_at IS NULL OR p_authenticated_at > p_now + interval '1 minute'
-     OR p_now - p_authenticated_at > interval '10 minutes' THEN
-    RAISE EXCEPTION 'reauthentication_required' USING ERRCODE = 'GK403';
-  END IF;
-  PERFORM business.account_order_freeze_check();
-  SELECT * INTO a FROM business.account x WHERE x.provider_subject = p_subject FOR UPDATE;
+  -- Freeze first in the lock order; refused only after the replay lookup.
+  SELECT f.frozen INTO v_frozen FROM business.recovery_freeze f WHERE f.singleton FOR SHARE;
+  SELECT * INTO a FROM business.account x WHERE x.provider_subject = p_subject FOR NO KEY UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'account_unavailable' USING ERRCODE = 'GK403';
   END IF;
+  -- A lost response is read back with the same key and body, without a
+  -- new sign-in and also during a freeze.
   v_prior := business.command_claim(a.id, 'account.delete', '', p_key, p_body_sha256);
   IF v_prior IS NOT NULL THEN
     RETURN QUERY SELECT t.account_id, true, t.deleted_at, t.orders_unlinked
@@ -1019,6 +1087,18 @@ BEGIN
     RAISE EXCEPTION 'account_deleted' USING ERRCODE = 'GK403';
   ELSIF a.disabled_at IS NOT NULL THEN
     RAISE EXCEPTION 'account_unavailable' USING ERRCODE = 'GK403';
+  END IF;
+  IF p_authenticated_at IS NULL OR p_authenticated_at > p_now + interval '1 minute'
+     OR p_now - p_authenticated_at > interval '10 minutes' THEN
+    RAISE EXCEPTION 'reauthentication_required' USING ERRCODE = 'GK403';
+  END IF;
+  IF v_frozen THEN
+    RAISE EXCEPTION 'recovery_frozen' USING ERRCODE = 'GK503';
+  END IF;
+  -- Staff accounts are not deleted by their holder: the operator revokes
+  -- the grants first (gk-identity-admin), then the customer may delete.
+  IF EXISTS (SELECT 1 FROM business.staff_capability s WHERE s.account_id = a.id AND s.revoked_at IS NULL) THEN
+    RAISE EXCEPTION 'staff_account' USING ERRCODE = 'GK409';
   END IF;
   SELECT * INTO pv FROM business.account_deletion_preview x WHERE x.id = p_preview AND x.account_id = a.id;
   IF NOT FOUND OR p_preview_hash IS NULL OR pv.facts_sha256 <> p_preview_hash THEN
@@ -1059,9 +1139,6 @@ BEGIN
       version = c.version + 1
   WHERE c.account_id = a.id;
   GET DIAGNOSTICS v_claims = ROW_COUNT;
-  UPDATE business.staff_capability s SET revoked_at = GREATEST(pg_catalog.now(), s.granted_at), revoked_by = a.id
-  WHERE s.account_id = a.id AND s.revoked_at IS NULL;
-  GET DIAGNOSTICS v_staff = ROW_COUNT;
   UPDATE business.account x
   SET profile_full_name = NULL, profile_phone = NULL, profile_instagram = NULL,
       profile_version = x.profile_version + 1, profile_updated_at = pg_catalog.now(),
@@ -1074,7 +1151,6 @@ BEGIN
                                 pg_catalog.json_build_object('orders_unlinked', v_unlinked,
                                                              'upcoming_orders', pg_catalog.jsonb_array_length(v_facts -> 'upcoming'),
                                                              'guest_capabilities_revoked', v_capabilities,
-                                                             'staff_capabilities_revoked', v_staff,
                                                              'claims_erased', v_claims));
   PERFORM business.command_finish(a.id, 'account.delete', '', p_key, a.id);
   RETURN QUERY SELECT a.id, false, p_now, v_unlinked;
@@ -1174,7 +1250,7 @@ BEGIN
   IF p_kind IS NULL OR p_kind NOT IN ('warning', 'reminder') OR p_anchor IS NULL OR p_now IS NULL THEN
     RAISE EXCEPTION 'retention notice needs a kind, an anchor and an instant' USING ERRCODE = 'invalid_parameter_value';
   END IF;
-  SELECT * INTO a FROM business.account x WHERE x.id = p_account FOR UPDATE;
+  SELECT * INTO a FROM business.account x WHERE x.id = p_account FOR NO KEY UPDATE;
   IF NOT FOUND THEN
     RETURN false;
   END IF;
@@ -1202,6 +1278,7 @@ REVOKE ALL ON TABLE business.account_tombstone FROM PUBLIC;
 REVOKE ALL ON TABLE business.account_provider_deletion FROM PUBLIC;
 REVOKE ALL ON TABLE business.account_retention_notice FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.order_owner_event_guard() FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.account_owner_guard() FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.identity_resolve_account(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.account_customer_id(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.account_customer_lock(uuid) FROM PUBLIC;

@@ -264,6 +264,8 @@ func TestDeletionRoutes(t *testing.T) {
 	}
 	acc.err = &catalog.ConflictError{Code: "account_deletion_blocked"}
 	expectStatus(t, "blocked", serveAccount(t, id, acc, &logs, del), 409, "ACCOUNT_DELETION_BLOCKED")
+	acc.err = &catalog.ConflictError{Code: "staff_account"}
+	expectStatus(t, "staff", serveAccount(t, id, acc, &logs, del), 409, "STAFF_ACCOUNT")
 	// A deleted account: its deletion replays; a new deletion is refused.
 	acc.err, acc.replayed = nil, true
 	gone := del

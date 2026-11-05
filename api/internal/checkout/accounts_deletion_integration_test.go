@@ -3,6 +3,7 @@
 package checkout_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"slices"
@@ -13,6 +14,7 @@ import (
 	"github.com/ChichaSasha/gk-cakes/api/internal/catalog"
 	"github.com/ChichaSasha/gk-cakes/api/internal/checkout"
 	"github.com/ChichaSasha/gk-cakes/api/internal/identity"
+	"github.com/ChichaSasha/gk-cakes/api/internal/schedule"
 )
 
 // Account deletion (GK-016 r02b answers 2, 3, 11; K09).
@@ -105,9 +107,10 @@ func TestAccountDeletionIsBlockedWhileMoneyIsUnsettled(t *testing.T) {
 	}
 }
 
-// A confirmed upcoming order warns but does not block. Deletion needs a
-// fresh sign-in and the unchanged preview; it unlinks the orders (kept),
-// revokes guest capabilities and staff grants, closes and erases claims,
+// A confirmed upcoming order warns but does not block; an active staff
+// account is refused (operator path). Deletion needs a fresh sign-in and
+// the unchanged preview; it unlinks the orders (kept), revokes guest
+// capabilities, closes and erases claims,
 // anonymises the profile, records a tombstone and a pending provider
 // deletion, audits counts only, and replays by key.
 func TestAccountDeletionEffects(t *testing.T) {
@@ -127,17 +130,25 @@ func TestAccountDeletionEffects(t *testing.T) {
 	h.owner(t, "SELECT business.staff_grant($1::uuid, 'fulfillment', 'test')", customerA)
 
 	p := h.deletionPreview(t, customerA)
-	if !p.CanDelete || len(p.Blocked) != 0 || len(p.Upcoming) != 1 || p.Upcoming[0].OrderID != upcoming ||
+	if p.CanDelete || len(p.Blocked) != 0 || len(p.Upcoming) != 1 || p.Upcoming[0].OrderID != upcoming ||
 		p.Upcoming[0].Date != "2026-11-14" || p.Upcoming[0].Lifecycle != "confirmed" || p.LinkedOrders != 1 ||
 		p.PendingClaims != 1 || !slices.Equal(p.StaffCapabilities, []string{"fulfillment"}) ||
 		!p.ExpiresAt.Equal(h.now.Add(15*time.Minute)) || len(p.PreviewHash) != 64 {
 		t.Fatalf("preview %+v", p)
 	}
+	// An active staff account is not deleted by its holder (operator path).
+	if _, err := h.deleteAccount(customerA, h.now, "d-staff", p); conflict(err) != "staff_account" {
+		t.Fatalf("staff self-deletion: %v", err)
+	}
+	h.owner(t, "SELECT business.staff_revoke($1::uuid, 'fulfillment', 'test: leaving')", customerA)
+	if p = h.deletionPreview(t, customerA); !p.CanDelete || len(p.StaffCapabilities) != 0 {
+		t.Fatalf("preview after the operator revoked the grant %+v", p)
+	}
 
 	// A fresh sign-in: within 10 minutes before the receipt.
 	for name, auth := range map[string]time.Time{"none": {}, "11 minutes ago": h.now.Add(-11 * time.Minute),
 		"in the future": h.now.Add(2 * time.Minute)} {
-		if _, err := h.deleteAccount(customerA, auth, "d-"+name, p); !errors.Is(err, checkout.ErrReauthenticate) {
+		if _, err := h.deleteAccount(customerA, auth, "d-"+strings.ReplaceAll(name, " ", "-"), p); !errors.Is(err, checkout.ErrReauthenticate) {
 			t.Errorf("sign-in %s: %v", name, err)
 		}
 	}
@@ -173,10 +184,20 @@ func TestAccountDeletionEffects(t *testing.T) {
 	if err != nil || res.Replayed || res.AccountID != a.AccountID || res.OrdersUnlinked != 1 || !res.DeletedAt.Equal(h.now) {
 		t.Fatalf("delete: %+v %v", res, err)
 	}
-	h.now = h.now.Add(time.Minute)
-	if again, err := h.deleteAccount(customerA, h.now, "del", p); err != nil || !again.Replayed || !again.DeletedAt.Equal(res.DeletedAt) ||
+	// A lost answer is read back with the same key and body, without a new
+	// sign-in and during a freeze.
+	h.now = h.now.Add(time.Hour)
+	if again, err := h.deleteAccount(customerA, time.Time{}, "del", p); err != nil || !again.Replayed || !again.DeletedAt.Equal(res.DeletedAt) ||
 		again.OrdersUnlinked != 1 {
-		t.Fatalf("replay: %+v %v", again, err)
+		t.Fatalf("replay without a fresh sign-in: %+v %v", again, err)
+	}
+	h.owner(t, "UPDATE business.recovery_freeze SET frozen = true, reason = 'test'")
+	if again, err := h.deleteAccount(customerA, time.Time{}, "del", p); err != nil || !again.Replayed {
+		t.Fatalf("replay during a freeze: %+v %v", again, err)
+	}
+	h.owner(t, "UPDATE business.recovery_freeze SET frozen = false, reason = NULL")
+	if _, err := h.deleteAccount(customerA, h.now, "del", deletionPreview{PreviewID: p.PreviewID, PreviewHash: strings.Repeat("b", 64)}); conflict(err) != "key_reused" {
+		t.Fatalf("same key, other body: %v", err)
 	}
 	if _, err := h.deleteAccount(customerA, h.now, "del-2", p); !errors.Is(err, checkout.ErrAccountDeleted) {
 		t.Fatalf("a new key after deletion: %v", err)
@@ -219,7 +240,7 @@ func TestAccountDeletionEffects(t *testing.T) {
 		"tombstone": `SELECT count(*) FROM business.account_tombstone WHERE account_id = $1::uuid AND reason = 'customer_request'
 			AND orders_unlinked = 1`,
 		"pending provider deletion": `SELECT count(*) FROM business.account_provider_deletion WHERE account_id = $1::uuid AND completed_at IS NULL`,
-		"staff grant revoked":       `SELECT count(*) FROM business.staff_capability WHERE account_id = $1::uuid AND revoked_at IS NOT NULL AND revoked_by = $1::uuid`,
+		"no active staff grant":     `SELECT 1 - count(*) FROM business.staff_capability WHERE account_id = $1::uuid AND revoked_at IS NULL`,
 		"claims erased": `SELECT count(*) FROM business.order_claim WHERE account_id = $1::uuid AND erased_at IS NOT NULL AND reference IS NULL
 			AND note IS NULL AND state IN ('closed', 'withdrawn')`,
 		"unlink event":    `SELECT count(*) FROM business.order_owner_event WHERE account_id = $1::uuid AND kind = 'unlinked' AND source = 'account_deleted'`,
@@ -227,7 +248,7 @@ func TestAccountDeletionEffects(t *testing.T) {
 		"no active capability": `SELECT 1 - count(*) FROM business.order_guest_capability WHERE order_id = (SELECT order_id FROM
 			business.order_owner_event WHERE account_id = $1::uuid LIMIT 1) AND revoked_at IS NULL`,
 	}
-	wantCounts := map[string]int{"tombstone": 1, "pending provider deletion": 1, "staff grant revoked": 1, "claims erased": 2,
+	wantCounts := map[string]int{"tombstone": 1, "pending provider deletion": 1, "no active staff grant": 1, "claims erased": 2,
 		"unlink event": 1, "evidence erased": 1, "no active capability": 1}
 	for name, sql := range checks {
 		if n := h.count(t, sql, a.AccountID); n != wantCounts[name] {
@@ -238,7 +259,7 @@ func TestAccountDeletionEffects(t *testing.T) {
 		t.Errorf("pending claim not closed")
 	}
 	details := h.auditDetails(t, "account.deleted")
-	if len(details) != 1 || details[0] != `{"orders_unlinked" : 1, "upcoming_orders" : 1, "guest_capabilities_revoked" : 1, "staff_capabilities_revoked" : 1, "claims_erased" : 2}` {
+	if len(details) != 1 || details[0] != `{"orders_unlinked" : 1, "upcoming_orders" : 1, "guest_capabilities_revoked" : 1, "claims_erased" : 2}` {
 		t.Fatalf("audit %v", details)
 	}
 	var everything string
@@ -373,5 +394,138 @@ func TestInactivityRetentionSteps(t *testing.T) {
 	}
 	if _, err := h.api.Exec(h.ctx, "SELECT * FROM business.account_retention_due(now(), 10)"); err == nil {
 		t.Fatal("gk_api reads retention steps")
+	}
+}
+
+// waitForLockWait waits until a session of the test database waits on a
+// lock (the other connection is blocked).
+func (h *harness) waitForLockWait(t *testing.T) {
+	t.Helper()
+	for range 200 {
+		if h.count(t, `SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`) > 0 {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatal("no session ever waited on a lock")
+}
+
+// M1: a checkout that read the account before a deletion committed cannot
+// attach its order to the deleted account: its order insert waits for the
+// deletion (account_owner_guard) and is then refused; the account never
+// owns an order after its deletion. Two connections: the deletion's
+// transaction stays open while the checkout runs.
+func TestCheckoutRacingADeletionCannotAttachTheOrder(t *testing.T) {
+	h := newHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	a := h.resolve(t, customerA)
+	q := must[catalog.Result](t)(h.co.CreateQuote(h.ctx, customerA, nil, "q-race", checkout.QuoteInput{Date: "2026-11-14",
+		SlotID: f.slot, FulfillmentMode: schedule.Collection, Lines: []checkout.QuoteLine{{VariantID: f.v1000, Quantity: 1}}})).ID
+	p := h.deletionPreview(t, customerA)
+	in := checkout.DeletionInput{PreviewID: p.PreviewID, PreviewHash: p.PreviewHash}
+
+	conn := h.db.LoginConn(t, "gk_api")
+	tx, err := conn.Begin(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(h.ctx)
+	var deleted string
+	if err := tx.QueryRow(h.ctx, `SELECT result_id::text FROM business.account_delete($1::uuid, 'del', $2, $3::uuid, $4, $5, $6)`,
+		customerA, catalog.BodyHash(checkout.CmdAccountDelete, "", in), p.PreviewID, p.PreviewHash, h.now, h.now).Scan(&deleted); err != nil {
+		t.Fatalf("deletion in the open transaction: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := h.checkout(customerA, nil, "k-race", q, pol)
+		done <- err
+	}()
+	h.waitForLockWait(t)
+	select {
+	case err := <-done:
+		t.Fatalf("checkout finished while the deletion was open: %v", err)
+	default:
+	}
+	if err := tx.Commit(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, catalog.ErrForbidden) {
+			t.Fatalf("checkout after the deletion: %v, want refused", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("checkout never finished")
+	}
+	if n := h.count(t, "SELECT count(*) FROM business.orders WHERE owner_account_id = $1::uuid OR quote_id = $2::uuid", a.AccountID, q); n != 0 {
+		t.Fatalf("%d orders attached after the deletion", n)
+	}
+	// Nothing new can be attached afterwards either, whatever the caller.
+	if err := h.ownerErr(t, `UPDATE business.checkout_quote SET owner_account_id = owner_account_id WHERE false`); err != nil {
+		t.Fatal(err)
+	}
+	order, _ := h.guestOrder(t, f, pol, "g-after")
+	if err := h.ownerErr(t, "UPDATE business.orders SET owner_account_id = $1::uuid WHERE id = $2::uuid", a.AccountID, order); pgMessage(err) != "account_deleted" {
+		t.Fatalf("attach an order to the deleted account directly: %v", err)
+	}
+}
+
+// m1: the account is locked FOR NO KEY UPDATE, so a customer order command
+// that locked the order and then writes a row referencing the account (KEY
+// SHARE) is not blocked by a deletion waiting for that order: no deadlock;
+// the deletion continues once the command commits.
+func TestOrderCommandAndDeletionDoNotDeadlock(t *testing.T) {
+	h := newHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	a := h.resolve(t, customerA)
+	order := h.signedInOrder(t, f, pol, customerA, "o1")
+	// Previews expired more than a day ago are removed when a new one is made.
+	for _, age := range []time.Duration{48 * time.Hour, 12 * time.Hour} {
+		h.owner(t, `INSERT INTO business.account_deletion_preview (id, account_id, facts, facts_sha256, created_at, expires_at)
+			VALUES (gen_random_uuid(), $1::uuid, '{}', repeat('0', 64), $2, $2::timestamptz + interval '15 minutes')`, a.AccountID, h.now.Add(-age))
+	}
+	p := h.deletionPreview(t, customerA)
+	if !p.CanDelete {
+		t.Fatalf("preview %+v", p)
+	}
+	if n := h.count(t, "SELECT count(*) FROM business.account_deletion_preview WHERE account_id = $1::uuid", a.AccountID); n != 2 {
+		t.Fatalf("previews kept %d, want the 12-hour-old one and the new one", n)
+	}
+	cmd := h.db.AdminConn(t)
+	tx, err := cmd.Begin(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(h.ctx)
+	if _, err := tx.Exec(h.ctx, "SELECT 1 FROM business.orders WHERE id = $1::uuid FOR UPDATE", order); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := h.deleteAccount(customerA, h.now, "del", p)
+		done <- err
+	}()
+	h.waitForLockWait(t) // the deletion holds the account and waits for the order
+	ctx, cancel := context.WithTimeout(h.ctx, 5*time.Second)
+	defer cancel()
+	if _, err := tx.Exec(ctx, `INSERT INTO business.command_receipt (account_id, command, resource, idempotency_key, body_sha256, result_id)
+		VALUES ($1::uuid, 'test.order_command', '', 'k', repeat('a', 64), gen_random_uuid())`, a.AccountID); err != nil {
+		t.Fatalf("the order command's row referencing the account: %v", err)
+	}
+	if err := tx.Commit(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("deletion: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("deletion never finished")
+	}
+	if n := h.count(t, "SELECT count(*) FROM business.orders WHERE owner_account_id = $1::uuid", a.AccountID); n != 0 {
+		t.Fatalf("orders still linked: %d", n)
 	}
 }

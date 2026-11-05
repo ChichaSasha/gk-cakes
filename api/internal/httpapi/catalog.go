@@ -502,6 +502,7 @@ var conflictMessages = map[string]string{
 	"already_yours":            "This order is already in your account.",
 	"order_owned":              "This order is already in another account.",
 	"account_unavailable":      "This account can't be used for this.",
+	"staff_account":            "A staff account can't be deleted here. Please ask for staff access to be removed first.",
 }
 
 // catalogError maps catalog errors to K00 responses without SQL detail.
@@ -590,6 +591,8 @@ func catalogError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, e
 			code = "ORDER_OWNED"
 		case "account_unavailable":
 			code = "ACCOUNT_UNAVAILABLE"
+		case "staff_account":
+			code = "STAFF_ACCOUNT"
 		}
 		writeError(w, r, http.StatusConflict, code, msg, false)
 	case errors.As(err, &inv):
