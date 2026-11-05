@@ -528,6 +528,120 @@ func TestNeverDispatchedCleanupWinsAndNothingIsSent(t *testing.T) {
 	}
 }
 
+// payDispatchJob is the collection's waiting dispatch job.
+func (h *payHarness) payDispatchJob(t *testing.T, coll string) string {
+	t.Helper()
+	var id string
+	if err := h.admin.QueryRow(h.ctx, `SELECT j.id::text FROM business.payment_job pj JOIN business.job j ON j.id = pj.job_id
+		WHERE pj.collection_id = $1::uuid AND pj.purpose = 'dispatch' AND j.state IN ('queued', 'retry')`, coll).Scan(&id); err != nil {
+		t.Fatalf("dispatch job of %s: %v", coll, err)
+	}
+	return id
+}
+
+// K11 (migration 0020): a restore freeze set on a live database while the
+// dispatch worker is between payment_job_begin and fix/admit wins over every
+// other answer ('ready', 'closed'): fix and admit answer 'frozen' (the
+// worker defers), nothing is fixed, admitted or recorded; after the freeze
+// lifts the job completes as it would have.
+func TestFreezeBetweenBeginAndFixOrAdmitDefersPaymentDispatch(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		fixed, closed bool
+	}{{"open", false, false}, {"closed", false, true}, {"closed fixed", true, true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newPayHarness(t)
+			f := h.setup(t)
+			pol := h.policy(t, "p1")
+			order, d := h.paidOrder(t, f, pol)
+			res, err := h.start(order, d, "pay-1", 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.fixed {
+				// Fixed and reserved; the prepared envelope keeps failing.
+				h.journal.Fail = func(op, name string) error {
+					if op == "put" && strings.HasSuffix(name, ".prepared") {
+						return errors.New("b2 unavailable")
+					}
+					return nil
+				}
+				if errs := h.drain(t); len(errs) != 1 || h.recoveryState(t, res.ID) != "reserved" {
+					t.Fatalf("journal down: %v", errs)
+				}
+				h.journal.Fail = nil
+			}
+			job := h.claimOnly(t, h.payDispatchJob(t, res.ID))
+			var (
+				status string
+				amount int64
+				dbNow  time.Time
+			)
+			if err := h.worker.QueryRow(h.ctx, "SELECT status, amount_minor, db_now FROM business.payment_job_begin($1::uuid, $2::uuid, $3)",
+				job.ID, job.Worker, job.Generation).Scan(&status, &amount, &dbNow); err != nil || status != "ready" {
+				t.Fatalf("begin %s %v", status, err)
+			}
+			if tc.closed {
+				// The never-dispatched cleanup closes the collection meanwhile.
+				h.age(t, res.ID)
+				h.endHold(t, order)
+				id, _ := h.reviewJob(t, order)
+				review := h.claimOnly(t, id)
+				if err := h.reviews.Handle(h.ctx, review); err != nil {
+					t.Fatal(err)
+				}
+				h.finish(t, review, nil)
+				if c := h.collection(t, res.ID); c.State != "cancelled" {
+					t.Fatalf("after the cleanup %+v", c)
+				}
+			}
+			h.owner(t, "SELECT business.recovery_set_freeze(true, 'restore drill')")
+			payload, err := payments.NewPayload(payments.SessionRequest{CollectionID: res.ID, OrderID: order, AmountMinor: amount,
+				Environment: "test", UIOrigin: uiOrigin, ExpiresAt: payments.SessionExpiry(dbNow)}, stripeAccount)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !tc.fixed {
+				if err := h.worker.QueryRow(h.ctx, "SELECT status FROM business.payment_dispatch_fix($1::uuid, $2::uuid, $3, $4::uuid, $5, $6)",
+					job.ID, job.Worker, job.Generation, res.ID, string(payload), dbNow).Scan(&status); err != nil || status != "frozen" {
+					t.Fatalf("fix while frozen: %s %v", status, err)
+				}
+			}
+			if err := h.worker.QueryRow(h.ctx, "SELECT business.payment_dispatch_admit($1::uuid, $2::uuid, $3, $4::uuid)",
+				job.ID, job.Worker, job.Generation, res.ID).Scan(&status); err != nil || status != "frozen" {
+				t.Fatalf("admit while frozen: %s %v", status, err)
+			}
+			wantOp := 0
+			if tc.fixed {
+				wantOp = 1
+			}
+			if got := h.count(t, `SELECT count(*) FROM business.payment_collection WHERE id = $1::uuid AND dispatch_started_at IS NULL
+				AND (first_dispatch_at IS NOT NULL) = $2`, res.ID, tc.fixed); got != 1 ||
+				h.count(t, "SELECT count(*) FROM business.recovery_operation WHERE id = $1::uuid AND state IN ('reserved')", res.ID) != wantOp ||
+				h.count(t, "SELECT count(*) FROM business.recovery_operation WHERE id = $1::uuid", res.ID) != wantOp ||
+				h.count(t, "SELECT count(*) FROM business.payment_attempt WHERE collection_id = $1::uuid", res.ID) != 0 {
+				t.Fatal("something was fixed, admitted or recorded while frozen")
+			}
+			// The worker defers; once the freeze lifts the job completes.
+			h.finish(t, job, jobs.Defer(payments.FreezeRecheck, nil))
+			h.owner(t, "SELECT business.recovery_set_freeze(false, NULL)")
+			h.due(t)
+			if errs := h.drain(t); len(errs) != 0 {
+				t.Fatalf("after the freeze: %v", errs)
+			}
+			c := h.collection(t, res.ID)
+			switch {
+			case !tc.closed && (c.State != "pending" || len(h.stripe.creates) != 1):
+				t.Fatalf("open: collection %+v, creates %v", c, h.stripe.creates)
+			case tc.closed && (c.State != "cancelled" || len(h.stripe.creates) != 0):
+				t.Fatalf("closed: collection %+v, creates %v", c, h.stripe.creates)
+			case tc.fixed && h.recoveryState(t, res.ID) != "secured":
+				t.Fatalf("dispatch %s, want secured with its never-dispatched outcome", h.recoveryState(t, res.ID))
+			}
+		})
+	}
+}
+
 // Admission wins: the call is underway when the review runs; the cleanup
 // leaves the collection alone and the session is created.
 func TestNeverDispatchedCleanupLosesToAnAdmittedCall(t *testing.T) {

@@ -862,7 +862,10 @@ database whatever its locale (`0018_small_fixes.sql`); the notice and a
 description may contain line feeds. The copied snapshot columns keep their
 source rules there too (trimmed flavour name of 1 to 80 characters, a GK-002
 size code, a stock mode, a one-dimensional composition without nulls), and a
-quote's and an order's copied slot window must end after it starts. Inventory links and batch
+quote's and an order's copied slot window must end after it starts. (Those
+constraints are added `NOT VALID` and then validated in the same migration;
+inside one migration transaction that gives no locking benefit over a plain
+`ADD CONSTRAINT`, the table locks are held until it commits.) Inventory links and batch
 use come with GK-032; real recipe data waits for GK-038's measurements.
 
 **Commands** need the chef capability and a current provider session, an
@@ -1144,7 +1147,11 @@ canonical encoding, environment, account, mode, return origin, expiry),
 writes the encrypted prepared envelope (the body is persisted before the
 external create, K04), and right before each call `payment_dispatch_admit`
 re-checks the restore freeze and the window on the database clock and records
-`dispatch_started_at`. A first call (none ever admitted) with less than 31
+`dispatch_started_at`. Since migration `0020_dispatch_freeze_first.sql`
+`payment_dispatch_fix` and `payment_dispatch_admit` read the freeze (share
+lock) before any other answer, so a freeze set while a worker is between its
+begin and fix/admit defers the job instead of letting a `closed` collection
+complete. A first call (none ever admitted) with less than 31
 minutes of session lifetime left (for example after the journal was down for
 over 1.5 hours) is not made: the dispatch is recorded as `rejected`
 (`expired_before_dispatch`), the collection `failed` without any Stripe call
@@ -1471,7 +1478,11 @@ alternative) without a second subsystem.
   `refund_dispatch_admit` re-checks, under the collection and operation
   locks, the restore freeze, that no quarantined observation appeared, that
   the operation is not decided and that the window is open (then
-  `dispatch_started_at`, `reserved` → `submitting`). Stripe's answer:
+  `dispatch_started_at`, `reserved` → `submitting`). Both
+  `refund_dispatch_fix` and `refund_dispatch_admit` check the freeze first
+  (share lock, migration `0020_dispatch_freeze_first.sql`): while frozen
+  they answer `frozen` (deferred) even for a `closed` or `settled`
+  operation. Stripe's answer:
   `succeeded` → succeeded; `pending` → pending (reconcile in 15 minutes);
   `requires_action` → attention; `failed`/`canceled` → failed + attention
   (the remainder reopens, never re-sent automatically); 400
