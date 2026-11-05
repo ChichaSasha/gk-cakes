@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -90,6 +91,21 @@ func (f *fakeCatalog) ArchiveVariant(_ context.Context, s, k, _ string, in catal
 	return f.cmd(s, k, in)
 }
 func (f *fakeCatalog) CreateRecipeVersion(_ context.Context, s, k string, in catalog.RecipeVersionInput) (catalog.Result, error) {
+	return f.cmd(s, k, in)
+}
+
+func (f *fakeCatalog) Colours(_ context.Context, subject string) ([]catalog.Colour, error) {
+	f.lastSubj = subject
+	return []catalog.Colour{{ID: "col-1", Code: "pink", Label: "Pink", Position: 10, Version: 1}}, f.readErr
+}
+func (f *fakeCatalog) Colour(_ context.Context, subject, id string) (catalog.Colour, error) {
+	f.lastSubj = subject
+	return catalog.Colour{ID: id, Code: "pink", Label: "Pink", Position: 10, Version: 1}, f.readErr
+}
+func (f *fakeCatalog) CreateColour(_ context.Context, s, k string, in catalog.ColourInput) (catalog.Result, error) {
+	return f.cmd(s, k, in)
+}
+func (f *fakeCatalog) UpdateColour(_ context.Context, s, k, _ string, in catalog.ColourPatch) (catalog.Result, error) {
 	return f.cmd(s, k, in)
 }
 
@@ -260,8 +276,8 @@ func TestCatalogCommandInput(t *testing.T) {
 	if rec := serveCatalog(t, cat, id, http.MethodPost, "/api/v1/admin/cakes", "chef", "k", big); rec.Code != 413 {
 		t.Fatalf("oversized: %d", rec.Code)
 	}
-	// PATCH: an explicit null on a non-nullable field is invalid (no catalog
-	// field is nullable); omitted fields are unchanged.
+	// PATCH: an explicit null on a non-nullable field is invalid (only a
+	// cake's colour_id is nullable); omitted fields are unchanged.
 	if rec := serveCatalog(t, cat, id, http.MethodPatch, "/api/v1/admin/cakes/c1", "chef", "k", `{"expected_version":1,"name":null}`); rec.Code != 422 {
 		t.Fatalf("null name: %d %s", rec.Code, rec.Body.String())
 	}
@@ -307,5 +323,163 @@ func TestCatalogRefusalsAndReplays(t *testing.T) {
 	rec = serveCatalog(t, cat, id, http.MethodPost, "/api/v1/admin/cakes", "chef", "k2", `{"name":"A","description":""}`)
 	if rec.Header().Get("Idempotent-Replayed") != "" {
 		t.Fatal("first use marked as replay")
+	}
+}
+
+func TestColourRoutes(t *testing.T) {
+	id := catalogIdentity()
+	const colourID = "11111111-1111-4111-8111-111111111111"
+	// Commands are the chef's; the list is read by the chef and technical
+	// support, like the rest of the staff catalog.
+	for name, c := range map[string]struct {
+		auth           string
+		create, list   int
+		patch, cakeSet int
+	}{
+		"anonymous":         {"", 401, 401, 401, 401},
+		"customer":          {secretToken, 403, 403, 403, 403},
+		"fulfillment":       {"fulfillment", 403, 403, 403, 403},
+		"technical support": {"support", 403, 200, 403, 403},
+		"chef":              {"chef", 201, 200, 200, 200},
+	} {
+		cat := &fakeCatalog{}
+		if rec := serveCatalog(t, cat, id, http.MethodPost, "/api/v1/admin/colours", c.auth, "k", `{"code":"pink","label":"Pink","position":10}`); rec.Code != c.create {
+			t.Errorf("%s create: %d %s, want %d", name, rec.Code, rec.Body.String(), c.create)
+		}
+		if rec := serveCatalog(t, cat, id, http.MethodGet, "/api/v1/admin/colours", c.auth, "", ""); rec.Code != c.list {
+			t.Errorf("%s list: %d %s, want %d", name, rec.Code, rec.Body.String(), c.list)
+		}
+		if rec := serveCatalog(t, cat, id, http.MethodPatch, "/api/v1/admin/colours/"+colourID, c.auth, "k", `{"expected_version":1,"archived":true}`); rec.Code != c.patch {
+			t.Errorf("%s patch: %d %s, want %d", name, rec.Code, rec.Body.String(), c.patch)
+		}
+		if rec := serveCatalog(t, cat, id, http.MethodPatch, "/api/v1/admin/cakes/c1", c.auth, "k", `{"expected_version":1,"colour_id":null}`); rec.Code != c.cakeSet {
+			t.Errorf("%s cake colour: %d %s, want %d", name, rec.Code, rec.Body.String(), c.cakeSet)
+		}
+		if c.auth != "chef" && cat.calls != 0 {
+			t.Errorf("%s: a refused actor reached the store", name)
+		}
+	}
+
+	cat := &fakeCatalog{}
+	rec := serveCatalog(t, cat, id, http.MethodGet, "/api/v1/admin/colours", "chef", "", "")
+	if !strings.Contains(rec.Body.String(), `"colours":[{"id":"col-1","code":"pink","label":"Pink","position":10,"archived_at":null,"version":1}]`) {
+		t.Fatalf("list body = %s", rec.Body.String())
+	}
+	rec = serveCatalog(t, cat, id, http.MethodPost, "/api/v1/admin/colours", "chef", "k", `{"code":"pink","label":"Pink","position":0}`)
+	if in := cat.lastBody.(catalog.ColourInput); rec.Code != 201 || in.Position == nil || *in.Position != 0 || cat.lastSubj != "sub-chef" {
+		t.Fatalf("create: %d %s, decoded %+v", rec.Code, rec.Body.String(), cat.lastBody)
+	}
+	rec = serveCatalog(t, cat, id, http.MethodPatch, "/api/v1/admin/colours/"+colourID, "chef", "k", `{"expected_version":3,"label":"Blush","archived":false}`)
+	if p := cat.lastBody.(catalog.ColourPatch); rec.Code != 200 || !p.Label.Set || p.Label.Value != "Blush" || p.Position.Set ||
+		!p.Archived.Set || p.Archived.Value || p.ExpectedVersion != 3 {
+		t.Fatalf("patch: %d, decoded %+v", rec.Code, cat.lastBody)
+	}
+
+	for name, c := range map[string]struct {
+		method, path, key, body string
+		status                  int
+		code                    string
+	}{
+		"no key":           {"POST", "/api/v1/admin/colours", "", `{"code":"pink","label":"Pink","position":1}`, 400, "IDEMPOTENCY_KEY_REQUIRED"},
+		"patch no key":     {"PATCH", "/api/v1/admin/colours/" + colourID, "", `{"expected_version":1,"archived":true}`, 400, "IDEMPOTENCY_KEY_REQUIRED"},
+		"code all":         {"POST", "/api/v1/admin/colours", "k", `{"code":"all","label":"All","position":1}`, 422, "INVALID_INPUT"},
+		"upper code":       {"POST", "/api/v1/admin/colours", "k", `{"code":"Pink","label":"Pink","position":1}`, 422, "INVALID_INPUT"},
+		"padded label":     {"POST", "/api/v1/admin/colours", "k", `{"code":"pink","label":"Pink ","position":1}`, 422, "INVALID_INPUT"},
+		"no position":      {"POST", "/api/v1/admin/colours", "k", `{"code":"pink","label":"Pink"}`, 422, "INVALID_INPUT"},
+		"null position":    {"POST", "/api/v1/admin/colours", "k", `{"code":"pink","label":"Pink","position":null}`, 422, "INVALID_INPUT"},
+		"string position":  {"POST", "/api/v1/admin/colours", "k", `{"code":"pink","label":"Pink","position":"1"}`, 400, "BAD_REQUEST"},
+		"fraction":         {"POST", "/api/v1/admin/colours", "k", `{"code":"pink","label":"Pink","position":1.5}`, 400, "BAD_REQUEST"},
+		"big position":     {"POST", "/api/v1/admin/colours", "k", `{"code":"pink","label":"Pink","position":10001}`, 422, "INVALID_INPUT"},
+		"unknown field":    {"POST", "/api/v1/admin/colours", "k", `{"code":"pink","label":"Pink","position":1,"hex":"#f0c"}`, 400, "BAD_REQUEST"},
+		"code change":      {"PATCH", "/api/v1/admin/colours/" + colourID, "k", `{"expected_version":1,"code":"red"}`, 400, "BAD_REQUEST"},
+		"empty patch":      {"PATCH", "/api/v1/admin/colours/" + colourID, "k", `{"expected_version":1}`, 422, "INVALID_INPUT"},
+		"no version":       {"PATCH", "/api/v1/admin/colours/" + colourID, "k", `{"archived":true}`, 422, "INVALID_INPUT"},
+		"null archived":    {"PATCH", "/api/v1/admin/colours/" + colourID, "k", `{"expected_version":1,"archived":null}`, 422, "INVALID_INPUT"},
+		"null label":       {"PATCH", "/api/v1/admin/colours/" + colourID, "k", `{"expected_version":1,"label":null}`, 422, "INVALID_INPUT"},
+		"string archived":  {"PATCH", "/api/v1/admin/colours/" + colourID, "k", `{"expected_version":1,"archived":"yes"}`, 400, "BAD_REQUEST"},
+		"cake bad colour":  {"POST", "/api/v1/admin/cakes", "k", `{"name":"A","description":"","colour_id":"pink"}`, 422, "INVALID_INPUT"},
+		"cake null name":   {"PATCH", "/api/v1/admin/cakes/c1", "k", `{"expected_version":1,"name":null,"colour_id":null}`, 422, "INVALID_INPUT"},
+		"nested null":      {"PATCH", "/api/v1/admin/cakes/c1", "k", `{"expected_version":1,"colour_id":[null]}`, 400, "BAD_REQUEST"},
+		"null on create":   {"POST", "/api/v1/admin/colours", "k", `{"code":"pink","label":null,"position":1}`, 422, "INVALID_INPUT"},
+		"colour_id upper":  {"PATCH", "/api/v1/admin/cakes/c1", "k", `{"expected_version":1,"COLOUR_ID":null}`, 400, "BAD_REQUEST"},
+		"colour_id repeat": {"PATCH", "/api/v1/admin/cakes/c1", "k", `{"expected_version":1,"colour_id":null,"colour_id":null}`, 400, "BAD_REQUEST"},
+	} {
+		cat := &fakeCatalog{}
+		rec := serveCatalog(t, cat, id, c.method, c.path, "chef", c.key, c.body)
+		if rec.Code != c.status || decodeError(t, rec).Error.Code != c.code {
+			t.Errorf("%s: %d %s, want %d %s", name, rec.Code, rec.Body.String(), c.status, c.code)
+		}
+		if cat.calls != 0 {
+			t.Errorf("%s: a refused input reached the store", name)
+		}
+	}
+
+	// A cake's colour: set, cleared (explicit null) or left unchanged.
+	cat = &fakeCatalog{}
+	if rec := serveCatalog(t, cat, id, http.MethodPost, "/api/v1/admin/cakes", "chef", "k", `{"name":"A","description":"","colour_id":"`+colourID+`"}`); rec.Code != 201 {
+		t.Fatalf("create with colour: %d %s", rec.Code, rec.Body.String())
+	}
+	if in := cat.lastBody.(catalog.CakeInput); in.ColourID == nil || *in.ColourID != colourID {
+		t.Fatalf("create decoded %+v", in)
+	}
+	if rec := serveCatalog(t, cat, id, http.MethodPost, "/api/v1/admin/cakes", "chef", "k", `{"name":"A","description":"","colour_id":null}`); rec.Code != 201 {
+		t.Fatalf("create with null colour: %d %s", rec.Code, rec.Body.String())
+	}
+	if in := cat.lastBody.(catalog.CakeInput); in.ColourID != nil {
+		t.Fatalf("create null colour decoded %+v", in)
+	}
+	if rec := serveCatalog(t, cat, id, http.MethodPatch, "/api/v1/admin/cakes/c1", "chef", "k", `{"expected_version":1,"colour_id":null}`); rec.Code != 200 {
+		t.Fatalf("clear colour: %d %s", rec.Code, rec.Body.String())
+	}
+	if p := cat.lastBody.(catalog.CakePatch); !p.ColourID.Set || !p.ColourID.Null || p.Name.Set {
+		t.Fatalf("clear decoded %+v", p)
+	}
+	if rec := serveCatalog(t, cat, id, http.MethodPatch, "/api/v1/admin/cakes/c1", "chef", "k", `{"expected_version":1,"colour_id":"`+colourID+`"}`); rec.Code != 200 {
+		t.Fatalf("set colour: %d %s", rec.Code, rec.Body.String())
+	}
+	if p := cat.lastBody.(catalog.CakePatch); !p.ColourID.Set || p.ColourID.Null || p.ColourID.Value != colourID {
+		t.Fatalf("set decoded %+v", p)
+	}
+	if rec := serveCatalog(t, cat, id, http.MethodPatch, "/api/v1/admin/cakes/c1", "chef", "k", `{"expected_version":1,"name":"B"}`); rec.Code != 200 {
+		t.Fatalf("name only: %d %s", rec.Code, rec.Body.String())
+	}
+	if p := cat.lastBody.(catalog.CakePatch); p.ColourID.Set {
+		t.Fatalf("name-only patch decoded a colour: %+v", p)
+	}
+
+	// Refusals: duplicate code, stale version, unknown or archived colour.
+	for name, c := range map[string]struct {
+		err          error
+		method, path string
+		body         string
+		status       int
+		code         string
+	}{
+		"duplicate": {&catalog.ConflictError{Code: "duplicate"}, "POST", "/api/v1/admin/colours", `{"code":"pink","label":"Pink","position":1}`, 409, "DUPLICATE"},
+		"stale":     {&catalog.ConflictError{Code: "stale_version"}, "PATCH", "/api/v1/admin/colours/" + colourID, `{"expected_version":1,"position":2}`, 409, "STALE_VERSION"},
+		"missing":   {catalog.ErrNotFound, "PATCH", "/api/v1/admin/colours/" + colourID, `{"expected_version":1,"position":2}`, 404, "NOT_FOUND"},
+		"archived":  {&catalog.InvalidError{Field: "colour_id", Message: "is not an active colour"}, "PATCH", "/api/v1/admin/cakes/c1", `{"expected_version":1,"colour_id":"` + colourID + `"}`, 422, "INVALID_INPUT"},
+	} {
+		cat := &fakeCatalog{cmdErr: c.err}
+		rec := serveCatalog(t, cat, id, c.method, c.path, "chef", "k", c.body)
+		if rec.Code != c.status || decodeError(t, rec).Error.Code != c.code {
+			t.Errorf("%s: %d %s, want %d %s", name, rec.Code, rec.Body.String(), c.status, c.code)
+		}
+	}
+	cat = &fakeCatalog{replayed: true}
+	if rec := serveCatalog(t, cat, id, http.MethodPost, "/api/v1/admin/colours", "chef", "k", `{"code":"pink","label":"Pink","position":1}`); rec.Code != 201 || rec.Header().Get("Idempotent-Replayed") != "true" {
+		t.Fatalf("replay: %d %q", rec.Code, rec.Header().Get("Idempotent-Replayed"))
+	}
+}
+
+// The public cake carries "colour": null or {code, label, position} only.
+func TestPublicCakeColourShape(t *testing.T) {
+	none, err := json.Marshal(catalog.Cake{ID: "c1", Variants: []catalog.Variant{}})
+	if err != nil || !strings.Contains(string(none), `"colour":null`) {
+		t.Fatalf("no colour = %s, %v", none, err)
+	}
+	with, err := json.Marshal(catalog.Cake{ID: "c1", Colour: &catalog.CakeColour{Code: "pink", Label: "Pink", Position: 10}, Variants: []catalog.Variant{}})
+	if err != nil || !strings.Contains(string(with), `"colour":{"code":"pink","label":"Pink","position":10}`) {
+		t.Fatalf("colour = %s, %v", with, err)
 	}
 }

@@ -877,8 +877,8 @@ use come with GK-032; real recipe data waits for GK-038's measurements.
 **Commands** need the chef capability and a current provider session, an
 `Idempotency-Key` header (1 to 128 visible ASCII characters) and, for an
 existing object, `expected_version`. Bodies are one UTF-8 JSON object with
-lower_snake_case keys, no unknown or repeated fields and no `null` (no catalog
-field is nullable; null is 422). The structural checks win: a `null` on an
+lower_snake_case keys, no unknown or repeated fields and no `null` (null is
+422) except on a field documented as nullable (only a cake's `colour_id`). The structural checks win: a `null` on an
 unknown field is 400 (unknown field), not 422; this holds for every command
 that reads its body this way (catalog, schedule and checkout). A key is scoped to (account, command, path
 resource); the same key and body return the original object, in its current
@@ -896,14 +896,35 @@ public business content, not personal data.
 | `GET /api/v1/admin/cakes`, `/admin/cakes/{id}` | chef, technical support | every state, with versions and archived variants |
 | `GET /api/v1/admin/recipes/versions/{id}` | chef, technical support | one immutable version with its lines |
 | `GET /api/v1/admin/flavours`, `/admin/allergen-notices/current`, `/admin/sizes` | chef, technical support | |
+| `GET /api/v1/admin/colours` | chef, technical support | every colour, archived included: `{id, code, label, position, archived_at, version}` by position, then label |
+| `POST /api/v1/admin/colours` | chef | `{code, label, position}` → 201; a used code (archived included) is 409 `DUPLICATE` |
+| `PATCH /api/v1/admin/colours/{id}` | chef | `{expected_version, label?, position?, archived?}` (at least one; none nullable; `code` cannot change); `archived: true` archives, `false` restores |
 | `POST /api/v1/admin/flavours` | chef | `{name}` |
 | `POST /api/v1/admin/allergen-notices` | chef | `{body}`: a new notice version |
-| `POST /api/v1/admin/cakes` | chef | `{name, description}`: a draft |
-| `PATCH /api/v1/admin/cakes/{id}` | chef | `{expected_version, name?, description?}` (not nullable) |
+| `POST /api/v1/admin/cakes` | chef | `{name, description, colour_id?}`: a draft; `colour_id` a colour ID or `null` (none) |
+| `PATCH /api/v1/admin/cakes/{id}` | chef | `{expected_version, name?, description?, colour_id?}`; name and description not nullable; `colour_id: null` clears the colour, absent keeps it |
 | `POST /api/v1/admin/cakes/{id}/state` | chef | `{expected_version, state: active\|archived}` |
 | `POST /api/v1/admin/cakes/{id}/variants` | chef | `{flavour_id, size_code, stock_mode}` |
 | `POST /api/v1/admin/variants/{id}/archive` | chef | `{expected_version}` |
 | `POST /api/v1/admin/recipes/versions` | chef | `{variant_id, expected_version, price_minor, servings_min, servings_max, coating, composition, allergen_notice_id, allergens, lines}` |
+
+**Colours** (`0028_catalog_colours.sql`; K01 amendment 2026-11-05, from the
+Creator-approved GK-016 r01c sketch) feed the shop's Colour filter. The chef
+keeps the list: a `code` (`^[a-z0-9][a-z0-9-]{0,39}$`, not `all`, the filter's
+"All colours" value; unique among all colours, archived ones included, and
+never changed), a `label` (1 to 40 Unicode code points, single line, no
+surrounding spaces: refused, not trimmed) and a `position` (0 to 10000, the
+filter order). Colours are archived, never deleted, and can be restored. A cake
+has at most one colour (`colour_id`); an unknown or archived colour is 422
+`INVALID_INPUT` (`colour_id is not an active colour`). Every cake in
+`GET /api/v1/cakes` and `/cakes/{id}` carries `"colour": {"code", "label",
+"position"}` or `"colour": null` (no colour, or an archived one); staff reads
+add the colour's `id` and `archived_at`. Nothing is seeded: the sketch's
+starting list (Pink, Silver, Red, Chocolate, White) is for the chef to create
+(chef screens are GK-018). The 0009 cake create/update functions stay for the
+previous build and leave the colour unchanged; a body without `colour_id`
+hashes as before, so a retry across a rolling deploy replays. Colours are
+public catalogue content, not personal data.
 
 Errors: 400 `BAD_REQUEST` / `IDEMPOTENCY_KEY_REQUIRED`, 403 `FORBIDDEN`, 404,
 409 `STALE_VERSION` / `KEY_REUSED` / `DUPLICATE` / `CONFLICT`, 413, 422
