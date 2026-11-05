@@ -653,6 +653,90 @@
 	white-space: nowrap;
 	font: 500 13px/1 var(--mono);
 }
+/* Favourites heart on a card (approved r01c sketch). */
+.shop .save {
+	position: absolute;
+	z-index: 4;
+	top: 12px;
+	right: 12px;
+	display: grid;
+	place-items: center;
+	width: 44px;
+	height: 44px;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: #ffffffb8;
+	-webkit-backdrop-filter: blur(12px);
+	backdrop-filter: blur(12px);
+	box-shadow:
+		var(--glass-ring),
+		0 4px 12px -6px #1414164d;
+	color: var(--ink);
+	cursor: pointer;
+	transition:
+		transform 0.35s var(--ease),
+		translate 0.7s var(--ease),
+		background 0.3s,
+		color 0.3s;
+}
+.shop .save .icon {
+	width: 18px;
+	height: 18px;
+}
+.shop .save[aria-pressed='true'] {
+	background: var(--ink);
+	color: #fff;
+}
+.shop .save[aria-pressed='true'] svg {
+	fill: #fff;
+	stroke: #fff;
+}
+@media (hover: hover) and (pointer: fine) {
+	.shop .save:hover:not(:disabled) {
+		background: #fff;
+		transform: scale(1.07);
+	}
+	.shop .save[aria-pressed='true']:hover:not(:disabled) {
+		background: #2d2e33;
+	}
+	.shop .product:hover .save {
+		translate: 0 -4px;
+	}
+}
+.shop .product:has(> a:focus-visible) .save {
+	translate: 0 -4px;
+}
+@media (prefers-reduced-transparency: reduce) {
+	.shop .save {
+		-webkit-backdrop-filter: none;
+		backdrop-filter: none;
+		background: #fbfbfc;
+	}
+}
+/* Status message ("Saved on this device for a year."). Empty, it stays in
+   the accessibility tree (invisible) so new messages are announced. */
+.shop .toast {
+	position: fixed;
+	z-index: 60;
+	bottom: 24px;
+	left: 16px;
+	right: 16px;
+	width: fit-content;
+	max-width: calc(100% - 32px);
+	margin: 0 auto;
+	padding: 13px 22px;
+	border-radius: 999px;
+	background: var(--ink);
+	box-shadow: var(--sh-2);
+	font: 500 13px/1.4 var(--sans);
+	color: #fff;
+}
+.shop .toast:empty {
+	padding: 0;
+	opacity: 0;
+	pointer-events: none;
+}
 .shop .product .meta {
 	display: flex;
 	flex-wrap: wrap;
@@ -1438,6 +1522,10 @@
 	}
 }
 @media (max-width: 560px) {
+	.shop .save {
+		top: 8px;
+		right: 8px;
+	}
 	.shop .page-title {
 		margin: 32px 0 26px;
 	}
@@ -1498,12 +1586,19 @@
 		animation: none !important;
 		transition: none !important;
 	}
+	.shop .product:hover .save,
+	.shop .product:has(> a:focus-visible) .save {
+		translate: none;
+	}
 }
 @media (forced-colors: active) {
 	.shop .choice-chip input:checked + span,
 	.shop .slot-option input:checked + span,
 	.shop .mode-card input:checked + span,
 	.shop .calendar-days .day[aria-pressed='true'] {
+		outline: 3px solid Highlight;
+	}
+	.shop .save[aria-pressed='true'] {
 		outline: 3px solid Highlight;
 	}
 }
