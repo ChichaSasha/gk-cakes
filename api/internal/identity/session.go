@@ -142,17 +142,6 @@ func (d *Directory) Resolve(ctx context.Context, c Claims) (Actor, error) {
 	return a, nil
 }
 
-// FreshSignIn is how recently a customer must have signed in for account
-// deletion (GK-016 r02b answer 3; 10 minutes is the sketch's example).
-const FreshSignIn = 10 * time.Minute
-
-// SignedInSince reports whether the actor's session was authenticated at
-// or after now minus max (and not in the future beyond a minute's skew).
-func (a Actor) SignedInSince(now time.Time, max time.Duration) bool {
-	return !a.AuthenticatedAt.IsZero() && !a.AuthenticatedAt.After(now.Add(time.Minute)) &&
-		now.Sub(a.AuthenticatedAt) <= max
-}
-
 // StaffMember is one active capability grant.
 type StaffMember struct {
 	AccountID  string    `json:"account_id"`

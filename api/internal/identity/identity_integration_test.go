@@ -420,3 +420,46 @@ func TestRoutesEndToEnd(t *testing.T) {
 		t.Fatal("a token signature reached the logs")
 	}
 }
+
+// GK-016 r02b (0033): resolving records sign-in activity at most once an
+// hour (K09 inactivity), passes the token's sign-in instant on, and a
+// deleted account resolves to ErrDeleted with its actor; the previous API
+// revision's identity_resolve still refuses it as disabled.
+func TestResolveRecordsActivityAndDeletedAccounts(t *testing.T) {
+	h := newHarness(t)
+	c := claims(alice)
+	c.AuthenticatedAt = time.Date(2026, 11, 5, 9, 0, 0, 0, time.UTC)
+	a, err := h.dir.Resolve(h.ctx, c)
+	if err != nil || !a.AuthenticatedAt.Equal(c.AuthenticatedAt) {
+		t.Fatalf("resolve: %+v %v", a, err)
+	}
+	active := func() time.Time {
+		t.Helper()
+		var at time.Time
+		if err := h.admin.QueryRow(h.ctx, "SELECT last_active_at FROM business.account WHERE id = $1::uuid", a.AccountID).Scan(&at); err != nil {
+			t.Fatal(err)
+		}
+		return at
+	}
+	first := active()
+	if _, err := h.dir.Resolve(h.ctx, c); err != nil || !active().Equal(first) {
+		t.Fatalf("activity rewritten within the hour: %v", err)
+	}
+	if _, err := h.admin.Exec(h.ctx, "UPDATE business.account SET last_active_at = now() - interval '2 hours' WHERE id = $1::uuid", a.AccountID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.dir.Resolve(h.ctx, c); err != nil || !active().After(first.Add(-time.Minute)) {
+		t.Fatalf("activity not refreshed after an hour: %v", err)
+	}
+	if _, err := h.admin.Exec(h.ctx, "UPDATE business.account SET disabled_at = now(), deleted_at = now() WHERE id = $1::uuid", a.AccountID); err != nil {
+		t.Fatal(err)
+	}
+	gone, err := h.dir.Resolve(h.ctx, c)
+	if !errors.Is(err, identity.ErrDeleted) || gone.AccountID != a.AccountID || gone.Subject != alice {
+		t.Fatalf("deleted account: %+v %v", gone, err)
+	}
+	var disabled bool
+	if err := h.api.QueryRow(h.ctx, "SELECT account_disabled FROM business.identity_resolve($1::uuid)", alice).Scan(&disabled); err != nil || !disabled {
+		t.Fatalf("previous identity_resolve on a deleted account: disabled=%v %v", disabled, err)
+	}
+}
