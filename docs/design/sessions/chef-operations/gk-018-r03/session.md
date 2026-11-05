@@ -4,7 +4,8 @@ Status: **Not approved.** r03 (0e1e954) was drafted from r02b (e26a37c). It appl
 r02b independent review left for r03, and it makes the chef screens match the payment, order and refund
 states that are now live in the backend. An independent design reviewer returned **revise** on 0e1e954
 (3 major, 5 minor, 3 nits). r03b, in the same folder, fixes all of them; see “r03b changes”. r03b still
-needs a fresh review and exact-version Creator approval. Example data only. The prototype saves, sends, charges and refunds nothing, and it makes
+needs a fresh review and exact-version Creator approval. Round 2 of that review (on ac8456d) left one major
+issue, fixed in r03b2; see “r03b2 change”. Example data only. The prototype saves, sends, charges and refunds nothing, and it makes
 no network calls. `../gk-018-r01/` and `../gk-018-r02/` are unchanged.
 
 - Card: GK-018 https://trello.com/c/jjP7btz9. Branch `sasha-chycha/gk-018-chef-ops-design`, base head
@@ -82,7 +83,7 @@ amended. The note now adds that the live backend refuses to start such a payment
 | `unknown` | Payment result unknown | GK-1042 |
 | `unknown` with `mismatch_reason` | **Payment doesn't match the order** · held (never confirmed, place held, no second payment) | GK-1083 |
 | `succeeded` | Paid | everywhere |
-| `failed` / `cancelled` | Payment failed · may try again / Payment not completed | GK-1080 |
+| `failed` / `cancelled` | Payment failed · may try again / Payment not completed: **only within the 15-minute hold; afterwards the order is released** (below) | GK-1080, GK-1086 |
 | order `awaiting_payment` | Waiting for payment (+ the collection state) | list, pill |
 | order `confirmation_pending` | **Paid · confirming the order** (nothing to do yet; no promise until it shows Paid) | GK-1079 |
 | order `paid_awaiting_agreement` | Paid late · your decision | GK-1039 |
@@ -131,8 +132,12 @@ support's home, renamed in the navigation. Groups:
      the place held, until a manager rule exists.
 4. **Technical (Sasha)** (r03b): jobs in attention for setup reasons, with no money decision.
    - The payment provider refused the worker's key (401): fix the key, redeploy, requeue.
-   - A payment page never created (`expired_before_dispatch`, GK-1086): the journal was down, so no
-     provider call was made and nothing was charged. The customer can start again.
+   - A payment page never created (GK-1086, r03b2). The journal went down before the first provider call
+     was admitted. The never-dispatched cleanup closed the created collection at 15 minutes (`cancelled`,
+     `never_dispatched`), and the hold review released the order (`cancelled`, `payment_not_completed`).
+     Nothing was charged; Elina creates a new order and link. `expired_before_dispatch` (payment failed, job
+     in attention) only happens when the hold review itself was delayed and a late first call has under
+     31 minutes of page lifetime left.
    - The recovery journal was unavailable: jobs waited and continued by themselves; requeue only jobs that
      reached attention.
 5. **Emails that didn't arrive**: the bounced-email flow (Creator answer 5), unchanged.
@@ -149,6 +154,23 @@ number as the queue's Money group; fulfilment doesn't see it. Labels depend on t
 The order list adds “Needs a manager”, “Waiting for payment or confirming” and “Paid late” filters, and the
 Money column uses the new states. The order pages show each case as a banner, progress steps, a Money row
 and a refund chip.
+
+## r03b2 change (round 2 of the review, on ac8456d)
+
+- **Major — GK-1086 contradicted the hold review.** r03b showed GK-1086 still waiting for payment with a
+  failed collection (`expired_before_dispatch`). The backend's never-dispatched cleanup closes a `created`
+  collection that had no admitted call once it's 15 minutes old. The hold review then releases the order.
+  GK-1086 now matches that:
+  - order: `cancelled`, `payment_not_completed`, “Not paid · released”, released 08:20;
+  - collection: `cancelled`, `never_dispatched`;
+  - action: “Create a new order and link”.
+
+  The order page no longer has an `expired_before_dispatch` waiting state. The Technical card says the
+  cleanup normally closes such payments at 15 minutes, and `expired_before_dispatch` only happens when the
+  hold review itself was delayed. “Payment failed · may try again” now says “within the 15-minute hold”,
+  and the state table's row is narrowed the same way.
+- **Nits:** GK-1087's “Refund needs attention” is labelled as a reading. Today's workload reads “8 cakes
+  to make, incl. 1 pending decision”. The audit list records the GK-1086 closure at 08:20.
 
 ## r03b changes (independent review of 0e1e954, verdict revise)
 
@@ -168,7 +190,8 @@ and a refund chip.
   confirming, and that no date is moved automatically. Confirm and Return £90 are marked “Preview only. The
   live action comes with GK-026.”
 - **M3 — Needs attention.** The “Still checking” note is corrected (above). New rows cover a definitively
-  failed refund, `requires_action`, `expired_before_dispatch` and a 401 key refusal. There's a new
+  failed refund, `requires_action`, a payment page never created (GK-1086, corrected in r03b2) and a 401
+  key refusal. There's a new
   “Technical (Sasha)” group (key refused, journal down, requeue). The Money note now names the automatic
   late-capture full return.
 - **Minor 1:** 192–216 h shows one line, “Must start and finish paying by …”, with a warning that slower
@@ -185,8 +208,8 @@ and a refund chip.
   - The core.js comment on GK-1078 now says “about 213 hours”.
   - “Check again” moves focus to a status message.
   - Open question 4 has suggested customer wording.
-  - The technical example times are consistent with the 10:30 checks (key refused 10:35; GK-1086
-    prepared 08:06, journal down until 09:50).
+  - The technical example times are consistent with the 10:30 checks (key refused 10:35; journal down
+    08:10–09:50; GK-1086 started 08:05, closed and released 08:20).
 
 ## Buttons and destinations (r03b additions and changes)
 
@@ -223,8 +246,10 @@ still applies to everything not listed here. “Later” means the live action i
 - **The released (payment not completed) GK-1082 shows “Cancelled · full return”**, not “Not paid ·
   released”, because money did arrive. The backend keeps `cancel_reason = payment_not_completed`.
 - Paid late is counted in the day's workload as well as the standard places. It can't be started until
-  Elina decides, so “cakes to make” includes a cake that may be returned instead.
-- The technical-job examples (key refused, journal outage, `expired_before_dispatch`) are illustrative
+  Elina decides, so Today reads “8 cakes to make, incl. 1 pending decision”.
+- “Refund needs attention” on GK-1087 (a definitively failed refund in attention) is the sketch's reading:
+  the README doesn't say which order-level refund state such a case reports (see the precedence above).
+- The technical-job examples (key refused, journal outage, the never-dispatched GK-1086) are illustrative
   example data. The README names the behaviour, not these times.
 - In the 192–216 h band the start window can be very short. r03b warns, but doesn't offer to lengthen it
   (that would be short notice under 192 h); see question 1.
@@ -282,7 +307,7 @@ GK-1039 form (filled in) and the mobile shots were taken through DevTools device
 are 390 px, cut at 4200 px tall. With `--window-size=390`, headless Chrome laid the page out wider than
 390 px and cropped it, so those images were discarded.
 
-All 18 were re-shot for r03b (the preview bar now reads “r03b”):
+All 18 were re-shot for r03b2 (the preview bar reads “r03b2” after the round-2 fix):
 
 - New order: `new-order-ordinary-192-216h-desktop`, `new-order-ordinary-desktop`,
   `new-order-short-notice-desktop`, `new-order-short-notice-mobile`.
@@ -317,8 +342,10 @@ All 18 were re-shot for r03b (the preview bar now reads “r03b”):
     status line.
   - **192–216 h:** Fri 30 Oct 10:00 reads “Must start and finish paying by Thu 22 Oct, 11:00” with the
     slower-methods warning, and GK-1078 reads “must start and finish paying by Thu 22 Oct, 15:00”.
-  - **GK-1086** reads “The payment page was never created … nothing was charged … Not paid and no place
-    held”. GK-1087 shows “Refund needs attention”.
+  - **GK-1086** (r03b2) is “Not paid · released”: the payment page was never created, the cleanup closed
+    it after 15 minutes, nothing was charged, with the next step “create a new order and link” and a button
+    for it. Its Technical card says the cleanup normally closes such payments at 15 minutes. GK-1087 shows
+    “Refund needs attention” (a reading).
 - The r03 scripted cases still pass:
   - Sat 31 Oct shows the two deadlines (start Fri 23 Oct 10:45, paid in full 13:30).
   - Short notice needs the tick and reason; “Paid in full by” after handover − 2 h is refused.
