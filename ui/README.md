@@ -265,8 +265,12 @@ shows "Try again", never a crash, and a cake that is not active is a 404 with
   Only cake IDs are kept, in `localStorage` (`gk-shop-favourites`, at most
   200), until the end of the same London date one year after the last save or
   removal (29 February clamps to 28 February; contracts K09); reading never
-  extends it, and an expired or damaged entry is removed. Other tabs follow
-  through the storage event. `/favourites` (noindex) shows the saved cakes as
+  extends it, an expired or damaged entry is removed and a stored expiry
+  beyond a year from now is capped. They are read again before every change,
+  when the page is shown again and when another tab changes them, so
+  favourites that expired while a page stayed open never come back. A browser
+  that blocks storage gets "This browser cannot keep things on this device."
+  and nothing changes. `/favourites` (noindex) shows the saved cakes as
   current shop cards, with the date they are kept until; cakes no longer in the
   collection are left out, and removing one moves focus to the next heart.
   Adding favourites to an account (K02 `PUT/DELETE /me/favourites/{cake_id}`)

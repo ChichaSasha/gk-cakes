@@ -714,24 +714,28 @@
 		background: #fbfbfc;
 	}
 }
-/* Status message ("Saved on this device for a year."). */
+/* Status message ("Saved on this device for a year."). Empty, it stays in
+   the accessibility tree (invisible) so new messages are announced. */
 .shop .toast {
 	position: fixed;
 	z-index: 60;
 	bottom: 24px;
-	left: 50%;
+	left: 16px;
+	right: 16px;
+	width: fit-content;
 	max-width: calc(100% - 32px);
-	margin: 0;
+	margin: 0 auto;
 	padding: 13px 22px;
 	border-radius: 999px;
 	background: var(--ink);
 	box-shadow: var(--sh-2);
 	font: 500 13px/1.4 var(--sans);
 	color: #fff;
-	transform: translateX(-50%);
 }
 .shop .toast:empty {
-	display: none;
+	padding: 0;
+	opacity: 0;
+	pointer-events: none;
 }
 .shop .product .meta {
 	display: flex;
@@ -1581,6 +1585,10 @@
 	.shop *::after {
 		animation: none !important;
 		transition: none !important;
+	}
+	.shop .product:hover .save,
+	.shop .product:has(> a:focus-visible) .save {
+		translate: none;
 	}
 }
 @media (forced-colors: active) {

@@ -23,7 +23,7 @@
 		const button = e.currentTarget as HTMLButtonElement;
 		const result = favourites.toggle(id);
 		if (result === null) {
-			toast.show('This browser can’t keep favourites on this device.');
+			toast.show('This browser cannot keep things on this device.');
 			return;
 		}
 		toast.show(result ? 'Saved on this device for a year.' : 'Removed from favourites.');

@@ -7,6 +7,7 @@
 	import { resolve } from '$app/paths';
 	import { tick } from 'svelte';
 	import { dateLabel } from '../../../lib/checkout/format';
+	import { focusAfterRemoval, savedListings } from '../../../lib/shop/favourites';
 	import { favourites } from '../../../lib/shop/favourites.svelte';
 	import { londonDate } from '../../../lib/shop/picker';
 	import CakeCard from '../../../lib/shop/ui/CakeCard.svelte';
@@ -15,26 +16,24 @@
 
 	let { data }: PageProps = $props();
 	let grid = $state<HTMLUListElement>();
+	let heading = $state<HTMLHeadingElement>();
 
 	const saved = $derived(favourites.state.ids);
-	const items = $derived.by(() => {
-		if (!data.listings.ok) return [];
-		const byId: Record<string, (typeof data.listings.data.listings)[number]> = {};
-		for (const l of data.listings.data.listings) byId[l.id] = l;
-		return saved.map((id) => byId[id]).filter((l) => l !== undefined);
-	});
+	const items = $derived(data.listings.ok ? savedListings(saved, data.listings.data.listings) : []);
 	const until = $derived(
 		favourites.state.expires ? dateLabel(londonDate(favourites.state.expires)) : ''
 	);
 
-	// The removed card goes away: focus moves to the next heart (or the
-	// previous one, or the page when none are left).
+	// The removed card goes away: focus moves to the next heart (or the new
+	// last one), or to the page heading when none are left (as the sketch).
 	async function removed(button: HTMLButtonElement) {
 		const before = [...(grid?.querySelectorAll<HTMLButtonElement>('.save') ?? [])];
-		const i = before.indexOf(button);
+		const target = focusAfterRemoval(before.indexOf(button), before.length);
 		await tick();
-		const rest = [...(grid?.querySelectorAll<HTMLButtonElement>('.save') ?? [])];
-		(rest[Math.min(Math.max(i, 0), rest.length - 1)] ?? document.getElementById('main'))?.focus();
+		const rest = grid?.querySelectorAll<HTMLButtonElement>('.save');
+		const next = target === null ? undefined : rest?.[target];
+		if (next) next.focus();
+		else heading?.focus();
 	}
 </script>
 
@@ -45,7 +44,7 @@
 
 <div class="wrap">
 	<div class="page-title">
-		<h1>Your favourites</h1>
+		<h1 tabindex="-1" bind:this={heading}>Your favourites</h1>
 		<p>A little collection of cakes you love.</p>
 	</div>
 
@@ -66,6 +65,9 @@
 		<div class="empty">
 			<h2>Find something you love</h2>
 			<p>Tap the heart on a cake to save it on this device.</p>
+			{#if !favourites.kept}
+				<p>This browser cannot keep things on this device, so favourites can’t be saved here.</p>
+			{/if}
 			<a class="button primary" href={resolve('/(shop)/shop')}
 				>Explore the cakes <span class="arrow" aria-hidden="true">→</span></a
 			>

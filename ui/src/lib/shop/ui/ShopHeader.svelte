@@ -86,7 +86,7 @@
 			<a href={l.href} aria-current={current(l.path)}>{l.label}</a>
 		{/each}
 		<a href={resolve('/(shop)/bag')} aria-current={current('/bag')}>Bag</a>
-		<a href={resolve('/(shop)/favourites')} aria-current={current('/favourites')}>Favourites</a>
 		<a href={resolve('/account')}>Your account</a>
+		<a href={resolve('/(shop)/favourites')} aria-current={current('/favourites')}>Favourites</a>
 	</nav>
 </header>

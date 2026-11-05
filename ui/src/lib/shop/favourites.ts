@@ -37,12 +37,73 @@ export function parseFavourites(raw: string | null, now: number): FavouritesStat
 	if (!Array.isArray(ids) || typeof expires !== 'string') return emptyFavourites();
 	const until = Date.parse(expires);
 	if (!Number.isFinite(until) || until <= now) return emptyFavourites();
+	// Never kept longer than a save made now would be (a damaged or edited entry).
+	const latest = expiryAfter(now);
+	const keptUntil = until > Date.parse(latest) ? latest : expires;
 	const kept: string[] = [];
 	for (const id of ids) {
 		if (typeof id === 'string' && isId(id) && !kept.includes(id)) kept.push(id);
 		if (kept.length === MAX_FAVOURITES) break;
 	}
-	return kept.length > 0 ? { ids: kept, expires } : emptyFavourites();
+	return kept.length > 0 ? { ids: kept, expires: keptUntil } : emptyFavourites();
+}
+
+/** The parts of the Web Storage API used here (localStorage, or a test double). */
+export type DeviceStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
+/**
+ * The favourites stored on this device at `now`. An expired or damaged entry
+ * is removed (reading never extends the year). Null when the browser does
+ * not let this page use its storage.
+ */
+export function readFavourites(storage: DeviceStorage, now: number): FavouritesState | null {
+	try {
+		const raw = storage.getItem(FAVOURITES_KEY);
+		const state = parseFavourites(raw, now);
+		if (raw !== null && state.ids.length === 0) storage.removeItem(FAVOURITES_KEY);
+		return state;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Presses the heart on `id` at `now`, starting from what is stored now (so
+ * favourites that expired while a page stayed open never come back). Returns
+ * the new favourites, or null when the browser could not keep the change.
+ */
+export function storeToggle(
+	storage: DeviceStorage,
+	id: string,
+	now: number
+): FavouritesState | null {
+	const current = readFavourites(storage, now);
+	if (current === null) return null;
+	const next = toggled(current, id, now);
+	try {
+		if (next.ids.length === 0) storage.removeItem(FAVOURITES_KEY);
+		else storage.setItem(FAVOURITES_KEY, JSON.stringify(next));
+	} catch {
+		return null;
+	}
+	return next;
+}
+
+/** The saved cakes that are still in the collection, in saved order. */
+export function savedListings<T extends { id: string }>(ids: string[], all: T[]): T[] {
+	const byId: Record<string, T> = {};
+	for (const l of all) byId[l.id] = l;
+	return ids.map((id) => byId[id]).filter((l): l is T => l !== undefined);
+}
+
+/**
+ * Which heart gets focus after the one at `removed` (of `before` hearts) is
+ * removed: the next one, else the new last one; null when none are left.
+ */
+export function focusAfterRemoval(removed: number, before: number): number | null {
+	const remaining = before - 1;
+	if (remaining <= 0) return null;
+	return Math.min(Math.max(removed, 0), remaining - 1);
 }
 
 /** The favourites after the heart on `id` is pressed, saved or removed at `now`. */
