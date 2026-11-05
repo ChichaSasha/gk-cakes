@@ -150,7 +150,7 @@ describe('role-safe wording, free orders and released orders (review fixes)', ()
 		const supportRow = (over: Partial<StaffOrderRow>) =>
 			row({ payment_state: undefined, refund: undefined, total_minor: undefined, ...over });
 		expect(statusOf(supportRow({ lifecycle: 'awaiting_payment' }), 'technical_support').text).toBe(
-			'Waiting for payment'
+			'Waiting for payment or confirmation'
 		);
 		expect(
 			statusOf(
@@ -186,6 +186,80 @@ describe('role-safe wording, free orders and released orders (review fixes)', ()
 			)
 		).toBe(false);
 		expect(isReleasedUnpaid(row(), 'chef')).toBe(false);
+	});
+});
+
+describe('round-2 review fixes', () => {
+	it('never says Paid for free orders, and support wording claims no payment', () => {
+		const free = row({ payment_requirement: 'none', total_minor: 0, payment_state: null });
+		expect(statusOf(free, 'chef').text).toBe('Free · automatic start later');
+		const support = row({
+			payment_requirement: undefined,
+			payment_state: undefined,
+			total_minor: undefined
+		});
+		expect(statusOf(support, 'technical_support').text).toBe('Confirmed · automatic start later');
+		expect(
+			statusOf({ ...support, lifecycle: 'confirmation_pending' }, 'technical_support').text
+		).toBe('Confirming the order');
+		expect(statusOf({ ...support, lifecycle: 'awaiting_payment' }, 'technical_support').text).toBe(
+			'Waiting for payment or confirmation'
+		);
+		expect(statusOf(row(), 'chef').text).toBe('Paid · automatic start later');
+	});
+
+	it('says why a manager case is one, and never guesses an unknown refund state', () => {
+		expect(moneyText(row({ needs_attention: true, attention: ['refund_quarantine'] }))).toBe(
+			'£90 · refund made outside GK Cakes'
+		);
+		expect(moneyText(row({ needs_attention: true, attention: ['refund_needs_attention'] }))).toBe(
+			'£90 · refund needs a manager'
+		);
+		expect(
+			moneyText(
+				row({
+					lifecycle: 'cancelled',
+					refund: { state: 'something_new', target_minor: 9000, succeeded_minor: 9000 }
+				})
+			)
+		).toBe('Refund £90');
+	});
+});
+
+describe('round-2 review fixes', () => {
+	it('never says Paid for free orders, and support wording claims no payment', () => {
+		const free = row({ payment_requirement: 'none', total_minor: 0, payment_state: null });
+		expect(statusOf(free, 'chef').text).toBe('Free · automatic start later');
+		const support = row({
+			payment_requirement: undefined,
+			payment_state: undefined,
+			total_minor: undefined
+		});
+		expect(statusOf(support, 'technical_support').text).toBe('Confirmed · automatic start later');
+		expect(
+			statusOf({ ...support, lifecycle: 'confirmation_pending' }, 'technical_support').text
+		).toBe('Confirming the order');
+		expect(statusOf({ ...support, lifecycle: 'awaiting_payment' }, 'technical_support').text).toBe(
+			'Waiting for payment or confirmation'
+		);
+		expect(statusOf(row(), 'chef').text).toBe('Paid · automatic start later');
+	});
+
+	it('says why a manager case is one, and never guesses an unknown refund state', () => {
+		expect(moneyText(row({ needs_attention: true, attention: ['refund_quarantine'] }))).toBe(
+			'£90 · refund made outside GK Cakes'
+		);
+		expect(moneyText(row({ needs_attention: true, attention: ['refund_needs_attention'] }))).toBe(
+			'£90 · refund needs a manager'
+		);
+		expect(
+			moneyText(
+				row({
+					lifecycle: 'cancelled',
+					refund: { state: 'something_new', target_minor: 9000, succeeded_minor: 9000 }
+				})
+			)
+		).toBe('Refund £90');
 	});
 });
 
@@ -234,13 +308,13 @@ describe('status, production and money (sketch wording)', () => {
 			'Payment result unknown'
 		);
 		expect(waiting({ attention: ['payment_mismatch'] })).toBe('Payment doesn’t match · held');
-		// Technical support has no payment_state: the plain stage.
+		// Technical support has no payment_state: wording true for free and paid orders.
 		expect(
 			statusOf(
 				row({ lifecycle: 'awaiting_payment', payment_state: undefined }),
 				'technical_support'
 			).text
-		).toBe('Waiting for payment');
+		).toBe('Waiting for payment or confirmation');
 	});
 
 	it('tells released unpaid orders from released orders whose money is returned', () => {

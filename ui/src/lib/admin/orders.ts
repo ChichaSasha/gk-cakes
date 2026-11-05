@@ -340,13 +340,27 @@ export function statusOf(
 			return { stage, text: WAITING.unknown, released: false };
 		}
 		if (free) return { stage, text: 'Free · not confirmed yet', released: false };
-		// Only the chef's rows carry the payment state; others get the plain stage.
-		if (view !== 'chef') return { stage, text: STAGES.awaiting, released: false };
+		// Only the chef's rows say whether an order is free or how its payment
+		// is going; others get wording true for both.
+		if (view !== 'chef') {
+			return { stage, text: 'Waiting for payment or confirmation', released: false };
+		}
 		const p = o.payment_state;
 		return { stage, text: (p && WAITING[p]) || 'Waiting for payment · link sent', released: false };
 	}
-	if (stage === 'confirming' && free) {
-		return { stage, text: 'Free · confirming the order', released: false };
+	if (stage === 'confirming' && (free || view !== 'chef')) {
+		return {
+			stage,
+			text: free ? 'Free · confirming the order' : 'Confirming the order',
+			released: false
+		};
+	}
+	if (stage === 'confirmed' && (free || view !== 'chef')) {
+		return {
+			stage,
+			text: free ? 'Free · automatic start later' : 'Confirmed · automatic start later',
+			released: false
+		};
 	}
 	if (stage === 'agreement') {
 		return {
@@ -432,9 +446,14 @@ export function moneyText(o: StaffOrderRow): string {
 		if (r.state === 'partly_returned') {
 			return `Partly refunded · ${m(r.succeeded_minor)} of ${m(r.target_minor)}`;
 		}
-		return `Refunded ${m(r.succeeded_minor)}`;
+		if (r.state === 'returned') return `Refunded ${m(r.succeeded_minor)}`;
+		return `Refund ${m(r.target_minor)}`;
 	}
-	return o.total_minor != null ? m(o.total_minor) : '';
+	const total = o.total_minor != null ? m(o.total_minor) : '';
+	// A manager case the money cell doesn't otherwise explain (r03b2 ATTENTION wording).
+	if (o.attention?.includes('refund_quarantine')) return `${total} · refund made outside GK Cakes`;
+	if (o.attention?.includes('refund_needs_attention')) return `${total} · refund needs a manager`;
+	return total;
 }
 
 /** The Cake column: each line's cake (with quantity when more than one). */

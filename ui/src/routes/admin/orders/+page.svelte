@@ -62,6 +62,9 @@
 	let showReleased = $state(params.get('released') === 'shown');
 	let term = $state('');
 	let revision = 0;
+	// False once the page is left, so a late answer never redirects elsewhere.
+	let mounted = true;
+	const isActive = () => mounted;
 
 	const filters = $derived(view ? statusFilters(view) : []);
 	const showMoney = $derived(view === 'chef');
@@ -72,7 +75,8 @@
 			(o) =>
 				matchesSearch(o, term) && (!mode || o.fulfillment_mode === mode) && matchesStatus(o, filter)
 		);
-		if (showReleased) return { shown: matching, hidden: 0 };
+		// Only the chef's rows can tell an unpaid release from a returned payment.
+		if (showReleased || v !== 'chef') return { shown: matching, hidden: 0 };
 		const shown = matching.filter((o) => !isReleasedUnpaid(o, v));
 		return { shown, hidden: matching.length - shown.length };
 	});
@@ -88,7 +92,7 @@
 			rows = list;
 			phase = 'ready';
 		} catch (e) {
-			if (rev !== revision || (await ended(e))) return;
+			if (rev !== revision || !isActive() || (await ended(e))) return;
 			phase = 'error';
 			problemText =
 				e instanceof Error && e.message.startsWith('more than')
@@ -119,13 +123,16 @@
 			phase = 'loading';
 			try {
 				const me = await apiGet<Me>('/api/v1/admin/me', { baseUrl: api.baseUrl, token: api.token });
+				if (!isActive()) return;
 				view = viewOf(me.capabilities);
 				if (!view) {
 					problem = 'This account has no staff access.';
 					return;
 				}
+				// A shared link may name a chip this role doesn't have.
+				if (!statusFilters(view).some(([k]) => k === filter)) filter = 'all';
 			} catch (e) {
-				if (await ended(e)) return;
+				if (!isActive() || (await ended(e))) return;
 				problemText = 'The orders could not be loaded right now.';
 				phase = 'error';
 				return;
@@ -147,7 +154,7 @@
 
 	function changePeriod() {
 		keepInUrl();
-		void load();
+		void start();
 	}
 
 	onMount(() => {
@@ -167,6 +174,7 @@
 		});
 		return () => {
 			active = false;
+			mounted = false;
 			unsubscribe();
 		};
 	});
@@ -234,10 +242,12 @@
 						>
 					{/each}
 				</div>
-				<label class="check"
-					><input type="checkbox" bind:checked={showReleased} onchange={keepInUrl} /> Show released orders
-					that weren’t paid</label
-				>
+				{#if view === 'chef'}
+					<label class="check"
+						><input type="checkbox" bind:checked={showReleased} onchange={keepInUrl} /> Show released
+						orders that weren’t paid</label
+					>
+				{/if}
 			</form>
 			<p class="small strong" aria-live="polite">
 				{phase === 'ready' && view
@@ -300,7 +310,9 @@
 								<tr>
 									<td colspan={showMoney ? 7 : 6} class="empty-row"
 										>No orders match{term.trim() ? ` “${term.trim()}”` : ''}. Try another name,
-										order ID or date range.</td
+										order ID or date range.{listed.hidden
+											? ' Released orders that weren’t paid are hidden; tick “Show released orders that weren’t paid” to include them.'
+											: ''}</td
 									>
 								</tr>
 							{/each}

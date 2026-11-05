@@ -331,11 +331,14 @@ API's longest range; this week; next week), How (handover mode) and the
 status chips ("Needs a manager" = a refund needing attention, a mismatching
 payment or a refund made outside GK Cakes; paid late has its own chip);
 released orders nobody paid for are hidden unless "Show released orders that
-weren't paid" is ticked (Sasha's answer to r03 Q5). Search matches the
+weren't paid" is ticked (Sasha's answer to r03 Q5; the chef's view only, as
+only the chef's rows can tell an unpaid release from a returned payment). Search matches the
 loaded orders by name or the start of the order ID in the browser (the API
 has no text search, K09) and is not put in the URL; the When, How, status and
-released choices are. Technical support's rows carry no money, so its
-wording says only what it knows ("Waiting for payment", "Released"). Read
+released choices are. Technical support's rows carry no money or payment
+requirement, so its wording says only what it knows ("Waiting for payment or
+confirmation", "Confirming the order", "Confirmed · automatic start later",
+"Released"); free orders read "Free · …" for the chef, never "Paid". Read
 only for now: no order page and no actions yet.
 
 Differences from the sketch, each because the API doesn't give it yet:
