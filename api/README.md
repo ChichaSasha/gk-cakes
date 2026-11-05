@@ -1026,7 +1026,9 @@ minutes, not a failure); a restore freeze defers them (5 minutes).
 in the Stripe sandbox with at least `checkout.session.completed`,
 `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`,
 `checkout.session.expired`, `payment_intent.succeeded`,
-`payment_intent.payment_failed` and `charge.refunded`. The API verifies
+`payment_intent.payment_failed` and `charge.refunded`, plus (full return,
+A3c2) `charge.refund.updated`, `refund.created`, `refund.updated` and
+`refund.failed`. The API verifies
 `Stripe-Signature` over the raw body (`t=` within 5 minutes either way, one of
 the `v1=` signatures = HMAC-SHA256 of `<t>.<body>` with the signing secret,
 constant-time; bodies over 256 KiB are 413; otherwise 400), parses the event
@@ -1039,8 +1041,11 @@ mode that is not yet decided, that collection's reconcile is scheduled now (a
 waiting one is brought forward under the collection's row lock, so duplicate
 or concurrent events never pile up jobs).
 Every verified event is stored (IDs, type, mode, times, body hash; never
-customer or card data), including `charge.refunded` and events of other
-collections or environments, which start nothing.
+customer or card data), including events of other collections or
+environments, which start nothing. A refund event (`charge.refunded`,
+`charge.refund.updated`, `refund.*`) whose object's metadata names a
+`succeeded` collection brings that collection's **refund reconcile** forward
+(see "Full return" below; at most one waits per collection).
 
 **5. Reconcile (worker).** The worker retrieves
 `GET /v1/checkout/sessions/{id}?expand[]=payment_intent.latest_charge` (the
@@ -1178,7 +1183,8 @@ them.
   longer awaits payment). A success observed later for one of its collections
   (real funds) is still recorded as `succeeded` with its evidence; its paid
   confirmation is refused (`order_changed`), the order stays `cancelled` and
-  the job goes to attention (returning the money is A3c2). The order view
+  the job goes to attention; the full return is recorded in the same
+  transaction (see "Full return" below). The order view
   shows `lifecycle: cancelled` with `cancel_reason` and `cancelled_at`, and
   nothing implies a refund. While a collection is still `pending` past its 15
   minutes the view keeps `payment.state: pending` (the UI says "Still checking
@@ -1229,6 +1235,116 @@ closed dispatch until attention, never calling Stripe for it. Deploy the
 A3c1 worker before (or with) the API, and requeue any review job that
 reached attention meanwhile.
 
+### Full return (K05, GK-025 A3c2)
+
+Migration `0016_full_return.sql`: the minimum full-return core, which
+GK-026 extends (customer/chef cancellation, partial goals, the Q5 manual
+alternative) without a second subsystem.
+
+- **Goal** (`business.refund_goal`): one versioned goal per order;
+  `target_minor` is the cumulative whole-order obligation (an obligation, not
+  reserved money), `reason` `late_capture_terminal` (the CHECK leaves room
+  for GK-026 reasons), `source` `system`/`chef`.
+- **Operation** (`business.refund_operation`): one attempt to return money
+  from one collection; its ID is the Stripe `Idempotency-Key` and the K11
+  recovery operation (kind `dispatch`, aggregate = the operation, prior
+  version 0). States `reserved` (nothing sent), `submitting` (admitted: a
+  request may be at Stripe), `pending`, `requires_action`, `unknown` (the
+  answer was lost or contradicts the operation), `succeeded`, `failed`
+  (definitive; the remainder reopens), `cancelled` (withdrawn before any
+  request). Channel `provider` (`manual_alternative` is reserved for Q5,
+  unused). **At most one unresolved operation per collection** (partial
+  unique index). Every create call is appended to `business.refund_attempt`.
+- **Observation** (`business.refund_observation`): every refund Stripe
+  reports for a collection, once per (account, mode, refund ID). One whose
+  `metadata[refund_operation_id]` names a local operation of the collection
+  with the same amount, currency and payment intent is matched (counted
+  through the operation); any other (a dashboard refund, another amount) is
+  **quarantined**: counted as exposure, and while unresolved it blocks every
+  new refund dispatch for the collection (resolution columns exist; manager
+  tooling: Not yet).
+- **Accounting** (`business.refund_balance`, `refund_available`), per
+  succeeded collection C: S = succeeded local operations + succeeded
+  unmatched observations; R = unresolved local operations + pending
+  unmatched observations; each provider refund counted once. A new
+  operation may take min(max(0, C − S − R), goal remaining) and only with no
+  unresolved operation, no unresolved quarantined observation and no
+  contradicting evidence on the collection. The K05 fixture (10000p capture,
+  a local `unknown` 10000p, an external succeeded 5000p) gives allocation
+  10000p, observation 5000p, available 0, possible exposure 15000p and no
+  new dispatch (`TestRefundAccountingPreservesPossibleExposure`).
+- **Trigger.** A refused paid confirmation (the order was released, cancelled
+  or lost its holds before the success was recorded) records, in the same
+  transaction, the goal (target = every succeeded collection of the order;
+  raised if more is captured later) and reserves one operation per succeeded
+  collection for what is available, with its dispatch job. Idempotent. The
+  order is never reopened or fulfilled; the paid confirmation job still goes
+  to attention. `paid_awaiting_agreement` creates no goal (honour or full
+  return is a chef/customer decision: GK-026).
+- **Dispatch (worker, `payments.Refunds`, chained in `gk-worker`).** At the
+  first dispatch (after the key and journal checks) the worker builds the
+  exact `POST /v1/refunds` form (`payment_intent`, `amount` in pence,
+  `reason=requested_by_customer`,
+  `metadata[order_id|collection_id|refund_operation_id|environment]`) and
+  `refund_dispatch_fix` stores it with `replay_until` = first dispatch + 23
+  hours, never rebuilt. The K11 recovery operation is reserved with that
+  payload, the prepared envelope is written, and right before every call
+  `refund_dispatch_admit` re-checks, under the collection and operation
+  locks, the restore freeze, that no quarantined observation appeared, that
+  the operation is not decided and that the window is open (then
+  `dispatch_started_at`, `reserved` → `submitting`). Stripe's answer:
+  `succeeded` → succeeded; `pending` → pending (reconcile in 15 minutes);
+  `requires_action` → attention; `failed`/`canceled` → failed + attention
+  (the remainder reopens, never re-sent automatically); 400
+  `invalid_request_error` → failed + attention and the collection's refunds
+  are reconciled now; 400 `idempotency_error` → reconcile + attention;
+  401/403 → attention; 409/429/5xx/network → `unknown`, retried with the same
+  key and body (an unanswered call also schedules the collection's
+  reconcile); past the window an unknown dispatch goes to reconciliation,
+  never a blind second POST; a dispatch never admitted before its window
+  ended is withdrawn (`cancelled`: provably nothing sent). A returned refund
+  object is verified (amount, `gbp`, payment intent, mode) before it is
+  trusted.
+- **Reconcile** (one job per collection, at most one waiting): lists the
+  payment intent's refunds completely (`GET /v1/refunds?payment_intent=…&limit=100`,
+  following `has_more`; an incomplete listing concludes nothing), records
+  each as an observation, matches operations by recorded refund ID or
+  `metadata[refund_operation_id]` (reading a recorded refund directly with
+  `GET /v1/refunds/{id}` when the list lags) and decides them. A lost-response
+  operation absent from the complete list stays `unknown` (never failed on a
+  timer); past its window it goes to a manager.
+- **Order view.** `order_get` adds `refund` (only with a goal):
+  `target_minor`, `succeeded_minor`, `in_progress_minor`, `currency`,
+  `requested_at`, `goal_version` and `state` `requested` (nothing sent yet),
+  `pending`, `partly_returned`, `returned` (all succeeded) or
+  `needs_attention`; never `returned` while anything is unresolved, so the UI
+  can tell "refund requested" from "refund succeeded". No emails yet.
+
+Tests: `internal/checkout/refunds_integration_test.go` (accounting, trigger),
+`refund_gateways_integration_test.go` (the gateway call by call, lease
+fencing, verification) and `refund_worker_integration_test.go` (the worker
+end to end against a fake Stripe refund API: late capture returned while the
+order stays cancelled; a lost response retried with the same key and body,
+one refund; unknown past the window with no match stays unknown + attention,
+no second POST; pending → succeeded on its event; failed → the remainder
+reopens once under a new key; a dashboard refund quarantined, blocking
+dispatch; duplicate refund events counted once; a freeze defers).
+
+Recorded decisions: a failed refund is never re-sent automatically (a later
+decision reserves the remainder: GK-026/manager); a reconcile never fails an
+operation from absence; any contradiction or quarantine stops automatic
+payouts for that collection until a manager resolves it. Matching a
+dashboard `charge.refunded` to its collection relies on the payment intent's
+metadata being copied to its charge; refund events of refunds made outside
+GK Cakes without that metadata start nothing, and are found by the next
+reconcile of the collection.
+
+**Release order.** Deploy the A3c2 worker before (or with) the API; an older
+worker backs refund jobs off as unhandled (then attention) and never calls
+Stripe for them: requeue them with `business.job_requeue` once the new
+worker runs. The staging webhook subscription needs the refund events
+listed in step 4.
+
 Not yet:
 
 - a failed delayed payment on a completed session (its payment intent back
@@ -1237,9 +1353,11 @@ Not yet:
   so Evaluate keeps the collection `pending` and the order keeps its holds
   (the review looks again every 15 minutes) until a reviewed Evaluate rule
   or manager tooling exists;
-- the full-return core (A3c2): refund goals, refund dispatch, observation
-  quarantine, and returning money for refused paid confirmations, including
-  a success observed after the order was released;
+- manager tooling for the full return: resolving quarantined observations,
+  clearing contradicting evidence, deciding `unknown` refunds past their
+  window and re-reserving a failed refund's remainder; the Q5 manual
+  alternative (`manual_alternative` channel); customer/chef cancellation and
+  partial refund goals (GK-026); refund emails; a sandbox proof of a refund;
 - the chef's resolution of `paid_awaiting_agreement` (honour or full return)
   and visible chef cases beyond job attention (A3c/GK-026); confirmation
   emails;
