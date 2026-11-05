@@ -2122,8 +2122,7 @@ BO-GK-001.move_time `7f8b0043…`, BO-GK-001.move_date `b0fe9fea…`,
 BO-GK-001.refund_follows_move `31d16f84…` (`docs/creator/GK-001/decisions.json`
 sha256 `6d3112d8…`), owner data contract "move"
 (`docs/design/owner-data-contract.md` sha256 `e7179297…`). Fulfilment
-transitions (ready, dispatch, handover, no-show, delivery exception) are
-part 2.
+transitions are part 2 (below).
 
 | Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
 | --- | --- | --- |
@@ -2209,6 +2208,87 @@ part 2.
   redaction, notice; freeze at the commit and a schedule change before the
   commit), `internal/httpapi` `TestAppointmentRoutes`,
   `TestPickupMoveChoicesQuery`.
+
+### Fulfilment transitions (K05, K06, K00, GK-031 B1 part 2)
+
+Migration `0032_fulfillment.sql`. Owner input BO-GK-003.no_show
+`ca5fb5c0…` (`docs/creator/GK-003/decisions.json` sha256 `41d7792b…`),
+BO-GK-001.ready_cancellation `93a75483…`.
+
+| Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
+| --- | --- | --- |
+| `POST /api/v1/admin/orders/{id}/transitions` | chef or fulfilment (no_show: chef only, 403 otherwise) | `{action, expected_version, reason?}` with Idempotency-Key. `ready`, `dispatch`, `delivery_exception`: 200 `{order_id, lifecycle, fulfillment_state}`. `handover`, `no_show`: 202 `handover_pending` / `no_show_pending` |
+
+| Action | From | To | Kind |
+| --- | --- | --- | --- |
+| `ready` | `in_production` | `ready`, fulfilment `awaiting_handover` | plain |
+| `dispatch` (GK delivery; optional `reason` = courier reference) | `ready`, `awaiting_handover` or `exception` | `out_for_delivery` | plain |
+| `delivery_exception` (`reason` required) | `ready`, `awaiting_handover`, `out_for_delivery` or `exception` | `exception` (still `ready`; not completed, no refund) | plain |
+| `handover` | `ready`, `awaiting_handover` or `exception` (collection, courier) / `out_for_delivery` (GK delivery) | `completed`, fulfilment `completed` | K11 |
+| `no_show` (chef) | `ready`, not completed, at or after the current appointment start | `completed`, fulfilment `no_show`, 50% goal | K11 |
+
+- **Fulfilment state** (K05 "Fulfillment separate awaiting_handover/
+  out_for_delivery/completed/exception"): new nullable
+  `orders.fulfillment_state` (`no_show` added for the K05 no-show history).
+  NULL reads as `awaiting_handover` while confirmed, in production or ready.
+  Every step appends an immutable `business.fulfillment_event` (action,
+  from/to, actor, receipt instant, reason, the K11 command) and moves the
+  order's version.
+- **Which steps are K11.** Anything that changes money or the customer's
+  commitment is: `handover` ends the customer's cancellation entitlement
+  (completed is not cancellable; later money is the chef's financial case,
+  K05 "post-handover personal chef refund request creates financial case")
+  and `no_show` creates the refund goal. `ready`, `dispatch` and
+  `delivery_exception` are operational status only (as the production start,
+  0022): plain audited transactions, freeze first (503), refused
+  (`CONFLICT`) while any K11 command on the order is unresolved, the same key
+  replays, and `ready`/`dispatch` already made by another request collapse
+  to 200 with `Idempotent-Replayed`.
+- **No-show is the chef's** (K00 "fulfillment can prepare/ready/dispatch/
+  handover only", "chef manages ... cancellations/refunds"; K05 "no-show/
+  post-handover 50%"). Fulfilment records what it saw as a
+  `delivery_exception` ("customer did not arrive"); the chef's `no_show`
+  command (receipt at or after the appointment start, else 409
+  `HANDOVER_NOT_DUE`) records the goal 50% of the actual paid aggregate,
+  nearest penny half up (`refund_goal_apply`, reason `no_show`; earlier
+  returns count against it, K05 cumulative goal) and reserves the refunds
+  (`refund_reserve`; a delivery share stays a chef-pending obligation). The
+  day place stays committed (the cake was made).
+- **Delivery payment.** `dispatch` needs a succeeded delivery collection of
+  the order, else 409 `DELIVERY_NOT_PAID` (K06 "paid/waived separate
+  collection required before dispatch"). The data model has no delivery
+  waiver and checkout creates no delivery collection yet, so today every GK
+  delivery dispatch is refused until delivery payment (or a waiver record)
+  exists; tests seed a collection.
+- **Never rewound.** `completed` is terminal (orders_guard); a completed or
+  no-show order accepts no further step, cancellation or appointment change
+  (409 `TRANSITION_NOT_ALLOWED` / `CANCELLATION_NOT_ELIGIBLE` /
+  `MOVE_NOT_ELIGIBLE`). Appointment changes also stop once an order is out
+  for delivery.
+- **Read models.** `order_get` gains `fulfillment {state, at, pending}`;
+  until a handover or no-show is secured the order reads `ready` with the
+  previous fulfilment state, `pending` handover | no_show and no `refund`
+  block. Staff detail: `fulfillment` (every view) and `fulfillment_history`
+  (reasons for chef and fulfilment, not technical support); list rows gain
+  `fulfillment_state`.
+- **Notices.** `no_show` (`order-no-show.v1`) when a no-show is secured,
+  with the 50% amount and "requested" or "already returned"; no
+  `refund_returned` email while the no-show is unsecured (it follows once
+  secured). Decision: no email for `ready` or `handover` (no noise; the chef
+  sends collection details separately, K06).
+- **Tests:** `internal/checkout/fulfillment_integration_test.go` (AC3:
+  fulfilment ready / exception / handover, no refund, no no-show, no chef
+  cancel, no capability grant through the API role; idempotency, collapse,
+  stale version; handover K11 outcome-envelope crash point and envelopes once;
+  no rewind; history redaction. No-show: not before the appointment, chef
+  only, freeze, replay, unsecured state hidden even after the refund
+  succeeded, 50% goal, notices. GK delivery: `DELIVERY_NOT_PAID`, dispatch,
+  exception, re-dispatch, handover), `internal/httpapi` `TestTransitionRoutes`.
+
+Not yet: delivery checkout and waivers (dispatch is refused until they
+exist); courier status mapping (only a free-text reference); a GK-caused
+delivery failure route (`refund_delivery_failure_record` stays interim);
+chef screens (UI).
 
 ## Not yet verified
 
