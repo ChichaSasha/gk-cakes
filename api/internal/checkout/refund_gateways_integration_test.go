@@ -191,8 +191,8 @@ func (h *payHarness) refundCommit(t *testing.T, job jobs.Job, op, outcome string
 }
 
 type refundRow struct {
-	State, RefundID, Mismatch string
-	Started                   bool
+	ID, State, RefundID, Mismatch string
+	Started                       bool
 }
 
 func (h *payHarness) refundRow(t *testing.T, op string) refundRow {

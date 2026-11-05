@@ -70,6 +70,7 @@ func (h *payHarness) lateCapture(t *testing.T, f fixture, pol, key string) (orde
 	h.owner(t, "SELECT business.payment_schedule_reconcile($1::uuid, now())", coll)
 	job := h.claimOnly(t, h.reconcileJob(t, coll))
 	at := time.Date(2026, 11, 5, 10, 20, 0, 0, time.UTC)
+	h.stripe.pay(session, at)
 	var state string
 	var cmd *string
 	if err := h.worker.QueryRow(h.ctx, `SELECT collection_state, command_id::text FROM business.payment_reconcile_record(
