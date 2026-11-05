@@ -7,11 +7,12 @@
 	// the customer. Nothing is reserved: checkout asks the server again.
 	import { tick } from 'svelte';
 	import type { Day, Slot } from '../../checkout/types';
-	import { dateLabel, londonToday, timeRange } from '../../checkout/format';
+	import { dateLabel, londonToday } from '../../checkout/format';
 	import type { ChosenSlot, PickerMode } from '../bag';
 	import type { ShopApi } from '../client';
 	import {
 		addMonths,
+		calendarNote,
 		dayView,
 		londonDate,
 		monthGrid,
@@ -19,8 +20,11 @@
 		monthOf,
 		monthRange,
 		nextOpenDates,
+		restoreChoice,
 		shortDate,
+		slotLabel,
 		timeChoices,
+		timesStatus,
 		type DayView
 	} from '../picker';
 	import Icon from './Icon.svelte';
@@ -52,7 +56,8 @@
 	let days = $state<Record<string, Day>>({});
 	let monthState = $state<'loading' | 'ready' | 'error'>('loading');
 	let date = $state<string | undefined>();
-	let wanted = $state<string | undefined>(); // slot ID the customer had chosen
+	// The time the customer chose ("13:00–14:00"), kept across dates and handovers.
+	let wanted = $state<string | undefined>();
 	let chosen = $state<string | undefined>();
 	let times = $state<{
 		status: 'idle' | 'loading' | 'list' | 'empty' | 'error';
@@ -60,6 +65,9 @@
 		hiddenLead: number;
 		hiddenLate: number;
 		dayStatus?: string;
+		/** The earlier time, and whether it was still offered, when these times arrived. */
+		wanted?: string;
+		kept?: boolean;
 	}>({ status: 'idle', slots: [], hiddenLead: 0, hiddenLate: 0 });
 	let alertText = $state<{ strong: string; rest: string } | undefined>();
 	let checking = $state(false);
@@ -85,19 +93,14 @@
 	);
 	const chosenSlot = $derived(times.slots.find((s) => s.id === chosen));
 	const alternatives = $derived(date ? nextOpenDates(date, views) : []);
-	const calendarNote = $derived(
-		'Numbers show places left that day. Bookable from 192 hours ahead; the chef sets the last bookable date.' +
-			(collectByDate
-				? ` Your ready-made cake must be collected by ${shortDate(collectByDate)}, the chef’s collect-by date.`
-				: '')
-	);
+	const note = $derived(calendarNote(places, collectByDate));
 
 	/** Opens the picker with the bag's current choice. */
-	export async function show(initial: { date?: string; mode: PickerMode; slotId?: string }) {
+	export async function show(initial: { date?: string; mode: PickerMode; slot?: ChosenSlot }) {
 		today = londonToday();
 		mode = initial.mode;
 		date = initial.date && initial.date >= today ? initial.date : undefined;
-		wanted = date ? initial.slotId : undefined;
+		wanted = date && initial.slot ? slotLabel(initial.slot) : undefined;
 		chosen = undefined;
 		alertText = undefined;
 		checkFailed = false;
@@ -157,12 +160,14 @@
 			const res = await api.schedule(date, mode, quantity);
 			if (rev !== timesRevision) return;
 			const tc = timeChoices(res.slots, collectBy);
+			chosen = restoreChoice(tc.slots, wanted);
 			times = {
 				status: tc.slots.length > 0 ? 'list' : 'empty',
 				...tc,
-				dayStatus: res.day_status
+				dayStatus: res.day_status,
+				wanted,
+				kept: chosen !== undefined
 			};
-			if (wanted && tc.slots.some((s) => s.id === wanted)) chosen = wanted;
 		} catch {
 			if (rev === timesRevision)
 				times = { status: 'error', slots: [], hiddenLead: 0, hiddenLate: 0 };
@@ -206,10 +211,6 @@
 		}
 	}
 
-	function slotLabel(s: { starts_at: string; ends_at: string }) {
-		return timeRange(s.starts_at, s.ends_at);
-	}
-
 	async function use() {
 		const d = date;
 		const s = chosenSlot;
@@ -219,6 +220,8 @@
 		const m = mode;
 		try {
 			const res = await api.schedule(d, m, quantity);
+			// The customer moved on while we were checking: their new choice wins.
+			if (date !== d || mode !== m || chosen !== s.id) return;
 			const tc = timeChoices(res.slots, collectBy);
 			if (tc.slots.some((x) => x.id === s.id)) {
 				dialog?.close();
@@ -269,34 +272,13 @@
 						: 'Choose a date and time'
 	);
 
-	const statusText = $derived.by(() => {
-		if (!date) return 'Choose a date to see its times.';
-		const d = shortDate(date);
-		if (times.status === 'loading') return `Loading times for ${d}…`;
-		if (times.status === 'error')
-			return `We couldn’t load the times for ${d}. Your other choices are kept.`;
-		if (times.status === 'empty') {
-			const why =
-				times.dayStatus === 'full'
-					? `${d} is now full.`
-					: times.dayStatus === 'lead_time'
-						? `${d} is now less than 192 hours away.`
-						: times.hiddenLate > 0
-							? `${d} is after your ready-made cake’s collect-by time.`
-							: `No times left on ${d}.`;
-			return `${why} Choose another date, or contact the chef.`;
-		}
-		if (times.status === 'list') {
-			const n = times.slots.length;
-			let text = `${n} ${n === 1 ? 'time' : 'times'} on ${d}.`;
-			if (wanted && chosen === wanted) text += ' Your time is still free.';
-			else if (wanted)
-				text += ' Your earlier time isn’t available for this choice, so please pick another.';
-			if (times.hiddenLead > 0) text += ' Earlier times that day are less than 192 hours away.';
-			return text;
-		}
-		return '';
-	});
+	const statusText = $derived(
+		timesStatus(
+			date,
+			{ ...times, count: times.slots.length },
+			{ label: times.wanted, kept: times.kept ?? false }
+		)
+	);
 </script>
 
 <dialog bind:this={dialog} class="picker-dialog" aria-labelledby="picker-title">
@@ -396,7 +378,7 @@
 			</div>
 		{:else}
 			<p class="calendar-note">
-				{calendarNote}
+				{note}
 			</p>
 		{/if}
 	</div>
@@ -420,7 +402,13 @@
 			{:else if times.status === 'list'}
 				{#each times.slots as s (s.id)}
 					<label class="slot-option">
-						<input type="radio" name="picker-slot" value={s.id} bind:group={chosen} />
+						<input
+							type="radio"
+							name="picker-slot"
+							value={s.id}
+							bind:group={chosen}
+							onchange={() => (wanted = slotLabel(s))}
+						/>
 						<span
 							><strong>{slotLabel(s)}</strong><small
 								>{s.availability === 'requestable'

@@ -1,7 +1,9 @@
 <script lang="ts">
 	// A failed catalogue load with its recovery (approved GK-016 r01c sketch:
-	// "Try again" reloads; nothing else on the page is lost).
+	// "Try again" reloads; nothing else on the page is lost). Focus then moves
+	// to the start of the page's content, as this button goes away.
 	import { invalidateAll } from '$app/navigation';
+	import { tick } from 'svelte';
 
 	let { what = 'the cakes' }: { what?: string } = $props();
 	let busy = $state(false);
@@ -13,6 +15,8 @@
 		} finally {
 			busy = false;
 		}
+		await tick();
+		document.getElementById('main')?.focus();
 	}
 </script>
 

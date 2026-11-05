@@ -30,6 +30,13 @@ const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const KEY = new RegExp(`^(v|lot):${UUID}$`);
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** A real calendar date (YYYY-MM-DD): not 2026-02-30 or 2099-13-01. */
+export function isRealDate(v: unknown): v is string {
+	if (typeof v !== 'string' || !DATE.test(v)) return false;
+	const d = new Date(`${v}T00:00:00Z`);
+	return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}
+
 export function emptyBag(): BagState {
 	return { keys: [], mode: 'collection' };
 }
@@ -68,7 +75,7 @@ export function parseBag(raw: string | null): BagState {
 		keys: keys.slice(0, MAX_BAG),
 		mode: isMode(v.mode) ? v.mode : 'collection'
 	};
-	if (typeof v.date === 'string' && DATE.test(v.date)) {
+	if (isRealDate(v.date)) {
 		bag.date = v.date;
 		if (isSlot(v.slot))
 			bag.slot = { id: v.slot.id, starts_at: v.slot.starts_at, ends_at: v.slot.ends_at };
@@ -95,28 +102,29 @@ export function withWhen(
 	return { ...bag, date, mode, slot };
 }
 
-export function withoutWhen(bag: BagState): BagState {
-	const next: BagState = { keys: bag.keys, mode: bag.mode };
-	return next;
-}
-
 /** Made-to-order cakes use the day's places; ready-made cakes do not (K04). */
 export function placesNeeded(keys: string[]): number {
 	return keys.filter((k) => k.startsWith('v:')).length;
 }
 
+/** The bag's date if it is still today or later (London), else none. */
+export function currentDate(bag: BagState, today: string): string | undefined {
+	return bag.date && bag.date >= today ? bag.date : undefined;
+}
+
 /**
  * The checkout link for the bag: `?v=<variantId>` and `?lot=<lotId>` once per
- * cake plus the chosen date (ui/README "Basket"). Checkout chooses the time
- * itself and prices everything on the server.
+ * cake plus the chosen date if it has not passed (ui/README "Basket").
+ * Checkout chooses the time itself and prices everything on the server.
  */
-export function checkoutHref(bag: BagState): string {
+export function checkoutHref(bag: BagState, today: string): string {
 	const q = new URLSearchParams();
 	for (const k of bag.keys) {
 		const [kind, id] = k.split(':');
 		q.append(kind === 'v' ? 'v' : 'lot', id);
 	}
-	if (bag.date) q.set('date', bag.date);
+	const date = currentDate(bag, today);
+	if (date) q.set('date', date);
 	return `/checkout?${q.toString()}`;
 }
 

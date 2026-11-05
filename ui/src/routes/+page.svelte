@@ -9,7 +9,7 @@
 
 	let { data }: PageProps = $props();
 
-	const featured = $derived(data.listings.ok ? data.listings.data.slice(0, 4) : []);
+	const featured = $derived(data.listings.ok ? data.listings.data.listings.slice(0, 4) : []);
 	const notes = [
 		'Handcrafted in London',
 		'Swiss meringue buttercream',

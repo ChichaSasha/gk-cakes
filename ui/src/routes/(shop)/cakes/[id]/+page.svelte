@@ -90,7 +90,7 @@
 		void picker?.show({
 			date: bagDate,
 			mode: bag.state.mode,
-			slotId: bagDate ? bag.state.slot?.id : undefined
+			slot: bagDate ? bag.state.slot : undefined
 		});
 	}
 

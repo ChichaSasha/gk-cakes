@@ -3,20 +3,28 @@
 // failure never throws: the page shows its own recovery state.
 import { PUBLIC_API_URL } from '$app/env/public';
 import { listing, type Listing } from './catalog';
-import { settle, shopApi, type Loaded } from './client';
+import { settle, shopApi, TIMEOUT_MS, type Loaded } from './client';
 import type { Cake, ReadyCake } from '../checkout/types';
 
+/** The public API for one page load: all its requests share one deadline. */
 export function apiFor(f: typeof fetch) {
-	return shopApi(PUBLIC_API_URL, f);
+	return shopApi(PUBLIC_API_URL, f, AbortSignal.timeout(TIMEOUT_MS));
 }
 
-/** Every active cake as a shop card, with the ready-made cakes on offer. */
-export async function loadListings(f: typeof fetch): Promise<Loaded<Listing[]>> {
+/**
+ * Active cakes as shop cards (every cake, or the newest `limit`), with the
+ * ready-made cakes on offer (their collect-by dates feed the date picker).
+ */
+export async function loadListings(
+	f: typeof fetch,
+	limit?: number
+): Promise<Loaded<{ listings: Listing[]; ready: ReadyCake[] }>> {
 	const api = apiFor(f);
 	return settle(
-		Promise.all([api.cakes(), api.readyCakes()]).then(([cakes, ready]) =>
-			cakes.map((c) => listing(c, ready))
-		)
+		Promise.all([api.cakes(limit), api.readyCakes()]).then(([cakes, ready]) => ({
+			listings: cakes.map((c) => listing(c, ready)),
+			ready
+		}))
 	);
 }
 

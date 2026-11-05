@@ -2,14 +2,18 @@ import { describe, expect, it } from 'vitest';
 import type { Day, Slot } from '../checkout/types';
 import {
 	addMonths,
+	calendarNote,
 	dayView,
 	londonDate,
 	monthGrid,
 	monthLabel,
 	monthRange,
 	nextOpenDates,
+	restoreChoice,
 	shortDate,
-	timeChoices
+	slotLabel,
+	timeChoices,
+	timesStatus
 } from './picker';
 
 const day = (date: string, status: Day['status'], remaining: number | null = 7): Day => ({
@@ -83,6 +87,8 @@ describe('dayView', () => {
 		});
 		expect(v(day('2026-11-13', 'open', 6), 0)).toMatchObject({ label: 'Open', enabled: true });
 		expect(v(day('2026-11-13', 'open', null))).toMatchObject({ label: 'Open', enabled: true });
+		// Never negative (K01), even if the server sent it.
+		expect(v(day('2026-11-13', 'open', -2))).toMatchObject({ label: '0 left' });
 	});
 
 	it('marks days after a ready-made cake’s collect-by date "Too late"', () => {
@@ -138,5 +144,66 @@ describe('timeChoices', () => {
 		);
 		expect(tc.slots.map((x) => x.id)).toEqual(['a']);
 		expect(tc.hiddenLate).toBe(1);
+	});
+});
+
+describe('keeping the customer’s time', () => {
+	const slots: Slot[] = [
+		{
+			id: 'fri-13',
+			starts_at: '2026-11-13T13:00:00Z',
+			ends_at: '2026-11-13T14:00:00Z',
+			availability: 'available',
+			reason_code: null
+		},
+		{
+			id: 'fri-15',
+			starts_at: '2026-11-13T15:00:00Z',
+			ends_at: '2026-11-13T16:00:00Z',
+			availability: 'available',
+			reason_code: null
+		}
+	];
+
+	it('matches by London clock time, so it survives another date or handover', () => {
+		expect(slotLabel(slots[1])).toBe('15:00–16:00');
+		expect(restoreChoice(slots, '15:00–16:00')).toBe('fri-15');
+		expect(restoreChoice(slots, '11:00–12:00')).toBeUndefined();
+		expect(restoreChoice(slots, undefined)).toBeUndefined();
+	});
+
+	it('words the status line as the approved sketch does', () => {
+		const list = { status: 'list' as const, count: 2, hiddenLead: 1, hiddenLate: 0 };
+		expect(timesStatus(undefined, list, { kept: false })).toBe('Choose a date to see its times.');
+		expect(timesStatus('2026-11-13', { ...list, status: 'loading' }, { kept: false })).toBe(
+			'Loading times for Fri 13 Nov…'
+		);
+		expect(timesStatus('2026-11-13', { ...list, status: 'error' }, { kept: false })).toBe(
+			'We couldn’t load the times for Fri 13 Nov. Your other choices are kept.'
+		);
+		expect(timesStatus('2026-11-13', list, { label: '15:00–16:00', kept: true })).toBe(
+			'2 times on Fri 13 Nov. Your time 15:00–16:00 is still free. Earlier times that day are less than 192 hours away.'
+		);
+		expect(
+			timesStatus('2026-11-13', { ...list, hiddenLead: 0 }, { label: '11:00–12:00', kept: false })
+		).toBe(
+			'2 times on Fri 13 Nov. 11:00–12:00 isn’t available for this choice, so please pick another.'
+		);
+		const empty = { status: 'empty' as const, count: 0, hiddenLead: 0, hiddenLate: 0 };
+		expect(timesStatus('2026-11-13', { ...empty, dayStatus: 'full' }, { kept: false })).toBe(
+			'Fri 13 Nov is now full. Choose another date, or contact the chef.'
+		);
+		expect(timesStatus('2026-11-13', { ...empty, hiddenLate: 2 }, { kept: false })).toBe(
+			'Fri 13 Nov is after your ready-made cake’s collect-by time. Choose another date, or contact the chef.'
+		);
+		expect(timesStatus('2026-11-13', empty, { kept: false })).toBe(
+			'No times left on Fri 13 Nov. Choose another date, or contact the chef.'
+		);
+	});
+
+	it('explains places only when the bag needs them, and the collect-by date', () => {
+		expect(calendarNote(1)).toContain('Numbers show places left that day.');
+		expect(calendarNote(0)).not.toContain('places');
+		expect(calendarNote(0, '2026-11-15')).toContain('must be collected by Sun 15 Nov');
 	});
 });

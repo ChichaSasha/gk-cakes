@@ -4,7 +4,18 @@
 	// no-match and error states with recovery.
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { PUBLIC_API_URL } from '$app/env/public';
 	import { page } from '$app/state';
+	import { dateLabel, londonToday, timeRange } from '../../../lib/checkout/format';
+	import {
+		currentDate,
+		earliestCollectBy,
+		placesNeeded,
+		withWhen,
+		type ChosenSlot,
+		type PickerMode
+	} from '../../../lib/shop/bag';
+	import { bag } from '../../../lib/shop/bag.svelte';
 	import {
 		filterListings,
 		flavoursOf,
@@ -12,7 +23,10 @@
 		type Selection,
 		type Sort
 	} from '../../../lib/shop/catalog';
+	import { shopApi } from '../../../lib/shop/client';
 	import CakeCard from '../../../lib/shop/ui/CakeCard.svelte';
+	import DatePicker from '../../../lib/shop/ui/DatePicker.svelte';
+	import Icon from '../../../lib/shop/ui/Icon.svelte';
 	import LoadProblem from '../../../lib/shop/ui/LoadProblem.svelte';
 	import type { PageProps } from './$types';
 
@@ -27,7 +41,8 @@
 	let flavour = $state('all');
 	let sort = $state<Sort>('featured');
 
-	const all = $derived(data.listings.ok ? data.listings.data : []);
+	const all = $derived(data.listings.ok ? data.listings.data.listings : []);
+	const ready = $derived(data.listings.ok ? data.listings.data.ready : []);
 	const flavours = $derived(flavoursOf(all));
 	const shown = $derived(filterListings(all, { selection, flavour, sort }));
 
@@ -37,6 +52,26 @@
 		else url.searchParams.set('selection', selection);
 		// eslint-disable-next-line svelte/no-navigation-without-resolve -- same page, query only
 		void goto(url, { replace: true, shallow: true });
+	}
+
+	// "Start with your celebration date" (approved sketch): the shared picker,
+	// for one place when the bag is empty.
+	const api = shopApi(PUBLIC_API_URL);
+	let picker = $state<DatePicker>();
+	const today = londonToday();
+	const bagDate = $derived(currentDate(bag.state, today));
+	const places = $derived(bag.state.keys.length > 0 ? placesNeeded(bag.state.keys) : 1);
+
+	function openPicker() {
+		void picker?.show({
+			date: bagDate,
+			mode: bag.state.mode,
+			slot: bagDate ? bag.state.slot : undefined
+		});
+	}
+
+	function chooseWhen(date: string, mode: PickerMode, slot: ChosenSlot) {
+		bag.set(withWhen(bag.state, date, mode, slot));
 	}
 
 	function clear() {
@@ -53,6 +88,11 @@
 </svelte:head>
 
 <div class="wrap">
+	<p class="sr-only" role="status">
+		{data.listings.ok && all.length > 0
+			? `${shown.length} ${shown.length === 1 ? 'cake' : 'cakes'} shown`
+			: ''}
+	</p>
 	<div class="page-title">
 		<h1>Shop cakes</h1>
 		<p>Handcrafted cakes, made to celebrate.</p>
@@ -93,10 +133,27 @@
 			</label>
 		</div>
 
-		<p class="sr-only" role="status">
-			{shown.length}
-			{shown.length === 1 ? 'cake' : 'cakes'} shown
-		</p>
+		<div class="date-prompt">
+			<p>
+				<Icon name="calendar" />
+				<span
+					>{bagDate
+						? `${dateLabel(bagDate)}${bag.state.slot ? ` · ${timeRange(bag.state.slot.starts_at, bag.state.slot.ends_at)}` : ''}`
+						: 'Start with your celebration date.'}</span
+				>
+			</p>
+			<button class="btn primary" type="button" onclick={openPicker}
+				>{bagDate ? 'Change date →' : 'Choose date →'}</button
+			>
+		</div>
+		<DatePicker
+			bind:this={picker}
+			{api}
+			{places}
+			collectBy={earliestCollectBy(bag.state.keys, ready)}
+			onchoose={chooseWhen}
+		/>
+
 		{#if shown.length > 0}
 			<ul class="grid">
 				{#each shown as item, i (item.id)}

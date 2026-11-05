@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
 	checkoutHref,
+	currentDate,
+	isRealDate,
 	earliestCollectBy,
 	emptyBag,
 	MAX_BAG,
@@ -85,6 +87,7 @@ describe('bag changes', () => {
 });
 
 describe('checkoutHref', () => {
+	const today = '2026-11-05';
 	it('hands checkout only catalogue IDs and the date (ui/README Basket)', () => {
 		const bag = withWhen(
 			{ ...emptyBag(), keys: [`v:${ID.made}`, `lot:${ID.lot}`, `v:${ID.madeM}`] },
@@ -92,10 +95,38 @@ describe('checkoutHref', () => {
 			'collection',
 			slot
 		);
-		expect(checkoutHref(bag)).toBe(
+		expect(checkoutHref(bag, today)).toBe(
 			`/checkout?v=${ID.made}&lot=${ID.lot}&v=${ID.madeM}&date=2026-11-13`
 		);
-		expect(checkoutHref({ ...emptyBag(), keys: [`v:${ID.made}`] })).toBe(`/checkout?v=${ID.made}`);
+		expect(checkoutHref({ ...emptyBag(), keys: [`v:${ID.made}`] }, today)).toBe(
+			`/checkout?v=${ID.made}`
+		);
+	});
+
+	it('never hands over a date that has passed', () => {
+		const bag = withWhen(
+			{ ...emptyBag(), keys: [`v:${ID.made}`] },
+			'2026-10-01',
+			'collection',
+			slot
+		);
+		expect(checkoutHref(bag, today)).toBe(`/checkout?v=${ID.made}`);
+		expect(currentDate(bag, today)).toBeUndefined();
+		expect(currentDate(bag, '2026-10-01')).toBe('2026-10-01');
+	});
+});
+
+describe('isRealDate', () => {
+	it('accepts real calendar days only', () => {
+		expect(isRealDate('2026-11-13')).toBe(true);
+		expect(isRealDate('2028-02-29')).toBe(true);
+		for (const bad of ['2099-13-01', '2026-02-30', '2026-11-31', '2026-1-01', 20261113, null]) {
+			expect(isRealDate(bad)).toBe(false);
+		}
+	});
+
+	it('drops an impossible stored date (it would break date labels)', () => {
+		expect(parseBag(JSON.stringify({ keys: [], date: '2099-13-01', slot })).date).toBeUndefined();
 	});
 });
 

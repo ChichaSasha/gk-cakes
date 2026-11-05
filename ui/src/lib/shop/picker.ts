@@ -3,7 +3,7 @@
 // and the times from GET /schedule. Availability is the server's; this only
 // words it and hides what can't be chosen.
 import type { Day, Slot } from '../checkout/types';
-import { addDays, londonToday } from '../checkout/format';
+import { addDays, londonToday, timeRange } from '../checkout/format';
 
 export type DayStatus = Day['status'] | 'past' | 'too_late' | 'unknown';
 
@@ -121,7 +121,9 @@ export function dayView(
 			aria: ARIA[status] ?? ''
 		};
 	}
-	const left = day?.remaining_places;
+	const raw = day?.remaining_places;
+	// Never show negative places (K01), whatever the server says.
+	const left = typeof raw === 'number' ? Math.max(0, raw) : raw;
 	if (opts.places > 0 && typeof left === 'number') {
 		return {
 			date,
@@ -175,4 +177,69 @@ export function nextOpenDates(after: string, days: DayView[], n = 2): string[] {
 /** The first choosable day in a list, if any. */
 export function firstOpen(days: DayView[]): string | undefined {
 	return days.find((d) => d.enabled)?.date;
+}
+
+/** A time as the customer sees it ("13:00–14:00", London): kept across dates and handovers. */
+export function slotLabel(s: { starts_at: string; ends_at: string }): string {
+	return timeRange(s.starts_at, s.ends_at);
+}
+
+/** The offered time matching the customer's earlier choice, if it is still offered. */
+export function restoreChoice(slots: Slot[], wantedLabel: string | undefined): string | undefined {
+	if (!wantedLabel) return undefined;
+	return slots.find((s) => slotLabel(s) === wantedLabel)?.id;
+}
+
+export interface TimesState {
+	status: 'idle' | 'loading' | 'list' | 'empty' | 'error';
+	count: number;
+	dayStatus?: string;
+	hiddenLead: number;
+	hiddenLate: number;
+}
+
+/** The picker's live status line for the times (approved r01c wording). */
+export function timesStatus(
+	date: string | undefined,
+	t: TimesState,
+	wanted: { label?: string; kept: boolean }
+): string {
+	if (!date) return 'Choose a date to see its times.';
+	const d = shortDate(date);
+	if (t.status === 'loading') return `Loading times for ${d}…`;
+	if (t.status === 'error')
+		return `We couldn’t load the times for ${d}. Your other choices are kept.`;
+	if (t.status === 'empty') {
+		const why =
+			t.dayStatus === 'full'
+				? `${d} is now full.`
+				: t.dayStatus === 'lead_time'
+					? `${d} is now less than 192 hours away.`
+					: t.hiddenLate > 0
+						? `${d} is after your ready-made cake’s collect-by time.`
+						: `No times left on ${d}.`;
+		return `${why} Choose another date, or contact the chef.`;
+	}
+	if (t.status === 'list') {
+		let text = `${t.count} ${t.count === 1 ? 'time' : 'times'} on ${d}.`;
+		if (wanted.label && wanted.kept) text += ` Your time ${wanted.label} is still free.`;
+		else if (wanted.label) {
+			text += ` ${wanted.label} isn’t available for this choice, so please pick another.`;
+		}
+		if (t.hiddenLead > 0) text += ' Earlier times that day are less than 192 hours away.';
+		return text;
+	}
+	return '';
+}
+
+/** The note under the calendar. */
+export function calendarNote(places: number, collectByDate?: string): string {
+	let note =
+		places > 0
+			? 'Numbers show places left that day. Bookable from 192 hours ahead; the chef sets the last bookable date.'
+			: 'Bookable from 192 hours ahead; the chef sets the last bookable date.';
+	if (collectByDate) {
+		note += ` Your ready-made cake must be collected by ${shortDate(collectByDate)}, the chef’s collect-by date.`;
+	}
+	return note;
 }

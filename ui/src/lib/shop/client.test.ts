@@ -22,6 +22,16 @@ describe('shopApi', () => {
 		expect(init.signal).toBeInstanceOf(AbortSignal);
 	});
 
+	it('reads one page for the newest cakes, and bounds a page load with one shared deadline', async () => {
+		const f = vi.fn<typeof fetch>().mockResolvedValue(json({ cakes: [cake()], next_cursor: 'c2' }));
+		const deadline = AbortSignal.timeout(1000);
+		const cakes = await shopApi('https://api.test', f, deadline).cakes(4);
+		expect(cakes).toHaveLength(1);
+		expect(f).toHaveBeenCalledTimes(1);
+		expect(String(f.mock.calls[0][0])).toBe('https://api.test/api/v1/cakes?limit=4');
+		expect((f.mock.calls[0][1] as RequestInit).signal).toBe(deadline);
+	});
+
 	it('asks the schedule for a new purchase with the places needed', async () => {
 		const f = vi.fn<typeof fetch>().mockResolvedValue(json({ slots: [] }));
 		await shopApi('https://api.test', f).schedule('2026-11-13', 'customer_courier', 2);

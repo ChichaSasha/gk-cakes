@@ -13,7 +13,8 @@ import type {
 } from '../checkout/types';
 
 export interface ShopApi {
-	cakes(): Promise<Cake[]>;
+	/** Every active cake (all pages), or only the newest `limit` (one page). */
+	cakes(limit?: number): Promise<Cake[]>;
 	cake(id: string): Promise<Cake>;
 	readyCakes(): Promise<ReadyCake[]>;
 	availability(from: string, to: string, quantity: number): Promise<Availability>;
@@ -23,7 +24,10 @@ export interface ShopApi {
 /** The API's page size limit, and how many pages a shop listing reads at most (500 cakes). */
 const PAGE_LIMIT = 50;
 const MAX_PAGES = 10;
-/** A page never waits longer than this for the API (the server renders it). */
+/**
+ * How long one page load (all its requests together, given as `deadline`) or
+ * one picker request may wait for the API.
+ */
 export const TIMEOUT_MS = 8000;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -33,11 +37,20 @@ export function isId(id: string): boolean {
 	return UUID.test(id);
 }
 
-function withTimeout(f: typeof fetch, ms: number): typeof fetch {
-	return (input, init) => f(input, { ...init, signal: AbortSignal.timeout(ms) });
+function withTimeout(f: typeof fetch, deadline?: AbortSignal): typeof fetch {
+	return (input, init) =>
+		f(input, { ...init, signal: deadline ?? AbortSignal.timeout(TIMEOUT_MS) });
 }
 
-export function shopApi(baseUrl: string | undefined, f: typeof fetch = fetch): ShopApi {
+/**
+ * Public reads. `deadline` bounds every request of one page load together;
+ * without it each request gets TIMEOUT_MS (the long-lived picker).
+ */
+export function shopApi(
+	baseUrl: string | undefined,
+	f: typeof fetch = fetch,
+	deadline?: AbortSignal
+): ShopApi {
 	const opts = () => {
 		if (!baseUrl) {
 			throw new ApiError(503, {
@@ -46,17 +59,18 @@ export function shopApi(baseUrl: string | undefined, f: typeof fetch = fetch): S
 				retryable: false
 			});
 		}
-		return { baseUrl, fetch: withTimeout(f, TIMEOUT_MS) };
+		return { baseUrl, fetch: withTimeout(f, deadline) };
 	};
 	return {
-		async cakes() {
+		async cakes(limit) {
 			const all: Cake[] = [];
 			let cursor: string | undefined;
 			for (let i = 0; i < MAX_PAGES; i++) {
 				const page = await apiGet<CakePage>('/api/v1/cakes', {
 					...opts(),
-					query: { limit: PAGE_LIMIT, cursor }
+					query: { limit: limit ?? PAGE_LIMIT, cursor }
 				});
+				if (limit !== undefined) return page.cakes;
 				all.push(...page.cakes);
 				cursor = page.next_cursor;
 				if (!cursor) break;

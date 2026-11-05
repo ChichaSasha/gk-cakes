@@ -5,7 +5,7 @@
 	// out by the server at checkout, never added up here.
 	import { resolve } from '$app/paths';
 	import { PUBLIC_API_URL } from '$app/env/public';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import {
 		dateLabel,
 		formatMoney,
@@ -83,23 +83,22 @@
 		void load();
 	});
 
-	function remove(key: string, index: number) {
+	async function remove(key: string, index: number) {
 		bag.set(withoutCake(bag.state, key));
 		removedCount = 0;
 		// Keep focus in the list: the next row's remove button, else the heading.
-		queueMicrotask(() => {
-			const buttons = document.querySelectorAll<HTMLButtonElement>('[data-remove]');
-			const target = buttons[Math.min(index, buttons.length - 1)];
-			if (target) target.focus();
-			else heading?.focus();
-		});
+		await tick();
+		const buttons = document.querySelectorAll<HTMLButtonElement>('[data-remove]');
+		const target = buttons[Math.min(index, buttons.length - 1)];
+		if (target) target.focus();
+		else heading?.focus();
 	}
 
 	function openPicker() {
 		void picker?.show({
 			date: bagDate,
 			mode: bag.state.mode,
-			slotId: bagDate ? bag.state.slot?.id : undefined
+			slot: bagDate ? bag.state.slot : undefined
 		});
 	}
 
@@ -180,7 +179,7 @@
 									class="text-link"
 									type="button"
 									data-remove
-									onclick={() => remove(l.option.key, i)}>Remove {l.cake.name}</button
+									onclick={() => void remove(l.option.key, i)}>Remove {l.cake.name}</button
 								>
 							</div>
 							<span class="line-price"
@@ -229,7 +228,7 @@
 					included. GK delivery is separately quoted and paid; it is not included in the cake total.
 				</p>
 				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- checkout URL with the bag's query -->
-				<a class="button primary" href={checkoutHref(bag.state)}
+				<a class="button primary" href={checkoutHref(bag.state, today)}
 					>Review checkout <span class="arrow" aria-hidden="true">→</span></a
 				>
 				<p class="small">Nothing is reserved until you pay.</p>
