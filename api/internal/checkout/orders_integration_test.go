@@ -21,14 +21,49 @@ import (
 // (gk019-owner-r6); the summary is illustrative, not the approved wording.
 func (h *harness) policy(t *testing.T, key string) string {
 	t.Helper()
+	// The gateway refuses effective_at more than a minute before the
+	// database clock, while the harness clock (h.now) is fixed in the past:
+	// insert the fixture directly as the owner, effective an hour before
+	// h.now, so tests never depend on the wall clock. The gateway path itself
+	// is covered by TestPolicyRecordUsesTheDatabaseClock.
+	_ = key
+	return h.insertPolicy(t, "BO-GK-003.cancellation_early",
+		"92751b1e4b59d9ec750e05776846849bf56679e5ef4e92c787b8296f3f487b70",
+		"Cancel more than 120 hours before handover: full refund. Later: 50% of the amount paid.", h.now.Add(-time.Hour))
+}
+
+// The real command records a policy effective now (database clock) and
+// refuses one more than a minute in the past.
+func TestPolicyRecordUsesTheDatabaseClock(t *testing.T) {
+	h := newHarness(t)
 	in := checkout.PolicyInput{SourceDecisionID: "BO-GK-003.cancellation_early",
 		SourceRevisionSHA256: "92751b1e4b59d9ec750e05776846849bf56679e5ef4e92c787b8296f3f487b70",
-		Summary:              "Cancel more than 120 hours before handover: full refund. Later: 50% of the amount paid.",
-		EffectiveAt:          time.Now().UTC().Add(-time.Second).Format(time.RFC3339), ApproverEvidence: "test fixture"}
+		Summary:              "Test terms", EffectiveAt: time.Now().UTC().Format(time.RFC3339), ApproverEvidence: "test fixture"}
 	if err := in.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	return must[catalog.Result](t)(h.co.RecordPolicy(h.ctx, chef, key, in)).ID
+	if r, err := h.co.RecordPolicy(h.ctx, chef, "now", in); err != nil || r.ID == "" {
+		t.Fatalf("record now: %+v %v", r, err)
+	}
+	in.EffectiveAt = time.Now().UTC().Add(-time.Hour).Format(time.RFC3339)
+	if _, err := h.co.RecordPolicy(h.ctx, chef, "past", in); err == nil {
+		t.Fatal("a policy effective an hour ago was accepted")
+	}
+}
+
+// insertPolicy records a policy version effective at an exact instant,
+// bypassing the gateway's wall-clock rule (test fixture only).
+func (h *harness) insertPolicy(t *testing.T, decision, sha, summary string, effective time.Time) string {
+	t.Helper()
+	var id string
+	if err := h.admin.QueryRow(h.ctx, `INSERT INTO business.policy_version
+		(id, source_decision_id, source_revision_sha256, summary, approver_evidence, effective_at, recorded_at, recorded_by)
+		SELECT gen_random_uuid(), $1, $2, $3, 'test fixture', $4, clock_timestamp(), a.id
+		FROM business.account a WHERE a.provider_subject = $5::uuid
+		RETURNING id::text`, decision, sha, summary, effective, chef).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
 }
 
 type orderJSON struct {
@@ -422,10 +457,8 @@ func TestCheckoutRechecksAndGuards(t *testing.T) {
 	}
 
 	// Future policies are not current.
-	future := checkout.PolicyInput{SourceDecisionID: "BO-GK-003.cancellation_late",
-		SourceRevisionSHA256: "b44d62dccb5defcafed270ced4ff29ad5f8cdd5194873c8c46e2597c2ec28a4b", Summary: "Later terms",
-		EffectiveAt: h.now.Add(time.Hour).Format(time.RFC3339), ApproverEvidence: "test fixture"}
-	must[catalog.Result](t)(h.co.RecordPolicy(h.ctx, chef, "future", future))
+	h.insertPolicy(t, "BO-GK-003.cancellation_late", "b44d62dccb5defcafed270ced4ff29ad5f8cdd5194873c8c46e2597c2ec28a4b",
+		"Later terms", h.now.Add(time.Hour))
 	if p := must[checkout.Policy](t)(h.co.CurrentPolicy(h.ctx)); p.ID != pol {
 		t.Fatalf("current policy = %s, want %s (the later one is not yet effective)", p.ID, pol)
 	}
