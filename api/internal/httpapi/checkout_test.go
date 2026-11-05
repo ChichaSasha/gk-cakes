@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -113,6 +114,77 @@ func (f *fakeCheckout) LatePayment(_ context.Context, subject, _, id string, _ c
 		return catalog.Result{}, f.freeErr
 	}
 	return catalog.Result{ID: "late-" + id, Replayed: f.replayed}, nil
+}
+
+func (f *fakeCheckout) RecordRefund(_ context.Context, subject, _, id string, _ checkout.RefundInput) (catalog.Result, error) {
+	f.calls++
+	f.subject = subject
+	if f.freeErr != nil {
+		return catalog.Result{}, f.freeErr
+	}
+	return catalog.Result{ID: "exc-" + id, Replayed: f.replayed}, nil
+}
+
+func (f *fakeCheckout) decision(subject string) (catalog.Result, error) {
+	f.calls++
+	f.subject = subject
+	if f.freeErr != nil {
+		return catalog.Result{}, f.freeErr
+	}
+	return catalog.Result{ID: "dec-1", Replayed: f.replayed}, nil
+}
+
+func (f *fakeCheckout) ResolveObservation(_ context.Context, subject, _, _, _ string, _ checkout.ResolveObservationInput) (catalog.Result, error) {
+	return f.decision(subject)
+}
+
+func (f *fakeCheckout) DecideOperation(_ context.Context, subject, _, _, _ string, _ checkout.DecideOperationInput) (catalog.Result, error) {
+	return f.decision(subject)
+}
+
+func (f *fakeCheckout) ClearRefundMismatch(_ context.Context, subject, _, _, _ string, _ checkout.ClearMismatchInput) (catalog.Result, error) {
+	return f.decision(subject)
+}
+
+func (f *fakeCheckout) ClearPaymentMismatch(_ context.Context, subject, _, _, _ string, _ checkout.NoteInput) (catalog.Result, error) {
+	return f.decision(subject)
+}
+
+func (f *fakeCheckout) ReserveRemainder(_ context.Context, subject, _, _, _ string, _ checkout.RemainderInput) (catalog.Result, error) {
+	return f.decision(subject)
+}
+
+func (f *fakeCheckout) AttentionList(_ context.Context, subject string) (checkout.Attention, error) {
+	f.subject = subject
+	return checkout.Attention(`[{"kind":"delivery_pending"}]`), nil
+}
+
+func (f *fakeCheckout) PreviewManualPayout(_ context.Context, subject, _ string, _ checkout.ManualPayoutPreviewInput) (json.RawMessage, error) {
+	f.calls++
+	f.subject = subject
+	return json.RawMessage(`{"preview_id":"p1"}`), f.freeErr
+}
+
+func (f *fakeCheckout) RequestManualPayout(_ context.Context, subject, _, _ string, _ checkout.ManualPayoutInput) (catalog.Result, error) {
+	return f.decision(subject)
+}
+
+func (f *fakeCheckout) RecordManualPayoutOutcome(_ context.Context, subject, _, _, _ string, _ checkout.ManualPayoutOutcomeInput) (catalog.Result, error) {
+	return f.decision(subject)
+}
+
+func (f *fakeCheckout) ManualPayouts(_ context.Context, subject, _ string) (json.RawMessage, error) {
+	f.subject = subject
+	return json.RawMessage(`[]`), nil
+}
+
+func (f *fakeCheckout) PayDeliveryRefund(_ context.Context, subject, _, id string, _ checkout.DeliveryRefundInput) (catalog.Result, error) {
+	f.calls++
+	f.subject = subject
+	if f.freeErr != nil {
+		return catalog.Result{}, f.freeErr
+	}
+	return catalog.Result{ID: "op-" + id, Replayed: f.replayed}, nil
 }
 
 func (f *fakeCheckout) CurrentPolicy(context.Context) (checkout.Policy, error) {
@@ -594,6 +666,191 @@ func TestProductionAndLatePaymentRoutes(t *testing.T) {
 	} {
 		if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, late, c.auth, "k", c.body, nil); rec.Code != c.status {
 			t.Errorf("late payment %s: %d %s, want %d", name, rec.Code, rec.Body.String(), c.status)
+		}
+	}
+}
+
+func TestChefRefundRoutes(t *testing.T) {
+	id := catalogIdentity()
+	id.actors["fulfil"] = identity.Actor{AccountID: "acc-ful", Subject: "sub-ful", Capabilities: []string{identity.Fulfillment}}
+	const refunds = "/api/v1/admin/orders/o1/refunds"
+	const c1, c2 = "aaaaaaaa-1111-4111-8111-11111111111b", "22222222-2222-4222-8222-222222222222"
+	good := `{"expected_version":3,"amount_minor":2500,"currency":"GBP","allocations":[{"collection_id":"` + c1 +
+		`","amount_minor":2000},{"collection_id":"` + c2 + `","amount_minor":500}],"reason":"Agreed adjustment"}`
+	for name, c := range map[string]struct {
+		auth, body string
+		status     int
+	}{
+		"support":        {"support", good, 403},
+		"fulfillment":    {"fulfil", good, 403},
+		"customer":       {secretToken, good, 403},
+		"chef":           {"chef", good, 202},
+		"no version":     {"chef", strings.Replace(good, `"expected_version":3`, `"expected_version":0`, 1), 422},
+		"zero":           {"chef", strings.Replace(good, `"amount_minor":2500`, `"amount_minor":0`, 1), 422},
+		"euro":           {"chef", strings.Replace(good, `"GBP"`, `"EUR"`, 1), 422},
+		"wrong sum":      {"chef", strings.Replace(good, `"amount_minor":2500`, `"amount_minor":2400`, 1), 422},
+		"duplicate":      {"chef", strings.Replace(good, c2, c1, 1), 422},
+		"upper case":     {"chef", strings.Replace(good, c1, strings.ToUpper(c1), 1), 422},
+		"no allocations": {"chef", `{"expected_version":3,"amount_minor":2500,"currency":"GBP","allocations":[],"reason":"x"}`, 422},
+		"no reason":      {"chef", strings.Replace(good, `"Agreed adjustment"`, `""`, 1), 422},
+		"two lines":      {"chef", strings.Replace(good, `"Agreed adjustment"`, `"Agreed\nadjustment"`, 1), 422},
+		"unknown field":  {"chef", strings.Replace(good, `"currency"`, `"note":"x","currency"`, 1), 400},
+		"null reason":    {"chef", strings.Replace(good, `"Agreed adjustment"`, `null`, 1), 422},
+	} {
+		if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, refunds, c.auth, "k", c.body, nil); rec.Code != c.status {
+			t.Errorf("refund %s: %d %s, want %d", name, rec.Code, rec.Body.String(), c.status)
+		}
+	}
+	rec := serveCheckout(t, &fakeCheckout{replayed: true}, id, http.MethodPost, refunds, "chef", "k", good, nil)
+	if rec.Code != 202 || rec.Header().Get("Idempotent-Replayed") != "true" ||
+		rec.Body.String() != `{"order_id":"o1","operation_id":"exc-o1","state":"refund_pending","poll_after_seconds":3}`+"\n" {
+		t.Fatalf("replayed refund: %d %q", rec.Code, rec.Body.String())
+	}
+	if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, refunds, "chef", "", good, nil); rec.Code != 400 {
+		t.Fatalf("no key: %d", rec.Code)
+	}
+	for code, want := range map[string]string{"refund_limit": "REFUND_LIMIT", "reconciliation_required": "RECONCILIATION_REQUIRED",
+		"refund_in_progress": "REFUND_IN_PROGRESS", "no_refund_pending": "NO_REFUND_PENDING"} {
+		rec := serveCheckout(t, &fakeCheckout{freeErr: &catalog.ConflictError{Code: code}}, id, http.MethodPost, refunds, "chef", "k", good, nil)
+		if rec.Code != 409 || !strings.Contains(rec.Body.String(), `"code":"`+want+`"`) {
+			t.Errorf("%s: %d %s", code, rec.Code, rec.Body.String())
+		}
+	}
+	if rec := serveCheckout(t, &fakeCheckout{freeErr: checkout.ErrOrdersFrozen}, id, http.MethodPost, refunds, "chef", "k", good, nil); rec.Code != 503 {
+		t.Fatalf("frozen refund: %d", rec.Code)
+	}
+	const delivery = "/api/v1/admin/orders/o1/delivery-refund"
+	body := `{"expected_version":3,"collection_id":"` + c2 + `"}`
+	for name, c := range map[string]struct {
+		auth, body string
+		status     int
+	}{
+		"support":       {"support", body, 403},
+		"fulfillment":   {"fulfil", body, 403},
+		"chef":          {"chef", body, 202},
+		"no collection": {"chef", `{"expected_version":3}`, 422},
+		"bad id":        {"chef", `{"expected_version":3,"collection_id":"c2"}`, 422},
+		"no version":    {"chef", `{"collection_id":"` + c2 + `"}`, 422},
+		"extra":         {"chef", `{"expected_version":3,"collection_id":"` + c2 + `","amount_minor":1}`, 400},
+	} {
+		if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, delivery, c.auth, "k", c.body, nil); rec.Code != c.status {
+			t.Errorf("delivery refund %s: %d %s, want %d", name, rec.Code, rec.Body.String(), c.status)
+		}
+	}
+	if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, delivery, "chef", "k", body, nil); rec.Body.String() !=
+		`{"order_id":"o1","operation_id":"op-o1","state":"refund_pending","poll_after_seconds":3}`+"\n" {
+		t.Fatalf("delivery refund answer %q", rec.Body.String())
+	}
+}
+
+func TestRecoveryToolRoutes(t *testing.T) {
+	id := catalogIdentity()
+	id.actors["fulfil"] = identity.Actor{AccountID: "acc-ful", Subject: "sub-ful", Capabilities: []string{identity.Fulfillment}}
+	const op = "bbbbbbbb-1111-4111-8111-11111111111c"
+	base := "/api/v1/admin/orders/o1/"
+	for name, c := range map[string]struct {
+		path, auth, body string
+		status           int
+	}{
+		"match":              {"refund-observations/x/resolve", "chef", `{"expected_version":2,"resolution":"match","refund_operation_id":"` + op + `","note":"Same refund"}`, 200},
+		"accept":             {"refund-observations/x/resolve", "chef", `{"expected_version":2,"resolution":"accept_external","note":"Dashboard refund"}`, 200},
+		"accept with op":     {"refund-observations/x/resolve", "chef", `{"expected_version":2,"resolution":"accept_external","refund_operation_id":"` + op + `","note":"x"}`, 422},
+		"match without op":   {"refund-observations/x/resolve", "chef", `{"expected_version":2,"resolution":"match","note":"x"}`, 422},
+		"delete":             {"refund-observations/x/resolve", "chef", `{"expected_version":2,"resolution":"delete","note":"x"}`, 422},
+		"no note":            {"refund-observations/x/resolve", "chef", `{"expected_version":2,"resolution":"accept_external"}`, 422},
+		"support resolve":    {"refund-observations/x/resolve", "support", `{"expected_version":2,"resolution":"accept_external","note":"x"}`, 403},
+		"failed":             {"refund-operations/x/decide", "chef", `{"expected_version":2,"decision":"failed","note":"Complete list"}`, 200},
+		"succeeded":          {"refund-operations/x/decide", "chef", `{"expected_version":2,"decision":"succeeded","provider_refund_id":"re_123","note":"Dashboard"}`, 200},
+		"succeeded no id":    {"refund-operations/x/decide", "chef", `{"expected_version":2,"decision":"succeeded","note":"x"}`, 422},
+		"failed with id":     {"refund-operations/x/decide", "chef", `{"expected_version":2,"decision":"failed","provider_refund_id":"re_1","note":"x"}`, 422},
+		"bad id":             {"refund-operations/x/decide", "chef", `{"expected_version":2,"decision":"succeeded","provider_refund_id":"ch_1","note":"x"}`, 422},
+		"fulfillment decide": {"refund-operations/x/decide", "fulfil", `{"expected_version":2,"decision":"failed","note":"x"}`, 403},
+		"keep":               {"refund-operations/x/clear-mismatch", "chef", `{"expected_version":2,"decision":"keep","note":"Stale sighting"}`, 200},
+		"other":              {"refund-operations/x/clear-mismatch", "chef", `{"expected_version":2,"decision":"ignore","note":"x"}`, 422},
+		"payment":            {"payment-collections/x/clear-mismatch", "chef", `{"expected_version":2,"note":"Checked"}`, 200},
+		"payment no note":    {"payment-collections/x/clear-mismatch", "chef", `{"expected_version":2}`, 422},
+		"re-reserve":         {"refund-operations/x/re-reserve", "chef", `{"expected_version":2}`, 202},
+		"re-reserve note":    {"refund-operations/x/re-reserve", "chef", `{"expected_version":2,"note":"Card replaced"}`, 202},
+		"re-reserve support": {"refund-operations/x/re-reserve", "support", `{"expected_version":2}`, 403},
+	} {
+		if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, base+c.path, c.auth, "k", c.body, nil); rec.Code != c.status {
+			t.Errorf("%s: %d %s, want %d", name, rec.Code, rec.Body.String(), c.status)
+		}
+	}
+	rec := serveCheckout(t, &fakeCheckout{replayed: true}, id, http.MethodPost, base+"refund-operations/x/decide", "chef", "k",
+		`{"expected_version":2,"decision":"failed","note":"x"}`, nil)
+	if rec.Code != 200 || rec.Header().Get("Idempotent-Replayed") != "true" || rec.Body.String() != `{"decision_id":"dec-1","order_id":"o1"}`+"\n" {
+		t.Fatalf("replayed decision: %d %q", rec.Code, rec.Body.String())
+	}
+	for code, want := range map[string]string{"identity_unproven": "IDENTITY_UNPROVEN", "window_open": "WINDOW_OPEN", "evidence_required": "EVIDENCE_REQUIRED"} {
+		rec := serveCheckout(t, &fakeCheckout{freeErr: &catalog.ConflictError{Code: code}}, id, http.MethodPost, base+"refund-operations/x/decide",
+			"chef", "k", `{"expected_version":2,"decision":"failed","note":"x"}`, nil)
+		if rec.Code != 409 || !strings.Contains(rec.Body.String(), `"code":"`+want+`"`) {
+			t.Errorf("%s: %d %s", code, rec.Code, rec.Body.String())
+		}
+	}
+	if rec := serveCheckout(t, &fakeCheckout{freeErr: checkout.ErrOrdersFrozen}, id, http.MethodPost, base+"refund-observations/x/resolve", "chef", "k",
+		`{"expected_version":2,"resolution":"accept_external","note":"x"}`, nil); rec.Code != 503 {
+		t.Fatalf("frozen: %d", rec.Code)
+	}
+	for name, c := range map[string]struct {
+		auth   string
+		status int
+	}{"chef": {"chef", 200}, "support": {"support", 200}, "fulfillment": {"fulfil", 403}, "customer": {secretToken, 403}} {
+		rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodGet, "/api/v1/admin/attention", c.auth, "", "", nil)
+		if rec.Code != c.status {
+			t.Errorf("attention by %s: %d", name, rec.Code)
+		}
+		if c.status == 200 && rec.Body.String() != `{"items":[{"kind":"delivery_pending"}]}`+"\n" {
+			t.Errorf("attention body %q", rec.Body.String())
+		}
+	}
+}
+
+func TestManualPayoutRoutes(t *testing.T) {
+	id := catalogIdentity()
+	id.actors["fulfil"] = identity.Actor{AccountID: "acc-ful", Subject: "sub-ful", Capabilities: []string{identity.Fulfillment}}
+	const coll = "cccccccc-1111-4111-8111-11111111111d"
+	const hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	base := "/api/v1/admin/orders/o1/manual-payouts"
+	preview := `{"collection_id":"` + coll + `","unavailable_evidence_ref":"stripe-failure/case-1","recipient_evidence_ref":"recipient/case-1"}`
+	success := `{"expected_version":4,"outcome":"succeeded","transfer_identity":"bank-statement/line-3","evidence_ref":"evidence/1","amount_minor":5000,"currency":"GBP"}`
+	for name, c := range map[string]struct {
+		path, auth, key, body string
+		status                int
+	}{
+		"preview":          {"/preview", "chef", "", preview, 200},
+		"preview support":  {"/preview", "support", "", preview, 403},
+		"bank details":     {"/preview", "chef", "", strings.Replace(preview, "recipient/case-1", "12-34-56 12345678", 1), 422},
+		"iban":             {"/preview", "chef", "", strings.Replace(preview, "recipient/case-1", "GB33BUKB20201555555555", 1), 422},
+		"spaced iban":      {"/preview", "chef", "", strings.Replace(preview, "recipient/case-1", "GB33 BUKB 2020 1555 5555 55", 1), 422},
+		"spaced digits":    {"/preview", "chef", "", strings.Replace(preview, "stripe-failure/case-1", "acct 12-34-56", 1), 422},
+		"withdrawn":        {"/op1/outcome", "chef", "k", `{"expected_version":4,"outcome":"withdrawn","evidence_ref":"note/1"}`, 202},
+		"withdrawn bare":   {"/op1/outcome", "chef", "k", `{"expected_version":4,"outcome":"withdrawn"}`, 422},
+		"preview extra":    {"/preview", "chef", "", strings.Replace(preview, `"collection_id"`, `"iban":"x","collection_id"`, 1), 400},
+		"reserve":          {"", "chef", "k", `{"expected_version":4,"preview_id":"` + coll + `","preview_hash":"` + hash + `"}`, 202},
+		"reserve no key":   {"", "chef", "", `{"expected_version":4,"preview_id":"` + coll + `","preview_hash":"` + hash + `"}`, 400},
+		"reserve bad hash": {"", "chef", "k", `{"expected_version":4,"preview_id":"` + coll + `","preview_hash":"x"}`, 422},
+		"reserve fulfil":   {"", "fulfil", "k", `{"expected_version":4,"preview_id":"` + coll + `","preview_hash":"` + hash + `"}`, 403},
+		"submitted":        {"/op1/outcome", "chef", "k", `{"expected_version":4,"outcome":"submitted"}`, 202},
+		"succeeded":        {"/op1/outcome", "chef", "k", success, 202},
+		"success no id":    {"/op1/outcome", "chef", "k", strings.Replace(success, `"transfer_identity":"bank-statement/line-3",`, "", 1), 422},
+		"success euro":     {"/op1/outcome", "chef", "k", strings.Replace(success, `"GBP"`, `"EUR"`, 1), 422},
+		"account number":   {"/op1/outcome", "chef", "k", strings.Replace(success, "bank-statement/line-3", "acct 12345678", 1), 422},
+		"failed no proof":  {"/op1/outcome", "chef", "k", `{"expected_version":4,"outcome":"failed"}`, 422},
+		"submitted amount": {"/op1/outcome", "chef", "k", `{"expected_version":4,"outcome":"submitted","amount_minor":5000}`, 422},
+		"paid":             {"/op1/outcome", "chef", "k", `{"expected_version":4,"outcome":"paid"}`, 422},
+	} {
+		if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, base+c.path, c.auth, c.key, c.body, nil); rec.Code != c.status {
+			t.Errorf("%s: %d %s, want %d", name, rec.Code, rec.Body.String(), c.status)
+		}
+	}
+	for name, c := range map[string]struct {
+		auth   string
+		status int
+	}{"chef": {"chef", 200}, "support": {"support", 403}, "fulfillment": {"fulfil", 403}} {
+		if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodGet, base, c.auth, "", "", nil); rec.Code != c.status {
+			t.Errorf("list by %s: %d", name, rec.Code)
 		}
 	}
 }

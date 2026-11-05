@@ -1588,7 +1588,7 @@ Not yet:
   cancelled (confirmed by another collection, or awaiting payment after its
   holds were released): attention only, no goal, until manager/chef tooling
   (GK-026) decides it;
-- manager tooling for the full return: resolving quarantined observations,
+- (done in GK-026 B2, see "Chef refunds and recovery") manager tooling for the full return: resolving quarantined observations,
   clearing contradicting evidence, deciding `unknown` refunds past their
   window and re-reserving a failed refund's remainder; the Q5 manual
   alternative (`manual_alternative` channel); partial refund goals
@@ -1733,9 +1733,8 @@ Migration `0022_production_late_payment.sql`.
   the integration harness claims them only when a test runs them
   (`holdProduction`).
 
-Not yet: a chef action that pays the pending delivery share of an ordinary
-cancellation; admin partial refunds with allocations (the agreed exception goal)
-and chef-confirmed revised allocations after skewed prior actuals; the
+Not yet (the delivery share action and the agreed exception goal: GK-026 B2
+below): chef-confirmed revised allocations after skewed prior actuals; the
 completed/no-show chef request that creates a financial case while
 preserving fulfillment history (K05); gating refund dispatch on the
 cancellation being secured (refunds are reserved and dispatched from the
@@ -1747,6 +1746,216 @@ unchanged goal); an HTTP route for the delivery failure and delivery
 collections from checkout; returning a sold ready cake to stock on
 cancellation; staff order reads; cancellation, production and refund emails;
 the UI (B2/B3).
+
+## Chef refunds and recovery (K05, GK-026 B2)
+
+Part 1: migrations `0023_b1_followups.sql` and `0024_chef_refunds.sql`.
+Both routes reuse the A3c2 ledger (`refund_goal`, `refund_operation`, the
+dispatch worker and its K11 protection per operation); there is no second
+refund ledger.
+
+| Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
+| --- | --- | --- |
+| `POST /api/v1/admin/orders/{id}/refunds` | chef | `{expected_version, amount_minor, currency: "GBP", allocations: [{collection_id, amount_minor}], reason}` with Idempotency-Key; 202 `{order_id, operation_id (the exception), state: "refund_pending", poll_after_seconds}` |
+| `POST /api/v1/admin/orders/{id}/delivery-refund` | chef | `{expected_version, collection_id}` with Idempotency-Key; 202 `{order_id, operation_id (the refund operation), state: "refund_pending", poll_after_seconds}` |
+
+- **Agreed exception (partial refund goal).** `amount_minor` 1–100000000
+  pence; 1–10 allocations, each a distinct succeeded collection of the order
+  (lower-case UUID), at least 1p, adding up to the amount (otherwise 422
+  `allocations`); reason 1–500 characters on one line (kept in
+  `business.refund_exception`, never in the audit detail or logs). Under the
+  order lock: 409 `RECONCILIATION_REQUIRED` while the order has an
+  unresolved quarantined refund observation, contradicting evidence on a
+  refund operation or payment collection, a refund in `requires_action`, an
+  unresolved refund whose dispatch is in K11 `reconcile`, or a payment
+  collection in `unknown`; 409 `REFUND_IN_PROGRESS` while any refund of the
+  order is unresolved (the explicit allocation is reserved against settled
+  balances, so no automatic reservation splits it); 409 `REFUND_LIMIT` when
+  the amount exceeds paid − S − R over the order or an allocation exceeds
+  its collection's room (C − S − R). Then the goal target becomes
+  min(paid, max(target, S + R) + amount), version + 1 (a new goal has reason
+  `chef_exception`), exactly the allocations are reserved as refund
+  operations under that version, the order version is bumped and the
+  exception is stored immutably. It is an obligation on top of what is owed:
+  a pending ordinary share stays pending. A later cancellation nets it (K05:
+  the policy target is cumulative): exceptions of 9500p on a 12000p order
+  cover a 50% cancellation (6000p), which then raises only the policy target
+  (audited `refund.policy_target_raised`) and sends nothing.
+- **Pending delivery share.** Reserves, for one unfloored succeeded delivery
+  collection, what `delivery_pending_minor` reports for it: min(its share −
+  its S + R, its room, what the goal still needs after everything returned,
+  reserved or automatically reservable). 404 for a collection of another
+  order, 409 `CONFLICT` for a cake or unpaid collection, 409
+  `NO_REFUND_PENDING` when nothing is pending, `REFUND_IN_PROGRESS` while
+  that collection has an unresolved refund, `RECONCILIATION_REQUIRED` as
+  above. Cake 9501p + delivery 2000p at 50%: the cancellation sends 4751p,
+  the chef's delivery refund 1000p once, and the refund reads `returned`.
+- **Both:** chef only (403 otherwise); 409 `STALE_VERSION`; the same key and
+  body replays (`Idempotent-Replayed: true`, also during a restore freeze),
+  another body is `KEY_REUSED`; a new request during a restore freeze is 503
+  and records nothing; 409 `CONFLICT` while a K11 command of the order is
+  not secured or a cancellation/late-payment decision is unresolved. Not
+  K11 order commands themselves (no customer commitment changes); each
+  reserved operation is protected under K11 before its first Stripe call.
+  Audited: `refund.exception_recorded` / `refund.delivery_paid`,
+  `refund.goal_recorded` / `refund.goal_raised`, `refund.reserved`.
+- **B1 follow-ups (0023).** After a failed refund the order's refund reads
+  `needs_attention` only when the goal lacks money beyond what is returned,
+  reserved and `delivery_pending_minor` (a pending chef delivery action is
+  not a failure); a policy target raised without raising the goal is audited
+  `refund.policy_target_raised`; the commit-time `honour_too_late` refusal
+  is audited `order.late_payment_refused`.
+- **Tests:** `internal/checkout/recovery_integration_test.go` (real
+  PostgreSQL, fake Stripe), `internal/httpapi` `TestChefRefundRoutes`.
+
+### Manager recovery tools (GK-026 B2 part 2, migration 0025)
+
+| Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
+| --- | --- | --- |
+| `POST /api/v1/admin/orders/{id}/refund-observations/{observation_id}/resolve` | chef | `{expected_version, resolution: "match" \| "accept_external", refund_operation_id (match only), note}`; 200 `{order_id, decision_id}` |
+| `POST /api/v1/admin/orders/{id}/refund-operations/{operation_id}/decide` | chef | `{expected_version, decision: "failed" \| "succeeded", provider_refund_id (succeeded only), note}`; 200 |
+| `POST /api/v1/admin/orders/{id}/refund-operations/{operation_id}/clear-mismatch` | chef | `{expected_version, decision: "keep" \| "failed" \| "succeeded", note}`; 200 |
+| `POST /api/v1/admin/orders/{id}/payment-collections/{collection_id}/clear-mismatch` | chef | `{expected_version, note}`; 200 |
+| `POST /api/v1/admin/orders/{id}/refund-operations/{operation_id}/re-reserve` | chef | `{expected_version, note?}`; 202 `refund_pending` |
+| `GET /api/v1/admin/attention` | chef; technical support (no amounts, audited `attention.viewed`) | 200 `{items: [{kind, order_id, collection_id, refund_operation_id, observation_id, job_id, reason, amount_minor, currency, window_ended, since}]}` |
+
+Every decision: Idempotency-Key (replays also during a restore freeze;
+another body `KEY_REUSED`), `expected_version` (the order version is
+bumped), 503 for a new decision during a restore freeze, `CONFLICT` while a
+K11 command of the order is unresolved, the note (1–500 characters, one
+line) stored immutably in `business.refund_recovery_decision` and kept out
+of the audit (`refund.recovery_decided`). No decision calls Stripe. A
+decision completes the order's refund jobs in attention that it settled (a
+dispatch now decided without contradiction, a reconcile whose collection
+has nothing unresolved, quarantined or contradicted; audited
+`refund.attention_settled`), and the attention list never shows such jobs.
+When a decision settles an operation whose dispatch K11 record is still
+prepared or in reconcile, a `refund_resolve` job (worker kind
+`refund_resolve`, after `refund`) records the outcome `manager_failed` |
+`manager_succeeded` (evidence: the decision ID and state) in the
+independent journal with `recovery.Coordinator.Resolve`, outside any
+transaction, and secures the record; a record already committed with
+another outcome is left alone. Deploy the worker with (or before) the API
+for this: an older worker backs these jobs off as unhandled.
+
+- **Resolve a quarantined observation.** `match` only when the identities
+  prove it (the refund's metadata names the operation or the operation
+  records that refund ID; same amount, `gbp`, the collection's payment
+  intent and Stripe account; no other refund matched to it; the operation
+  unresolved): the operation is settled by the refund's own status;
+  otherwise 409 `IDENTITY_UNPROVEN`. `accept_external` keeps the observation
+  (never deleted), lifts its block and counts its money as returned by its
+  own status; nothing new is reserved.
+- **Decide an `unknown` refund** only past its replay window (409
+  `WINDOW_OPEN`). `failed` needs complete-provider-list evidence of
+  non-execution (`business.refund_not_executed_proven`, migration 0027): a
+  complete reconcile listing after the window found nothing
+  (`refund_operation.not_found_at` ≥ `replay_until`; only the reconcile's
+  not_found verdict, which follows a complete list, sets it), no
+  observation names, matches or links the operation, it records no refund
+  ID, carries no contradiction and no refund object in its evidence (409
+  `EVIDENCE_REQUIRED`). `succeeded` needs the Stripe refund ID: an observed
+  refund of that ID is matched at once only when Stripe's record proves the
+  identity (its metadata names the operation, or the operation already
+  records that ID); otherwise the ID is recorded and the collection's
+  reconcile runs now, which verifies it at Stripe (complete list, then
+  `GET /v1/refunds/{id}`: amount, currency, payment intent) and matches an
+  unmatched observation of that ID to the operation (counted once) before
+  the operation is decided. An ID held by another operation, or observed on
+  another collection, is 409 `DUPLICATE`.
+- **Clear a contradiction.** On a refund operation: `keep` (the recorded
+  state stands), `failed` (its remainder reopens, nothing is re-sent): on an
+  unknown refund exactly the proof of a `failed` decision above (409
+  `WINDOW_OPEN`, then `EVIDENCE_REQUIRED`), on a succeeded refund only when
+  Stripe's record of that same refund (matched, same ID) is failed or
+  canceled; `succeeded` (only with a succeeded refund of the same ID and
+  amount matched to it, else `EVIDENCE_REQUIRED`). On a payment collection: only when it is succeeded
+  or failed (an unknown payment outcome is payment reconciliation, not a
+  note).
+- **Re-reserve a failed remainder.** The latest operation of its collection,
+  a failed provider refund; min(its amount, the collection's room, what the
+  goal still needs) on the same collection (so a failed agreed-exception
+  refund returns to the collection the chef chose); `REFUND_IN_PROGRESS`
+  while anything is unresolved on the collection, `RECONCILIATION_REQUIRED`
+  while anything on the order needs reconciliation, `NO_REFUND_PENDING` at
+  0, `CONFLICT` once superseded.
+- **Attention list.** Jobs in attention (their reason; the order when the
+  job belongs to one), unresolved quarantined observations, contradictions
+  on refunds and payment collections, unknown or requires_action refunds
+  (`window_ended`), failed refunds whose remainder is still owed
+  (`refund_failed_owed`, with the re-reservable amount), pending delivery
+  shares and unresolved manual payouts. Fulfillment has no access.
+- `refund_chef_admit` (B2 part 1) no longer requires a `secured` recovery
+  state (a never-confirmed order is `prepared`): it refuses only pending
+  confirmation/cancellation and unsecured K11 commands.
+- K05 card fixture (`TestCardFixtureResolvedByEvidence`): 10000p collection,
+  local unknown 10000p, external 5000p: match refused, the external 5000p
+  accepted (S 5000p, R 10000p, nothing sent), the unknown failed with the
+  complete-list evidence, the remainder re-reserved: exactly 5000p sent
+  once, the order reads `returned`.
+
+### Q5 manual alternative payout (GK-026 B2 part 2, migration 0026)
+
+| Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
+| --- | --- | --- |
+| `POST /api/v1/admin/orders/{id}/manual-payouts/preview` | chef | `{collection_id, unavailable_evidence_ref, recipient_evidence_ref}` (no key); 200 `{preview_id, order_id, order_version, collection_id, failed_refund_operation_id, amount_minor, currency, unavailable_evidence_ref, recipient_evidence_ref, computed_at, expires_at, preview_hash}` |
+| `POST /api/v1/admin/orders/{id}/manual-payouts` | chef | `{expected_version, preview_id, preview_hash}` with Idempotency-Key; 202 `payout_pending` (operation_id = the K11 command) |
+| `POST /api/v1/admin/orders/{id}/manual-payouts/{refund_operation_id}/outcome` | chef | `{expected_version, outcome, transfer_identity?, evidence_ref?, amount_minor?, currency?}` with Idempotency-Key; 202 `outcome_pending` |
+| `GET /api/v1/admin/orders/{id}/manual-payouts` | chef | 200 `{items: [{refund_operation_id, collection_id, state, amount_minor, currency, unavailable_evidence_ref, instructions, submitted_at, transfer_identity, decided_at, outcome_pending}]}` |
+
+- **Eligible only after definitive provider unavailability:** the
+  collection's latest decided refund is a definitive failure (and a provider
+  refund failed definitively on it), nothing unresolved
+  (`REFUND_IN_PROGRESS`), no reconciliation outstanding; otherwise 409
+  `MANUAL_PAYOUT_NOT_ELIGIBLE`.
+- **References only.** Evidence, recipient and transfer references: 1–200
+  visible characters; once spaces, hyphens and dots are removed, no run of
+  six or more digits and nothing IBAN-like (two letters, two digits, 11–30
+  letters or digits) (422); the evidence itself lives outside this system.
+  Never logged.
+- **Preview:** immutable for 10 minutes and the order version; the whole
+  remaining allocation (min(the failed refund's amount, the room, what the
+  goal still needs)); a changed recipient or amount is a new preview.
+- **Reservation:** a K11 order command `manual_payout` (prepared envelope
+  before the commit, outcome envelope before it is visible). The commit
+  re-checks everything under the order and collection locks and reserves
+  one refund operation with channel `manual_alternative` for the whole
+  amount (no dispatch job; the one-unresolved-per-collection rule blocks
+  provider refunds and other manual payouts), or refuses (`order_changed`,
+  `not_eligible`, `amount_changed`). The list shows `instructions` (amount,
+  GBP, recipient evidence reference, payment reference = the operation ID)
+  only once the reservation's outcome is secured (`protecting` before).
+- **Outcomes** (K11 order command `manual_payout_outcome`): `submitted`
+  (reserved → pending), `unknown` (pending → unknown: blocks every retry and
+  channel), `succeeded` (pending/unknown → succeeded; a transfer identity
+  unique across all manual payouts (409 `DUPLICATE`), an evidence reference,
+  exactly the reserved amount in GBP), `failed` (pending/unknown → failed
+  with evidence: the remainder is owed again, a new manual payout may
+  follow), `withdrawn` (reserved → cancelled: nothing was paid; needs an
+  evidence reference). Each is in
+  `business.manual_payout_event`. A success counts once (the operation's
+  S, no Stripe refund ID invented); until its outcome is secured the order
+  view reports it in progress, never `returned`.
+- **Restore freeze:** like the B1 order commands, the preview and the
+  request do not check the freeze (the request is recorded); the commit of
+  each K11 command checks it first and waits while frozen, so nothing is
+  reserved or recorded during a restore.
+- **Tests:** `internal/checkout/recovery_tools_integration_test.go`,
+  `manual_payout_integration_test.go`; `internal/httpapi`
+  `TestRecoveryToolRoutes`, `TestManualPayoutRoutes`.
+
+Not yet (after B2): the UI for all of this; refund and payout emails or
+notifications; protected storage of the evidence the references point to;
+journal resolution of a dispatch record that a reconcile (not a manager)
+decided after the window (it stays `reconcile`, as before B2);
+foreign-currency manual payouts (liability stays open);
+re-reserving a remainder by policy shares across collections (the
+remainder returns to the failed operation's collection); payment
+reconciliation of an `unknown` payment collection; chef-confirmed revised
+allocations after skewed prior actuals; staff order reads (the chef needs
+the order's `expected_version`); a raised goal settling a manual payout
+reserves the remainder through the provider (it fails again if the
+provider is still unavailable, then needs another decision).
 
 ## Not yet verified
 
