@@ -1,9 +1,13 @@
-# GK-016 r01b — discovery, cake page, custom request and shared date-and-time picker (first sketch, revised after independent review)
+# GK-016 r01c — discovery, cake page, custom request and shared date-and-time picker (Creator-approved 2026-11-05)
 
 2026-11-04. Card GK-016 (Owner: Agent, Kind: Design). r01 covers **browsing and custom
 requests**: one shared date-and-time picker, the cake page, the custom request and its Instagram/email handoff,
 a public "Sizes and starting prices" guide and reorder from history. Account pages (sign-up/sign-in with Google,
-history, claims, favourites merge, Instagram handle) are r02. **Not approved.**
+history, claims, favourites merge, Instagram handle) are r02.
+
+**r01c — Creator-approved 2026-11-05 (answers as suggested).** The Creator approved r01b with the three open
+questions answered as suggested; r01c applies those answers (see [r01c — Creator approval](#r01c--creator-approval-2026-11-05)).
+The fresh integration review (AC3) is still to come.
 
 r01b (2026-11-04) revises r01 (`528223b`) after an independent review (verdict: revise) in this same folder;
 see [What changed in r01b](#what-changed-in-r01b-independent-review). Everything not listed there is unchanged.
@@ -257,14 +261,25 @@ and "Too late" after it; "no times" only on the first date; disabled label 10.5p
 disclosure; gallery error → Try again → 8 cakes; empty gallery; favourites expiry at the end of the London anniversary.
 All 138 pass. No new independent review yet; no Creator feedback yet.
 
+## r01c — Creator approval (2026-11-05)
+
+The Creator approved GK-016 r01b on 2026-11-05 "as suggested", answering the three open questions (relayed by the
+planning master in this session; not a separate file). Applied by the same author worker (`llmplatform/claude-opus-5-5`),
+no corporate tools.
+
+| # | Question | Creator answer | Where applied |
+| --- | --- | --- | --- |
+| 1 | Non-wedding custom requests beyond 2 months? | Allowed up to 8 months ahead (same limit as weddings), with "the chef will confirm" after 2 months. | Behaviour unchanged (non-wedding ✱ from 2 to 8 months; wedding no ✱). Copy: request calendar "Thursday to Sunday, up to 8 months ahead. ✱ Under 8 days’ notice, or more than 2 months ahead for a cake that isn’t a wedding cake: you can still ask, and the chef will confirm."; date note "…more than 2 months ahead. You can ask up to 8 months ahead; the chef will confirm." / wedding "…which is normal for a wedding cake (up to 8 months ahead)"; wedding tick hint "(booking 2 to 8 months ahead is normal for weddings)". |
+| 2 | "Request this design" vs "Request changes to this design"? | Keep: "Request this design" for gallery cakes, "Request changes to this design" for buyable cakes. | No change. |
+| 3 | Ready-made collect-by and notice? | Show the chef's collect-by date on ready-made cakes; the ordinary 192-hour notice applies until the Creator approves shorter notice for a specific cake (K04 Q1). | Cake tag "Ready-made · 1 left · collect by Sun 15 Nov" (no "(example)"); cake note "It must be collected by …: the chef’s collect-by date for this cake (example date; the chef sets it for each ready-made cake). The usual 192-hour notice applies unless the chef has approved shorter notice for this cake."; picker note "…must be collected by …, the chef’s collect-by date." Picker logic unchanged (192 h, "Too late" after collect-by). |
+
+Review-bar label and the policies "About this prototype" text say r01c. Output: `poc/app.js` `034a412d5e891f4a` (r01b
+`931d6a48f3ac2ce4`); other files unchanged. Checks: `node --check poc/app.js`; headless DOM check of
+`cake.html?id=chocolate` and `custom.html` (with `now=2026-11-05T12:00`) shows the new tag, note and calendar copy.
+
 ## Open questions for the Creator
 
-1. Custom requests that aren't weddings: may they also go up to 8 months ahead (as the sketch allows, with "the chef
-   will confirm" after 2 months), or should they stop earlier?
-2. Inspiration photos: is "Request this design" right for gallery cakes, with "Request changes to this design" for cakes
-   you can buy?
-3. Ready-made cakes: the sketch shows an example "collect by" date. Should customers see the chef's collect-by date like
-   this, and is the 192-hour notice right for ready-made cakes unless the chef shortens it?
+None open: questions 1–3 were answered on 2026-11-05 (see r01c above).
 
 ## How to view
 
