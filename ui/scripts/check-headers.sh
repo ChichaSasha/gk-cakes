@@ -29,7 +29,7 @@ directive() { # directive <policy> <name>
   tr ';' '\n' <<<"$1" | sed 's/^ *//' | grep -E "^$2( |$)" || true
 }
 
-for page in / /sign-in /account /admin /auth/callback /%61ccount; do
+for page in / /sign-in /account /admin /auth/callback /%61ccount /checkout /orders/00000000-0000-4000-8000-000000000000; do
   h=$(headers "$page")
   csp=$(value "$h" content-security-policy)
   [[ -n "$csp" ]] || { fail "$page: no Content-Security-Policy"; continue; }

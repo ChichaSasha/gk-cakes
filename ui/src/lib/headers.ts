@@ -22,11 +22,12 @@ export function withConnectSources(policy: string, origins: (string | undefined)
 /**
  * Whether a route is private or carries a one-time code. Decided by the
  * route SvelteKit matched (not the raw path, which may be percent-encoded).
+ * Checkout and order pages show personal and order details (GK-025).
  */
 export function isPrivateRoute(routeId: string | null): boolean {
 	// Route groups such as /(app) do not appear in the URL; ignore them.
 	const id = routeId?.replace(/\/\([^)]*\)/g, '') ?? null;
-	return id !== null && /^\/(account|admin|sign-in|auth)(\/|$)/.test(id);
+	return id !== null && /^\/(account|admin|sign-in|auth|checkout|orders)(\/|$)/.test(id);
 }
 
 /** Names of the sign-in settings that are missing when only some are set. */

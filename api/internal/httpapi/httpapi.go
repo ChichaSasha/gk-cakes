@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/notifications"
+	"github.com/ChichaSasha/gk-cakes/api/internal/payments"
 )
 
 // RequestDeadline is the proposed overall API request budget (architecture.md).
@@ -33,6 +34,12 @@ type EmailWebhook interface {
 	Receive(ctx context.Context, h http.Header, body []byte) (string, error)
 }
 
+// StripeWebhook verifies and stores one Stripe webhook delivery
+// (payments.Webhook).
+type StripeWebhook interface {
+	Receive(ctx context.Context, h http.Header, body []byte) (string, error)
+}
+
 // Options configures the handler.
 type Options struct {
 	// UIOrigin is the single exact browser origin allowed by CORS.
@@ -41,6 +48,9 @@ type Options struct {
 	Logger   *slog.Logger
 	// EmailWebhook serves POST /webhooks/email when set (EMAIL_WEBHOOK_SECRET).
 	EmailWebhook EmailWebhook
+	// StripeWebhook serves POST /webhooks/stripe when set
+	// (STRIPE_WEBHOOK_SECRET).
+	StripeWebhook StripeWebhook
 	// Identity serves the authenticated /api/v1 routes when set (AUTH_ISSUER).
 	Identity Identity
 	// Catalog serves the public catalog when set, and the chef catalog when
@@ -52,6 +62,9 @@ type Options struct {
 	// Checkout serves storefront quotes when set (signed-in quotes and the
 	// chef's discount codes need Identity too).
 	Checkout Checkout
+	// CheckoutEnabled also serves POST /api/v1/checkouts (config
+	// CHECKOUT_ENABLED; off until payments exist).
+	CheckoutEnabled bool
 }
 
 // NewHandler returns the API handler with its middleware chain.
@@ -73,6 +86,9 @@ func NewHandler(opts Options) http.Handler {
 	if opts.EmailWebhook != nil {
 		mux.HandleFunc("POST /webhooks/email", emailWebhook(opts.EmailWebhook))
 	}
+	if opts.StripeWebhook != nil {
+		mux.HandleFunc("POST /webhooks/stripe", stripeWebhook(opts.StripeWebhook))
+	}
 	if opts.Identity != nil {
 		identityRoutes(mux, opts.Identity, opts.Logger)
 	}
@@ -83,7 +99,7 @@ func NewHandler(opts Options) http.Handler {
 		}
 	}
 	if opts.Checkout != nil {
-		checkoutRoutes(mux, opts.Checkout, opts.Identity, opts.Logger)
+		checkoutRoutes(mux, opts.Checkout, opts.Identity, opts.CheckoutEnabled, opts.Logger)
 	}
 	if opts.Schedule != nil {
 		schedulePublicRoutes(mux, opts.Schedule, opts.Logger)
@@ -123,6 +139,35 @@ func emailWebhook(rcv EmailWebhook) http.HandlerFunc {
 		case errors.Is(err, notifications.ErrInvalidSignature):
 			writeError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid webhook signature", false)
 		case errors.Is(err, notifications.ErrMalformedEvent):
+			writeError(w, r, http.StatusBadRequest, "BAD_REQUEST", "Malformed webhook event", false)
+		case err != nil:
+			writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Service temporarily unavailable", true)
+		default:
+			writeJSON(w, http.StatusOK, map[string]string{"status": result})
+		}
+	}
+}
+
+// stripeWebhook acknowledges a delivery only after it is stored: an invalid
+// signature or an unusable signed event is 400 (Stripe retries non-2xx), a
+// storage failure 503. Bodies are never logged.
+func stripeWebhook(rcv StripeWebhook) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, payments.MaxWebhookBytes))
+		var tooLarge *http.MaxBytesError
+		switch {
+		case errors.As(err, &tooLarge):
+			writeError(w, r, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "Payload too large", false)
+			return
+		case err != nil:
+			writeError(w, r, http.StatusBadRequest, "BAD_REQUEST", "Unreadable request body", false)
+			return
+		}
+		result, err := rcv.Receive(r.Context(), r.Header, body)
+		switch {
+		case errors.Is(err, payments.ErrInvalidSignature):
+			writeError(w, r, http.StatusBadRequest, "BAD_SIGNATURE", "Invalid webhook signature", false)
+		case errors.Is(err, payments.ErrMalformedEvent):
 			writeError(w, r, http.StatusBadRequest, "BAD_REQUEST", "Malformed webhook event", false)
 		case err != nil:
 			writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Service temporarily unavailable", true)
@@ -201,7 +246,7 @@ func withCORS(origin string, next http.Handler) http.Handler {
 		h.Set("Access-Control-Expose-Headers", "X-Request-Id, Idempotent-Replayed")
 		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 			h.Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE")
-			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, X-Quote-Proof")
+			h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, X-Quote-Proof, X-Order-Capability")
 			h.Set("Access-Control-Max-Age", "600")
 			w.WriteHeader(http.StatusNoContent)
 			return

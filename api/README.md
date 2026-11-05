@@ -51,17 +51,23 @@ and staging/production reject local hosts and Unix sockets.
 | `UI_ORIGIN`              | api        | required exact origin for CORS; staging/production need public `https`                     |
 | `PORT`                   | api        | default `8080`                                                                              |
 | `SHUTDOWN_TIMEOUT`       | api, worker | drain budget, default `20s`                                                                |
-| `PAYMENT_SECRET`         | api        | optional until its adapter exists; live keys only in production, test keys only elsewhere   |
-| `PAYMENT_WEBHOOK_SECRET`, `STORAGE_WRITE_KEY` | api | optional until their adapters exist; redacted |
+| `PAYMENT_SECRET`         | api        | legacy placeholder, still validated (live keys only in production, test keys only elsewhere) but unused: the worker's `STRIPE_SECRET_KEY` is the payment key |
+| `PAYMENT_WEBHOOK_SECRET`, `STORAGE_WRITE_KEY` | api | optional until their adapters exist; redacted (`PAYMENT_WEBHOOK_SECRET` is unused: see `STRIPE_WEBHOOK_SECRET`) |
+| `STRIPE_ACCOUNT_ID`      | api, worker | the Stripe account collections are made in (`acct_...`, public); on the API it enables `POST /api/v1/orders/{id}/payment` (503 without it) and names the account of events that carry none; on the worker it must be set with `STRIPE_SECRET_KEY` and match the key's account (checked at start) |
+| `STRIPE_WEBHOOK_SECRET`  | api        | signing secret of this environment's Stripe webhook endpoint (`whsec_...`), redacted; needs `STRIPE_ACCOUNT_ID`; when set the API serves `POST /webhooks/stripe`, otherwise that path is 404 |
+| `STRIPE_SECRET_KEY`      | worker     | Stripe secret or restricted key, redacted: test mode (`sk_test_`, `rk_test_`) outside production, live mode only in production (nothing is configured for production now); without it payment jobs wait, see [Payments](#payments-k04-gk-025-a3b) |
 | `EMAIL_WEBHOOK_SECRET`   | api        | Resend webhook signing secret (`whsec_` + base64), redacted; when set, the API serves `POST /webhooks/email`, otherwise that path is 404 |
 | `AUTH_ISSUER`, `AUTH_PUBLISHABLE_KEY` | api | public identity-provider settings: the exact token issuer `https://<project>.supabase.co/auth/v1` and the publishable key `sb_publishable_...` (a secret key is refused); required in staging/production, otherwise both or neither; without them the authenticated `/api/v1` routes are not served, see [Identity](#identity-k00-gk-021) |
+| `CHECKOUT_ENABLED`       | api        | `true` serves `POST /api/v1/checkouts`, the free confirmation and the payment request; default off (`false`); turn it on only once a worker of the same release (with the hold review, GK-025 A3c1) runs |
 | `EMAIL_API_KEY`          | worker     | Resend sending key (`re_...`), redacted; see email dispatch below                          |
 | `RECOVERY_B2_KEY_ID`, `RECOVERY_B2_KEY` | worker | B2 application key for the recovery journal (key secret redacted); scope enforced at start, see [Recovery journal](#recovery-journal-k11-gk-024) |
 | `RECOVERY_ENCRYPTION_KEYS` | worker   | journal encryption keys `kid:base64(32 bytes)[,...]`, redacted                              |
 | `BACKUP_DATABASE_URL`    | gk-backup dump | the `gk_backup` login (read only), same rules as `DATABASE_URL` |
 | `RESTORE_DATABASE_URL`   | gk-backup restore-check | a disposable database on a loopback address only |
+| `RESTORE_TARGET_DATABASE_URL` | gk-backup restore | the migration credential of the isolated restore database, same rules as `MIGRATION_DATABASE_URL`; the user must be in the URL's userinfo (`postgres://user:password@host/db`; no `user=` or `password=` query parameter: the synthetic check derives its temporary login's URL from it); `APP_ENV` names the environment whose backups are read (production is refused) |
+| `RESTORE_BACKUP`         | gk-backup restore | optional backup time such as `20261104-052703z`; default the newest complete backup |
 | `BACKUP_B2_KEY_ID`, `BACKUP_B2_KEY`, `BACKUP_ENCRYPTION_KEYS` | gk-backup | B2 key restricted to `database/` (list/read/write, no delete) and the backup encryption keys `kid:base64(32 bytes)[,...]`; see [Database backups](#database-backups-k11-gk-034) |
-| `PG_DUMP`, `PG_RESTORE`, `BACKUP_MAX_AGE` | gk-backup | optional tool paths (default from `PATH`; version 17 or newer) and the restore check's maximum backup age (default `26h`) |
+| `PG_DUMP`, `PG_RESTORE`, `BACKUP_MAX_AGE` | gk-backup | optional tool paths (default from `PATH`; version 17 or newer; `restore` runs `pg_restore` offline only, archive in and script out) and the restore check's maximum backup age (default `26h`) |
 
 Email dispatch: the four worker variables above are required in staging and
 production; in local and test they are set together or not at all, and a worker
@@ -72,7 +78,8 @@ The API still accepts an `EMAIL_API_KEY` but does not use it.
 
 API endpoints: `GET /healthz` (liveness), `GET /readyz` (database reachable and,
 outside local, the login check), `POST /webhooks/email` (Resend events,
-Svix-signed; only with `EMAIL_WEBHOOK_SECRET`), and with `AUTH_ISSUER` the
+Svix-signed; only with `EMAIL_WEBHOOK_SECRET`), `POST /webhooks/stripe` (Stripe
+events, signed; only with `STRIPE_WEBHOOK_SECRET`), and with `AUTH_ISSUER` the
 authenticated `GET /api/v1/me`, `GET /api/v1/admin/me` and
 `GET /api/v1/admin/staff` (see [Identity](#identity-k00-gk-021)).
 
@@ -93,8 +100,11 @@ production stores wait for the first authorized production release (GK-036).
 | `BACKUP_DATABASE_URL`    | `gk_backup` login, one per environment (staging `gk_backup_staging`) | GitHub environment secret, staging: `STAGING_BACKUP_DATABASE_URL` | `ALTER ROLE <login> PASSWORD`, update the secret | `ALTER ROLE <login> NOLOGIN` or drop it |
 | `BACKUP_B2_KEY_ID`, `BACKUP_B2_KEY` | B2 key: backup bucket, prefix `database/`, list/read/write only (no delete) | GitHub environment secrets `STAGING_BACKUP_B2_KEY_ID`, `STAGING_BACKUP_B2_KEY`; Bitwarden | create a new key with the B2 CLI, update the secrets, delete the old key | delete the key in B2 |
 | `BACKUP_ENCRYPTION_KEYS` | seals database backups; one list per environment | GitHub environment secret `STAGING_BACKUP_ENCRYPTION_KEYS` **and** Bitwarden (backups are unreadable without it) | prepend a new `kid:key`, keep the old ones for at least 31 days (30 visible + 1 hidden) | never drop a key while backups sealed with it are retained |
+| `RESTORE_TARGET_DATABASE_URL` | `postgres` role of the isolated restore project `gk-cakes-restore-test` (synthetic/staging test data only) | Creator's Keychain `gk-restore-test-DATABASE_PASSWORD` (Bitwarden); not in GitHub or Railway | issued at restore time: reset through the Supabase Management API (Creator decision E1, 2026-11-04) | reset the password again |
 | `MIGRATION_DATABASE_URL` | migration credential (used by `gk-migrate` in deploys and by the manual Email proof and Identity admin workflows) | GitHub environment secret, staging: `STAGING_MIGRATION_DATABASE_URL` | rotate the password of the same role (see below)                | rotate; runtime services never hold it       |
 | `RAILWAY_STAGING_TOKEN`  | Railway project token, staging environment only | GitHub environment `staging` secret (deployable from `main` only) | regenerate in Railway, update the secret                  | delete the token in Railway                  |
+| `STRIPE_SECRET_KEY`      | Stripe sandbox (test-mode) key of account `acct_1UNHEgPqGToF2ulH`, one per environment; a restricted key limited to Checkout Sessions (write) and PaymentIntents, Charges and the account (read) is preferred | worker service variables (sealed); Creator's Keychain/Bitwarden | roll the key in the Stripe dashboard, update the variable, redeploy, expire the old key | roll or delete the key in the Stripe dashboard |
+| `STRIPE_WEBHOOK_SECRET`  | signing secret of the Stripe webhook endpoint for this environment's API (sandbox) | API service variables (sealed) | roll the endpoint's secret in Stripe (it can keep the old one valid for a while), update the variable and redeploy promptly | delete the webhook endpoint in Stripe |
 | Provider secrets         | per provider account and environment | API service variables                            | provider dashboard, update the variable, redeploy               | revoke the key in the provider dashboard     |
 
 The migration credential should stay one stable role (on Supabase, `postgres`)
@@ -110,8 +120,8 @@ are provisioned per environment outside Git and granted exactly one group:
 | Group       | Purpose                       | Privileges                                                  |
 | ----------- | ----------------------------- | ----------------------------------------------------------- |
 | `gk_owner`  | owns business objects         | never granted to runtime; migration credential may `SET ROLE` |
-| `gk_api`    | API runtime                   | schema `USAGE`; `EXECUTE` on `email_event_record` (webhook evidence), `identity_resolve` and `identity_staff_list` (identity); more gateway functions as features add them |
-| `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions (`job_claim`, `job_heartbeat`, `job_complete`, `job_release`, `job_fail`, `job_attention`) and the lease-fenced notification gateway (`notification_dispatch_begin`, `notification_attempt_record`, `notification_recovery_*`) |
+| `gk_api`    | API runtime                   | schema `USAGE`; `EXECUTE` on `email_event_record` (webhook evidence), `identity_resolve` and `identity_staff_list` (identity), the catalog, schedule, checkout and order gateway functions, and `payment_initiate` and `payment_event_record` (payments); the exact list is tested |
+| `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions (`job_claim`, `job_heartbeat`, `job_complete`, `job_release`, `job_fail`, `job_attention`), the lease-fenced notification gateway (`notification_dispatch_begin`, `notification_attempt_record`, `notification_recovery_*`) and the lease-fenced order-command gateway (`order_command_begin`, `order_command_reserve`, `order_command_prepared`, `order_command_apply`, `order_command_secured`, `order_command_frozen`) and the lease-fenced payment gateway (`payment_job_begin`, `payment_dispatch_admit`, `payment_attempt_record`, `payment_reconcile_record`, `payment_recovery_*`, `payment_expire_admit`, `payment_expire_record`, `payment_under_reconciliation`) and the order hold review (`order_hold_review_run`); the exact list is tested |
 | `gk_backup` | backup reader                 | `SELECT` on business tables and future sequences, and on `gk_meta.schema_migration` (migration 0008) |
 
 The migration credential needs `CREATEROLE` and `CREATE` on the database.
@@ -318,9 +328,10 @@ Railway and Cloudflare notes from the first staging setup:
 
 `internal/recovery` implements the minimal confirmed-order recovery protocol
 from [K11](../docs/design/contracts.md#k11--confirmed-order-recovery-contract)
-for outgoing dispatches (email now; payments and refunds later). Accepted
-order commands (confirmation, changes) are designed with GK-025 and are not
-supported yet. Every dispatch runs through `Coordinator.Dispatch`:
+for outgoing dispatches (email, and Stripe Checkout Sessions since GK-025 A3b;
+refunds later) and accepted order commands (GK-025: free and paid
+confirmation now; changes later; see "Accepted order commands" below). Every dispatch runs through
+`Coordinator.Dispatch`:
 
 1. reserve it in `business.recovery_operation`: one unresolved operation per
    aggregate (`ErrBusy`), prior versions only increase (`ErrStale`);
@@ -390,21 +401,63 @@ Setup requirements (the code refuses any other key):
 The tables and functions are owner-internal: domain gateway functions call
 them in the same transaction as their own state change, and no runtime role
 can call them directly (`gk_backup` may read the tables, as every business
-table). Restore tooling (as `gk_owner`) freezes all outgoing effects with
-`business.recovery_set_freeze(true, reason)`.
+table). Restore tooling (`gk-backup restore`, as `gk_owner`) freezes all
+outgoing effects (`business.recovery_freeze`) in the same transaction that
+loads the backup.
 
 Not yet:
 
-- B2 Object Lock retention, restore tooling and the restore drill (GK-034
-  Milestone B, GK-035). The restore tooling must replay the journal before
-  workers resume: a restored database can re-anchor a notice's window (the
+- B2 Object Lock retention and the domain restore drill (GK-035). The
+  database restore (`gk-backup restore`, see
+  [Database backups](#database-backups-k11-gk-034)) restores frozen; replaying
+  the journal before workers resume is GK-035's: a restored database can re-anchor a notice's window (the
   existing prepared envelope then refuses the resume), and an existing outcome
   envelope should be adopted rather than replayed;
+- K09 retention for order commands: `business.order_command.payload` (and its
+  prepared envelope) is an immutable copy of the order snapshot, including
+  the customer's name and email. Redacting it once the operation is secured,
+  with order anonymisation, belongs to the retention work (GK-034 Milestone B,
+  GK-037 deletion inventory);
 - K09 retention for the journal: it keeps recipients and message bodies (and
   later essential photos) until deleted, and this key cannot delete. Keeping
   only current copies of still-retained records, 30-day restore points and
   deletion tombstones carried into replay belong to GK-034 Milestone B with
   the retention work.
+
+### Accepted order commands (K11, GK-025 A3a)
+
+An accepted order command is a recovery operation of kind `command` on its
+order (aggregate = order, prior version = the order's version), run by
+`Coordinator.Command`:
+
+1. the API records the command, its exact accepted payload (the full order
+   snapshot: items, holds, code use, guest capability digests, contact) and
+   its receipt instant, reserves the operation and enqueues a worker job in
+   one transaction, and answers 202;
+2. the worker writes the encrypted **prepared** envelope and marks it
+   `prepared`;
+3. the domain commit re-validates the command and changes the order (or
+   records a refusal) in one transaction with the `committed` phase; it is
+   idempotent for the operation;
+4. the worker writes the **outcome** envelope and marks it `secured`; only
+   then is the result visible. Between the commit and the outcome
+   acknowledgment the order shows `confirmation_pending`, never `confirmed`.
+
+A command has no replay deadline (its commit is local and idempotent for the
+operation forever; the database records `infinity`, keeping the column
+`NOT NULL` for the running build)
+and never goes to `reconcile`. A restore freeze and a missing journal make
+the job wait (`Defer`), never commit without protection: the commit itself
+re-checks the freeze under a share lock on the freeze row (SQLSTATE `GK002`),
+so a freeze that lands after the worker's last check still stops it. After a primary
+database loss `Pending` lists commands as well; restore tooling resumes each
+with `Command` after checking the restored order.
+
+Since GK-025 A3b the same path carries the system's paid confirmation
+(`paid_confirm`, recorded by the payment reconcile; see
+[Payments](#payments-k04-gk-025-a3b)); `order_command_apply` dispatches on the
+command, and a secured `paid_awaiting_agreement` outcome is exposed like a
+confirmation.
 
 ## Transactional email (K08, GK-024)
 
@@ -570,18 +623,154 @@ service container of the pinned image), and compares the migrations and every
 business table's row count. A failure fails the workflow, which GitHub
 reports by email.
 
-Restoring to the isolated restore project (`gk-cakes-restore-test`, Frankfurt,
-synthetic data only) uses credentials the Creator issues at restore time
-(GK-014) and is **not yet built or verified** (Milestone B part 2). The CI
-check proves a different path: a full restore into an empty database without
-owners or privileges. A real restore must at least: create roles and schema
-with `gk-migrate` up to the backup's version; restore business data only
-(not `gk_meta`), replacing rows the migrations inserted (for example
-`business.recovery_freeze`) and without firing triggers; set the outgoing
-freeze in the same transaction, before any runtime connects; replay the
-recovery journal, deletions and tombstones, and reconcile providers, as K09
-and K11 describe. Object backups (Supabase Storage) start when the first
-essential files exist (catalog images, GK-022).
+### Restoring into the isolated restore project (GK-034 Milestone B)
+
+`gk-backup restore` restores a backup (the newest complete one, or
+`RESTORE_BACKUP`) into the isolated restore database
+(`gk-cakes-restore-test`, Frankfurt, synthetic/staging data only), frozen.
+It is a different path from the CI check above, which restores everything
+into an empty database without owners or privileges:
+
+1. **Select and validate** (no target access yet): the dump must match its
+   manifest (SHA-256, size); `pg_restore --data-only` turns the archive into
+   a text script offline (no database connection), and the script is
+   accepted only as data: session settings, comments, psql's `\restrict`
+   guard and COPY blocks into `business` and `gk_meta` (any function call,
+   DDL or unknown statement is refused, naming a line number only). Every
+   business table's row count must match the manifest, and the backup's
+   migration history must be this build's, file for file (same SHA-256);
+   a backup with a migration this build does not know is refused (restore
+   with the release that took it).
+2. **Target**: a session advisory lock allows one restore per target at a
+   time (held to the end). The target is refused unless it is empty (no
+   `business` or `gk_meta` schema) or exactly a fresh migrated schema: a
+   history that is a prefix of the backup's and no rows except those
+   migrations insert (`business.recovery_freeze`). A restored target is
+   therefore refused too.
+3. **Migrate** with `gk-migrate`'s code up to the backup's schema version
+   (roles, schema, gateway functions, privileges), then freeze the fresh
+   schema at once.
+4. **Load, in one transaction**, as `gk_owner` with
+   `session_replication_role = replica` (no trigger fires; the migration
+   credential needs superuser or `GRANT SET ON PARAMETER
+   session_replication_role`, which Supabase's `postgres` role has): lock
+   every business table against writers and check again that none holds
+   more than its fresh rows (anything written since step 2 is refused,
+   never deleted), delete every business table's rows (the migration seed
+   rows included), COPY the backup's business data (not `gk_meta`: the
+   history comes from this build's migrations), revoke every job lease
+   (every generation moves up by 1,000,000, so a lease held at backup time
+   or issued after it, in the lost window, is fenced out even if its worker
+   ID came back; jobs leased at backup time go to `retry`), set `recovery_freeze` to frozen with the reason `gk-backup
+   restore of database/<env>/<time>/: outgoing effects frozen until
+   reconciled (K11)`, check every foreign key (the load skipped their
+   triggers) and every row count, and commit. No state ever exists in which
+   restored jobs are visible and not frozen.
+5. **Verify** after the commit: history with checksums, row counts, the
+   freeze, no live lease, and that the freeze row and every restored
+   business row carry the load transaction's ID (`xmin`).
+6. **Synthetic dispatch check**: a temporary `gk_worker` login (created with
+   a SCRAM verifier, never the password, valid for an hour, checked with
+   `database.CheckLogin`, dropped at the end) presents every lease from the
+   backup to `job_heartbeat`, `job_complete`, `job_release`, `job_attention`
+   and `job_fail` (all must refuse), then runs the worker's own handler
+   chain (`internal/handlers`, the constructor `gk-worker` uses: order
+   commands, payments, refunds, hold reviews, email) over every claimable
+   job with recording providers and a journal that refuses writes. Every
+   job must answer frozen (a suspended notice may answer attention: its
+   manager hold is checked before the freeze); a job no handler owns, a
+   provider call, an envelope written, or a change to any business table
+   but `job` (content digests before and after) fails the check. Each job
+   is checked once and released for an hour, never completed, failed or
+   escalated; the check fails as well if the temporary login cannot be
+   dropped (`synthetic_login_dropped`).
+
+   **A failed check has already modified the target**: the claimed jobs
+   moved (new generations, released for an hour) and a handler that went
+   past the freeze may have written. Empty the target (runbook step 2)
+   before the next restore; it would be refused as non-empty anyway when
+   any business row remains.
+
+The result is one JSON object: backup name and time, schema version,
+migrations applied, tables and rows, `frozen`, `freeze_same_transaction`,
+leases in the backup and revoked, the generation epoch, the synthetic
+dispatch counts, the
+data-loss window (restore time minus backup time) and per-step timings.
+Errors keep PostgreSQL's data messages out (SQLSTATE classes 22 and 23 are
+reduced to code, table and constraint).
+
+Runbook (local, by the agent or the Creator; no GitHub secret or workflow:
+the restore credential stays in the Keychain, Creator decision E1):
+
+```sh
+# 1. Credential: reset the restore project's postgres password through the
+#    Management API (PAT in Keychain gk-supabase-pat, project gjrhgikkvxrvvogvxnrs)
+#    and keep it in Keychain gk-restore-test-DATABASE_PASSWORD (account $USER).
+# 2. Empty the target if it holds an earlier restore (synthetic data only):
+#    as postgres, SET ROLE gk_owner; DROP SCHEMA business CASCADE;
+#    RESET ROLE; DROP SCHEMA gk_meta CASCADE;  (the NOLOGIN groups stay)
+# 3. Restore (from api/; pg_restore 17+, e.g. a wrapper running
+#    `docker exec -i <postgres:17 container> pg_restore "$@"`):
+CGO_ENABLED=0 go build -trimpath -o bin/ ./cmd/gk-backup
+PW=$(security find-generic-password -a "$USER" -s gk-restore-test-DATABASE_PASSWORD -w)
+APP_ENV=staging \
+BACKUP_B2_KEY_ID=$(security find-generic-password -s gk-staging-backup-B2_KEY_ID -w) \
+BACKUP_B2_KEY=$(security find-generic-password -s gk-staging-backup-B2_KEY -w) \
+BACKUP_ENCRYPTION_KEYS=$(security find-generic-password -s gk-staging-backup-ENCRYPTION_KEYS -w) \
+RESTORE_TARGET_DATABASE_URL="postgres://postgres.gjrhgikkvxrvvogvxnrs:$PW@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=verify-full&sslrootcert=$PWD/certs/supabase-root-2021.crt" \
+PG_RESTORE=/path/to/pg_restore17 bin/gk-backup restore
+```
+
+The restore project's direct host (`db.<ref>.supabase.co`) is IPv6 only;
+from an IPv4 network use the session pooler (port 5432, user
+`postgres.<ref>`), which supports the advisory lock, the transaction and
+COPY. The synthetic worker login keeps the pooler's `.<ref>` suffix.
+
+**Exercise, 2026-11-05** (build of commit `5848a4e`, into
+`gk-cakes-restore-test` through the session pooler, `verify-full`; that
+build revoked leases with a generation step of 1 and did not yet re-check
+the target under table locks, fail on unowned jobs or report the login
+drop; those review fixes are covered by the integration tests, not by a
+new exercise):
+
+| Run | Backup | Schema | Tables / rows | Leases revoked | Synthetic dispatch | Total (select, fetch, validate, target, migrate, load, verify, check) |
+| --- | --- | --- | --- | --- | --- | --- |
+| staging | `database/staging/20261104-052703z/` (newest complete) | `0008` (8 migrations) | 9 / 90, all matching | 0 of 0 | 0 claimable (all 10 restored jobs completed, all 10 recovery operations secured) | 14.5 s (1.8, 0.2, 0.1, 0.4, 2.9, 3.2, 1.8, 4.1) |
+| synthetic | a seeded local backup with one due job of every kind, a leased job and a suspended notice | `0017` (17) | 46 / 25, all matching | 1 of 1; 5 of 5 old-lease calls refused | 7 claimed: 6 deferred frozen (order command, payment, refund, hold review, 2 notifications), 1 suspended notice held; 0 provider calls, 0 journal writes, no other table changed | 51.9 s (load 18.3, check 18.0: one pooler round trip per table and foreign key) |
+
+Both runs set the freeze in the load transaction (`freeze_same_transaction`)
+and left no synthetic login. A second restore over the restored target was
+refused (`business.account has 3 rows`). Data-loss window of the staging
+backup: 23 h 30 min (taken 2026-11-04 05:27 UTC by hand; the 02:30 UTC
+schedule had not run on 2026-11-05 by 04:57). The staging recovery journal
+(`recovery/staging/`) holds 15 operations, all with an outcome envelope (none
+pending), against 10 in that backup: the 5 newer ones are the lost window
+GK-035 must replay. Object restoration had nothing to restore: no business
+record references a stored file yet (catalog images are not built), and no
+journal blob exists.
+
+Remaining for GK-035 (not done here): provider reconciliation of the lost
+window (Resend, Stripe sessions and refunds), journal replay (adopting
+outcome envelopes, resuming prepared operations with `Coordinator.Pending`;
+opening envelopes needs the environment's `RECOVERY_ENCRYPTION_KEYS`),
+deletions and tombstones carried into the restore (K09), object
+restoration once essential files exist, and a controlled, audited unfreeze
+(`business.recovery_set_freeze(false, …)`) after reconciliation. Before production: a read-only restore key and a
+decision on where personal data is decrypted (GK-014 exception 1).
+
+Hold-review note (found in this exercise, closed by
+`0019_hold_review_freeze.sql`): `order_hold_review_run` answered `done` for
+an already decided review, and closed an undecided one (`closed` or `paid`)
+whose order no longer awaited payment or had a succeeded collection, before
+it read the freeze, so on a restored database the worker completed those
+jobs while frozen (the synthetic check counted `hold_review:completed` and
+failed; the staging backup had no such job). The review now reads the
+freeze first (a share-locked read of `business.recovery_freeze`, before any
+lock, outcome or audit) and defers every hold review job while frozen; the
+synthetic restore test seeds an undecided, a decided and a closing review
+and expects all three deferred frozen. The other worker begin functions
+(order command, payment, refund, notification) already answered `frozen`
+right after identifying their job.
 
 ## Identity (K00, GK-021)
 
@@ -673,14 +862,25 @@ flag (Snickers: `PEANUTS`). The shared-kitchen notice is versioned separately
 and pinned by each recipe version. A variant without a current recipe version,
 which always declares at least one allergen and the notice, is not purchasable
 (missing disclosure disables buying, K01). Recipe quantities are exact
-decimals with at most two places; counts are whole. Inventory links and batch
+decimals with at most two places; counts are whole. Catalog text refuses
+control characters (C0 and C1) and U+2028/U+2029, in the API and in the
+database whatever its locale (`0018_small_fixes.sql`); the notice and a
+description may contain line feeds. The copied snapshot columns keep their
+source rules there too (trimmed flavour name of 1 to 80 characters, a GK-002
+size code, a stock mode, a one-dimensional composition without nulls), and a
+quote's and an order's copied slot window must end after it starts. (Those
+constraints are added `NOT VALID` and then validated in the same migration;
+inside one migration transaction that gives no locking benefit over a plain
+`ADD CONSTRAINT`, the table locks are held until it commits.) Inventory links and batch
 use come with GK-032; real recipe data waits for GK-038's measurements.
 
 **Commands** need the chef capability and a current provider session, an
 `Idempotency-Key` header (1 to 128 visible ASCII characters) and, for an
 existing object, `expected_version`. Bodies are one UTF-8 JSON object with
 lower_snake_case keys, no unknown or repeated fields and no `null` (no catalog
-field is nullable; null is 422). A key is scoped to (account, command, path
+field is nullable; null is 422). The structural checks win: a `null` on an
+unknown field is 400 (unknown field), not 422; this holds for every command
+that reads its body this way (catalog, schedule and checkout). A key is scoped to (account, command, path
 resource); the same key and body return the original object, in its current
 state, with `Idempotent-Replayed: true`; another body is 409 `KEY_REUSED`. A
 refused command stores no key. The database checks the capability again under
@@ -817,6 +1017,572 @@ Migration `0011_checkout_quotes.sql`, package `internal/checkout`.
 | `GET /api/v1/admin/discount-codes` | chef, technical support | current terms of each code |
 | `POST /api/v1/admin/discount-codes` | chef | `{code, kind, basis_points?, expires_at?, total_limit?, per_customer_limit?}` |
 | `POST /api/v1/admin/discount-codes/{id}/versions`, `/archive` | chef | new terms `{expected_version, ...}`; archive `{expected_version}` |
+
+## Orders and checkout holds (K02, K04, K05, GK-025 A2)
+
+Migration `0012_orders.sql`. The chef records **policy versions** (refund
+and cancellation terms citing their owner decision and source hash; final
+legal text is reviewed before launch, GK-037); customers consent to the
+newest effective one. `POST /api/v1/checkouts` turns one quote into one order
+awaiting payment, in one transaction:
+
+- the quote's owner (bearer) or guest proof must match (404 otherwise); the
+  quote must not have expired (24 h; equality expires: `QUOTE_EXPIRED`); the
+  consented policy must be the current one (`POLICY_CHANGED`); every recipe
+  version, price, lot price and code version must still be current
+  (`PRICE_CHANGED`: the customer reviews a new quote); the appointment must
+  still be offered (`SLOT_UNAVAILABLE`);
+- it inserts the order (customer full name, a different payer's name only
+  when someone else pays, an email for service notices) and immutable items
+  (unit price, discount share, net paid per line), fixes the refund deadline
+  as the appointment start minus 120 hours (K05), admits the made-to-order
+  cakes to the day (soft capacity: committed cakes plus the quantity within
+  the limit; other orders' holds never own the last place, so two customers
+  can both take it), reserves ready cakes exclusively (`ITEM_UNAVAILABLE`
+  when gone), reserves the code's use within its total and per-customer
+  limits (`CODE_USED_UP`), and binds a guest order to the quote's proof as
+  an order capability (`read`, `pay`, `cancel`, `move_pickup`);
+- a refused checkout leaves nothing behind; a repeated checkout of the same
+  quote returns the same order (`Idempotent-Replayed`), another body is
+  `KEY_REUSED`. The answer is 202 `{order_id, state: "pending",
+  poll_after_seconds: 3}`: never an accepted order.
+
+Quotes now judge day places as admission does (committed cakes only), and
+the quote purge keeps quotes that became orders. Locks follow K00 (day, lots
+by ID, code; rows referencing them only afterwards), so concurrent checkouts
+of the same ready cakes never deadlock; the code is rechecked after its lock.
+A guest replays a checkout only while its order capability is active. Code
+uses move reserved to consumed or released and never back; revoked
+capabilities stay revoked; order snapshots are immutable and terminal orders
+are never reopened.
+
+**Free confirmation (K03, GK-025 A3a, migration `0013_order_commands.sql`).**
+A zero-amount order is confirmed by the customer's explicit
+`POST /api/v1/orders/{id}/free-confirmation` (`{expected_version}` with an
+Idempotency-Key; the owner, or a guest capability with `pay`), without any
+payment row. The persisted receipt instant is the anchor (K04): the quote's
+24 h window must still be open then (equality expires: `QUOTE_EXPIRED`) and
+the handover at least 192 elapsed hours later (equality allowed:
+`LEAD_TIME`); the order must be awaiting payment with its holds intact and
+cost nothing (`PAYMENT_REQUIRED` otherwise). The answer is 202
+`{order_id, operation_id, state: "confirmation_pending", poll_after_seconds: 3}`; the
+worker commits it under K11 (above): the day allocation becomes committed
+(never refused for capacity), the ready cakes sold, the code use consumed,
+`free_confirmed_at` = the receipt instant. The order reads
+`confirmation_pending` until the outcome is secured, then `confirmed`, and
+`free_confirmation` reports `processing`, `confirmed` or `refused` (with a
+reason: `order_changed`, `holds_released`, `window_closed`; a refusal changes
+nothing but the order's version). At most one free confirmation per order
+is pending or confirmed: the same actor (account, or guest capability) and
+key replays, another key is a conflict; after a refusal the customer may ask
+again at the new version. No confirmation email is sent yet.
+
+**Switched off by default:** `POST /api/v1/checkouts`, the free
+confirmation and the payment request are served only with
+`CHECKOUT_ENABLED=true`. Payment (Stripe sandbox Checkout behind the K11
+recovery gate) is [below](#payments-k04-gk-025-a3b); the hold review that
+releases the holds of abandoned and proven-unpaid orders is
+there too (step 7). Recorded
+deviations: the 202 carries the order ID (no payment operation exists yet);
+a 409 `PRICE_CHANGED` asks the client for a new quote (with a fresh guest
+proof) instead of returning one; the appointment is the quote's.
+
+| Route | Who | Notes |
+| --- | --- | --- |
+| `GET /api/v1/policies/current` | anyone | `{id, summary, effective_at, source_decision_id}`; 404 before the first |
+| `POST /api/v1/admin/policies` | chef | `{source_decision_id, source_revision_sha256, summary, effective_at, approver_evidence}`; an `effective_at` more than 1 minute before the database's current time is refused (422 `INVALID_INPUT` "effective_at is not valid", `business.policy_record`): a policy cannot be back-dated; a future instant is accepted and becomes current then |
+| `POST /api/v1/checkouts` (only with `CHECKOUT_ENABLED=true`) | a guest (`guest_proof` of the quote) or the signed-in owner | `{quote_id, quote_version: 1, consented_policy_version, contact{full_name, email, payer_name?}}` with Idempotency-Key |
+| `POST /api/v1/orders/{id}/free-confirmation` (only with `CHECKOUT_ENABLED=true`) | the owner (bearer) or the guest (`X-Order-Capability` with `pay`) | `{expected_version}` with Idempotency-Key; 202 `confirmation_pending` |
+| `POST /api/v1/orders/{id}/payment` (only with `CHECKOUT_ENABLED=true`; 503 without `STRIPE_ACCOUNT_ID` or during a restore freeze) | the owner (bearer) or the guest (`X-Order-Capability` with `pay`) | `{expected_version}` with Idempotency-Key; 202 `payment_pending`, see [Payments](#payments-k04-gk-025-a3b) |
+| `GET /api/v1/orders/{id}` | the owner (bearer) or the guest (`X-Order-Capability`: the quote's proof) | the order snapshot (`lifecycle` is `confirmation_pending` until K11 secures a commit; `paid_at` only then; `payment`: the latest collection); 404 otherwise |
+| `POST /webhooks/stripe` (only with `STRIPE_WEBHOOK_SECRET`) | Stripe (signed) | events; 200 only after the durable insert |
+
+## Payments (K04, GK-025 A3b)
+
+Migration `0014_payments.sql`, `internal/payments`. A full-payment order is
+paid through a Stripe **sandbox** Checkout Session; the payment confirms the
+order only after the worker has verified Stripe's evidence, through the same
+K11 command path as the free confirmation.
+
+**1. Initiation (API).** `POST /api/v1/orders/{id}/payment`
+(`{expected_version}`, Idempotency-Key; the owner, or a guest capability with
+`pay`) calls `business.payment_initiate` under the order lock. The order must
+be awaiting a full payment, not yet committed, with its holds intact, at the
+expected version (`STALE_VERSION`); at the request instant the quote's 24 h
+window must be open (equality expires: `QUOTE_EXPIRED`) and the handover at
+least 192 elapsed hours away (equality allowed: `LEAD_TIME`; the late-success
+path is never a way around a lead time already missed). No other collection
+of the order may still succeed (`created`, `pending` or `unknown`):
+`PAYMENT_IN_PROGRESS` ("do not pay again"), except that the same actor
+(account, or guest capability) with the same key replays the same collection
+(`Idempotent-Replayed`; another body is `KEY_REUSED`). A failed, expired or
+cancelled collection allows a new one; a succeeded one never does. While a
+restore freeze is on, a new collection is refused with 503 `UNAVAILABLE`
+(retryable; a replay still answers). The collection stores the amount (the
+order total, GBP pence), the environment, the Stripe account
+(`STRIPE_ACCOUNT_ID`), the mode (live only in production) and the UI origin
+of the return URLs, its dispatch job and an audit event, in one transaction,
+and the API answers 202
+`{order_id, operation_id, state: "payment_pending", poll_after_seconds: 3}`
+(`operation_id` is the collection, which is also the Stripe idempotency key).
+
+**2. The Checkout Session request** is built once, at the first dispatch, and
+never rebuilt (stored in the payload, form-encoded, keys sorted): `mode=payment`,
+one line item (`price_data[currency]=gbp`, `price_data[unit_amount]` = the
+order total, `price_data[product_data][name]=GK Cakes order`, `quantity=1`),
+`client_reference_id` = the order, `metadata[order_id|collection_id|environment]`
+and the same three under `payment_intent_data[metadata]`, `success_url` and
+`cancel_url` = `<UI_ORIGIN>/orders/<id>?payment=returned` (the return never
+confirms anything) and `expires_at` = the first dispatch second (database
+clock) + 2 hours (Stripe allows 30 minutes to 24 hours; two hours leaves room
+for retries of a call that may never have reached Stripe, and the
+15-minute expire request (step 7) bounds how long a hold really waits). No customer
+name, email or cake detail is sent. Every
+request pins `Stripe-Version: 2026-08-26.dahlia` (verified on the sandbox).
+
+**3. Dispatch (worker, K11 `Dispatch`).** Only once the worker has its Stripe
+key and journal (a waiting job fixes nothing and starts no window),
+`payment_dispatch_fix` stores the request built on the database clock (the
+function checks it belongs to the collection, order, amount, environment,
+account, mode and expiry) and only then fixes `first_dispatch_at` and
+`replay_until` = first dispatch + 23 hours (Stripe keeps idempotency keys 24
+hours). The dispatch is a recovery operation of kind `dispatch` (aggregate =
+collection, prior version 0) reserved with that payload's hash; the worker
+validates the stored payload against the collection (exact keys and values,
+canonical encoding, environment, account, mode, return origin, expiry),
+writes the encrypted prepared envelope (the body is persisted before the
+external create, K04), and right before each call `payment_dispatch_admit`
+re-checks the restore freeze and the window on the database clock and records
+`dispatch_started_at`. Since migration `0020_dispatch_freeze_first.sql`
+`payment_dispatch_fix` and `payment_dispatch_admit` read the freeze (share
+lock) before any other answer, so a freeze set while a worker is between its
+begin and fix/admit defers the job instead of letting a `closed` collection
+complete. A first call (none ever admitted) with less than 31
+minutes of session lifetime left (for example after the journal was down for
+over 1.5 hours) is not made: the dispatch is recorded as `rejected`
+(`expired_before_dispatch`), the collection `failed` without any Stripe call
+and the job goes to attention. Every call is appended to
+`business.payment_attempt`.
+
+| Stripe response | Attempt | Collection | Job |
+| --- | --- | --- | --- |
+| 200 Checkout Session | `created` | `pending` (session ID, URL, provider `expires_at`, mode); a reconcile 15 minutes later | completed |
+| 400/402 `invalid_request_error` or `card_error` (for example a retry so late that the stored `expires_at` is under 30 minutes away) | `rejected` | `failed` (the customer may start a new one) | attention |
+| 400 `idempotency_error` | `conflict` | `unknown`; the dispatch goes to `reconcile` | attention (never a new session under another key) |
+| 401/403/404 and other 4xx | `refused` | unchanged | attention (fix the key, then requeue) |
+| 409, 429 | `deferred` | unchanged | retry with the same key and body |
+| timeout, connection loss, 5xx | `unknown` | `unknown` | retry with the same key and body (Stripe returns the same session) |
+
+A rejected dispatch is audited once as `payment.failed` on the order, the
+collection ID and reason in its data like every other payment audit (migration
+`0017_followups.sql`; earlier events keep subject kind `payment_collection`).
+A session created in the wrong mode makes the collection `unknown` (attention).
+After the window, an unknown dispatch goes to reconciliation, never to a new
+send. Without `STRIPE_SECRET_KEY` (or the journal) payment jobs wait (15
+minutes, not a failure); a restore freeze defers them (5 minutes).
+
+**4. Webhook (API).** Configure the endpoint `https://<api host>/webhooks/stripe`
+in the Stripe sandbox with at least `checkout.session.completed`,
+`checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`,
+`checkout.session.expired`, `payment_intent.succeeded`,
+`payment_intent.payment_failed` and `charge.refunded`, plus (full return,
+A3c2) `charge.refund.updated`, `refund.created`, `refund.updated` and
+`refund.failed`. The API verifies
+`Stripe-Signature` over the raw body (`t=` within 5 minutes either way, one of
+the `v1=` signatures = HMAC-SHA256 of `<t>.<body>` with the signing secret,
+constant-time; bodies over 256 KiB are 413; otherwise 400), parses the event
+ID, type, account (absent: `STRIPE_ACCOUNT_ID`), mode, time, the object and
+its metadata, and `business.payment_event_record` stores it once per
+(account, mode, event ID) before the API answers 200 (a storage failure is
+503, so Stripe retries the same event; a duplicate is acknowledged without new
+work). When the metadata names a collection of this environment, account and
+mode that is not yet decided, that collection's reconcile is scheduled now (a
+waiting one is brought forward under the collection's row lock, so duplicate
+or concurrent events never pile up jobs).
+Every verified event is stored (IDs, type, mode, times, body hash; never
+customer or card data), including events of other collections or
+environments, which start nothing. A refund event (`charge.refunded`,
+`charge.refund.updated`, `refund.*`) whose object's metadata names a
+`succeeded` collection brings that collection's **refund reconcile** forward
+(see "Full return" below; at most one waits per collection).
+
+**5. Reconcile (worker).** The worker retrieves
+`GET /v1/checkout/sessions/{id}?expand[]=payment_intent.latest_charge` (the
+created session, or one a verified event named) and decides:
+
+- **mismatch** (collection `unknown`, attention, never confirmed): the
+  session's metadata or `client_reference_id` do not name this collection,
+  order and environment, the mode is wrong, the currency is not GBP, the
+  amount differs, the payment intent or charge contradicts them (metadata,
+  mode, currency, a different received or captured amount), the charge is
+  refunded (in any part) or disputed, the session is not found in this
+  account, or an expired session has a succeeded payment. On a collection
+  that already succeeded the state and paid evidence stay; the contradicting
+  observation is kept beside them (`mismatch_reason`, `mismatch_evidence`).
+  A stale mismatch on a `cancelled` collection (migration
+  `0017_followups.sql`) likewise keeps `cancelled` and its evidence and
+  records only the mismatch (audit `payment.mismatch`, job in attention); the
+  money it may show is never hidden: a collection under reconciliation
+  (`mismatch_reason` set, not succeeded) keeps the order's holds in the hold
+  review exactly as `unknown` does, refuses a second collection
+  (`payment_in_progress`) and reads `unknown` in the order view. An order
+  released before the mismatch stays cancelled; a manager reconciles it. A
+  reconcile of a collection under reconciliation that ends without a new
+  mismatch (its paid, cancelled or pending verdict ignored, or the collection
+  already settled; asked through `payment_under_reconciliation`) goes to
+  attention, never completing or waiting quietly while the holds stay;
+- **paid** only when all hold: session `payment_status = paid`; payment
+  intent `succeeded`, `amount_received` = the amount, GBP; latest charge
+  `paid`, `captured`, `succeeded`, `amount_captured` = the amount, not
+  refunded (`refunded = false`, `amount_refunded = 0`) and not disputed. The
+  authoritative success instant is the charge's `created` (provider time;
+  never the webhook arrival), `observed_at` is recorded separately;
+- **cancelled** (the hold review then releases the order's holds, step 7): the session
+  expired and its payment intent is absent, `canceled` or
+  `requires_payment_method` (no successful or unresolved funds); a later
+  stale observation never reopens it;
+- **pending** otherwise (open, processing, requires_capture, an expired
+  session whose intent is still processing or awaiting action, unpaid,
+  no_payment_required on a nonzero amount, complete without a succeeded
+  payment intent or charge): the observation is recorded and the session is
+  retrieved again in 15 minutes (or at the next event).
+
+Evidence kept on the collection is bounded: IDs, statuses, amounts,
+currencies and times. Network errors and 5xx retry.
+
+**6. Paid confirmation (A3a command path).** In the transaction that records
+`succeeded` (with `succeeded_at`), `payment_reconcile_record` records the
+order command `paid_confirm` (actor system; receipt instant = the success
+instant; exact payload = the order snapshot and the collection evidence),
+reserves its K11 command operation on the order and enqueues its job, at most
+once per collection (unique), however many events arrive in whatever order.
+Another unresolved protected operation on the order makes the record retry
+(counted: 1, 5, 15 and 60 minutes, then attention; nothing is recorded
+meanwhile); an operation already at this or a later order version can never
+succeed and goes to attention at once; a restore freeze stops it under its
+own lock. `order_command_apply` then commits it: an order still awaiting
+payment with its holds intact gets its day allocation committed, ready cakes
+sold, code consumed and `paid_at` = the success instant, as `confirmed` when
+the handover is at least 192 h after the success (equality allowed), or as
+`paid_awaiting_agreement` otherwise (K04 Q2: the money is real; no
+fulfillment; the job goes to attention so the case is never silent). An order
+that changed or lost its holds is `refused` (`order_changed`,
+`holds_released`): the collection stays `succeeded`, the order's version
+moves, and the job goes to attention (full return is A3c2). From the moment
+the payment is recorded (K11 "payment received, confirmation being secured")
+until the paid confirmation's outcome envelope is secured the order reads
+`confirmation_pending`; only then `confirmed` (or `paid_awaiting_agreement`)
+with `paid_at`, or back to `awaiting_payment` after a refusal.
+
+`GET /api/v1/orders/{id}` adds `payment` (the latest collection: `id`,
+`state`, `amount_minor`, `currency`, `requested_at`, `checkout_url` only while
+the session is open and unexpired, the order still awaits payment and no
+expire request was made, `expires_at` from Stripe), and `cancel_reason` and
+`cancelled_at` (step 7).
+
+**7. Expiry, never-dispatched cleanup and release (worker, GK-025 A3c1,
+migration `0015_payment_expiry.sql`).** K03/K04: the timer is a trigger to
+ask and verify, never proof that the money failed; only a verified
+terminal-unpaid situation releases holds and code uses; anything unknown keeps
+them.
+
+- **Expire request at 15 minutes.** The collection's reconcile (the one the
+  dispatch schedules 15 minutes after the session is created, or any later
+  one) first calls `payment_expire_admit`: when the collection is `pending`,
+  its session was last seen `open`, Stripe's own `expires_at`
+  (`provider_expires_at`) has not passed (after it Stripe has expired the
+  session itself; migration `0017_followups.sql`), the first admitted call
+  (`dispatch_started_at`) is at least 15 minutes old and no expire request was
+  answered yet, it records `expire_requested_at` (a concurrent reconcile
+  within 30 seconds skips) and the worker posts
+  `POST /v1/checkout/sessions/{id}/expire` with `Idempotency-Key:
+  <collection>-expire`. `payment_expire_record` appends the answer to
+  `business.payment_attempt` (kind `expire`): `expired` (200), `not_open`
+  (400 `invalid_request_error`: the session is already complete or expired),
+  `rejected` (404, other 4xx) end the expire requests; `refused` (401/403)
+  goes to attention; after `unknown` (no answer, 5xx) or `deferred` (409,
+  429) the reconcile still retrieves and records its verdict, and a session
+  still pending is asked again with the same key a minute later (Stripe
+  replays its first answer; a deferral, not a counted failure). Once an
+  expire request was made the order view no longer offers the checkout link.
+  Whatever Stripe answers, the reconcile retrieves and verifies the session
+  as in step 5 and only that verdict counts: a payment still processing stays `pending` (no second
+  expire request; re-checked every 15 minutes or at the next event), a paid
+  one is confirmed, an expired one with no or a failed payment intent is
+  `cancelled`. Verified on the sandbox on 2026-11-04 with
+  `gk-stripe-proof`: an open session answers 200 `expired`, the same key
+  again replays that 200, and a new request for the expired session answers
+  400 `invalid_request_error`.
+- **Never-dispatched cleanup.** A collection still `created` whose Stripe
+  call was never admitted (`dispatch_started_at` null: no key, journal down, a
+  backlog) is closed by the hold review once 15 minutes old (the later of
+  `initiated_at` and its insertion): `cancelled` with
+  `cancel_reason = never_dispatched`, in one transaction under the order and
+  collection locks. `payment_dispatch_admit` records `dispatch_started_at`
+  under the same collection lock and now answers `closed` for such a
+  collection, so exactly one side wins: the cleanup first means zero Stripe
+  calls (the dispatch records a `rejected` outcome with reason
+  `never_dispatched` without calling, or simply completes when its request
+  was never fixed); admission first means the cleanup leaves it alone and the
+  normal reconcile decides. A collection whose call was admitted is never
+  closed this way.
+- **Hold review and release.** Every order gets a hold review (AFTER INSERT
+  trigger on `business.orders`; table `business.order_hold_review` and its
+  jobs in `business.order_hold_review_job`, at most one waiting per order),
+  due when its hold ends: `hold_until` = the later of `placed_at` and the
+  insertion instant + 15 minutes (at or after it the hold has ended). A
+  collection becoming `cancelled` or `failed` brings it forward (never before
+  `hold_until`). `order_hold_review_run` (lease-fenced; it needs neither Stripe
+  nor the journal) re-checks everything under the order lock (lock order: the
+  order, its collections by ID, the review row, then the day, lots by ID and
+  the code, as checkout and the order commands). A restore freeze defers it
+  first (5 minutes), before any lock or outcome, an already decided review
+  included: nothing is recorded or audited while frozen (migration
+  `0019_hold_review_freeze.sql`). Then an already decided review ends;
+  an order no longer awaiting payment ends the review; a `succeeded`
+  collection ends it too (the money is real: confirmation or a full return
+  decide, never a release); before `hold_until` it waits; it closes never-dispatched collections; while a
+  collection is `created` (admitted), `pending` or `unknown` or under
+  reconciliation (`mismatch_reason` set), or a protected
+  operation on the order (a free or paid confirmation) is not yet secured, it
+  keeps the holds and looks again in 15 minutes (or when a young
+  never-admitted collection reaches 15 minutes). Otherwise every collection
+  is `failed` or `cancelled` (or there is none: nobody started paying or asked
+  for the free confirmation) and the order is abandoned: its day allocation
+  is released, reserved ready cakes return to their lot (reservation
+  `returned`), the code use is `released`, and the order becomes `cancelled`
+  with `cancel_reason` `payment_not_completed` (full payment) or
+  `free_not_confirmed` (free order), `cancelled_at` and version + 1, audited as
+  `order.released_unpaid`. A free order whose free confirmation is pending is
+  kept; a refused one is released at the next review.
+- **After a release** a new payment is refused (`STATE_CONFLICT`: the order no
+  longer awaits payment). A success observed later for one of its collections
+  (real funds) is still recorded as `succeeded` with its evidence; its paid
+  confirmation is refused (`order_changed`), the order stays `cancelled` and
+  the job goes to attention; because the order is cancelled, the full return
+  is recorded in the same transaction (see "Full return" below). The order view
+  shows `lifecycle: cancelled` with `cancel_reason` and `cancelled_at`, and
+  nothing implies a refund. While a collection is still `pending` past its 15
+  minutes the view keeps `payment.state: pending` (the UI says "Still checking
+  payment; do not pay again").
+
+Recorded decisions: the storefront sends the customer to pay (or to confirm a
+free order) right after checkout, so an order with no payment started 15
+minutes after placement is abandoned; coming back later means a new quote and
+checkout. The 15-minute clocks of the hold and of the cleanup use the later of
+the API's request instant and the database insertion instant, so a skewed (or
+test) request clock never shortens them. The expire request is timed from the
+first admitted call (K04 "local attempt admitted + 15m"), at most one
+answered request per collection.
+
+**Sandbox proof.** `STRIPE_SECRET_KEY=sk_test_... STRIPE_ACCOUNT_ID=acct_... go run ./cmd/gk-stripe-proof`
+creates one session twice under one idempotency key through the worker's
+client (one session), retrieves and verifies it (pending), expires it under
+the worker's expire key (200 `expired`; the same key again replays it; a new
+request for the expired session is 400 `invalid_request_error`: not open),
+verifies it again (cancelled) and shows that a changed request under the used
+key is an idempotency conflict; it refuses live keys and prints IDs only.
+Passed against account `acct_1UNHEgPqGToF2ulH` on 2026-11-04, the expire
+steps the same day with the A3c1 build (the same day the sandbox also
+showed that `expires_at` = creation + 30 minutes is accepted with about a
+minute of tolerance and refused beyond it, which is why the request is fixed
+at the first dispatch with two hours of lifetime, not at the initiation).
+
+Recorded decisions: the request and its window are fixed at the first
+dispatch, and the dispatch's recovery operation is reserved then (as for
+email), because its replay deadline is fixed at reservation; the collection,
+its key, account, environment and return origin exist from the initiation.
+The customer's email is not sent to Stripe in this milestone.
+`STRIPE_SECRET_KEY` lives on the worker only; the API never calls Stripe.
+
+**Release order.** Deploy the worker of this release before (or with) the
+API, and keep `CHECKOUT_ENABLED` off until the new worker runs with
+`STRIPE_SECRET_KEY`/`STRIPE_ACCOUNT_ID` and the journal: an older (A3a)
+worker does not know payment jobs and backs them off as unhandled (retries
+1, 5, 15, 60 minutes, then attention), so a payment requested before the new
+worker is deployed waits and may reach attention (requeue it with
+`business.job_requeue` once the new worker runs). A new worker without a key
+makes payment jobs wait without starting their windows.
+With A3c1 (migration 0015) every new order also gets a hold review job, and
+the migration enqueues one for each order already awaiting payment. An older
+worker does not know review jobs, the `closed` dispatch status or the expire
+step: it backs review jobs off as unhandled (then attention) and retries a
+closed dispatch until attention, never calling Stripe for it. Deploy the
+A3c1 worker before (or with) the API, and requeue any review job that
+reached attention meanwhile.
+
+### Full return (K05, GK-025 A3c2)
+
+Migration `0016_full_return.sql`: the minimum full-return core, which
+GK-026 extends (customer/chef cancellation, partial goals, the Q5 manual
+alternative) without a second subsystem.
+
+- **Goal** (`business.refund_goal`): one versioned goal per order;
+  `target_minor` is the cumulative whole-order obligation (an obligation, not
+  reserved money), `reason` `late_capture_terminal` (the CHECK leaves room
+  for GK-026 reasons), `source` `system`/`chef`.
+- **Operation** (`business.refund_operation`): one attempt to return money
+  from one collection; its ID is the Stripe `Idempotency-Key` and the K11
+  recovery operation (kind `dispatch`, aggregate = the operation, prior
+  version 0). States `reserved` (nothing sent), `submitting` (admitted: a
+  request may be at Stripe), `pending`, `requires_action`, `unknown` (the
+  answer was lost or contradicts the operation), `succeeded`, `failed`
+  (definitive; the remainder reopens), `cancelled` (withdrawn before any
+  request). Channel `provider` (`manual_alternative` is reserved for Q5,
+  unused). **At most one unresolved operation per collection** (partial
+  unique index). Every create call is appended to `business.refund_attempt`.
+- **Observation** (`business.refund_observation`): every refund Stripe
+  reports for a collection, once per (account, mode, refund ID). One whose
+  `metadata[refund_operation_id]` names a local operation of the collection
+  with the same amount, currency and payment intent is matched (counted
+  through the operation); any other (a dashboard refund, another amount) is
+  **quarantined**: counted as exposure, and while unresolved it blocks every
+  new refund dispatch for the collection (resolution columns exist; manager
+  tooling: Not yet). One that names an operation but contradicts its
+  amount, currency or payment intent is linked to it (`named_operation_id`,
+  for reporting and manager tooling only): it cannot be that operation's
+  result, so it adds to the exposure beside the operation's own allocation
+  (never clipped). A matched refund
+  whose status later contradicts its decided operation (Stripe correcting a
+  `succeeded` refund to `failed`/`canceled`, a `failed` one turning out
+  otherwise, or any refund for a withdrawn operation) records the
+  contradiction on the operation: nothing becomes available, no automatic
+  payout or reopening, the order view says `needs_attention` and the worker
+  asks a manager (every reconcile also re-checks succeeded and failed
+  operations against Stripe's list). A refund matched to a failed or
+  withdrawn operation still counts by its own status (succeeded in S,
+  pending in R).
+- **Accounting** (`business.refund_balance`, `refund_available`), per
+  succeeded collection C: S = succeeded local operations + succeeded
+  observations not counted through an operation (unmatched, or matched to a
+  failed/withdrawn one); R = unresolved local operations + pending such
+  observations; each provider refund counted once. A new
+  operation may take min(max(0, C − S − R), goal remaining) and only with no
+  unresolved operation, no unresolved quarantined observation and no
+  contradicting evidence on the collection. The K05 fixture (10000p capture,
+  a local `unknown` 10000p, an external succeeded 5000p) gives allocation
+  10000p, observation 5000p, available 0, possible exposure 15000p and no
+  new dispatch (`TestRefundAccountingPreservesPossibleExposure`).
+- **Trigger.** A refused paid confirmation on a **cancelled** order (released
+  before the success was recorded) records, in the same transaction, the
+  goal (target = every succeeded collection of the order; raised if more is
+  captured later) and reserves one operation per succeeded collection for
+  what is available, with its dispatch job. Idempotent. The order is never
+  reopened or fulfilled; the paid confirmation job still goes to attention.
+  A refusal on an order that is not cancelled (confirmed by another
+  collection, awaiting payment after its holds were released) records no
+  goal: attention only, since refunding automatically could return the
+  confirmed collection too; `refund_late_capture` itself refuses a
+  non-cancelled order. `paid_awaiting_agreement` creates no goal (honour or
+  full return is a chef/customer decision: GK-026).
+- **Dispatch (worker, `payments.Refunds`, chained in `gk-worker`).** At the
+  first dispatch (after the key and journal checks) the worker builds the
+  exact `POST /v1/refunds` form (`payment_intent`, `amount` in pence,
+  `reason=requested_by_customer`,
+  `metadata[order_id|collection_id|refund_operation_id|environment]`) and
+  `refund_dispatch_fix` stores it with `replay_until` = first dispatch + 23
+  hours, never rebuilt. The K11 recovery operation is reserved with that
+  payload, the prepared envelope is written, and right before every call
+  `refund_dispatch_admit` re-checks, under the collection and operation
+  locks, the restore freeze, that no quarantined observation appeared, that
+  the operation is not decided and that the window is open (then
+  `dispatch_started_at`, `reserved` → `submitting`). Both
+  `refund_dispatch_fix` and `refund_dispatch_admit` check the freeze first
+  (share lock, migration `0020_dispatch_freeze_first.sql`): while frozen
+  they answer `frozen` (deferred) even for a `closed` or `settled`
+  operation. Stripe's answer:
+  `succeeded` → succeeded; `pending` → pending (reconcile in 15 minutes);
+  `requires_action` → attention; `failed`/`canceled` → failed + attention
+  (the remainder reopens, never re-sent automatically); 400
+  `invalid_request_error` → failed + attention and the collection's refunds
+  are reconciled now; 400 `idempotency_error` → reconcile + attention;
+  401/403 → attention; 409/429/5xx/network → `unknown`, retried with the same
+  key and body (an unanswered call also schedules the collection's
+  reconcile); past the window an unknown dispatch goes to reconciliation,
+  never a blind second POST; a dispatch never admitted before its window
+  ended is withdrawn (`cancelled`: provably nothing sent). A returned refund
+  object is verified (amount, `gbp`, payment intent, mode) before it is
+  trusted.
+- **Reconcile** (one job per collection, at most one waiting): lists the
+  payment intent's refunds completely (`GET /v1/refunds?payment_intent=…&limit=100`,
+  following `has_more`; an incomplete listing concludes nothing), records
+  each as an observation, matches operations by recorded refund ID or
+  `metadata[refund_operation_id]` (reading a recorded refund directly with
+  `GET /v1/refunds/{id}` when the list lags) and decides them. A lost-response
+  operation absent from the complete list stays `unknown` (never failed on a
+  timer); past its window it goes to a manager.
+- **Order view.** `order_get` adds `refund` (only with a goal):
+  `target_minor`, `succeeded_minor`, `in_progress_minor`, `currency`,
+  `requested_at`, `goal_version` and `state` `requested` (nothing sent yet),
+  `pending`, `partly_returned`, `returned` (all succeeded) or
+  `needs_attention`; never `returned` while anything is unresolved, so the UI
+  can tell "refund requested" from "refund succeeded". No emails yet.
+
+Tests: `internal/checkout/refunds_integration_test.go` (accounting, trigger),
+`refund_gateways_integration_test.go` (the gateway call by call, lease
+fencing, verification) and `refund_worker_integration_test.go` (the worker
+end to end against a fake Stripe refund API: late capture returned while the
+order stays cancelled; a lost response retried with the same key and body,
+one refund; unknown past the window with no match stays unknown + attention,
+no second POST; pending → succeeded on its event; failed → the remainder
+reopens once under a new key; a dashboard refund quarantined, blocking
+dispatch; duplicate refund events counted once; a freeze defers; a
+succeeded refund Stripe later reports failed needs a manager; a failed
+refund Stripe later reports succeeded is counted as returned; a refund naming
+an operation with another amount adds to the exposure; a refusal on a confirmed
+order records no full return).
+
+Recorded decisions: a failed refund is never re-sent automatically (a later
+decision reserves the remainder: GK-026/manager); a reconcile never fails an
+operation from absence; any contradiction or quarantine stops automatic
+payouts for that collection until a manager resolves it. Matching a
+dashboard `charge.refunded` to its collection relies on the payment intent's
+metadata being copied to its charge; refund events of refunds made outside
+GK Cakes without that metadata start nothing, and are found by the next
+reconcile of the collection.
+
+**Release order.** Deploy the A3c2 worker before (or with) the API; an older
+worker backs refund jobs off as unhandled (then attention) and never calls
+Stripe for them: requeue them with `business.job_requeue` once the new
+worker runs. The staging webhook subscription needs the refund events
+listed in step 4.
+
+Not yet:
+
+- a failed delayed payment on a completed session (its payment intent back
+  to `requires_payment_method`, for example a bank debit that fails after
+  the customer finished Checkout): Stripe never expires a complete session,
+  so Evaluate keeps the collection `pending` and the order keeps its holds
+  (the review looks again every 15 minutes) until a reviewed Evaluate rule
+  or manager tooling exists;
+- an unmatched refund Stripe reports `failed` or `canceled` (for example a
+  failed dashboard refund) is quarantined like any other unmatched refund
+  and blocks the collection's dispatch until a manager resolves it, although
+  it returned no money (deliberately conservative);
+- a contradiction recorded on an operation stays until manager tooling
+  clears it: even a stale sighting (for example a `pending` status seen for
+  a refund already recorded `succeeded`) flags the operation and blocks new
+  refunds for its collection permanently until then;
+- the money of a refused paid confirmation on an order that is not
+  cancelled (confirmed by another collection, or awaiting payment after its
+  holds were released): attention only, no goal, until manager/chef tooling
+  (GK-026) decides it;
+- manager tooling for the full return: resolving quarantined observations,
+  clearing contradicting evidence, deciding `unknown` refunds past their
+  window and re-reserving a failed refund's remainder; the Q5 manual
+  alternative (`manual_alternative` channel); customer/chef cancellation and
+  partial refund goals (GK-026); refund emails; a sandbox proof of a refund;
+- the chef's resolution of `paid_awaiting_agreement` (honour or full return)
+  and visible chef cases beyond job attention (A3c/GK-026); confirmation
+  emails;
+- payment-method configuration snapshot and drift detection, Q4 method
+  qualification, Adaptive Pricing and presentment-currency evidence (any
+  non-GBP session, intent or charge is a mismatch for now), delivery
+  collections;
+- manager reconciliation tooling for `unknown` collections and dispatches in
+  `reconcile`;
+- journal readiness reaching the API: initiation is refused during a restore
+  freeze, but an unreachable journal only makes the worker wait.
 
 ## Not yet verified
 

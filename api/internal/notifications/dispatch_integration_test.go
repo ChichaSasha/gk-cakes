@@ -843,7 +843,43 @@ func TestRuntimeRolesUseOnlyTheNotificationGateway(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := append([]string{"business.job_claim(uuid, interval)", "business.job_complete(uuid, uuid, bigint)",
-		"business.job_heartbeat(uuid, uuid, bigint, interval)", "business.job_release(uuid, uuid, bigint, interval)"}, worker...)
+		"business.job_heartbeat(uuid, uuid, bigint, interval)", "business.job_release(uuid, uuid, bigint, interval)",
+		// GK-025 lease-fenced order commands.
+		"business.order_command_apply(uuid, uuid, bigint, uuid)", "business.order_command_begin(uuid, uuid, bigint)",
+		"business.order_command_frozen(uuid, uuid, bigint)", "business.order_command_prepared(uuid, uuid, bigint, uuid)",
+		"business.order_command_reserve(uuid, uuid, bigint, uuid, text, uuid, integer, text, text)",
+		"business.order_command_secured(uuid, uuid, bigint, uuid)",
+		// GK-025 A3b lease-fenced payment gateway.
+		"business.payment_attempt_record(uuid, uuid, bigint, uuid, text, integer, text)",
+		"business.payment_dispatch_admit(uuid, uuid, bigint, uuid)",
+		"business.payment_dispatch_fix(uuid, uuid, bigint, uuid, text, timestamp with time zone)",
+		"business.payment_job_begin(uuid, uuid, bigint)",
+		"business.payment_reconcile_record(uuid, uuid, bigint, uuid, text, text, text, text, text, json, timestamp with time zone, text)",
+		"business.payment_recovery_committed(uuid, uuid, bigint, uuid, json, text)",
+		"business.payment_recovery_frozen(uuid, uuid, bigint)", "business.payment_recovery_prepared(uuid, uuid, bigint, uuid)",
+		"business.payment_recovery_reconcile(uuid, uuid, bigint, uuid, text)",
+		"business.payment_recovery_reserve(uuid, uuid, bigint, uuid, text, uuid, integer, text, text, timestamp with time zone)",
+		"business.payment_recovery_secured(uuid, uuid, bigint, uuid)",
+		// GK-025 A3c1 expire request and order hold review.
+		"business.order_hold_review_run(uuid, uuid, bigint)",
+		"business.payment_expire_admit(uuid, uuid, bigint, uuid)",
+		"business.payment_expire_record(uuid, uuid, bigint, uuid, text, integer, text)",
+		// GK-025 follow-ups: a collection under manager reconciliation.
+		"business.payment_under_reconciliation(uuid, uuid, bigint, uuid)",
+		// GK-025 A3c2 lease-fenced refund gateway.
+		"business.refund_attempt_record(uuid, uuid, bigint, uuid, text, integer, text)",
+		"business.refund_dispatch_admit(uuid, uuid, bigint, uuid)",
+		"business.refund_dispatch_fix(uuid, uuid, bigint, uuid, text, timestamp with time zone)",
+		"business.refund_job_begin(uuid, uuid, bigint)",
+		"business.refund_observation_record(uuid, uuid, bigint, uuid, text, bigint, text, text, text, uuid, timestamp with time zone)",
+		"business.refund_reconcile_operations(uuid, uuid, bigint, uuid)",
+		"business.refund_reconcile_record(uuid, uuid, bigint, uuid, text, text, text, json, text)",
+		"business.refund_recovery_committed(uuid, uuid, bigint, uuid, json, text)",
+		"business.refund_recovery_frozen(uuid, uuid, bigint)",
+		"business.refund_recovery_prepared(uuid, uuid, bigint, uuid)",
+		"business.refund_recovery_reconcile(uuid, uuid, bigint, uuid, text)",
+		"business.refund_recovery_reserve(uuid, uuid, bigint, uuid, text, uuid, integer, text, text, timestamp with time zone)",
+		"business.refund_recovery_secured(uuid, uuid, bigint, uuid)"}, worker...)
 	slices.Sort(want)
 	if !slices.Equal(got, want) {
 		t.Errorf("gk_worker can execute %v, want exactly %v", got, want)

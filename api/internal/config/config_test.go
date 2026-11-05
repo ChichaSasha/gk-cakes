@@ -405,3 +405,104 @@ func TestLoadBackup(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadRestore(t *testing.T) {
+	valid := map[string]string{"APP_ENV": "staging", "BACKUP_B2_KEY_ID": "0031234abcd000000000000a1", "BACKUP_B2_KEY": "K003" + canary,
+		"BACKUP_ENCRYPTION_KEYS":      "k1:" + canary,
+		"RESTORE_TARGET_DATABASE_URL": "postgresql://postgres.ref:" + canary + "@pooler.example.supabase.com:5432/postgres?sslmode=verify-full"}
+	cfg, err := LoadRestore(env(valid))
+	if err != nil || !cfg.TargetURL.IsSet() || cfg.Name != "" || cfg.Env != EnvStaging || strings.Contains(fmt.Sprintf("%+v", cfg), canary) {
+		t.Fatalf("restore configuration: %v", err)
+	}
+	if cfg, err := LoadRestore(env(merge(valid, map[string]string{"RESTORE_BACKUP": "20261105-023000z"}))); err != nil || cfg.Name != "20261105-023000z" {
+		t.Fatalf("named backup: %q %v", cfg.Name, err)
+	}
+	for name, c := range map[string]struct {
+		env     map[string]string
+		mention string
+	}{
+		"production":              {merge(valid, map[string]string{"APP_ENV": "production"}), "production backups"},
+		"no target":               {merge(valid, map[string]string{"RESTORE_TARGET_DATABASE_URL": ""}), "RESTORE_TARGET_DATABASE_URL is required"},
+		"target unverified":       {merge(valid, map[string]string{"RESTORE_TARGET_DATABASE_URL": "postgres://postgres:" + canary + "@db.example.supabase.co/postgres?sslmode=require"}), "sslmode=verify-full"},
+		"target local in staging": {merge(valid, map[string]string{"RESTORE_TARGET_DATABASE_URL": "postgres://postgres:" + canary + "@127.0.0.1/postgres"}), "must not target a local database"},
+		"target hostaddr":         {merge(valid, map[string]string{"RESTORE_TARGET_DATABASE_URL": valid["RESTORE_TARGET_DATABASE_URL"] + "&hostaddr=203.0.113.9"}), "must not set hostaddr"},
+		"user in the query":       {merge(valid, map[string]string{"RESTORE_TARGET_DATABASE_URL": "postgresql://pooler.example.supabase.com:5432/postgres?sslmode=verify-full&user=postgres"}), "must name its user in the URL"},
+		"bad name":                {merge(valid, map[string]string{"RESTORE_BACKUP": "database/staging/20261105-023000z/"}), "RESTORE_BACKUP must be"},
+		"no keys":                 {merge(valid, map[string]string{"BACKUP_B2_KEY": ""}), "are required"},
+	} {
+		_, err := LoadRestore(env(c.env))
+		if err == nil || !strings.Contains(err.Error(), c.mention) {
+			t.Errorf("%s: %v, want an error mentioning %q", name, err, c.mention)
+		}
+		if err != nil && strings.Contains(err.Error(), canary) {
+			t.Errorf("%s: error leaks a value: %q", name, err)
+		}
+	}
+	// A local test restore may target a loopback database.
+	if _, err := LoadRestore(env(merge(valid, map[string]string{"APP_ENV": "test",
+		"RESTORE_TARGET_DATABASE_URL": "postgres://postgres:pw@127.0.0.1:55432/restore?sslmode=disable"}))); err != nil {
+		t.Fatalf("local restore target: %v", err)
+	}
+}
+
+func TestCheckoutSwitch(t *testing.T) {
+	for value, want := range map[string]bool{"": false, "false": false, "true": true} {
+		cfg, err := LoadAPI(env(merge(validLocalAPI, map[string]string{"CHECKOUT_ENABLED": value})))
+		if err != nil || cfg.CheckoutEnabled != want {
+			t.Errorf("CHECKOUT_ENABLED=%q: %v %v", value, cfg.CheckoutEnabled, err)
+		}
+	}
+	if _, err := LoadAPI(env(merge(validLocalAPI, map[string]string{"CHECKOUT_ENABLED": "yes"}))); err == nil {
+		t.Error("CHECKOUT_ENABLED=yes accepted")
+	}
+}
+
+func TestLoadStripe(t *testing.T) {
+	const account = "acct_1UNHEgTest"
+	stripeSecret := "whsec_" + canary + "0123456789"
+	cfg, err := LoadAPI(env(merge(validLocalAPI, map[string]string{"STRIPE_ACCOUNT_ID": account, "STRIPE_WEBHOOK_SECRET": stripeSecret})))
+	if err != nil || cfg.Stripe.AccountID != account || cfg.Stripe.WebhookSecret.Reveal() != stripeSecret {
+		t.Fatalf("valid API Stripe configuration: %+v %v", cfg.Stripe, err)
+	}
+	if strings.Contains(fmt.Sprintf("%+v %#v", cfg, cfg.Stripe), canary) {
+		t.Fatal("formatted configuration leaks the webhook secret")
+	}
+	if cfg, err := LoadAPI(env(validLocalAPI)); err != nil || cfg.Stripe.AccountID != "" || cfg.Stripe.WebhookSecret.IsSet() {
+		t.Fatalf("API without Stripe: %+v %v", cfg.Stripe, err)
+	}
+	local := map[string]string{"APP_ENV": "local", "DATABASE_URL": "postgres://gk_worker:" + canary + "@localhost/gk"}
+	w, err := LoadWorker(env(merge(local, map[string]string{"STRIPE_SECRET_KEY": "sk_test_" + canary, "STRIPE_ACCOUNT_ID": account})))
+	if err != nil || !w.Stripe.Enabled() || w.Stripe.AccountID != account || strings.Contains(fmt.Sprintf("%+v", w), canary) {
+		t.Fatalf("valid worker Stripe configuration: %v", err)
+	}
+	if w, err := LoadWorker(env(local)); err != nil || w.Stripe.Enabled() {
+		t.Fatalf("worker without Stripe: %v", err)
+	}
+	cases := []struct {
+		name    string
+		api     bool
+		env     map[string]string
+		mention string
+	}{
+		{"webhook without account", true, merge(validLocalAPI, map[string]string{"STRIPE_WEBHOOK_SECRET": stripeSecret}), "STRIPE_ACCOUNT_ID"},
+		{"malformed webhook secret", true, merge(validLocalAPI, map[string]string{"STRIPE_ACCOUNT_ID": account, "STRIPE_WEBHOOK_SECRET": "sk_" + canary}), "STRIPE_WEBHOOK_SECRET"},
+		{"malformed API account", true, merge(validLocalAPI, map[string]string{"STRIPE_ACCOUNT_ID": "acct-" + canary}), "STRIPE_ACCOUNT_ID"},
+		{"worker key without account", false, merge(local, map[string]string{"STRIPE_SECRET_KEY": "sk_test_" + canary}), "set together"},
+		{"worker account without key", false, merge(local, map[string]string{"STRIPE_ACCOUNT_ID": account}), "set together"},
+		{"live key outside production", false, merge(local, map[string]string{"STRIPE_SECRET_KEY": "sk_live_" + canary, "STRIPE_ACCOUNT_ID": account}), "STRIPE_SECRET_KEY"},
+		{"publishable key", false, merge(local, map[string]string{"STRIPE_SECRET_KEY": "pk_test_" + canary, "STRIPE_ACCOUNT_ID": account}), "STRIPE_SECRET_KEY"},
+		{"test key in production", false, merge(merge(validStagingWorker, validEmailDispatch), map[string]string{"APP_ENV": "production",
+			"STRIPE_SECRET_KEY": "rk_test_" + canary, "STRIPE_ACCOUNT_ID": account}), "STRIPE_SECRET_KEY"},
+	}
+	for _, tc := range cases {
+		var err error
+		if tc.api {
+			_, err = LoadAPI(env(tc.env))
+		} else {
+			_, err = LoadWorker(env(tc.env))
+		}
+		if err == nil || !strings.Contains(err.Error(), tc.mention) || strings.Contains(err.Error(), canary) {
+			t.Errorf("%s: err = %v, want a refusal naming %s without the value", tc.name, err, tc.mention)
+		}
+	}
+}

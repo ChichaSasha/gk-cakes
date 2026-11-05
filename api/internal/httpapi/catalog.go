@@ -260,8 +260,13 @@ func readCommand(w http.ResponseWriter, r *http.Request, in validator) (string, 
 // repeated keys at any depth, no null value and nothing after it. Keys must
 // be lower_snake_case ASCII (K00): encoding/json matches field names without
 // regard to case, so "NAME" would otherwise reach the "name" field.
+//
+// A null is reported only after the structural and unknown-field checks
+// pass: a null on an unknown field is an unknown field (400), not an invalid
+// value (422).
 func decodeStrict(body []byte, v any) error {
-	if err := noDuplicateKeys(body); err != nil {
+	null, err := noDuplicateKeys(body)
+	if err != nil {
 		return err
 	}
 	dec := json.NewDecoder(bytes.NewReader(body))
@@ -271,6 +276,9 @@ func decodeStrict(body []byte, v any) error {
 	}
 	if _, err := dec.Token(); err != io.EOF {
 		return errors.New("trailing data after the JSON object")
+	}
+	if null != nil {
+		return null
 	}
 	return nil
 }
@@ -283,29 +291,42 @@ func (e *nullError) Error() string { return "null value for " + e.field }
 var wireKey = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 
 // noDuplicateKeys rejects a JSON document that is not an object, repeats a
-// key in any object, uses a key that is not lower_snake_case or holds a null.
-func noDuplicateKeys(body []byte) error {
+// key in any object or uses a key that is not lower_snake_case. It walks the
+// whole document and returns the first explicit null it saw (nil if none)
+// for decodeStrict to report after the unknown-field check.
+func noDuplicateKeys(body []byte) (*nullError, error) {
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.UseNumber()
 	first, err := dec.Token()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if d, ok := first.(json.Delim); !ok || d != '{' {
-		return errors.New("not a JSON object")
+		return nil, errors.New("not a JSON object")
 	}
-	return walkObject(dec, 1, "")
+	w := walker{dec: dec}
+	if err := w.object(1); err != nil {
+		return nil, err
+	}
+	return w.null, nil
 }
 
 const maxJSONDepth = 16
 
-func walkObject(dec *json.Decoder, depth int, _ string) error {
+// walker checks one JSON document token by token and remembers its first
+// null.
+type walker struct {
+	dec  *json.Decoder
+	null *nullError
+}
+
+func (w *walker) object(depth int) error {
 	if depth > maxJSONDepth {
 		return errors.New("JSON nested too deeply")
 	}
 	seen := map[string]bool{}
-	for dec.More() {
-		t, err := dec.Token()
+	for w.dec.More() {
+		t, err := w.dec.Token()
 		if err != nil {
 			return err
 		}
@@ -320,21 +341,24 @@ func walkObject(dec *json.Decoder, depth int, _ string) error {
 			return errors.New("repeated key " + strconv.Quote(k))
 		}
 		seen[k] = true
-		if err := walkValue(dec, depth, k); err != nil {
+		if err := w.value(depth, k); err != nil {
 			return err
 		}
 	}
-	_, err := dec.Token() // '}'
+	_, err := w.dec.Token() // '}'
 	return err
 }
 
-func walkValue(dec *json.Decoder, depth int, field string) error {
-	t, err := dec.Token()
+func (w *walker) value(depth int, field string) error {
+	t, err := w.dec.Token()
 	if err != nil {
 		return err
 	}
 	if t == nil {
-		return &nullError{field: field}
+		if w.null == nil {
+			w.null = &nullError{field: field}
+		}
+		return nil
 	}
 	d, ok := t.(json.Delim)
 	if !ok {
@@ -342,17 +366,17 @@ func walkValue(dec *json.Decoder, depth int, field string) error {
 	}
 	switch d {
 	case '{':
-		return walkObject(dec, depth+1, field)
+		return w.object(depth + 1)
 	case '[':
 		if depth+1 > maxJSONDepth {
 			return errors.New("JSON nested too deeply")
 		}
-		for dec.More() {
-			if err := walkValue(dec, depth+1, field); err != nil {
+		for w.dec.More() {
+			if err := w.value(depth+1, field); err != nil {
 				return err
 			}
 		}
-		_, err := dec.Token() // ']'
+		_, err := w.dec.Token() // ']'
 		return err
 	}
 	return errors.New("unexpected JSON delimiter")
@@ -394,6 +418,16 @@ var conflictMessages = map[string]string{
 	// Quotes: what the customer chose changed since it was shown; choose again.
 	"item_unavailable": "A cake in your basket is no longer available as chosen. Please check your basket.",
 	"slot_unavailable": "That time is no longer available. Please choose another time.",
+	// Checkout: the reviewed quote can no longer be accepted as it is.
+	"price_changed":  "Something in your quote changed. Please review the new quote.",
+	"quote_expired":  "This quote has expired. Please review a new quote.",
+	"policy_changed": "Our terms changed since you reviewed them. Please review them again.",
+	"code_used_up":   "This code has been used up.",
+	// Free confirmation.
+	"payment_required": "This order needs payment; it cannot be confirmed free.",
+	"lead_time":        "It is now too close to the handover time to confirm this order.",
+	// Payment.
+	"payment_in_progress": "A payment for this order is already in progress. Do not pay again; check the order.",
 }
 
 // catalogError maps catalog errors to K00 responses without SQL detail.
@@ -424,6 +458,20 @@ func catalogError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, e
 			code = "ITEM_UNAVAILABLE"
 		case "slot_unavailable":
 			code = "SLOT_UNAVAILABLE"
+		case "price_changed":
+			code = "PRICE_CHANGED"
+		case "quote_expired":
+			code = "QUOTE_EXPIRED"
+		case "policy_changed":
+			code = "POLICY_CHANGED"
+		case "code_used_up":
+			code = "CODE_USED_UP"
+		case "payment_required":
+			code = "PAYMENT_REQUIRED"
+		case "lead_time":
+			code = "LEAD_TIME"
+		case "payment_in_progress":
+			code = "PAYMENT_IN_PROGRESS"
 		}
 		writeError(w, r, http.StatusConflict, code, msg, false)
 	case errors.As(err, &inv):
