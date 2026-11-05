@@ -63,13 +63,20 @@ func (h *payHarness) withNotices(t *testing.T) *fakeEmail {
 		t.Fatal(err)
 	}
 	email := &fakeEmail{}
+	h.dispatchTo(t, email)
+	return email
+}
+
+// dispatchTo chains an email dispatcher sending to email after the current
+// handlers.
+func (h *payHarness) dispatchTo(t *testing.T, email *fakeEmail) {
+	t.Helper()
 	d, err := notifications.NewDispatcher(notifications.DispatcherConfig{DB: h.worker, Coordinator: h.coord, Sender: email,
 		Environment: "test", Logger: slog.New(slog.NewJSONHandler(h.logs, nil))})
 	if err != nil {
 		t.Fatal(err)
 	}
 	h.handler = jobs.Chain(h.handler, d.Handle)
-	return email
 }
 
 type noticeRow struct {
@@ -522,4 +529,62 @@ func TestOrderNoticeRendering(t *testing.T) {
 			t.Errorf("%s: frame %q", kind, text[:20])
 		}
 	}
+}
+
+// A return completed by a Q5 manual payout is emailed once, when its
+// outcome is secured (published), not while it is only submitted; a late
+// capture after a release is returned in full the same way.
+func TestManualPayoutReturnNotice(t *testing.T) {
+	h := newPayHarness(t)
+	email := h.withNotices(t)
+	f := h.setup(t)
+	h.staffGrants(t)
+	order, d, coll := h.lateCapture(t, f, h.policy(t, "p1"), "q5")
+	if ns := h.notices(t, order); kinds(ns) != "released:queued:accepted" {
+		t.Fatalf("notices after the release %s", kinds(ns))
+	}
+	h.failedProviderRefund(t, coll) // chains the refund worker without the dispatcher
+	h.dispatchTo(t, email)
+	op := h.reserveManual(t, order, d, coll, "m1")
+	if err := h.manualOutcome(t, order, d, op, "sub", checkout.ManualPayoutOutcomeInput{Outcome: "submitted"}); err != nil {
+		t.Fatal(err)
+	}
+	if ns := h.notices(t, order); len(ns) != 1 {
+		t.Fatalf("notices while submitted %s", kinds(ns))
+	}
+	success := checkout.ManualPayoutOutcomeInput{Outcome: "succeeded", TransferIdentity: "bank-statement/nov/line-3",
+		EvidenceRef: "evidence/case-7", AmountMinor: 10000, Currency: "GBP"}
+	// The success commits, but its outcome envelope fails: not published,
+	// not emailed.
+	h.journal.Fail = func(op, name string) error {
+		if op == "put" && strings.HasSuffix(name, ".outcome") {
+			return fmt.Errorf("b2 unavailable")
+		}
+		return nil
+	}
+	success.ExpectedVersion = h.version(t, order, d)
+	if _, err := h.co.RecordManualPayoutOutcome(h.ctx, chef, "ok", order, op, success); err != nil {
+		t.Fatal(err)
+	}
+	if errs := h.drain(t); len(errs) == 0 {
+		t.Fatal("the outcome envelope did not fail")
+	}
+	if v, raw := h.view(t, order, d); v.Refund == nil || v.Refund.State == "returned" {
+		t.Fatalf("published before protection %s", raw)
+	}
+	if ns := h.notices(t, order); len(ns) != 1 {
+		t.Fatalf("notices before the outcome is secured %s", kinds(ns))
+	}
+	h.journal.Fail = nil
+	h.due(t)
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatal(reasons(errs))
+	}
+	ns := h.notices(t, order)
+	if kinds(ns) != "released:queued:accepted,refund_returned:queued:accepted" || len(email.all()) != 2 {
+		t.Fatalf("notices %s, sent %d", kinds(ns), len(email.all()))
+	}
+	req := h.request(t, ns[1])
+	has(t, "text", req.Text, "We have returned £100 to you for this order.")
+	hasNot(t, "text", req.Text, "bank-statement", "evidence/case-7", "recipient-verified", "refunded")
 }
