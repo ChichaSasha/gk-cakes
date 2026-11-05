@@ -6,12 +6,17 @@
 	import type { Snippet } from 'svelte';
 	import { onMount } from 'svelte';
 	import { bag } from '../bag.svelte';
+	import { favourites } from '../favourites.svelte';
 	import ShopFooter from './ShopFooter.svelte';
 	import ShopHeader from './ShopHeader.svelte';
+	import ShopToast from './ShopToast.svelte';
 
 	let { children }: { children: Snippet } = $props();
 
-	onMount(() => bag.load());
+	onMount(() => {
+		bag.load();
+		favourites.load();
+	});
 </script>
 
 <div class="shop">
@@ -20,4 +25,5 @@
 		{@render children()}
 	</main>
 	<ShopFooter />
+	<ShopToast />
 </div>

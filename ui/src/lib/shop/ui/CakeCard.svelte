@@ -1,17 +1,25 @@
 <script lang="ts">
 	// One shop card (approved GK-016 r01c sketch): photo, name, the server's
 	// price ("From" when sizes differ), servings, how it is made and any
-	// prominent allergen exactly as declared.
+	// prominent allergen exactly as declared, and the favourites heart.
 	import { resolve } from '$app/paths';
 	import { formatMoney } from '../../checkout/format';
 	import { servingsLabel, type Listing } from '../catalog';
 	import CakePhoto from './CakePhoto.svelte';
+	import SaveButton from './SaveButton.svelte';
 
 	let {
 		item,
 		index,
-		heading = 'h2'
-	}: { item: Listing; index: number; heading?: 'h2' | 'h3' } = $props();
+		heading = 'h2',
+		onremove
+	}: {
+		item: Listing;
+		index: number;
+		heading?: 'h2' | 'h3';
+		/** Called after the heart removes this cake from favourites. */
+		onremove?: (button: HTMLButtonElement) => void;
+	} = $props();
 
 	const price = $derived(
 		item.fromMinor === null
@@ -48,4 +56,5 @@
 			{/if}
 		</p>
 	</a>
+	<SaveButton id={item.id} name={item.name} {onremove} />
 </li>

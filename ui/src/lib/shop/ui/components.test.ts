@@ -33,4 +33,12 @@ describe('CakeCard', () => {
 		expect(text(body)).toContain('Not available right now');
 		expect(text(body)).not.toContain('PEANUTS');
 	});
+
+	it('has a favourites heart outside the link, named for the cake and not pressed', () => {
+		const item = listing(cake(), []);
+		const { body } = render(CakeCard, { props: { item, index: 0 } });
+		expect(body).toMatch(
+			/<\/a>\s*(<!--[^]*?-->\s*)*<button class="save" type="button" aria-label="Save Chocolate swirl" aria-pressed="false"/
+		);
+	});
 });
