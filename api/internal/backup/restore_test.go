@@ -6,10 +6,12 @@ import (
 	"errors"
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ChichaSasha/gk-cakes/api/internal/handlers"
 	"github.com/ChichaSasha/gk-cakes/api/migrations"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -214,5 +216,18 @@ func TestSafeErrorDropsDataMessages(t *testing.T) {
 	access := &pgconn.PgError{Code: "42501", Message: "permission denied to set parameter"}
 	if got := safeError(access); !errors.Is(got, access) {
 		t.Fatalf("access error: %v", got)
+	}
+}
+
+// The synthetic check runs the worker's own chain (internal/handlers), with
+// recording providers in place of Stripe and Resend.
+func TestSyntheticHandlersAreTheWorkerChain(t *testing.T) {
+	hs := syntheticHandlers(nil, nil, &recorder{}, nil, "test", nil)
+	kinds := make([]string, len(hs))
+	for i, h := range hs {
+		kinds[i] = h.Kind
+	}
+	if !slices.Equal(kinds, handlers.Kinds) {
+		t.Fatalf("synthetic kinds %v, worker kinds %v", kinds, handlers.Kinds)
 	}
 }

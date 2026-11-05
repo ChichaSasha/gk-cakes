@@ -92,7 +92,7 @@ COMMIT`)
 }
 
 // restoreSource builds a migrated, seeded source and its backup.
-func restoreSource(t *testing.T) (*memStore, Sealer, Manifest, string) {
+func restoreSource(t *testing.T) (*memStore, Sealer, Manifest, string, *dbtest.DB) {
 	t.Helper()
 	ctx := context.Background()
 	pgDump, pgRestore := pgTools(t)
@@ -107,7 +107,7 @@ func restoreSource(t *testing.T) (*memStore, Sealer, Manifest, string) {
 	if err != nil {
 		t.Fatalf("Dump: %v", err)
 	}
-	return store, sealer, m, pgRestore
+	return store, sealer, m, pgRestore, source
 }
 
 // restoreTarget is a fresh database whose migration role may disable
@@ -128,7 +128,15 @@ func restoreTarget(t *testing.T) *dbtest.DB {
 // business table but job. A second restore over it is refused.
 func TestRestoreIsFrozenInTheSameTransaction(t *testing.T) {
 	ctx := context.Background()
-	store, sealer, m, pgRestore := restoreSource(t)
+	store, sealer, m, pgRestore, source := restoreSource(t)
+	// The lost window: after the backup, a worker claims a job on the source.
+	const lostWorker = "0b1d0000-0000-4000-8000-0000000000ee"
+	var lostJob string
+	var lostGen int64
+	if err := source.LoginConn(t, "gk_worker").QueryRow(ctx, "SELECT job_id::text, job_generation FROM business.job_claim($1::uuid, interval '1 minute')",
+		lostWorker).Scan(&lostJob, &lostGen); err != nil {
+		t.Fatalf("lost-window claim: %v", err)
+	}
 	target := restoreTarget(t)
 	r := &Restore{Env: "test", Target: target.MigratorURL(), PgRestore: pgRestore, Store: store, Sealer: sealer, Migrations: migrations.FS}
 	// While the load is still open, another session sees nothing of it.
@@ -149,14 +157,16 @@ func TestRestoreIsFrozenInTheSameTransaction(t *testing.T) {
 		rows += n
 	}
 	if rep.Result != "ok" || rep.Tables != len(m.Rows) || rep.Rows != rows || rep.SchemaVersion != m.SchemaVersion ||
-		rep.MigrationsApplied != len(m.Migrations) || !rep.Frozen || !rep.FreezeSameTxn || rep.LeasesInBackup != 1 || rep.LeasesRevoked != 1 {
+		rep.MigrationsApplied != len(m.Migrations) || !rep.Frozen || !rep.FreezeSameTxn || rep.LeasesInBackup != 1 || rep.LeasesRevoked != 1 ||
+		rep.GenerationEpoch != GenerationEpoch {
 		t.Fatalf("report = %+v", rep)
 	}
 	s := rep.Synthetic
 	wantKinds := map[string]int{"order_command": 1, "payment": 1, "refund": 1, "hold_review": 1, "notification": 2}
 	if s.StaleLeaseCalls != 5 || s.StaleLeaseRefused != 5 || s.Claimable != 7 || s.NotDue != 1 || s.Claimed != 7 ||
 		s.DeferredFrozen != 6 || !maps.Equal(s.DeferredByKind, wantKinds) || s.HeldForAttention != 1 || s.Unowned != 0 || s.Violations != nil ||
-		s.ProviderCalls != 0 || s.JournalWrites != 0 || !s.TablesUnchanged || !s.RecoveryOperationsUnchanged {
+		s.ProviderCalls != 0 || s.JournalWrites != 0 || !s.TablesUnchanged || !s.RecoveryOperationsUnchanged ||
+		s.Reclaimed != 0 || !s.SyntheticLoginDropped {
 		t.Fatalf("synthetic dispatch = %+v", s)
 	}
 
@@ -174,9 +184,33 @@ func TestRestoreIsFrozenInTheSameTransaction(t *testing.T) {
 		Scan(&finished, &running, &oldLease); err != nil || finished != 0 || running != 0 || oldLease != 0 {
 		t.Fatalf("jobs: %d finished, %d running, %d with the old lease (%v)", finished, running, oldLease, err)
 	}
-	var generation int64
-	if err := admin.QueryRow(ctx, "SELECT generation FROM business.job WHERE id = $1", seedRunning).Scan(&generation); err != nil || generation <= 3 {
-		t.Fatalf("restored lease generation %d (%v)", generation, err)
+	var generation, lowest int64
+	if err := admin.QueryRow(ctx, "SELECT (SELECT generation FROM business.job WHERE id = $1), (SELECT min(generation) FROM business.job)",
+		seedRunning).Scan(&generation, &lowest); err != nil || generation < 3+GenerationEpoch || lowest < GenerationEpoch {
+		t.Fatalf("restored generations: leased job %d, lowest %d (%v)", generation, lowest, err)
+	}
+	// A lease issued in the lost window is refused even when the same
+	// worker ID claims the same job on the restored database: without the
+	// epoch both claims would carry the same generation.
+	if _, err := admin.Exec(ctx, "UPDATE business.job SET next_attempt_at = now() - interval '1 minute' WHERE id = $1", lostJob); err != nil {
+		t.Fatal(err)
+	}
+	worker := target.LoginConn(t, "gk_worker")
+	var claimed string
+	var fresh int64
+	if err := worker.QueryRow(ctx, "SELECT job_id::text, job_generation FROM business.job_claim($1::uuid, interval '1 minute')", lostWorker).
+		Scan(&claimed, &fresh); err != nil || claimed != lostJob || fresh <= GenerationEpoch {
+		t.Fatalf("fresh claim: %s generation %d (%v), lost-window lease %s generation %d", claimed, fresh, err, lostJob, lostGen)
+	}
+	heartbeat := func(gen int64) bool {
+		var until *time.Time
+		if err := worker.QueryRow(ctx, "SELECT business.job_heartbeat($1::uuid, $2::uuid, $3, interval '1 minute')", lostJob, lostWorker, gen).Scan(&until); err != nil {
+			t.Fatal(err)
+		}
+		return until != nil
+	}
+	if heartbeat(lostGen) || !heartbeat(fresh) {
+		t.Fatalf("lost-window generation %d accepted, or the fresh generation %d refused", lostGen, fresh)
 	}
 	// The synthetic worker login is gone.
 	var logins int
@@ -200,7 +234,7 @@ func TestRestoreIsFrozenInTheSameTransaction(t *testing.T) {
 // of the way is completed up to the backup's version.
 func TestFailedLoadLeavesAFreshTarget(t *testing.T) {
 	ctx := context.Background()
-	store, sealer, m, pgRestore := restoreSource(t)
+	store, sealer, m, pgRestore, _ := restoreSource(t)
 	target := restoreTarget(t)
 	if _, err := migrate.RunTo(ctx, target.MigratorConn(t), migrations.FS, m.Migrations[4]); err != nil {
 		t.Fatal(err)
@@ -228,7 +262,7 @@ func TestFailedLoadLeavesAFreshTarget(t *testing.T) {
 // Targets that are not empty or fresh are refused before anything changes.
 func TestRestoreRefusesNonEmptyTargets(t *testing.T) {
 	ctx := context.Background()
-	store, sealer, _, pgRestore := restoreSource(t)
+	store, sealer, _, pgRestore, _ := restoreSource(t)
 	run := func(db *dbtest.DB) error {
 		r := &Restore{Env: "test", Target: db.MigratorURL(), PgRestore: pgRestore, Store: store, Sealer: sealer, Migrations: migrations.FS}
 		_, err := r.Run(ctx)
@@ -292,7 +326,7 @@ func TestFreshRowsMatchTheMigrations(t *testing.T) {
 // is touched.
 func TestRestoreRefusesADumpThatDisagreesWithItsManifest(t *testing.T) {
 	ctx := context.Background()
-	store, sealer, m, pgRestore := restoreSource(t)
+	store, sealer, m, pgRestore, _ := restoreSource(t)
 	m.Rows["job"]++
 	resealManifest(t, store, sealer, m)
 	target := restoreTarget(t)
@@ -312,7 +346,7 @@ func TestRestoreRefusesADumpThatDisagreesWithItsManifest(t *testing.T) {
 // the freeze, the handlers go ahead and the check fails.
 func TestSyntheticDispatchCatchesAnUnfrozenRestore(t *testing.T) {
 	ctx := context.Background()
-	store, sealer, _, pgRestore := restoreSource(t)
+	store, sealer, _, pgRestore, _ := restoreSource(t)
 	target := restoreTarget(t)
 	r := &Restore{Env: "test", Target: target.MigratorURL(), PgRestore: pgRestore, Store: store, Sealer: sealer, Migrations: migrations.FS}
 	// The load commits unfrozen (as if the freeze were forgotten).
@@ -328,5 +362,43 @@ func TestSyntheticDispatchCatchesAnUnfrozenRestore(t *testing.T) {
 	if err == nil || rep.Violations["hold_review:completed"] != 1 || rep.Violations["notification:attention"] == 0 ||
 		rep.DeferredFrozen != 0 || rep.TablesUnchanged {
 		t.Fatalf("unfrozen jobs passed the synthetic dispatch check: %v (%+v)", err, rep)
+	}
+}
+
+// Data written into the target after its emptiness check (between the
+// migration and the load) is found again under the load's table locks and
+// refused, never deleted; a target whose restore lock is held is refused.
+func TestLoadRechecksTheTargetAndOneRestoreRunsAtATime(t *testing.T) {
+	ctx := context.Background()
+	store, sealer, _, pgRestore, _ := restoreSource(t)
+	target := restoreTarget(t)
+	r := &Restore{Env: "test", Target: target.MigratorURL(), PgRestore: pgRestore, Store: store, Sealer: sealer, Migrations: migrations.FS}
+	admin := target.AdminConn(t)
+	const stray = "0b1d0000-0000-4000-8000-0000000000dd"
+	r.beforeLoad = func(ctx context.Context) error {
+		_, err := admin.Exec(ctx, "INSERT INTO business.account (id, provider_subject) VALUES ($1, gen_random_uuid())", stray)
+		return err
+	}
+	rep, err := r.Run(ctx)
+	if err == nil || rep.Stage != "load" || !strings.Contains(err.Error(), "business.account has 1 rows") {
+		t.Fatalf("write after the check: %v (%+v)", err, rep)
+	}
+	var kept int
+	if err := admin.QueryRow(ctx, "SELECT count(*) FROM business.account WHERE id = $1", stray).Scan(&kept); err != nil || kept != 1 {
+		t.Fatalf("the late write was deleted: %d (%v)", kept, err)
+	}
+
+	other := restoreTarget(t)
+	holder := other.AdminConn(t)
+	if _, err := holder.Exec(ctx, "SELECT pg_advisory_lock($1)", restoreLockKey); err != nil {
+		t.Fatal(err)
+	}
+	r = &Restore{Env: "test", Target: other.MigratorURL(), PgRestore: pgRestore, Store: store, Sealer: sealer, Migrations: migrations.FS}
+	if rep, err := r.Run(ctx); err == nil || rep.Stage != "target" || !strings.Contains(err.Error(), "another restore") {
+		t.Fatalf("second restore on a locked target: %v (%+v)", err, rep)
+	}
+	var business bool
+	if err := holder.QueryRow(ctx, "SELECT to_regnamespace('business') IS NOT NULL").Scan(&business); err != nil || business {
+		t.Fatalf("the locked target was migrated: %v %v", business, err)
 	}
 }

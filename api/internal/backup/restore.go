@@ -26,24 +26,29 @@ import (
 //     manifest, and read its data script offline: every business table's
 //     row count must match the manifest, and its migration history must be
 //     this build's, file for file (same SHA-256).
-//  2. Refuse a target that is not empty or exactly a fresh migrated schema.
+//  2. Take the target's restore advisory lock (one restore at a time) and
+//     refuse a target that is not empty or exactly a fresh migrated schema.
 //  3. Migrate the target up to the backup's schema version (roles, schema,
 //     gateway functions) and freeze outgoing effects at once.
 //  4. In one transaction, without firing triggers (session_replication_role
-//     = replica, as pg_restore --disable-triggers): replace every business
-//     table's rows with the backup's (migration seed rows such as
-//     recovery_freeze included; gk_meta is not restored), revoke the job
-//     leases held at backup time (a new lease generation, released for a
-//     fresh claim), set recovery_freeze to frozen with a reason, check
+//     = replica, as pg_restore --disable-triggers): lock the business tables
+//     against writers and check again that they hold only fresh rows,
+//     replace every business table's rows with the backup's (migration seed
+//     rows such as recovery_freeze included; gk_meta is not restored),
+//     revoke every job lease (each generation moves up by GenerationEpoch;
+//     jobs leased at backup time are released for a fresh claim), set
+//     recovery_freeze to frozen with a reason, check
 //     foreign keys and row counts, and commit. So no state ever exists in
 //     which the restored jobs are visible and not frozen.
 //  5. Verify after the commit: history, row counts, the freeze, and that
 //     the freeze and every restored row were written by that one
 //     transaction (same xmin).
 //  6. Prove the freeze holds (frozen.go): old leases are refused, and a
-//     fresh worker login running the real job handlers with recording
-//     providers defers every claimable job, calls no provider, writes no
-//     journal envelope and changes no business table but job.
+//     fresh worker login running the worker's own handler chain
+//     (internal/handlers) with recording providers defers every claimable
+//     job, calls no provider, writes no journal envelope and changes no
+//     business table but job. A failed check has already changed the
+//     target (jobs claimed and released): empty it before restoring again.
 type Restore struct {
 	Env        string // environment of the backups (APP_ENV)
 	Target     string // migration credential of the restore database (never logged)
@@ -54,8 +59,18 @@ type Restore struct {
 	Migrations fs.FS // this build's migrations
 	Now        func() time.Time
 
+	beforeLoad   func(context.Context) error         // test hook: runs after the migration, before the load
 	beforeCommit func(context.Context, pgx.Tx) error // test hook: runs before the load commits
 }
+
+// GenerationEpoch is added to every restored job's lease generation: a lease
+// issued after the backup was taken (the lost window) carries a generation
+// below it, so it is refused even if its worker ID came back.
+const GenerationEpoch = 1_000_000
+
+// restoreLockKey is the session advisory lock one restore holds on its
+// target from the emptiness check to the end ("gk-rstr").
+const restoreLockKey int64 = 0x676b2d7273747200
 
 // RestoreReport is the machine-readable result: names, versions, counts and
 // timings only.
@@ -76,6 +91,7 @@ type RestoreReport struct {
 	FreezeSameTxn     bool           `json:"freeze_same_transaction"`
 	LeasesInBackup    int            `json:"leases_in_backup"`
 	LeasesRevoked     int64          `json:"leases_revoked"`
+	GenerationEpoch   int64          `json:"generation_epoch"`
 	Synthetic         *FrozenReport  `json:"synthetic_dispatch,omitempty"`
 	TimingsMS         map[string]int `json:"timings_ms"`
 }
@@ -158,6 +174,16 @@ func (r *Restore) Run(ctx context.Context) (rep RestoreReport, err error) {
 		return rep, fmt.Errorf("backup: connect to the restore target: %w", err)
 	}
 	defer conn.Close(context.WithoutCancel(ctx))
+	// One restore at a time on a target, from the check to the end (the
+	// lock ends with the session).
+	var locked bool
+	if err := conn.QueryRow(ctx, "SELECT pg_try_advisory_lock($1)", restoreLockKey).Scan(&locked); err != nil {
+		return rep, fmt.Errorf("backup: lock the restore target: %w", err)
+	}
+	if !locked {
+		return rep, errors.New("backup: another restore is running on this target")
+	}
+	defer func() { _, _ = conn.Exec(context.WithoutCancel(ctx), "SELECT pg_advisory_unlock($1)", restoreLockKey) }()
 	if err := checkTarget(ctx, conn, sum.History); err != nil {
 		return rep, err
 	}
@@ -180,6 +206,11 @@ func (r *Restore) Run(ctx context.Context) (rep RestoreReport, err error) {
 	}); err != nil {
 		return rep, fmt.Errorf("backup: freeze the target: %w", err)
 	}
+	if r.beforeLoad != nil {
+		if err := r.beforeLoad(ctx); err != nil {
+			return rep, err
+		}
+	}
 	step("migrate")
 
 	rep.Stage = "load"
@@ -187,7 +218,7 @@ func (r *Restore) Run(ctx context.Context) (rep RestoreReport, err error) {
 	if err != nil {
 		return rep, err
 	}
-	rep.LeasesRevoked = revoked
+	rep.LeasesRevoked, rep.GenerationEpoch = revoked, GenerationEpoch
 	step("load")
 
 	rep.Stage = "verify"
@@ -283,18 +314,22 @@ func checkTarget(ctx context.Context, conn *pgx.Conn, history []MigrationRecord)
 	if len(applied) == 0 {
 		return errors.New("backup: the target has a business schema but no migration history: refusing a non-empty target")
 	}
-	return ownerTx(ctx, conn, true, func(tx pgx.Tx) error {
-		counts, err := countRows(ctx, tx)
-		if err != nil {
-			return err
+	return ownerTx(ctx, conn, true, func(tx pgx.Tx) error { return refuseData(ctx, tx) })
+}
+
+// refuseData fails when any business table holds more than the rows
+// migrations insert.
+func refuseData(ctx context.Context, tx pgx.Tx) error {
+	counts, err := countRows(ctx, tx)
+	if err != nil {
+		return err
+	}
+	for _, t := range slices.Sorted(maps.Keys(counts)) {
+		if counts[t] > freshRows[t] {
+			return fmt.Errorf("backup: the target is not empty (business.%s has %d rows): refusing to restore over it", t, counts[t])
 		}
-		for _, t := range slices.Sorted(maps.Keys(counts)) {
-			if counts[t] > freshRows[t] {
-				return fmt.Errorf("backup: the target is not empty (business.%s has %d rows): refusing to restore over it", t, counts[t])
-			}
-		}
-		return nil
-	})
+	}
+	return nil
 }
 
 // ownerTx runs f in a transaction as gk_owner (the migration credential may
@@ -355,6 +390,18 @@ func (r *Restore) load(ctx context.Context, conn *pgx.Conn, pgRestore string, ar
 	if !slices.Equal(tables, slices.Sorted(maps.Keys(m.Rows))) {
 		return "", 0, fmt.Errorf("backup: the migrated target has business tables %v, the backup %v", tables, slices.Sorted(maps.Keys(m.Rows)))
 	}
+	// Writers wait from here to the commit; then the target is checked again
+	// under the lock, so nothing written since the first check is deleted.
+	quoted := make([]string, len(tables))
+	for i, t := range tables {
+		quoted[i] = pgx.Identifier{"business", t}.Sanitize()
+	}
+	if _, err := tx.Exec(ctx, "LOCK TABLE "+strings.Join(quoted, ", ")+" IN EXCLUSIVE MODE"); err != nil {
+		return "", 0, fmt.Errorf("backup: lock the business tables: %w", err)
+	}
+	if err := refuseData(ctx, tx); err != nil {
+		return "", 0, err
+	}
 	for _, t := range tables {
 		if _, err := tx.Exec(ctx, "DELETE FROM business."+pgx.Identifier{t}.Sanitize()); err != nil {
 			return "", 0, fmt.Errorf("backup: clear business.%s: %w", t, err)
@@ -378,15 +425,20 @@ func (r *Restore) load(ctx context.Context, conn *pgx.Conn, pgRestore string, ar
 	}); err != nil {
 		return "", 0, err
 	}
-	// Leases held at backup time are revoked: a new generation, released for
-	// a fresh claim, so an old worker's (worker, generation) fences out.
-	tag, err := tx.Exec(ctx, `UPDATE business.job SET state = 'retry', next_attempt_at = now(), lease_owner = NULL,
-		lease_until = NULL, generation = generation + 1, version = version + 1, updated_at = now() WHERE state = 'running'`)
-	if err != nil {
+	// Leases are revoked: every job's generation moves up by the epoch, so a
+	// lease held at backup time or issued after it (the lost window) fences
+	// out, and jobs leased at backup time are released for a fresh claim.
+	var revoked int64
+	if err := tx.QueryRow(ctx, "SELECT count(*) FROM business.job WHERE state = 'running'").Scan(&revoked); err != nil {
+		return "", 0, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE business.job SET generation = generation + $1,
+		state = CASE WHEN state = 'running' THEN 'retry' ELSE state END,
+		next_attempt_at = CASE WHEN state = 'running' THEN now() ELSE next_attempt_at END,
+		lease_owner = NULL, lease_until = NULL, version = version + 1, updated_at = now()`, GenerationEpoch); err != nil {
 		return "", 0, fmt.Errorf("backup: revoke restored leases: %w", err)
 	}
-	revoked := tag.RowsAffected()
-	if tag, err = tx.Exec(ctx, "UPDATE business.recovery_freeze SET frozen = true, reason = $1, changed_at = now() WHERE singleton", reason); err != nil {
+	if tag, err := tx.Exec(ctx, "UPDATE business.recovery_freeze SET frozen = true, reason = $1, changed_at = now() WHERE singleton", reason); err != nil {
 		return "", 0, fmt.Errorf("backup: freeze: %w", err)
 	} else if tag.RowsAffected() != 1 {
 		return "", 0, errors.New("backup: the backup has no recovery_freeze row to freeze")

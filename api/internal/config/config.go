@@ -302,6 +302,11 @@ func LoadRestore(getenv func(string) string) (Restore, error) {
 	}
 	cfg.TargetURL = l.databaseURL("RESTORE_TARGET_DATABASE_URL", cfg.Env)
 	l.plainConnection("RESTORE_TARGET_DATABASE_URL", cfg.TargetURL)
+	// The synthetic dispatch check derives its temporary login's URL from
+	// the target's userinfo (user:password@host).
+	if u, err := url.Parse(cfg.TargetURL.value); cfg.TargetURL.IsSet() && (err != nil || u.User == nil || u.User.Username() == "" || u.Query().Has("user")) {
+		l.fail("RESTORE_TARGET_DATABASE_URL must name its user in the URL (postgres://user:password@host/db), not in the query")
+	}
 	if cfg.Name = l.get("RESTORE_BACKUP"); cfg.Name != "" && !backupStampPattern.MatchString(cfg.Name) {
 		l.fail("RESTORE_BACKUP must be a backup time such as 20261105-023000z")
 	}

@@ -64,7 +64,7 @@ and staging/production reject local hosts and Unix sockets.
 | `RECOVERY_ENCRYPTION_KEYS` | worker   | journal encryption keys `kid:base64(32 bytes)[,...]`, redacted                              |
 | `BACKUP_DATABASE_URL`    | gk-backup dump | the `gk_backup` login (read only), same rules as `DATABASE_URL` |
 | `RESTORE_DATABASE_URL`   | gk-backup restore-check | a disposable database on a loopback address only |
-| `RESTORE_TARGET_DATABASE_URL` | gk-backup restore | the migration credential of the isolated restore database, same rules as `MIGRATION_DATABASE_URL`; `APP_ENV` names the environment whose backups are read (production is refused) |
+| `RESTORE_TARGET_DATABASE_URL` | gk-backup restore | the migration credential of the isolated restore database, same rules as `MIGRATION_DATABASE_URL`; the user must be in the URL's userinfo (`postgres://user:password@host/db`; no `user=` or `password=` query parameter: the synthetic check derives its temporary login's URL from it); `APP_ENV` names the environment whose backups are read (production is refused) |
 | `RESTORE_BACKUP`         | gk-backup restore | optional backup time such as `20261104-052703z`; default the newest complete backup |
 | `BACKUP_B2_KEY_ID`, `BACKUP_B2_KEY`, `BACKUP_ENCRYPTION_KEYS` | gk-backup | B2 key restricted to `database/` (list/read/write, no delete) and the backup encryption keys `kid:base64(32 bytes)[,...]`; see [Database backups](#database-backups-k11-gk-034) |
 | `PG_DUMP`, `PG_RESTORE`, `BACKUP_MAX_AGE` | gk-backup | optional tool paths (default from `PATH`; version 17 or newer; `restore` runs `pg_restore` offline only, archive in and script out) and the restore check's maximum backup age (default `26h`) |
@@ -641,22 +641,27 @@ into an empty database without owners or privileges:
    migration history must be this build's, file for file (same SHA-256);
    a backup with a migration this build does not know is refused (restore
    with the release that took it).
-2. **Target**: refused unless it is empty (no `business` or `gk_meta`
-   schema) or exactly a fresh migrated schema: a history that is a prefix of
-   the backup's and no rows except those migrations insert
-   (`business.recovery_freeze`). A restored target is therefore refused too.
+2. **Target**: a session advisory lock allows one restore per target at a
+   time (held to the end). The target is refused unless it is empty (no
+   `business` or `gk_meta` schema) or exactly a fresh migrated schema: a
+   history that is a prefix of the backup's and no rows except those
+   migrations insert (`business.recovery_freeze`). A restored target is
+   therefore refused too.
 3. **Migrate** with `gk-migrate`'s code up to the backup's schema version
    (roles, schema, gateway functions, privileges), then freeze the fresh
    schema at once.
 4. **Load, in one transaction**, as `gk_owner` with
    `session_replication_role = replica` (no trigger fires; the migration
    credential needs superuser or `GRANT SET ON PARAMETER
-   session_replication_role`, which Supabase's `postgres` role has): delete
-   every business table's rows (the migration seed rows included), COPY the
-   backup's business data (not `gk_meta`: the history comes from this
-   build's migrations), revoke every job lease held at backup time (state
-   `retry`, a new generation, so an old worker's `(worker, generation)` is
-   fenced out), set `recovery_freeze` to frozen with the reason `gk-backup
+   session_replication_role`, which Supabase's `postgres` role has): lock
+   every business table against writers and check again that none holds
+   more than its fresh rows (anything written since step 2 is refused,
+   never deleted), delete every business table's rows (the migration seed
+   rows included), COPY the backup's business data (not `gk_meta`: the
+   history comes from this build's migrations), revoke every job lease
+   (every generation moves up by 1,000,000, so a lease held at backup time
+   or issued after it, in the lost window, is fenced out even if its worker
+   ID came back; jobs leased at backup time go to `retry`), set `recovery_freeze` to frozen with the reason `gk-backup
    restore of database/<env>/<time>/: outgoing effects frozen until
    reconciled (K11)`, check every foreign key (the load skipped their
    triggers) and every row count, and commit. No state ever exists in which
@@ -668,18 +673,28 @@ into an empty database without owners or privileges:
    a SCRAM verifier, never the password, valid for an hour, checked with
    `database.CheckLogin`, dropped at the end) presents every lease from the
    backup to `job_heartbeat`, `job_complete`, `job_release`, `job_attention`
-   and `job_fail` (all must refuse), then runs the worker's real handler
-   chain (order commands, payments, refunds, hold reviews, email) over every
-   claimable job with recording providers and a journal that refuses
-   writes. Every job must answer frozen (a suspended notice may answer
-   attention: its manager hold is checked before the freeze), no provider
-   may be called, no envelope written, and no business table but `job` may
-   change (content digests before and after); claimed jobs are released
-   for a later attempt, never completed, failed or escalated.
+   and `job_fail` (all must refuse), then runs the worker's own handler
+   chain (`internal/handlers`, the constructor `gk-worker` uses: order
+   commands, payments, refunds, hold reviews, email) over every claimable
+   job with recording providers and a journal that refuses writes. Every
+   job must answer frozen (a suspended notice may answer attention: its
+   manager hold is checked before the freeze); a job no handler owns, a
+   provider call, an envelope written, or a change to any business table
+   but `job` (content digests before and after) fails the check. Each job
+   is checked once and released for an hour, never completed, failed or
+   escalated; the check fails as well if the temporary login cannot be
+   dropped (`synthetic_login_dropped`).
+
+   **A failed check has already modified the target**: the claimed jobs
+   moved (new generations, released for an hour) and a handler that went
+   past the freeze may have written. Empty the target (runbook step 2)
+   before the next restore; it would be refused as non-empty anyway when
+   any business row remains.
 
 The result is one JSON object: backup name and time, schema version,
 migrations applied, tables and rows, `frozen`, `freeze_same_transaction`,
-leases in the backup and revoked, the synthetic dispatch counts, the
+leases in the backup and revoked, the generation epoch, the synthetic
+dispatch counts, the
 data-loss window (restore time minus backup time) and per-step timings.
 Errors keep PostgreSQL's data messages out (SQLSTATE classes 22 and 23 are
 reduced to code, table and constraint).
@@ -711,8 +726,12 @@ from an IPv4 network use the session pooler (port 5432, user
 `postgres.<ref>`), which supports the advisory lock, the transaction and
 COPY. The synthetic worker login keeps the pooler's `.<ref>` suffix.
 
-**Exercise, 2026-11-05** (branch build, into `gk-cakes-restore-test`
-through the session pooler, `verify-full`):
+**Exercise, 2026-11-05** (build of commit `5848a4e`, into
+`gk-cakes-restore-test` through the session pooler, `verify-full`; that
+build revoked leases with a generation step of 1 and did not yet re-check
+the target under table locks, fail on unowned jobs or report the login
+drop; those review fixes are covered by the integration tests, not by a
+new exercise):
 
 | Run | Backup | Schema | Tables / rows | Leases revoked | Synthetic dispatch | Total (select, fetch, validate, target, migrate, load, verify, check) |
 | --- | --- | --- | --- | --- | --- | --- |

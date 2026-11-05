@@ -426,6 +426,7 @@ func TestLoadRestore(t *testing.T) {
 		"target unverified":       {merge(valid, map[string]string{"RESTORE_TARGET_DATABASE_URL": "postgres://postgres:" + canary + "@db.example.supabase.co/postgres?sslmode=require"}), "sslmode=verify-full"},
 		"target local in staging": {merge(valid, map[string]string{"RESTORE_TARGET_DATABASE_URL": "postgres://postgres:" + canary + "@127.0.0.1/postgres"}), "must not target a local database"},
 		"target hostaddr":         {merge(valid, map[string]string{"RESTORE_TARGET_DATABASE_URL": valid["RESTORE_TARGET_DATABASE_URL"] + "&hostaddr=203.0.113.9"}), "must not set hostaddr"},
+		"user in the query":       {merge(valid, map[string]string{"RESTORE_TARGET_DATABASE_URL": "postgresql://pooler.example.supabase.com:5432/postgres?sslmode=verify-full&user=postgres"}), "must name its user in the URL"},
 		"bad name":                {merge(valid, map[string]string{"RESTORE_BACKUP": "database/staging/20261105-023000z/"}), "RESTORE_BACKUP must be"},
 		"no keys":                 {merge(valid, map[string]string{"BACKUP_B2_KEY": ""}), "are required"},
 	} {

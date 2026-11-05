@@ -19,8 +19,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ChichaSasha/gk-cakes/api/internal/checkout"
 	"github.com/ChichaSasha/gk-cakes/api/internal/database"
+	"github.com/ChichaSasha/gk-cakes/api/internal/handlers"
 	"github.com/ChichaSasha/gk-cakes/api/internal/jobs"
 	"github.com/ChichaSasha/gk-cakes/api/internal/notifications"
 	"github.com/ChichaSasha/gk-cakes/api/internal/payments"
@@ -41,11 +41,12 @@ type FrozenReport struct {
 	Claimable int `json:"claimable"`
 	NotDue    int `json:"not_due"`
 	// Jobs a fresh worker claimed and what the real handlers answered.
-	Claimed          int            `json:"claimed"`
+	Claimed          int            `json:"claimed"`   // distinct jobs
+	Reclaimed        int            `json:"reclaimed"` // claims of an already checked job (not run again)
 	DeferredFrozen   int            `json:"deferred_frozen"`
 	DeferredByKind   map[string]int `json:"deferred_frozen_by_kind"`
 	HeldForAttention int            `json:"held_for_attention"`
-	Unowned          int            `json:"unowned"` // no handler owns the job: nothing to dispatch
+	Unowned          int            `json:"unowned"` // no handler of this build owns the job: a failure
 	Violations       map[string]int `json:"violations,omitempty"`
 	// Provider calls (email, Stripe sessions and refunds) and journal
 	// envelopes written: all must be zero.
@@ -55,6 +56,8 @@ type FrozenReport struct {
 	// the same content before and after.
 	RecoveryOperationsUnchanged bool `json:"recovery_operations_unchanged"`
 	TablesUnchanged             bool `json:"tables_unchanged"`
+	// The temporary worker login was dropped (the check fails otherwise).
+	SyntheticLoginDropped bool `json:"synthetic_login_dropped"`
 }
 
 // errSyntheticJournal refuses every journal write during the check.
@@ -62,12 +65,13 @@ var errSyntheticJournal = errors.New("backup: synthetic dispatch check: journal 
 
 // checkFrozen proves the restored jobs stay frozen (K11): as a fresh,
 // temporary gk_worker login it presents the backup's old leases to the
-// lease functions, then runs the worker's real job handlers (order
-// commands, payments, refunds, hold reviews, email) over every claimable
-// job with recording providers and a journal that refuses writes. Claimed
-// jobs are released for a later attempt; nothing else may change.
-func checkFrozen(ctx context.Context, owner *pgx.Conn, target, env string, leases []Lease) (FrozenReport, error) {
-	rep := FrozenReport{Violations: map[string]int{}, DeferredByKind: map[string]int{}}
+// lease functions, then runs the worker's real job handlers
+// (internal/handlers, the chain cmd/gk-worker runs) over every claimable job
+// with recording providers and a journal that refuses writes. Claimed jobs
+// are released for an hour; nothing else may change. The login is dropped
+// at the end, and the check fails if that drop fails.
+func checkFrozen(ctx context.Context, owner *pgx.Conn, target, env string, leases []Lease) (rep FrozenReport, err error) {
+	rep = FrozenReport{Violations: map[string]int{}, DeferredByKind: map[string]int{}}
 	login, password := "gk_restore_check_"+randomHex(4), randomHex(24)
 	verifier, err := scramVerifier(password)
 	if err != nil {
@@ -79,8 +83,16 @@ func checkFrozen(ctx context.Context, owner *pgx.Conn, target, env string, lease
 		"' VALID UNTIL '"+until+"' IN ROLE gk_worker"); err != nil {
 		return rep, fmt.Errorf("backup: create the synthetic worker login: %w", err)
 	}
+	var pool *pgxpool.Pool
 	defer func() {
-		_, _ = owner.Exec(context.WithoutCancel(ctx), "DROP ROLE IF EXISTS "+pgx.Identifier{login}.Sanitize())
+		if pool != nil {
+			pool.Close() // its sessions end before the role is dropped
+		}
+		_, dropErr := owner.Exec(context.WithoutCancel(ctx), "DROP ROLE IF EXISTS "+pgx.Identifier{login}.Sanitize())
+		rep.SyntheticLoginDropped = dropErr == nil
+		if dropErr != nil && err == nil {
+			err = fmt.Errorf("backup: drop the synthetic worker login %s: %w", login, dropErr)
+		}
 	}()
 	workerURL, err := loginURL(target, login, password)
 	if err != nil {
@@ -92,18 +104,25 @@ func checkFrozen(ctx context.Context, owner *pgx.Conn, target, env string, lease
 	}
 	pcfg.MaxConns = 4
 	pcfg.ConnConfig.RuntimeParams["application_name"] = "gk-backup-restore-check"
-	pool, err := pgxpool.NewWithConfig(ctx, pcfg)
-	if err != nil {
+	if pool, err = pgxpool.NewWithConfig(ctx, pcfg); err != nil {
 		return rep, err
 	}
-	defer pool.Close()
 	if err := database.CheckLogin(ctx, pool, "gk_worker"); err != nil {
 		return rep, fmt.Errorf("backup: the synthetic worker login: %w", err)
 	}
+	return rep, runFrozen(ctx, owner, pool, env, leases, &rep)
+}
 
+// syntheticHandlers is the worker's handler chain with recording providers.
+func syntheticHandlers(pool *pgxpool.Pool, coord *recovery.Coordinator, rec *recorder, email jobs.Handler, env string, logger *slog.Logger) []handlers.Named {
+	return handlers.New(handlers.Config{DB: pool, Coordinator: coord, Payments: rec, Refunds: rec, Email: email,
+		Environment: env, Account: "acct_restorecheck", Logger: logger}) // the account is never reached
+}
+
+func runFrozen(ctx context.Context, owner *pgx.Conn, pool *pgxpool.Pool, env string, leases []Lease, rep *FrozenReport) error {
 	before, err := tableDigests(ctx, owner)
 	if err != nil {
-		return rep, err
+		return err
 	}
 	// The migration credential reads jobs as gk_owner.
 	if err := ownerTx(ctx, owner, true, func(tx pgx.Tx) error {
@@ -112,51 +131,49 @@ func checkFrozen(ctx context.Context, owner *pgx.Conn, target, env string, lease
 			count(*) FILTER (WHERE state IN ('queued', 'retry') AND next_attempt_at > now())
 			FROM business.job`).Scan(&rep.Claimable, &rep.NotDue)
 	}); err != nil {
-		return rep, fmt.Errorf("backup: count claimable jobs: %w", err)
+		return fmt.Errorf("backup: count claimable jobs: %w", err)
 	}
 
-	staleLeases(ctx, pool, leases, &rep)
+	staleLeases(ctx, pool, leases, rep)
 
 	rec := &recorder{}
 	sealer, err := recovery.NewSealer("k1:" + base64.StdEncoding.EncodeToString(randomBytes(32)))
 	if err != nil {
-		return rep, err
+		return err
 	}
 	coord := &recovery.Coordinator{Journal: rec, Sealer: sealer, Environment: env}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	email, err := notifications.NewDispatcher(notifications.DispatcherConfig{DB: pool, Coordinator: coord, Sender: rec, Environment: env, Logger: logger})
 	if err != nil {
-		return rep, err
-	}
-	const account = "acct_restorecheck" // never reached: no provider is called
-	kinds := []struct {
-		name string
-		h    jobs.Handler
-	}{
-		{"order_command", (&checkout.Commands{DB: pool, Coordinator: coord, Logger: logger}).Handle},
-		{"payment", (&payments.Worker{DB: pool, Coordinator: coord, Provider: rec, Environment: env, Account: account, Logger: logger}).Handle},
-		{"refund", (&payments.Refunds{DB: pool, Coordinator: coord, Provider: rec, Environment: env, Account: account, Logger: logger}).Handle},
-		{"hold_review", (&checkout.HoldReviews{DB: pool, Logger: logger}).Handle},
-		{"notification", email.Handle},
+		return err
 	}
 	var (
 		mu       sync.Mutex
 		answered string
+		seen     = map[string]bool{}
 	)
-	chain := make([]jobs.Handler, len(kinds))
-	for i, k := range kinds {
-		chain[i] = func(ctx context.Context, job jobs.Job) error {
-			err := k.h(ctx, job)
+	named := syntheticHandlers(pool, coord, rec, email.Handle, env, logger)
+	for i, h := range named {
+		inner := h.Handle
+		named[i].Handle = func(ctx context.Context, job jobs.Job) error {
+			err := inner(ctx, job)
 			if !errors.Is(err, jobs.ErrNoHandler) {
-				answered = k.name
+				answered = h.Kind
 			}
 			return err
 		}
 	}
-	all := jobs.Chain(chain...) // the worker's order (cmd/gk-worker)
+	all := handlers.Chain(named)
 	handler := func(ctx context.Context, job jobs.Job) error {
 		mu.Lock()
 		defer mu.Unlock()
+		if seen[job.ID] {
+			// Released for an hour, so only a check longer than that could
+			// see a job twice; it is counted once and not run again.
+			rep.Reclaimed++
+			return jobs.Defer(time.Hour, errors.New("restore check: already checked"))
+		}
+		seen[job.ID] = true
 		answered = ""
 		err := all(ctx, job)
 		rep.Claimed++
@@ -168,7 +185,6 @@ func checkFrozen(ctx context.Context, owner *pgx.Conn, target, env string, lease
 		case errors.As(err, &deferral) && errors.Is(err, recovery.ErrFrozen):
 			rep.DeferredFrozen++
 			rep.DeferredByKind[answered]++
-			return err
 		case errors.Is(err, jobs.ErrNoHandler):
 			rep.Unowned++
 		case errors.As(err, &attention) && answered == "notification" && suspended(ctx, owner, job.OperationID):
@@ -185,16 +201,17 @@ func checkFrozen(ctx context.Context, owner *pgx.Conn, target, env string, lease
 		default:
 			rep.Violations[answered+":failed"]++
 		}
-		// Never fail, complete or escalate a restored job in this check: the
-		// deferral must not wrap an attention error (the worker would
-		// escalate it).
+		// Never fail, complete or escalate a restored job in this check, and
+		// release every one for an hour (longer than the handlers' own
+		// freeze recheck) so the check cannot claim it again. The deferral
+		// must not wrap an attention error (the worker would escalate it).
 		return jobs.Defer(time.Hour, fmt.Errorf("restore check: %v", err))
 	}
 	w := jobs.New(pool, jobs.Options{Handler: handler, Logger: logger, ShutdownTimeout: 5 * time.Second, WorkerID: newUUID()})
 	for i := 0; i <= rep.Claimable+rep.NotDue; i++ {
 		ok, err := w.RunOnce(ctx)
 		if err != nil {
-			return rep, fmt.Errorf("backup: synthetic claim: %w", err)
+			return fmt.Errorf("backup: synthetic claim: %w", err)
 		}
 		if !ok {
 			break
@@ -203,7 +220,7 @@ func checkFrozen(ctx context.Context, owner *pgx.Conn, target, env string, lease
 
 	after, err := tableDigests(ctx, owner)
 	if err != nil {
-		return rep, err
+		return err
 	}
 	rep.RecoveryOperationsUnchanged = before["recovery_operation"] == after["recovery_operation"]
 	rep.TablesUnchanged = maps.Equal(before, after)
@@ -213,13 +230,15 @@ func checkFrozen(ctx context.Context, owner *pgx.Conn, target, env string, lease
 	}
 	switch {
 	case rep.StaleLeaseRefused != rep.StaleLeaseCalls:
-		return rep, fmt.Errorf("backup: %d of %d old-lease calls were accepted", rep.StaleLeaseCalls-rep.StaleLeaseRefused, rep.StaleLeaseCalls)
+		return fmt.Errorf("backup: %d of %d old-lease calls were accepted", rep.StaleLeaseCalls-rep.StaleLeaseRefused, rep.StaleLeaseCalls)
 	case len(rep.Violations) > 0:
-		return rep, fmt.Errorf("backup: restored jobs were not frozen: %v", rep.Violations)
+		return fmt.Errorf("backup: restored jobs were not frozen: %v", rep.Violations)
+	case rep.Unowned > 0:
+		return fmt.Errorf("backup: %d restored jobs belong to no handler of this build", rep.Unowned)
 	case rep.Claimed < rep.Claimable:
-		return rep, fmt.Errorf("backup: %d jobs were claimable, the synthetic worker claimed %d", rep.Claimable, rep.Claimed)
+		return fmt.Errorf("backup: %d jobs were claimable, the synthetic worker checked %d", rep.Claimable, rep.Claimed)
 	case rep.ProviderCalls > 0 || rep.JournalWrites > 0:
-		return rep, fmt.Errorf("backup: %d provider calls and %d journal writes while frozen", rep.ProviderCalls, rep.JournalWrites)
+		return fmt.Errorf("backup: %d provider calls and %d journal writes while frozen", rep.ProviderCalls, rep.JournalWrites)
 	case !rep.TablesUnchanged:
 		var changed []string
 		for _, t := range slices.Sorted(maps.Keys(before)) {
@@ -227,9 +246,9 @@ func checkFrozen(ctx context.Context, owner *pgx.Conn, target, env string, lease
 				changed = append(changed, t)
 			}
 		}
-		return rep, fmt.Errorf("backup: the synthetic dispatch changed business tables %v", changed)
+		return fmt.Errorf("backup: the synthetic dispatch changed business tables %v", changed)
 	}
-	return rep, nil
+	return nil
 }
 
 // suspended reports whether the notification intent is on a manager hold.
