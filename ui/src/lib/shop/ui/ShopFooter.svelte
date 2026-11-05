@@ -17,6 +17,7 @@
 			<div>
 				<h2>Your order</h2>
 				<a href={resolve('/(shop)/bag')}>Your bag</a>
+				<a href={resolve('/(shop)/favourites')}>Your favourites</a>
 				<a href={resolve('/account')}>Your account</a>
 			</div>
 			<div>
