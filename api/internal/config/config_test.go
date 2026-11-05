@@ -406,6 +406,44 @@ func TestLoadBackup(t *testing.T) {
 	}
 }
 
+func TestLoadRestore(t *testing.T) {
+	valid := map[string]string{"APP_ENV": "staging", "BACKUP_B2_KEY_ID": "0031234abcd000000000000a1", "BACKUP_B2_KEY": "K003" + canary,
+		"BACKUP_ENCRYPTION_KEYS":      "k1:" + canary,
+		"RESTORE_TARGET_DATABASE_URL": "postgresql://postgres.ref:" + canary + "@pooler.example.supabase.com:5432/postgres?sslmode=verify-full"}
+	cfg, err := LoadRestore(env(valid))
+	if err != nil || !cfg.TargetURL.IsSet() || cfg.Name != "" || cfg.Env != EnvStaging || strings.Contains(fmt.Sprintf("%+v", cfg), canary) {
+		t.Fatalf("restore configuration: %v", err)
+	}
+	if cfg, err := LoadRestore(env(merge(valid, map[string]string{"RESTORE_BACKUP": "20261105-023000z"}))); err != nil || cfg.Name != "20261105-023000z" {
+		t.Fatalf("named backup: %q %v", cfg.Name, err)
+	}
+	for name, c := range map[string]struct {
+		env     map[string]string
+		mention string
+	}{
+		"production":              {merge(valid, map[string]string{"APP_ENV": "production"}), "production backups"},
+		"no target":               {merge(valid, map[string]string{"RESTORE_TARGET_DATABASE_URL": ""}), "RESTORE_TARGET_DATABASE_URL is required"},
+		"target unverified":       {merge(valid, map[string]string{"RESTORE_TARGET_DATABASE_URL": "postgres://postgres:" + canary + "@db.example.supabase.co/postgres?sslmode=require"}), "sslmode=verify-full"},
+		"target local in staging": {merge(valid, map[string]string{"RESTORE_TARGET_DATABASE_URL": "postgres://postgres:" + canary + "@127.0.0.1/postgres"}), "must not target a local database"},
+		"target hostaddr":         {merge(valid, map[string]string{"RESTORE_TARGET_DATABASE_URL": valid["RESTORE_TARGET_DATABASE_URL"] + "&hostaddr=203.0.113.9"}), "must not set hostaddr"},
+		"bad name":                {merge(valid, map[string]string{"RESTORE_BACKUP": "database/staging/20261105-023000z/"}), "RESTORE_BACKUP must be"},
+		"no keys":                 {merge(valid, map[string]string{"BACKUP_B2_KEY": ""}), "are required"},
+	} {
+		_, err := LoadRestore(env(c.env))
+		if err == nil || !strings.Contains(err.Error(), c.mention) {
+			t.Errorf("%s: %v, want an error mentioning %q", name, err, c.mention)
+		}
+		if err != nil && strings.Contains(err.Error(), canary) {
+			t.Errorf("%s: error leaks a value: %q", name, err)
+		}
+	}
+	// A local test restore may target a loopback database.
+	if _, err := LoadRestore(env(merge(valid, map[string]string{"APP_ENV": "test",
+		"RESTORE_TARGET_DATABASE_URL": "postgres://postgres:pw@127.0.0.1:55432/restore?sslmode=disable"}))); err != nil {
+		t.Fatalf("local restore target: %v", err)
+	}
+}
+
 func TestCheckoutSwitch(t *testing.T) {
 	for value, want := range map[string]bool{"": false, "false": false, "true": true} {
 		cfg, err := LoadAPI(env(merge(validLocalAPI, map[string]string{"CHECKOUT_ENABLED": value})))
