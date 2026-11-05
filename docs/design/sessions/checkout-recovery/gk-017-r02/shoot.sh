@@ -76,5 +76,11 @@ while read -r name src; do [ -n "$name" ] && shot "$name" "$src"; done <<'LIST'
 57-timeline-no-show recovery.html?state=timeline&v=no-show&shot=1
 58-timeline-completed recovery.html?state=timeline&v=completed&shot=1
 59-timeline-completed-refund-via-chef recovery.html?state=timeline&v=completed-refund&shot=1
-60-timeline-delivery-failed recovery.html?state=timeline&v=delivery-failed&shot=1
+60-timeline-delivery-failed-our-side recovery.html?state=timeline&v=delivery-failed-gk&shot=1
+61-timeline-delivery-failed-collection-chosen recovery.html?state=timeline&v=delivery-failed-gk-collection&shot=1
+62-timeline-delivery-failed-redelivery-chosen recovery.html?state=timeline&v=delivery-failed-gk-redelivery&shot=1
+63-timeline-delivery-failed-nobody-available recovery.html?state=timeline&v=delivery-failed-customer&shot=1
+64-late-payment-offer-another-date recovery.html?state=late-payment&v=offer-other&shot=1
+65-late-payment-accepted-another-date recovery.html?state=late-payment&v=agreed-other&shot=1
+66-delivery-unpaid-pay-by-passed recovery.html?state=delivery-unpaid&v=passed&shot=1
 LIST

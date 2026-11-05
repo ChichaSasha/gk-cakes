@@ -1,10 +1,13 @@
-# GK-017 r02 — checkout and order problem states
+# GK-017 r02b — checkout and order problem states
+
+**r02b — Creator-approved 2026-11-05 (answers as suggested).** The Creator approved r02 "as suggested" with the
+answers to questions 6–21 recorded under "Creator decisions (2026-11-05)"; r02b applies them. The fresh integration
+review (AC3) still follows.
 
 2026-11-05. Card [GK-017](https://trello.com/c/1YGOcOHR), In Progress. r02 covers the **problem states** the
 Creator asked for on 2026-11-04, plus the two r02 items (visible start–end times as a radio list; no delivery
 time self-change on GK delivery orders). It reuses the Creator-approved r01 checkout (look, copy style,
-accessibility patterns) on the GK-015 r12 foundation. **Not approved** — needs exact-version Creator approval,
-then the fresh integration review (AC3).
+accessibility patterns) on the GK-015 r12 foundation.
 
 **Review round 1** (independent design reviewer, PR #28, REVISE on a4c3a81) is addressed in this revision; see
 "Review round 1 changes" below.
@@ -18,7 +21,9 @@ current user-selected model takes precedence** (status: host-reported, not the r
 the author, so it is not an independent review. Writes: this folder only, worktree branch
 `sasha-chycha/gk-017-r02-design` from `origin/main` 7df96d0. `api/`, `ui/`, r01 files and other worktrees untouched.
 Round 1 fixes: the same author subagent and model, working from the reviewer's findings; no corporate tools
-(Glean, Slack, Jira, Grafana, Snoocode GitHub tools) were used in this round.
+(Glean, Slack, Jira, Grafana, Snoocode GitHub tools) were used in this round. Review round 2 copy fixes landed in
+dc2bd09 (neutral preparation wording per K05, past tense once returned, delivery refund "requested" wording).
+r02b: the same author subagent and model applied the Creator's answers from head dc2bd09; no corporate tools used.
 
 Inputs (SHA-256, first 12 hex):
 
@@ -68,24 +73,24 @@ details survived. Nothing is charged; nothing is replaced for them.
 | # | State (variants) | What the customer sees | Buttons → destination |
 | --- | --- | --- | --- |
 | 1 | Price changed / total refreshed (PRICE_CHANGED, QUOTE_EXPIRED) | "The price has changed" or "We've refreshed your total"; old price struck through beside the new one; refund terms show the new amounts with an "Updated" badge; tick-box cleared with "Your earlier tick was cleared because the total changed" (refreshed variant: "…because your total was refreshed"). | Continue → inline tick error until ticked; then "Opening secure payment…" → state 8 (demo) |
-| 2 | Refund terms updated (POLICY_CHANGED) | Full current terms marked "Updated"; total unchanged; tick cleared. | Same as 1 |
-| 3 | Time taken / date now full (SLOT_UNAVAILABLE; day capacity reached) | Time: fresh radio list, the lost time shown struck through "No longer available", **no time pre-selected**; choosing one fills the new refund deadline; tick cleared because the deadline follows the time. Date: "Thu 22 October is now fully booked", choose another date or contact the chef; Continue disabled ("Choose another date first"). | Choose another date → calendar dialog; Continue → time and tick errors, then payment |
+| 2 | Refund terms updated (POLICY_CHANGED) | A short **"What changed:"** line (published with the policy revision; example text) plus the full current terms marked "Updated" (Q11); total unchanged; tick cleared. | Same as 1 |
+| 3 | Time taken / date now full (SLOT_UNAVAILABLE; day capacity reached) | Time: fresh radio list; the lost time is shown struck through "No longer available" **only because it was the customer's selected time** — other gone times are dropped (Q15; the checkout picker does the same); **no time pre-selected**; choosing one fills the new refund deadline; tick cleared because the deadline follows the time. Date: "Thu 22 October is now fully booked", choose another date or contact the chef; Continue disabled ("Choose another date first"). | Choose another date → calendar dialog; Continue → time and tick errors, then payment |
 | 4 | Cake no longer available (ITEM_UNAVAILABLE) | Ready-made Chocolate swirl marked "Sold · No longer available"; total withheld until a new quote; never swapped. After removing: "Chocolate swirl removed · new total", re-tick. | Remove and update the total → variant "after removing"; Back to your bag → bag |
 | 5 | Other refusals | LEAD_TIME (checkout and order-page wording), CODE_USED_UP, PAYMENT_IN_PROGRESS, using the built wording. | Choose a later date; Start a new order; Review the new total; View your order |
 | 6 | Still checking payment (polling / stopped / payment page still open) | Title "Still checking payment; do not pay again"; place stays held past 15 minutes while the result is awaited; "This page updates by itself" ticker (visible, not announced each second); after 5 minutes "We're still waiting… Refresh to check"; "What happens next" list ("…you can try again while your place is still held"). Payment page still open: "Your place… is held while you pay", go back to the same payment, "This link disappears once the payment page closes" (the polling variant has no link). | Refresh status → polling; Back to the secure payment page → (demo) polling variant; Contact us |
 | 7 | Result unclear — a person is checking | "We're checking your payment": a team member checks; don't pay again; place and code stay with the order; if paid → confirmed, or everything returned if the date can't be met; if not paid → nothing charged. No pay button. | Contact us (with order reference) |
 | 8 | Payment received — confirming (`confirmation_pending`) | Spinner, "usually a few seconds", don't pay again. | — (page updates) |
 | 9 | Time ran out — place released (`cancelled`, `payment_not_completed`) | "Your place was released": "The payment wasn't completed, so this order was cancelled and your place released. No payment was taken." (no reference to the 15-minute timer, which never proves failure). New order re-checks price and times. Paid elsewhere? Contact us. | Start a new order with the same cakes → checkout with the cake re-added (new quote, new hold) |
-| 10 | Paid after the preparation time (`paid_awaiting_agreement`; waiting / chef offers a date / agreed) | "Payment received"; date and time labelled **requested (not confirmed yet)**; chef will contact; never moved without agreement; if not agreed, everything back (£90); don't pay again. Offer variant: "The chef can make your cake for Thu 22 October… Do you agree?" | Contact the chef; Yes, confirm this date → confirmed with standard terms; No, refund everything → refund requested (full) |
-| 11 | Paid after the order was cancelled (requested / pending / returned / needs a check) | "Payment received after this order was cancelled": payment kept safe and all of it being returned; 3-step tracker (see 13); wording follows the API refund state, "returned" only when the API says so; cake not made. | Start a new order; Contact us |
+| 10 | Paid after the preparation time (`paid_awaiting_agreement`; waiting / chef can make your date / chef offers another date / you agreed / you accepted another date) | "Payment received"; date and time labelled **requested (not confirmed yet)**; the chef's answer appears on this page; never moved without agreement; if not agreed, everything back (£90); don't pay again. The customer answers **on the order page** (Q6): "Yes, confirm this date" or, when the chef proposes Sat 24 October 13:00–14:00, "Accept Sat 24 October, 13:00–14:00" — "This is only an offer: nothing changes unless you accept it"; "We keep a record of your answer and when you gave it" (agreement evidence). Confirmed screen: "You agreed to … on Thu 15 October, 18:20". | Yes / Accept → confirmed with standard terms; No, refund everything · £90 → refund "full refund · date not agreed"; Contact the chef |
+| 11 | Paid after the order was cancelled (requested / pending / returned / needs a check) | "Payment received after this order was cancelled": payment kept safe and all of it being returned; 3-step tracker (see 13); wording follows the API refund state, "returned" only when the API says so; cake not made. Always a full refund for now (Q7). | Start a new order; Contact us |
 | 12 | Cancellation preview (before / deadline passed while open / after / after with GK delivery) | Inline "Cancel your order?" panel: amount back, which side of the deadline, time left (as of a server time). Boundary: alert "The full-refund deadline has just passed… now £45… confirm again", button relabelled with the new amount. After: 50% "rounded in your favour" with the labelled rounding example; "If we have to cancel, you always get 100% back". Delivery: split cakes £45 (to your payment method) + delivery £60 (sent by the chef). | Cancel order · refund £X → state 13 with the **same amount**: before → "Requested · £90", after and deadline-passed → "Requested · £45", with GK delivery → "Requested · £105" (then partly returned); Keep my order → order page |
 | 13 | Refund progress (requested £90 / requested £45 / requested £105 with delivery / partly returned / pending / returned / needs a check / we cancelled / full refund · date not agreed / full refund · we couldn't deliver / full refund · delivery was paid) | Why this amount (one sentence), then the built refund line verbatim. Tracker for the card refund: "Refund requested" → "Waiting to be sent…" / "Sent to our payment provider · waiting for them" / "Needs a check by our team" → "Return to your payment method"; past tense only once a step is finished ("Returned to your payment method", all steps ticked). The chef's delivery refund is always its own line ("Delivery · sent separately by the chef · Waiting for the chef"). "Returned so far" in the summary; chef cancellation: apology and 100%. | Contact us |
-| 14 | We can't deliver after payment (Q5; choose / choose with delivery already paid / collection chosen / own courier chosen / both results with the £120 delivery refund) | Apology; cake still paid and booked; choose **Collect it · free**, **Send your own courier** (responsibility passes at handover) or **Full refund · everything paid**; collection/courier reveal the radio list of times that day; deadline unchanged; if delivery was paid it is returned in full whatever they choose. Nothing changes until Confirm. Summary shows "GK delivery · Not paid". Results: "You'll collect your cake" or "Your courier will collect your cake" (you book and pay the courier; responsibility passes at handover), new time, unchanged deadline, and in the delivery-paid case "Your delivery payment of £120 is being returned in full" with a "Delivery refund · requested" summary line. | Confirm my choice → the matching result, or refund "full refund · we couldn't deliver" (£90) / "delivery was paid" (£210: cakes £90 + delivery £120 on its own line); inline errors if nothing/no time chosen |
-| 15 | Delivery quote not paid (waiting / delivery payment being checked) | Quote (address, date, time, £120); cake already paid and confirmed; "We can deliver only once the delivery is paid"; the same three Q5 alternatives; summary "GK delivery · quoted, not paid · £120". Checking variant: "Still checking delivery payment; do not pay again". | Pay for delivery · £120 → checking variant; Confirm my choice |
-| 16 | Free order £0 (checkout / confirm / confirming / refused: order changed / place released / time passed) | Checkout: GIFT100 example code, "To pay now £0", "Continue · confirm your free order", no payment page, "nothing to refund if it's cancelled". Order page: "Confirm your order" (place held 15 min), confirming spinner, refusal wording by reason from the built UI, one variant per reason (order_changed → Try again; holds_released and window_closed → Start a new order); no review-only text in customer copy. | Confirm order; Try again; Start a new order |
+| 14 | We can't deliver after payment (Q5; choose / choose with delivery already paid / collection chosen / own courier chosen / both results with the £120 delivery refund) | Apology; cake still paid and booked; choose **Collect it · free**, **Send your own courier** (responsibility passes at handover) or **Full refund · everything paid**; "There's no deadline: the chef keeps your order open until you decide" (Q8); collection/courier reveal **every opening time that day** (11:00–17:00, example hourly starts; Q10); deadline unchanged; if delivery was paid it is returned in full whatever they choose. Nothing changes until Confirm. Summary shows "GK delivery · Not paid". Results: "You'll collect your cake" or "Your courier will collect your cake" (you book and pay the courier; responsibility passes at handover), new time, unchanged deadline, and in the delivery-paid case "Your delivery payment of £120 is being returned in full" with a "Delivery refund · requested" summary line. | Confirm my choice → the matching result, or refund "full refund · we couldn't deliver" (£90) / "delivery was paid" (£210: cakes £90 + delivery £120 on its own line); inline errors if nothing/no time chosen |
+| 15 | Delivery quote not paid (waiting / delivery payment being checked / pay-by time passed) | Quote (address, date, time, £120) with **"Please pay by 11:00 (London time) on Tue 20 October (48 hours before your delivery)"** (Q9); cake already paid and confirmed; the same three Q5 alternatives; summary "GK delivery · quoted, not paid · £120". Checking variant: "Still checking delivery payment; do not pay again". Pay-by passed: "Your delivery wasn't paid in time… we can't deliver", the same choice with no deadline (Q8/Q9). The r01 checkout delivery note now adds "Delivery must be paid at least 48 hours before your delivery time". | Pay for delivery · £120 → checking variant; Confirm my choice |
+| 16 | Free order £0 (checkout / confirm / confirming / refused: order changed / place released / time passed) | Checkout: GIFT100 example code, "To pay now £0", "Continue · confirm your free order", no payment page, "nothing to refund if it's cancelled". Order page: "Confirm your order" (place held 15 min, as live — Q13), confirming spinner, refusal wording by reason from the built UI, one variant per reason (order_changed → Try again; holds_released and window_closed → Start a new order); no review-only text in customer copy. | Confirm order; Try again; Start a new order |
 | 17 | r02 item — visible start–end times (times shown / GK delivery requestable / loading / no times / couldn't load) | Radio cards "12:30–13:30 · Available", London time in the legend; delivery shows "Requestable · subject to chef confirmation"; loading skeleton with announced status; "No times… we haven't changed your date" with another date / contact chef; failure with Try again only. Also live in `checkout.html`. | Choose another date; Try again; mode cards switch variants |
 | 18 | r02 item — time changes (GK delivery order / collection order) | GK delivery: no time-change control; "Need a different delivery time? Please contact the chef: a GK delivery time can only change with the chef's agreement." Collection (and own courier): unchanged rule, same day until 6 hours before (05:00 for an 11:00 slot), radio list, "doesn't change your refund deadline". | Preview cancellation → state 12; Move to the selected time (preview only) |
-| 19 | Order timeline (confirmed · being made / GK delivery · being made / cancel while being made / not collected / collected · ask the chef / collected · refund via the chef / delivery failed on the day) | Two lanes side by side, **Money** and **Your cake**, each with its own ticked, current (ringed) and upcoming steps, so money and fulfilment move independently. Being made: paid £90, full refund until the deadline; cake confirmed → being made → ready (collection address about 48 h before) → collected. GK delivery: cakes and delivery paid separately, "Delivery confirmed by the chef", out for delivery, delivered; no time change (contact the chef). Cancel while being made: "Your cake already being made doesn't reduce your refund" — £90 before the deadline, 50% (£45) after, never less. Not collected: cake lane ends "Not collected" (problem marker), money lane "Refund of £45 requested · 50% for a cake that wasn't collected". Collected: "Something wrong with your cake? Contact the chef"; after the chef arranges it, "Refund of £45 requested · arranged with the chef", while "Collected" stays in the cake lane. Delivery failed: out for delivery ✓ → "Delivery couldn't be completed", chef will contact today, paid delivery returned in full if the problem was ours. | Change your time / Preview cancellation / Keep my order; Cancel order · refund £90 → refund requested £90; Contact the chef |
+| 19 | Order timeline (confirmed · being made / GK delivery · being made / cancel while being made / not collected / collected · ask the chef / collected · refund agreed with the chef / delivery failed · our side (choose, collection chosen, redelivery chosen) / delivery failed · nobody available) | Two lanes side by side, **Money** and **Your cake**, each with its own ticked, current (ringed) and upcoming steps, so money and fulfilment move independently. Being made: paid £90, full refund until the deadline; cake confirmed → being made (neutral "being prepared since…" wording) → ready (collection address about 48 h before) → collected. GK delivery: cakes and delivery paid separately, "Delivery confirmed by the chef", out for delivery, delivered; no time change (contact the chef). Cancel while being made: "Your cake already being made doesn't reduce your refund" — £90 before the deadline, 50% (£45) after, never less. Not collected: cake lane ends "Not collected"; "Refund of £45 requested · automatically" — requested when the chef recorded it (Q19). Collected: "Something wrong with your cake? Contact the chef… agree any refund"; afterwards "Refund of £30 requested: the amount you agreed with the chef" (example; Q20 financial case), while "Collected" stays in the cake lane. **Delivery failed · our side** (Q17): apology, choose "Deliver it again" (chef confirms a new time, nothing more to pay) or "Collect it today · delivery refunded" (any opening time still ahead today; £120 = 100% of the delivery back); results "We'll deliver your cake again" or "You'll collect your cake today" with "Delivery refund of £120 requested". **Delivery failed · nobody available** (Q18): treated like a no-show — "50% of the cake price back: £45, requested automatically"; "The delivery payment of £120 isn't refunded, because the delivery was attempted"; money lane "Delivery payment kept". | Change your time / Preview cancellation / Keep my order; Cancel order · refund £90 → refund requested £90; Confirm my choice (inline errors if nothing or no time chosen) → the matching result; Contact the chef |
 
 Accessibility patterns reused from r01: one `h1`, numbered `h2` sections, visible 3px focus ring, problem banners
 and status headings receive focus on arrival, polite live regions only for state changes, radio cards built on
@@ -93,9 +98,35 @@ native radios inside `fieldset`/`legend` (arrow keys, forced-colours outline), i
 `aria-describedby`, ≥44px targets, reduced-motion stops spinners and shimmer.
 
 The r01 order page (`order.html`) also no longer says "Collection details follow separately" on GK delivery
-orders: it says "The chef delivers at the time confirmed with you".
+orders: it says "The chef delivers at the time confirmed with you". The r01 checkout summary no longer says
+"We'll email you", and its GK delivery promise says the delivery quote "appears on your order page" instead of
+being emailed (Q21; order emails come with GK-031).
 
-## Review round 1 changes
+## Creator decisions (2026-11-05)
+
+Approved "as suggested". Answers and where r02b applies them:
+
+| Q | Answer | Applied |
+| --- | --- | --- |
+| 6 | Paid late: the customer agrees or declines on the order page; the buttons record explicit agreement as evidence. The chef may propose a different date, only as an offer the customer must accept. | State 10: new "Chef offers another date" and "You accepted another date" variants; "We keep a record of your answer and when you gave it"; agreed time shown on confirmation; "What happens next" says the answer appears on this page |
+| 7 | Paid after cancellation: always a full refund for now (reinstatement needs its own consent rules later). | State 11 unchanged in copy; recorded in its API note |
+| 8 | No time limit on the Q5 choice; the case stays open with the chef. | States 14 and 15 (pay-by passed): "There's no deadline: the chef keeps your order open until you decide" |
+| 9 | Unpaid delivery quote: deadline 48 h before handover, then the same choice. | State 15: pay-by line and new "Pay-by time passed" variant; r01 checkout delivery note |
+| 10 | After a failed delivery: any opening time that day. | State 14 shows all of Thursday's opening times; state 19 (our side) shows the times still ahead today |
+| 11 | Terms changed at Continue: a short "what changed" line plus the full terms. | State 2 |
+| 12 | Keep "Your bank may take a few days". | States 11, 13 (no change) |
+| 13 | The 15-minute hold applies to £0 confirmation (as live). | State 16 (no change) |
+| 14 | Collapse unaffected sections to "Kept" after a refusal. | States 1–4 (no change) |
+| 15 | Strike through a lost time only if it was the customer's selected time; otherwise drop it. | State 3 (already so); the checkout picker now keeps a lost selected time struck through |
+| 17 | GK-caused delivery failure: redelivery or collection, or 100% of the delivery back (K05). | State 19: "Delivery failed · our side" with choose and both results (replaces the deferred note) |
+| 18 | Customer-caused failure: treated like a no-show (50% of the cake; delivery payment kept). | State 19: "Delivery failed · nobody available" |
+| 19 | The no-show 50% refund is requested automatically when the chef records the no-show. | State 19: "Not collected" copy and money lane |
+| 20 | Refunds after handover: the amount the chef agrees (financial case). | State 19: "Collected · refund agreed with the chef", £30 example instead of £45 |
+| 21 | Remove "We'll email you" until order emails exist (GK-031). | r01 checkout summary and GK delivery promise |
+
+Question 16 ("anything to change before approving") was answered by the approval itself.
+
+## Review round 1 changes (kept for the record)
 
 - M1: cancellation and refund amounts now match end to end (£90 / £45 / £105; Q5 refunds £90 / £210).
 - M2: new "Order timeline" state (row 19); r01 delivery wording fixed; undesignable parts deferred below.
@@ -119,9 +150,9 @@ Open <http://127.0.0.1:8792/states.html> (index) or e.g.
 run `sh shoot.sh` (headless Chrome; `shot.html` frames each `poc/` page at exactly 1440 or 390 px, because
 headless Chrome's window is at least 500 px wide, and reports the full height).
 
-`screens/` holds 61 full-page renders, each at desktop (1440) and mobile (390) — 122 JPEGs (quality 78, to keep
-the repository small): `00-states-index` … `60-timeline-delivery-failed`, listed at the end of `shoot.sh`. All
-were re-shot in round 1. They use
+`screens/` holds 67 full-page renders, each at desktop (1440) and mobile (390) — 134 JPEGs (quality 78, to keep
+the repository small): `00-states-index` … `66-delivery-unpaid-pay-by-passed`, listed at the end of `shoot.sh`.
+All were re-shot for r02b (including those affected by the dc2bd09 copy fixes). They use
 screenshot mode (`?shot=1`): no focus move, no polling ticker and no site footer; everything else is as on screen.
 
 ## Checks done
@@ -138,6 +169,11 @@ screenshot mode (`?shot=1`): no focus move, no polling ticker and no site footer
   being made offers £90 (never £0); r01 delivery order page no longer says "Collection details follow separately";
   no `data-reconfirm`; no review-only text in the free-order refusal.
 - Round 1: all 78 state/variant links render at 320, 768 and 1440 px with no horizontal overflow.
+- r02b harness (temporary), all passing: our-side delivery failure requires a choice, shows the four later-today
+  times, and leads to the collection (with the £120 refund) or redelivery result; nobody-available shows £45 and
+  the kept delivery; accepting the chef's other date confirms Sat 24 October; Q5 shows all six day times and "no
+  deadline"; the pay-by time shows; "What changed" shows; no "We'll email you" on the checkout; the post-handover
+  refund shows the agreed £30. All 84 state/variant links render at 320 and 1440 px without horizontal overflow.
 - Every state and variant renders at 320, 768 and 1440 px with no horizontal overflow (one 8px overflow from a
   long API note in the review switcher at 320 px was fixed with `overflow-wrap`).
 - New colours (WCAG contrast): review text 13.1:1, review API note 10.7:1, re-tick note 8.4:1, muted text on the
@@ -151,48 +187,29 @@ radio ring and timeline step ring `#767b7d` 4.3:1 on white (3.9:1 on the page ba
 - Model mismatch (above). A read-only Glean memory-schema lookup was made by mistake during the first run's
   execution check, which broke the project's no-corporate-tools rule; no data from it was used. None were used in
   round 1.
-- The checkout problem states use a condensed checkout (unaffected sections collapsed to "Kept"); proposed for the
-  live shop, not yet decided (question 14).
+- The checkout problem states use a condensed checkout (unaffected sections collapsed to "Kept"), kept by the
+  Creator (Q14).
 - r01's typed-details-lost-on-date-change limitation remains in the prototype; the live shop keeps details.
+- r02b reading of Q17: two choices (redelivery, or collection with the delivery refunded in full); question 24
+  confirms whether a third option is needed.
 - Order-page wording follows the built UI (`order.ts`, `messages.ts`); r02 adds the "What happens next" lists,
   trackers and Q5 screens, which need new API states (delivery infeasible, delivery quote) not built yet.
-- "Your bank may take a few days to show it" is new wording (question 12).
+- "Your bank may take a few days to show it" is new wording, kept by the Creator (Q12).
 - The cancellation boundary is shown as a separate variant ("Deadline passed while open") rather than a live
   timer; the prototype has no clock-driven refresh.
-- **Deferred (not designed, Creator decision needed):**
-  - What the customer can choose after a GK delivery fails on the day (redelivery, later collection, cake refund),
-    and how a customer-caused failure (nobody at the address) differs — shown only as "the chef will contact you
-    today"; questions 17 and 18.
-  - Whether the 50% refund for a cake that wasn't collected is requested automatically when the chef records it
-    (as drawn) or only when the customer asks — question 19.
-  - How much a post-handover refund can be (the 50% rule or an amount the chef agrees) — the screen shows an
-    example £45 "arranged with the chef"; question 20.
-  - Over-capacity chef cancellation is covered only by the generic "We had to cancel your order" refund variant.
+- Deferred: over-capacity chef cancellation is covered only by the generic "We had to cancel your order" refund
+  variant. (The r02 deferrals for delivery failure, no-show refunds and post-handover amounts were resolved by
+  Q17–Q20 and are now designed.)
 
 ## Open questions for the Creator
 
-6. **Paid late, agreeing the date:** should the customer accept or decline on the order page (buttons as in
-   "Chef offers a date"), or only by message with the chef recording it? May the chef offer a different date there?
-7. **Paid after cancellation:** always a full refund, or may the chef offer to reinstate the order if the customer
-   explicitly agrees?
-8. **Q5 choice:** is there a time limit for choosing collection / own courier / refund? If the customer doesn't
-   answer, the chef keeps the case open (the contract forbids inventing a timeout). Is that right?
-9. **Unpaid delivery quote:** should it have a payment deadline, and what happens if it passes?
-10. **After delivery fails:** may the customer pick any collection time that day (as shown), or only the original
-    time?
-11. **Terms changed at Continue:** show a short "what changed" summary, or only the full current terms (as now)?
-12. Is "Your bank may take a few days to show it" acceptable after a refund is returned, or should it be left out?
-13. **Free orders:** confirm the same 15-minute hold applies while the customer confirms a £0 order.
-14. Collapse unaffected checkout sections to "Kept" lines after a refusal (as shown), or keep the full checkout?
-15. A lost time is shown struck through as "No longer available". Keep it visible like this, or simply drop it?
-16. Anything to change before approving this exact r02 revision?
-17. **GK delivery fails on the day:** what may the customer choose — redelivery, collect later, or a refund of the
-    cake as well as the delivery? (Deferred; the screen says only that the chef will contact them.)
-18. **Customer-caused delivery failure** (nobody at the address): is the delivery payment kept, and is the cake
-    treated like a cake that wasn't collected (50%)?
-19. **Not collected:** is the 50% refund requested automatically once the chef records the no-show (as drawn), or
-    only when the customer asks the chef?
-20. **After handover:** is a refund the customer asks the chef for always 50%, or whatever amount the chef agrees?
-21. r01's summary says "Your order is confirmed only when we receive the payment. **We'll email you.**" Order
-    emails don't exist yet (the built UI doesn't promise one). Remove "We'll email you" until emails exist, or keep
-    it as the target design?
+Questions 6–21 were answered on 2026-11-05 (above). New questions raised while applying them:
+
+22. **Chef offers another date after a late payment:** the new date keeps the original full-refund deadline (K05:
+    moves never change it), as shown. Is that right, or should the deadline follow the new date?
+23. **After a no-show or a missed delivery** (nobody available): may the customer still collect the cake later that
+    day, and if so, is the automatic 50% refund cancelled?
+24. **Delivery failed on our side:** r02b offers redelivery, or collection with 100% of the delivery back. Should
+    there also be an own-courier option, or a refund of the cake?
+25. **Redelivery:** same day only, or another day too (a date change the chef and customer agree)? r02b says only
+    "the chef confirms a new delivery time with you".
