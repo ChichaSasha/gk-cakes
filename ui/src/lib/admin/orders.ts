@@ -239,6 +239,16 @@ export function isManagerCase(o: StaffOrderRow): boolean {
 	return (o.attention ?? []).some((f) => MANAGER_FLAGS.includes(f));
 }
 
+/** Why an order is a manager case, in the sketch's ATTENTION words (shown under its status). */
+const MANAGER_REASONS: Record<string, string> = {
+	payment_mismatch: 'Payment doesn’t match the order',
+	refund_needs_attention: 'Refund needs attention',
+	refund_quarantine: 'Refund made outside GK Cakes'
+};
+export function managerReasons(o: StaffOrderRow): string[] {
+	return (o.attention ?? []).filter((f) => f in MANAGER_REASONS).map((f) => MANAGER_REASONS[f]);
+}
+
 /**
  * A released order nobody paid for. Sasha's answer to r03 Q5: hidden from
  * the list by default, with a filter to show them.
@@ -408,7 +418,11 @@ export function productionText(o: StaffOrderRow, view: StaffView, now: Date): st
 		const past = new Date(p.scheduled_at) < now;
 		return `${past ? 'Automatic since' : 'Automatic from'} ${short(p.scheduled_at)}`;
 	}
-	if (stage === 'awaiting' || stage === 'confirming') return 'After payment';
+	if (stage === 'awaiting' || stage === 'confirming') {
+		// Free orders start 48 h after their confirmation (api/README).
+		if (o.payment_requirement === 'none') return 'After confirmation';
+		return view === 'chef' ? 'After payment' : 'After payment or confirmation';
+	}
 	return '—';
 }
 
@@ -449,11 +463,7 @@ export function moneyText(o: StaffOrderRow): string {
 		if (r.state === 'returned') return `Refunded ${m(r.succeeded_minor)}`;
 		return `Refund ${m(r.target_minor)}`;
 	}
-	const total = o.total_minor != null ? m(o.total_minor) : '';
-	// A manager case the money cell doesn't otherwise explain (r03b2 ATTENTION wording).
-	if (o.attention?.includes('refund_quarantine')) return `${total} · refund made outside GK Cakes`;
-	if (o.attention?.includes('refund_needs_attention')) return `${total} · refund needs a manager`;
-	return total;
+	return o.total_minor != null ? m(o.total_minor) : '';
 }
 
 /** The Cake column: each line's cake (with quantity when more than one). */

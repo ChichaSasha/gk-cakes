@@ -4,6 +4,7 @@ import {
 	cakeText,
 	isManagerCase,
 	isReleasedUnpaid,
+	managerReasons,
 	matchesSearch,
 	matchesStatus,
 	moneyText,
@@ -206,52 +207,51 @@ describe('round-2 review fixes', () => {
 			'Waiting for payment or confirmation'
 		);
 		expect(statusOf(row(), 'chef').text).toBe('Paid · automatic start later');
-	});
-
-	it('says why a manager case is one, and never guesses an unknown refund state', () => {
-		expect(moneyText(row({ needs_attention: true, attention: ['refund_quarantine'] }))).toBe(
-			'£90 · refund made outside GK Cakes'
-		);
-		expect(moneyText(row({ needs_attention: true, attention: ['refund_needs_attention'] }))).toBe(
-			'£90 · refund needs a manager'
-		);
+		const unscheduled = {
+			state: 'not_scheduled',
+			scheduled_at: null,
+			started_at: null,
+			observed_at: null,
+			source: null
+		};
+		const now = new Date('2026-10-22T09:45:00Z');
 		expect(
-			moneyText(
+			productionText(
 				row({
-					lifecycle: 'cancelled',
-					refund: { state: 'something_new', target_minor: 9000, succeeded_minor: 9000 }
-				})
+					lifecycle: 'awaiting_payment',
+					payment_requirement: 'none',
+					production: unscheduled
+				}),
+				'chef',
+				now
 			)
-		).toBe('Refund £90');
-	});
-});
-
-describe('round-2 review fixes', () => {
-	it('never says Paid for free orders, and support wording claims no payment', () => {
-		const free = row({ payment_requirement: 'none', total_minor: 0, payment_state: null });
-		expect(statusOf(free, 'chef').text).toBe('Free · automatic start later');
-		const support = row({
-			payment_requirement: undefined,
-			payment_state: undefined,
-			total_minor: undefined
-		});
-		expect(statusOf(support, 'technical_support').text).toBe('Confirmed · automatic start later');
+		).toBe('After confirmation');
 		expect(
-			statusOf({ ...support, lifecycle: 'confirmation_pending' }, 'technical_support').text
-		).toBe('Confirming the order');
-		expect(statusOf({ ...support, lifecycle: 'awaiting_payment' }, 'technical_support').text).toBe(
-			'Waiting for payment or confirmation'
-		);
-		expect(statusOf(row(), 'chef').text).toBe('Paid · automatic start later');
+			productionText(
+				row({
+					lifecycle: 'awaiting_payment',
+					payment_requirement: undefined,
+					production: unscheduled
+				}),
+				'technical_support',
+				now
+			)
+		).toBe('After payment or confirmation');
 	});
 
 	it('says why a manager case is one, and never guesses an unknown refund state', () => {
-		expect(moneyText(row({ needs_attention: true, attention: ['refund_quarantine'] }))).toBe(
-			'£90 · refund made outside GK Cakes'
-		);
-		expect(moneyText(row({ needs_attention: true, attention: ['refund_needs_attention'] }))).toBe(
-			'£90 · refund needs a manager'
-		);
+		expect(
+			managerReasons(
+				row({ lifecycle: 'cancelled', attention: ['refund_quarantine', 'notice_not_sent'] })
+			)
+		).toEqual(['Refund made outside GK Cakes']);
+		expect(
+			managerReasons(row({ attention: ['payment_mismatch', 'refund_needs_attention'] }))
+		).toEqual(['Payment doesn’t match the order', 'Refund needs attention']);
+		expect(
+			managerReasons(row({ attention: ['paid_awaiting_agreement', 'payment_unknown'] }))
+		).toEqual([]);
+		expect(moneyText(row({ attention: ['refund_quarantine'] }))).toBe('£90');
 		expect(
 			moneyText(
 				row({

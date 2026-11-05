@@ -16,6 +16,7 @@
 	import {
 		cakeText,
 		isReleasedUnpaid,
+		managerReasons,
 		matchesSearch,
 		matchesStatus,
 		MODES,
@@ -116,23 +117,36 @@
 		return false;
 	}
 
+	// One role read at a time: a When change while it runs reuses it.
+	let roleRead: Promise<Me> | null = null;
+
 	/** Who is signed in (once), then the orders; Try again repeats whatever failed. */
 	async function start() {
 		if (!api) return;
 		if (!view) {
 			phase = 'loading';
+			const a = api;
 			try {
-				const me = await apiGet<Me>('/api/v1/admin/me', { baseUrl: api.baseUrl, token: api.token });
-				if (!isActive()) return;
+				roleRead ??= apiGet<Me>('/api/v1/admin/me', { baseUrl: a.baseUrl, token: a.token });
+				const me = await roleRead;
+				if (!isActive() || view) {
+					// Another start() already used this answer.
+					if (view) await load();
+					return;
+				}
 				view = viewOf(me.capabilities);
 				if (!view) {
 					problem = 'This account has no staff access.';
 					return;
 				}
 				// A shared link may name a chip this role doesn't have.
-				if (!statusFilters(view).some(([k]) => k === filter)) filter = 'all';
+				if (!statusFilters(view).some(([k]) => k === filter)) {
+					filter = 'all';
+					keepInUrl();
+				}
 			} catch (e) {
-				if (!isActive() || (await ended(e))) return;
+				roleRead = null;
+				if (!isActive() || view || (await ended(e))) return;
 				problemText = 'The orders could not be loaded right now.';
 				phase = 'error';
 				return;
@@ -302,7 +316,9 @@
 													name="check"
 													cls="pill-icon"
 												/>{/if}{status.text}</span
-										></td
+										>{#each managerReasons(o) as reason (reason)}<span class="block small bad-text"
+												>{reason}</span
+											>{/each}</td
 									>
 									{#if showMoney}<td data-label="Money">{moneyText(o)}</td>{/if}
 								</tr>
