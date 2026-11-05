@@ -258,12 +258,59 @@ func LoadBackup(getenv func(string) string, restore bool) (Backup, error) {
 		cfg.DatabaseURL = l.databaseURL("BACKUP_DATABASE_URL", cfg.Env)
 		l.plainConnection("BACKUP_DATABASE_URL", cfg.DatabaseURL)
 	}
+	l.backupKeys(cfg)
+	return cfg, l.err()
+}
+
+func (l *loader) backupKeys(cfg Backup) {
 	switch {
 	case cfg.B2KeyID == "" || !cfg.B2Key.IsSet() || !cfg.EncryptionKeys.IsSet():
 		l.fail("BACKUP_B2_KEY_ID, BACKUP_B2_KEY and BACKUP_ENCRYPTION_KEYS are required")
 	case !b2KeyIDPattern.MatchString(cfg.B2KeyID):
 		l.fail("BACKUP_B2_KEY_ID must be a B2 application key ID")
 	}
+}
+
+// Restore is the configuration of gk-backup restore (GK-034): the backups
+// of APP_ENV are read with the backup key and restored into the isolated
+// restore database, reached with its migration credential.
+type Restore struct {
+	Backup
+	// TargetURL is RESTORE_TARGET_DATABASE_URL: the migration credential of
+	// the isolated restore database (same rules as MIGRATION_DATABASE_URL).
+	TargetURL Secret
+	// Name is RESTORE_BACKUP, a backup's UTC stamp (yyyymmdd-hhmmssz);
+	// empty selects the newest complete backup.
+	Name string
+}
+
+var backupStampPattern = regexp.MustCompile(`^[0-9]{8}-[0-9]{6}z$`)
+
+// LoadRestore reads the restore configuration. Production backups cannot be
+// restored with it yet: the complete domain restore is GK-035's.
+func LoadRestore(getenv func(string) string) (Restore, error) {
+	var l loader
+	l.getenv = getenv
+	cfg := Restore{Backup: Backup{
+		Env:            l.env(),
+		B2KeyID:        l.get("BACKUP_B2_KEY_ID"),
+		B2Key:          l.optionalSecret("BACKUP_B2_KEY"),
+		EncryptionKeys: l.optionalSecret("BACKUP_ENCRYPTION_KEYS"),
+	}}
+	if cfg.Env == EnvProduction {
+		l.fail("gk-backup restore does not restore production backups yet (GK-035)")
+	}
+	cfg.TargetURL = l.databaseURL("RESTORE_TARGET_DATABASE_URL", cfg.Env)
+	l.plainConnection("RESTORE_TARGET_DATABASE_URL", cfg.TargetURL)
+	// The synthetic dispatch check derives its temporary login's URL from
+	// the target's userinfo (user:password@host).
+	if u, err := url.Parse(cfg.TargetURL.value); cfg.TargetURL.IsSet() && (err != nil || u.User == nil || u.User.Username() == "" || u.Query().Has("user")) {
+		l.fail("RESTORE_TARGET_DATABASE_URL must name its user in the URL (postgres://user:password@host/db), not in the query")
+	}
+	if cfg.Name = l.get("RESTORE_BACKUP"); cfg.Name != "" && !backupStampPattern.MatchString(cfg.Name) {
+		l.fail("RESTORE_BACKUP must be a backup time such as 20261105-023000z")
+	}
+	l.backupKeys(cfg.Backup)
 	return cfg, l.err()
 }
 

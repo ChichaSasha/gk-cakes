@@ -64,8 +64,10 @@ and staging/production reject local hosts and Unix sockets.
 | `RECOVERY_ENCRYPTION_KEYS` | worker   | journal encryption keys `kid:base64(32 bytes)[,...]`, redacted                              |
 | `BACKUP_DATABASE_URL`    | gk-backup dump | the `gk_backup` login (read only), same rules as `DATABASE_URL` |
 | `RESTORE_DATABASE_URL`   | gk-backup restore-check | a disposable database on a loopback address only |
+| `RESTORE_TARGET_DATABASE_URL` | gk-backup restore | the migration credential of the isolated restore database, same rules as `MIGRATION_DATABASE_URL`; the user must be in the URL's userinfo (`postgres://user:password@host/db`; no `user=` or `password=` query parameter: the synthetic check derives its temporary login's URL from it); `APP_ENV` names the environment whose backups are read (production is refused) |
+| `RESTORE_BACKUP`         | gk-backup restore | optional backup time such as `20261104-052703z`; default the newest complete backup |
 | `BACKUP_B2_KEY_ID`, `BACKUP_B2_KEY`, `BACKUP_ENCRYPTION_KEYS` | gk-backup | B2 key restricted to `database/` (list/read/write, no delete) and the backup encryption keys `kid:base64(32 bytes)[,...]`; see [Database backups](#database-backups-k11-gk-034) |
-| `PG_DUMP`, `PG_RESTORE`, `BACKUP_MAX_AGE` | gk-backup | optional tool paths (default from `PATH`; version 17 or newer) and the restore check's maximum backup age (default `26h`) |
+| `PG_DUMP`, `PG_RESTORE`, `BACKUP_MAX_AGE` | gk-backup | optional tool paths (default from `PATH`; version 17 or newer; `restore` runs `pg_restore` offline only, archive in and script out) and the restore check's maximum backup age (default `26h`) |
 
 Email dispatch: the four worker variables above are required in staging and
 production; in local and test they are set together or not at all, and a worker
@@ -98,6 +100,7 @@ production stores wait for the first authorized production release (GK-036).
 | `BACKUP_DATABASE_URL`    | `gk_backup` login, one per environment (staging `gk_backup_staging`) | GitHub environment secret, staging: `STAGING_BACKUP_DATABASE_URL` | `ALTER ROLE <login> PASSWORD`, update the secret | `ALTER ROLE <login> NOLOGIN` or drop it |
 | `BACKUP_B2_KEY_ID`, `BACKUP_B2_KEY` | B2 key: backup bucket, prefix `database/`, list/read/write only (no delete) | GitHub environment secrets `STAGING_BACKUP_B2_KEY_ID`, `STAGING_BACKUP_B2_KEY`; Bitwarden | create a new key with the B2 CLI, update the secrets, delete the old key | delete the key in B2 |
 | `BACKUP_ENCRYPTION_KEYS` | seals database backups; one list per environment | GitHub environment secret `STAGING_BACKUP_ENCRYPTION_KEYS` **and** Bitwarden (backups are unreadable without it) | prepend a new `kid:key`, keep the old ones for at least 31 days (30 visible + 1 hidden) | never drop a key while backups sealed with it are retained |
+| `RESTORE_TARGET_DATABASE_URL` | `postgres` role of the isolated restore project `gk-cakes-restore-test` (synthetic/staging test data only) | Creator's Keychain `gk-restore-test-DATABASE_PASSWORD` (Bitwarden); not in GitHub or Railway | issued at restore time: reset through the Supabase Management API (Creator decision E1, 2026-11-04) | reset the password again |
 | `MIGRATION_DATABASE_URL` | migration credential (used by `gk-migrate` in deploys and by the manual Email proof and Identity admin workflows) | GitHub environment secret, staging: `STAGING_MIGRATION_DATABASE_URL` | rotate the password of the same role (see below)                | rotate; runtime services never hold it       |
 | `RAILWAY_STAGING_TOKEN`  | Railway project token, staging environment only | GitHub environment `staging` secret (deployable from `main` only) | regenerate in Railway, update the secret                  | delete the token in Railway                  |
 | `STRIPE_SECRET_KEY`      | Stripe sandbox (test-mode) key of account `acct_1UNHEgPqGToF2ulH`, one per environment; a restricted key limited to Checkout Sessions (write) and PaymentIntents, Charges and the account (read) is preferred | worker service variables (sealed); Creator's Keychain/Bitwarden | roll the key in the Stripe dashboard, update the variable, redeploy, expire the old key | roll or delete the key in the Stripe dashboard |
@@ -398,14 +401,16 @@ Setup requirements (the code refuses any other key):
 The tables and functions are owner-internal: domain gateway functions call
 them in the same transaction as their own state change, and no runtime role
 can call them directly (`gk_backup` may read the tables, as every business
-table). Restore tooling (as `gk_owner`) freezes all outgoing effects with
-`business.recovery_set_freeze(true, reason)`.
+table). Restore tooling (`gk-backup restore`, as `gk_owner`) freezes all
+outgoing effects (`business.recovery_freeze`) in the same transaction that
+loads the backup.
 
 Not yet:
 
-- B2 Object Lock retention, restore tooling and the restore drill (GK-034
-  Milestone B, GK-035). The restore tooling must replay the journal before
-  workers resume: a restored database can re-anchor a notice's window (the
+- B2 Object Lock retention and the domain restore drill (GK-035). The
+  database restore (`gk-backup restore`, see
+  [Database backups](#database-backups-k11-gk-034)) restores frozen; replaying
+  the journal before workers resume is GK-035's: a restored database can re-anchor a notice's window (the
   existing prepared envelope then refuses the resume), and an existing outcome
   envelope should be adopted rather than replayed;
 - K09 retention for order commands: `business.order_command.payload` (and its
@@ -618,18 +623,148 @@ service container of the pinned image), and compares the migrations and every
 business table's row count. A failure fails the workflow, which GitHub
 reports by email.
 
-Restoring to the isolated restore project (`gk-cakes-restore-test`, Frankfurt,
-synthetic data only) uses credentials the Creator issues at restore time
-(GK-014) and is **not yet built or verified** (Milestone B part 2). The CI
-check proves a different path: a full restore into an empty database without
-owners or privileges. A real restore must at least: create roles and schema
-with `gk-migrate` up to the backup's version; restore business data only
-(not `gk_meta`), replacing rows the migrations inserted (for example
-`business.recovery_freeze`) and without firing triggers; set the outgoing
-freeze in the same transaction, before any runtime connects; replay the
-recovery journal, deletions and tombstones, and reconcile providers, as K09
-and K11 describe. Object backups (Supabase Storage) start when the first
-essential files exist (catalog images, GK-022).
+### Restoring into the isolated restore project (GK-034 Milestone B)
+
+`gk-backup restore` restores a backup (the newest complete one, or
+`RESTORE_BACKUP`) into the isolated restore database
+(`gk-cakes-restore-test`, Frankfurt, synthetic/staging data only), frozen.
+It is a different path from the CI check above, which restores everything
+into an empty database without owners or privileges:
+
+1. **Select and validate** (no target access yet): the dump must match its
+   manifest (SHA-256, size); `pg_restore --data-only` turns the archive into
+   a text script offline (no database connection), and the script is
+   accepted only as data: session settings, comments, psql's `\restrict`
+   guard and COPY blocks into `business` and `gk_meta` (any function call,
+   DDL or unknown statement is refused, naming a line number only). Every
+   business table's row count must match the manifest, and the backup's
+   migration history must be this build's, file for file (same SHA-256);
+   a backup with a migration this build does not know is refused (restore
+   with the release that took it).
+2. **Target**: a session advisory lock allows one restore per target at a
+   time (held to the end). The target is refused unless it is empty (no
+   `business` or `gk_meta` schema) or exactly a fresh migrated schema: a
+   history that is a prefix of the backup's and no rows except those
+   migrations insert (`business.recovery_freeze`). A restored target is
+   therefore refused too.
+3. **Migrate** with `gk-migrate`'s code up to the backup's schema version
+   (roles, schema, gateway functions, privileges), then freeze the fresh
+   schema at once.
+4. **Load, in one transaction**, as `gk_owner` with
+   `session_replication_role = replica` (no trigger fires; the migration
+   credential needs superuser or `GRANT SET ON PARAMETER
+   session_replication_role`, which Supabase's `postgres` role has): lock
+   every business table against writers and check again that none holds
+   more than its fresh rows (anything written since step 2 is refused,
+   never deleted), delete every business table's rows (the migration seed
+   rows included), COPY the backup's business data (not `gk_meta`: the
+   history comes from this build's migrations), revoke every job lease
+   (every generation moves up by 1,000,000, so a lease held at backup time
+   or issued after it, in the lost window, is fenced out even if its worker
+   ID came back; jobs leased at backup time go to `retry`), set `recovery_freeze` to frozen with the reason `gk-backup
+   restore of database/<env>/<time>/: outgoing effects frozen until
+   reconciled (K11)`, check every foreign key (the load skipped their
+   triggers) and every row count, and commit. No state ever exists in which
+   restored jobs are visible and not frozen.
+5. **Verify** after the commit: history with checksums, row counts, the
+   freeze, no live lease, and that the freeze row and every restored
+   business row carry the load transaction's ID (`xmin`).
+6. **Synthetic dispatch check**: a temporary `gk_worker` login (created with
+   a SCRAM verifier, never the password, valid for an hour, checked with
+   `database.CheckLogin`, dropped at the end) presents every lease from the
+   backup to `job_heartbeat`, `job_complete`, `job_release`, `job_attention`
+   and `job_fail` (all must refuse), then runs the worker's own handler
+   chain (`internal/handlers`, the constructor `gk-worker` uses: order
+   commands, payments, refunds, hold reviews, email) over every claimable
+   job with recording providers and a journal that refuses writes. Every
+   job must answer frozen (a suspended notice may answer attention: its
+   manager hold is checked before the freeze); a job no handler owns, a
+   provider call, an envelope written, or a change to any business table
+   but `job` (content digests before and after) fails the check. Each job
+   is checked once and released for an hour, never completed, failed or
+   escalated; the check fails as well if the temporary login cannot be
+   dropped (`synthetic_login_dropped`).
+
+   **A failed check has already modified the target**: the claimed jobs
+   moved (new generations, released for an hour) and a handler that went
+   past the freeze may have written. Empty the target (runbook step 2)
+   before the next restore; it would be refused as non-empty anyway when
+   any business row remains.
+
+The result is one JSON object: backup name and time, schema version,
+migrations applied, tables and rows, `frozen`, `freeze_same_transaction`,
+leases in the backup and revoked, the generation epoch, the synthetic
+dispatch counts, the
+data-loss window (restore time minus backup time) and per-step timings.
+Errors keep PostgreSQL's data messages out (SQLSTATE classes 22 and 23 are
+reduced to code, table and constraint).
+
+Runbook (local, by the agent or the Creator; no GitHub secret or workflow:
+the restore credential stays in the Keychain, Creator decision E1):
+
+```sh
+# 1. Credential: reset the restore project's postgres password through the
+#    Management API (PAT in Keychain gk-supabase-pat, project gjrhgikkvxrvvogvxnrs)
+#    and keep it in Keychain gk-restore-test-DATABASE_PASSWORD (account $USER).
+# 2. Empty the target if it holds an earlier restore (synthetic data only):
+#    as postgres, SET ROLE gk_owner; DROP SCHEMA business CASCADE;
+#    RESET ROLE; DROP SCHEMA gk_meta CASCADE;  (the NOLOGIN groups stay)
+# 3. Restore (from api/; pg_restore 17+, e.g. a wrapper running
+#    `docker exec -i <postgres:17 container> pg_restore "$@"`):
+CGO_ENABLED=0 go build -trimpath -o bin/ ./cmd/gk-backup
+PW=$(security find-generic-password -a "$USER" -s gk-restore-test-DATABASE_PASSWORD -w)
+APP_ENV=staging \
+BACKUP_B2_KEY_ID=$(security find-generic-password -s gk-staging-backup-B2_KEY_ID -w) \
+BACKUP_B2_KEY=$(security find-generic-password -s gk-staging-backup-B2_KEY -w) \
+BACKUP_ENCRYPTION_KEYS=$(security find-generic-password -s gk-staging-backup-ENCRYPTION_KEYS -w) \
+RESTORE_TARGET_DATABASE_URL="postgres://postgres.gjrhgikkvxrvvogvxnrs:$PW@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=verify-full&sslrootcert=$PWD/certs/supabase-root-2021.crt" \
+PG_RESTORE=/path/to/pg_restore17 bin/gk-backup restore
+```
+
+The restore project's direct host (`db.<ref>.supabase.co`) is IPv6 only;
+from an IPv4 network use the session pooler (port 5432, user
+`postgres.<ref>`), which supports the advisory lock, the transaction and
+COPY. The synthetic worker login keeps the pooler's `.<ref>` suffix.
+
+**Exercise, 2026-11-05** (build of commit `5848a4e`, into
+`gk-cakes-restore-test` through the session pooler, `verify-full`; that
+build revoked leases with a generation step of 1 and did not yet re-check
+the target under table locks, fail on unowned jobs or report the login
+drop; those review fixes are covered by the integration tests, not by a
+new exercise):
+
+| Run | Backup | Schema | Tables / rows | Leases revoked | Synthetic dispatch | Total (select, fetch, validate, target, migrate, load, verify, check) |
+| --- | --- | --- | --- | --- | --- | --- |
+| staging | `database/staging/20261104-052703z/` (newest complete) | `0008` (8 migrations) | 9 / 90, all matching | 0 of 0 | 0 claimable (all 10 restored jobs completed, all 10 recovery operations secured) | 14.5 s (1.8, 0.2, 0.1, 0.4, 2.9, 3.2, 1.8, 4.1) |
+| synthetic | a seeded local backup with one due job of every kind, a leased job and a suspended notice | `0017` (17) | 46 / 25, all matching | 1 of 1; 5 of 5 old-lease calls refused | 7 claimed: 6 deferred frozen (order command, payment, refund, hold review, 2 notifications), 1 suspended notice held; 0 provider calls, 0 journal writes, no other table changed | 51.9 s (load 18.3, check 18.0: one pooler round trip per table and foreign key) |
+
+Both runs set the freeze in the load transaction (`freeze_same_transaction`)
+and left no synthetic login. A second restore over the restored target was
+refused (`business.account has 3 rows`). Data-loss window of the staging
+backup: 23 h 30 min (taken 2026-11-04 05:27 UTC by hand; the 02:30 UTC
+schedule had not run on 2026-11-05 by 04:57). The staging recovery journal
+(`recovery/staging/`) holds 15 operations, all with an outcome envelope (none
+pending), against 10 in that backup: the 5 newer ones are the lost window
+GK-035 must replay. Object restoration had nothing to restore: no business
+record references a stored file yet (catalog images are not built), and no
+journal blob exists.
+
+Remaining for GK-035 (not done here): provider reconciliation of the lost
+window (Resend, Stripe sessions and refunds), journal replay (adopting
+outcome envelopes, resuming prepared operations with `Coordinator.Pending`;
+opening envelopes needs the environment's `RECOVERY_ENCRYPTION_KEYS`),
+deletions and tombstones carried into the restore (K09), object
+restoration once essential files exist, and a controlled, audited unfreeze
+(`business.recovery_set_freeze(false, …)`) after reconciliation; also the
+hold-review gap below. Before production: a read-only restore key and a
+decision on where personal data is decrypted (GK-014 exception 1).
+
+Hold-review note: `order_hold_review_run` closes a review (`closed` or
+`paid`) before it checks the freeze, so on a restored database a due review
+of an order that no longer awaits payment, or has a succeeded collection,
+records its outcome while frozen. It sends nothing and changes no order,
+but the synthetic check counts it as a violation (`hold_review:completed`)
+and fails; the staging backup had no such job.
 
 ## Identity (K00, GK-021)
 

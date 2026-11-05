@@ -11,9 +11,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ChichaSasha/gk-cakes/api/internal/checkout"
 	"github.com/ChichaSasha/gk-cakes/api/internal/config"
 	"github.com/ChichaSasha/gk-cakes/api/internal/database"
+	"github.com/ChichaSasha/gk-cakes/api/internal/handlers"
 	"github.com/ChichaSasha/gk-cakes/api/internal/jobs"
 	"github.com/ChichaSasha/gk-cakes/api/internal/notifications"
 	"github.com/ChichaSasha/gk-cakes/api/internal/payments"
@@ -84,29 +84,26 @@ func main() {
 	} else {
 		logger.Warn("email dispatch not configured; notification jobs are retried, never sent; order commands wait for the recovery journal")
 	}
-	// Order commands share the recovery journal; without it they wait.
-	commands := &checkout.Commands{DB: pool, Coordinator: coord, Logger: logger}
-	// Payment collections need Stripe (and the journal to dispatch);
-	// without them their jobs wait.
-	pay := &payments.Worker{DB: pool, Coordinator: coord, Environment: string(cfg.Env), Account: cfg.Stripe.AccountID, Logger: logger}
-	// Refunds (the full-return core) share Stripe and the journal.
-	refunds := &payments.Refunds{DB: pool, Coordinator: coord, Environment: string(cfg.Env), Account: cfg.Stripe.AccountID, Logger: logger}
+	var (
+		stripePayments payments.Provider
+		stripeRefunds  payments.RefundProvider
+	)
 	if cfg.Stripe.Enabled() {
 		client, code, err := stripeClient(ctx, cfg, logger)
 		if err != nil {
 			logger.Error("stripe", "error", err.Error())
 			os.Exit(code)
 		}
-		pay.Provider = client
-		refunds.Provider = client
+		stripePayments, stripeRefunds = client, client
 		logger.Info("stripe payments enabled", "account", cfg.Stripe.AccountID, "api_version", payments.APIVersion)
 	} else {
 		logger.Warn("stripe not configured; payment and refund jobs wait")
 	}
-	// Order hold reviews (expiry cleanup and release of unpaid holds) need
-	// neither Stripe nor the journal.
-	reviews := &checkout.HoldReviews{DB: pool, Logger: logger}
-	handler := jobs.Chain(commands.Handle, pay.Handle, refunds.Handle, reviews.Handle, emailHandler)
+	// One constructor for the worker and the restore's synthetic dispatch
+	// check (internal/handlers): order commands, payments, refunds, hold
+	// reviews, email. Commands wait without the journal; payments and
+	// refunds without Stripe.
+	handler := handlers.Chain(workerHandlers(pool, coord, stripePayments, stripeRefunds, emailHandler, string(cfg.Env), cfg.Stripe.AccountID, logger))
 
 	w := jobs.New(pool, jobs.Options{
 		Handler:         handler,
@@ -117,6 +114,13 @@ func main() {
 		logger.Error("worker", "error", err.Error())
 		os.Exit(1)
 	}
+}
+
+// workerHandlers is the worker's handler chain (internal/handlers).
+func workerHandlers(pool *pgxpool.Pool, coord *recovery.Coordinator, pay payments.Provider, refunds payments.RefundProvider,
+	email jobs.Handler, env, account string, logger *slog.Logger) []handlers.Named {
+	return handlers.New(handlers.Config{DB: pool, Coordinator: coord, Payments: pay, Refunds: refunds, Email: email,
+		Environment: env, Account: account, Logger: logger})
 }
 
 func journalRoot(env config.Env) string { return "recovery/" + string(env) + "/" }
