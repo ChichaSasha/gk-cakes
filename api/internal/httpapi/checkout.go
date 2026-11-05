@@ -8,6 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/catalog"
 	"github.com/ChichaSasha/gk-cakes/api/internal/checkout"
@@ -39,6 +41,8 @@ type Checkout interface {
 	ClearPaymentMismatch(ctx context.Context, subject, key, orderID, collectionID string, in checkout.NoteInput) (catalog.Result, error)
 	ReserveRemainder(ctx context.Context, subject, key, orderID, operationID string, in checkout.RemainderInput) (catalog.Result, error)
 	AttentionList(ctx context.Context, subject string) (checkout.Attention, error)
+	StaffOrders(ctx context.Context, subject string, f checkout.StaffOrderFilter) (checkout.StaffOrderPage, error)
+	StaffOrder(ctx context.Context, subject, id string) (json.RawMessage, error)
 	PreviewManualPayout(ctx context.Context, subject, orderID string, in checkout.ManualPayoutPreviewInput) (json.RawMessage, error)
 	RequestManualPayout(ctx context.Context, subject, key, orderID string, in checkout.ManualPayoutInput) (catalog.Result, error)
 	RecordManualPayoutOutcome(ctx context.Context, subject, key, orderID, operationID string, in checkout.ManualPayoutOutcomeInput) (catalog.Result, error)
@@ -304,6 +308,22 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 	}
 	readers := []string{identity.Chef, identity.TechnicalSupport}
 	chef := []string{identity.Chef}
+	// Staff order reads (K00): chef, technical support and fulfillment, each
+	// view redacted by the database; served whether or not new checkouts
+	// are enabled (existing orders stay readable).
+	orderReaders := []string{identity.Chef, identity.TechnicalSupport, identity.Fulfillment}
+	mux.HandleFunc("GET /api/v1/admin/orders", staff(id, logger, orderReaders, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+		f, ok := staffOrderFilter(w, r)
+		if !ok {
+			return
+		}
+		page, err := co.StaffOrders(r.Context(), a.Subject, f)
+		respond(w, r, logger, http.StatusOK, page, err)
+	}))
+	mux.HandleFunc("GET /api/v1/admin/orders/{id}", staff(id, logger, orderReaders, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+		o, err := co.StaffOrder(r.Context(), a.Subject, r.PathValue("id"))
+		respond(w, r, logger, http.StatusOK, o, err)
+	}))
 	if checkoutEnabled {
 		// K05 chef cancellation (100%), the same K11 command path.
 		mux.HandleFunc("POST /api/v1/admin/orders/{id}/cancel", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
@@ -539,6 +559,53 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 		res, err := co.ArchiveCode(r.Context(), a.Subject, key, r.PathValue("id"), in)
 		respondCommand(w, r, logger, http.StatusOK, res, err, func() (any, error) { return codeAfter(r.Context(), a.Subject, res.ID) })
 	}))
+}
+
+// staffOrderFilter reads the staff order list query: from and to (London
+// handover days, required), lifecycle (comma-separated and/or repeated),
+// needs_attention (true or false), cursor and limit (1 to 100, default 50).
+// It answers the error.
+func staffOrderFilter(w http.ResponseWriter, r *http.Request) (checkout.StaffOrderFilter, bool) {
+	q := r.URL.Query()
+	var f checkout.StaffOrderFilter
+	var ok bool
+	if f.From, ok = queryDate(w, r, "from"); !ok {
+		return f, false
+	}
+	if f.To, ok = queryDate(w, r, "to"); !ok {
+		return f, false
+	}
+	for _, v := range q["lifecycle"] {
+		for _, l := range strings.Split(v, ",") {
+			f.Lifecycles = append(f.Lifecycles, strings.TrimSpace(l))
+		}
+	}
+	if q.Has("needs_attention") {
+		switch q.Get("needs_attention") {
+		case "true":
+			f.NeedsAttention = new(bool)
+			*f.NeedsAttention = true
+		case "false":
+			f.NeedsAttention = new(bool)
+		default:
+			writeError(w, r, http.StatusUnprocessableEntity, "INVALID_INPUT", "needs_attention must be true or false", false)
+			return f, false
+		}
+	}
+	if raw := q.Get("limit"); raw != "" || q.Has("limit") {
+		n, err := strconv.Atoi(raw)
+		if !limitPattern.MatchString(raw) || err != nil || n < 1 || n > checkout.MaxStaffOrderPage {
+			writeError(w, r, http.StatusUnprocessableEntity, "INVALID_INPUT", "limit must be 1 to 100", false)
+			return f, false
+		}
+		f.Limit = n
+	}
+	f.Cursor = q.Get("cursor")
+	if err := f.Validate(); err != nil {
+		catalogError(w, r, slog.Default(), err)
+		return f, false
+	}
+	return f, true
 }
 
 // emptyBody accepts a request without a body or with an empty JSON object
