@@ -252,8 +252,11 @@ delete); a backup encryption key; all four as GitHub `staging` environment secre
 (`STAGING_BACKUP_*`) with copies in the Creator's Keychain for Bitwarden. B2 lifecycle rule on
 `database/` only: hide after 30 days, delete one day later. Turn on with the repository
 variable `STAGING_BACKUP_ENABLED=true` only after the staging deploy that applies
-migration 0008 succeeds (the backup login reads the migration history from then on). A restore into
-`gk-cakes-restore-test` (GK-014) still needs the Creator's restore-time credentials.
+migration 0008 succeeds (the backup login reads the migration history from then on). Restores into
+`gk-cakes-restore-test` (GK-014) use a `postgres` password the agent resets through the Management
+API at restore time (Creator decision E1), kept in the Creator's Keychain as
+`gk-restore-test-DATABASE_PASSWORD` for Bitwarden; first verified 2026-11-05 (runbook and results:
+[api/README.md](api/README.md#restoring-into-the-isolated-restore-project-gk-034-milestone-b)).
 
 **GK-024 staging email setup (Owner: Creator; agent guides each step).** Needed
 before the staging worker sends and the webhook records evidence. Secret values

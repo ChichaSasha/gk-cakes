@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/config"
 	"github.com/ChichaSasha/gk-cakes/api/internal/database"
+	"github.com/ChichaSasha/gk-cakes/api/internal/handlers"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -111,5 +113,18 @@ func TestStagingDeployNamesTheStartLine(t *testing.T) {
 	}
 	if want := `-start-line "` + startLine + `"`; !strings.Contains(string(wf), want) {
 		t.Fatalf("staging.yml does not pass %s to the worker deploy", want)
+	}
+}
+
+// The worker builds its chain with the constructor the restore's synthetic
+// dispatch check uses (internal/handlers).
+func TestWorkerHandlersAreTheSharedChain(t *testing.T) {
+	hs := workerHandlers(nil, nil, nil, nil, nil, "test", "", nil)
+	kinds := make([]string, len(hs))
+	for i, h := range hs {
+		kinds[i] = h.Kind
+	}
+	if !slices.Equal(kinds, handlers.Kinds) {
+		t.Fatalf("worker kinds %v, shared kinds %v", kinds, handlers.Kinds)
 	}
 }
