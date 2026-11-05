@@ -20,8 +20,10 @@ const ReviewFreezeRecheck = 5 * time.Minute
 // closes never-dispatched collections and releases the holds of an order
 // whose payment is proven not completed (or that was never paid or
 // confirmed), cancelling it; while anything may still succeed it schedules
-// the next review instead. It needs neither Stripe nor the journal. Jobs of
-// other kinds return jobs.ErrNoHandler.
+// the next review instead. A restore freeze defers every review before any
+// outcome, an already decided one included (migration 0019). It needs
+// neither Stripe nor the journal. Jobs of other kinds return
+// jobs.ErrNoHandler.
 type HoldReviews struct {
 	DB     Querier // gk_worker pool
 	Logger *slog.Logger

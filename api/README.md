@@ -755,16 +755,22 @@ outcome envelopes, resuming prepared operations with `Coordinator.Pending`;
 opening envelopes needs the environment's `RECOVERY_ENCRYPTION_KEYS`),
 deletions and tombstones carried into the restore (K09), object
 restoration once essential files exist, and a controlled, audited unfreeze
-(`business.recovery_set_freeze(false, …)`) after reconciliation; also the
-hold-review gap below. Before production: a read-only restore key and a
+(`business.recovery_set_freeze(false, …)`) after reconciliation. Before production: a read-only restore key and a
 decision on where personal data is decrypted (GK-014 exception 1).
 
-Hold-review note: `order_hold_review_run` closes a review (`closed` or
-`paid`) before it checks the freeze, so on a restored database a due review
-of an order that no longer awaits payment, or has a succeeded collection,
-records its outcome while frozen. It sends nothing and changes no order,
-but the synthetic check counts it as a violation (`hold_review:completed`)
-and fails; the staging backup had no such job.
+Hold-review note (found in this exercise, closed by
+`0019_hold_review_freeze.sql`): `order_hold_review_run` answered `done` for
+an already decided review, and closed an undecided one (`closed` or `paid`)
+whose order no longer awaited payment or had a succeeded collection, before
+it read the freeze, so on a restored database the worker completed those
+jobs while frozen (the synthetic check counted `hold_review:completed` and
+failed; the staging backup had no such job). The review now reads the
+freeze first (a share-locked read of `business.recovery_freeze`, before any
+lock, outcome or audit) and defers every hold review job while frozen; the
+synthetic restore test seeds an undecided, a decided and a closing review
+and expects all three deferred frozen. The other worker begin functions
+(order command, payment, refund, notification) already answered `frozen`
+right after identifying their job.
 
 ## Identity (K00, GK-021)
 
@@ -1322,11 +1328,13 @@ them.
   `hold_until`). `order_hold_review_run` (lease-fenced; it needs neither Stripe
   nor the journal) re-checks everything under the order lock (lock order: the
   order, its collections by ID, the review row, then the day, lots by ID and
-  the code, as checkout and the order commands):
+  the code, as checkout and the order commands). A restore freeze defers it
+  first (5 minutes), before any lock or outcome, an already decided review
+  included: nothing is recorded or audited while frozen (migration
+  `0019_hold_review_freeze.sql`). Then an already decided review ends;
   an order no longer awaiting payment ends the review; a `succeeded`
   collection ends it too (the money is real: confirmation or a full return
-  decide, never a release); a restore freeze defers it (5 minutes); before
-  `hold_until` it waits; it closes never-dispatched collections; while a
+  decide, never a release); before `hold_until` it waits; it closes never-dispatched collections; while a
   collection is `created` (admitted), `pending` or `unknown` or under
   reconciliation (`mismatch_reason` set), or a protected
   operation on the order (a free or paid confirmation) is not yet secured, it

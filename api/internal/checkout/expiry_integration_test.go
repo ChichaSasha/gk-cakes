@@ -18,6 +18,7 @@ import (
 	"github.com/ChichaSasha/gk-cakes/api/internal/jobs"
 	"github.com/ChichaSasha/gk-cakes/api/internal/migrate"
 	"github.com/ChichaSasha/gk-cakes/api/internal/payments"
+	"github.com/ChichaSasha/gk-cakes/api/internal/recovery"
 	"github.com/ChichaSasha/gk-cakes/api/internal/schedule"
 	"github.com/ChichaSasha/gk-cakes/api/migrations"
 	"github.com/jackc/pgx/v5"
@@ -986,6 +987,77 @@ func TestRestoreFreezeDefersExpiryAndRelease(t *testing.T) {
 	}
 	if o := h.orderRow(t, order); o.Lifecycle != "cancelled" || len(h.expireCalls()) != 1 {
 		t.Fatalf("order %+v, expire calls %v", o, h.expireCalls())
+	}
+}
+
+// A restore freeze defers a hold review before any outcome (migration
+// 0019): one already decided, and one that would close now because its
+// order no longer awaits payment, both defer instead of completing, and
+// nothing is recorded or audited while frozen; after the freeze they
+// complete.
+func TestRestoreFreezeDefersADecidedHoldReview(t *testing.T) {
+	for _, tc := range []struct {
+		name, setup, outcome string
+	}{
+		{"decided", "UPDATE business.order_hold_review SET outcome = 'released', decided_at = now() WHERE order_id = $1::uuid", "released"},
+		{"order no longer awaits payment", `UPDATE business.orders SET lifecycle = 'cancelled', cancel_reason = 'payment_not_completed',
+			cancelled_at = now(), version = version + 1 WHERE id = $1::uuid`, "closed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newPayHarness(t)
+			f := h.setup(t)
+			pol := h.policy(t, "p1")
+			order, _ := h.paidOrder(t, f, pol)
+			id, _ := h.reviewJob(t, order)
+			if id == "" {
+				t.Fatal("no waiting hold review job")
+			}
+			h.owner(t, tc.setup, order)
+			review := func() string {
+				var outcome *string
+				if err := h.admin.QueryRow(h.ctx, "SELECT outcome FROM business.order_hold_review WHERE order_id = $1::uuid", order).
+					Scan(&outcome); err != nil {
+					t.Fatal(err)
+				}
+				if outcome == nil {
+					return ""
+				}
+				return *outcome
+			}
+			jobState := func() string {
+				var state string
+				if err := h.admin.QueryRow(h.ctx, "SELECT state FROM business.job WHERE id = $1::uuid", id).Scan(&state); err != nil {
+					t.Fatal(err)
+				}
+				return state
+			}
+			before, audits := review(), h.count(t, "SELECT count(*) FROM business.audit_event")
+
+			h.owner(t, "SELECT business.recovery_set_freeze(true, 'restore drill')")
+			job := h.claimOnly(t, id)
+			err := h.reviews.Handle(h.ctx, job)
+			var de *jobs.DeferError
+			if !errors.As(err, &de) || de.After != checkout.ReviewFreezeRecheck || !errors.Is(err, recovery.ErrFrozen) {
+				t.Fatalf("frozen: %v, want a freeze deferral", err)
+			}
+			h.finish(t, job, err)
+			if got := jobState(); got != "retry" && got != "queued" {
+				t.Fatalf("frozen: job %s", got)
+			}
+			if got := review(); got != before || h.count(t, "SELECT count(*) FROM business.audit_event") != audits {
+				t.Fatalf("frozen: review %q (was %q), audit events changed", got, before)
+			}
+
+			h.owner(t, "SELECT business.recovery_set_freeze(false, NULL)")
+			job = h.claimOnly(t, id)
+			if err := h.reviews.Handle(h.ctx, job); err != nil {
+				t.Fatalf("after the freeze: %v", err)
+			}
+			h.finish(t, job, nil)
+			if got := jobState(); got != "completed" || review() != tc.outcome {
+				t.Fatalf("after the freeze: job %s, review %q, want completed %q", got, review(), tc.outcome)
+			}
+		})
 	}
 }
 
