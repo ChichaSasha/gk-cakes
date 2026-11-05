@@ -3,8 +3,10 @@
 // a collection's exact request, creates the session twice with one
 // idempotency key through the same client the worker uses (one session),
 // retrieves it with its payment intent and charge, verifies it as the
-// reconcile does (pending: unpaid), expires it and verifies again
-// (cancelled). It never accepts a live key and prints IDs and statuses only.
+// reconcile does (pending: unpaid), expires it under the worker's expire key
+// (and shows a replay of that key and a second expiry of the now expired
+// session) and verifies again (cancelled). It never accepts a live key and
+// prints IDs and statuses only.
 //
 //	STRIPE_SECRET_KEY=sk_test_... [STRIPE_ACCOUNT_ID=acct_...] gk-stripe-proof
 package main
@@ -90,9 +92,23 @@ func prove(ctx context.Context, client *payments.Client, account string, out io.
 		return fmt.Errorf("open session verdict %s (%s), want pending", v.Kind, v.Reason)
 	}
 	fmt.Fprintln(out, "retrieve: open, verdict pending")
-	if res := client.ExpireSession(ctx, first); res.Kind != payments.Found || res.Session.Status != "expired" {
+	// The worker's 15-minute expire request (GK-025 A3c1): the collection's
+	// expire key expires the open session; the same key again replays that
+	// answer; a new request for the expired session is refused as not open.
+	key := payments.ExpireKey(req.CollectionID)
+	if res := client.ExpireSession(ctx, key, first); res.Kind != payments.Expired || res.Session.Status != "expired" {
 		return fmt.Errorf("expire: %s", res)
 	}
+	fmt.Fprintln(out, "expire (open session): expired")
+	if res := client.ExpireSession(ctx, key, first); res.Kind != payments.Expired {
+		return fmt.Errorf("expire replay under the same key: %s, want the first answer", res)
+	}
+	fmt.Fprintln(out, "expire replay under the same key: expired (the first answer)")
+	again := client.ExpireSession(ctx, key+"-again", first)
+	if again.Kind != payments.NotOpen {
+		return fmt.Errorf("expire of an expired session: %s, want not_open", again)
+	}
+	fmt.Fprintf(out, "expire (already expired session): not_open (HTTP %d %s)\n", again.Status, again.Code)
 	res = client.RetrieveSession(ctx, first)
 	if res.Kind != payments.Found {
 		return fmt.Errorf("retrieve after expiry: %s", res)

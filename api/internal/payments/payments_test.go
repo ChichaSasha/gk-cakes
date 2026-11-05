@@ -176,6 +176,44 @@ func TestClassifyCreate(t *testing.T) {
 	}
 }
 
+// The expire answers seen on the sandbox (2026-11-04): an open session is
+// expired (200); the same key replays that answer; an expired session is
+// refused with 400 invalid_request_error (not open).
+func TestClassifyExpire(t *testing.T) {
+	expired := `{"id":"cs_test_a1","object":"checkout.session","status":"expired","livemode":false}`
+	complete := `{"id":"cs_test_a1","object":"checkout.session","status":"complete","livemode":false}`
+	cases := []struct {
+		status int
+		body   string
+		want   ResultKind
+	}{
+		{200, expired, Expired},
+		{200, complete, NotOpen},
+		{200, `{"object":"checkout.session"}`, Unknown},
+		{400, `{"error":{"type":"invalid_request_error","message":"Only Checkout Sessions with a status in [\"open\"] can be expired."}}`, NotOpen},
+		{400, `{"error":{"type":"idempotency_error"}}`, Rejected},
+		{404, `{"error":{"type":"invalid_request_error"}}`, Rejected},
+		{401, `{"error":{"type":"authentication_error"}}`, Refused},
+		{403, `{}`, Refused},
+		{409, `{}`, Deferred},
+		{429, `{"error":{"type":"rate_limit_error"}}`, Deferred},
+		{500, `{}`, Unknown},
+		{502, ``, Unknown},
+	}
+	for _, c := range cases {
+		got := ClassifyExpire(c.status, []byte(c.body))
+		if got.Kind != c.want {
+			t.Errorf("expire %d %s: %s, want %s", c.status, c.body, got.Kind, c.want)
+		}
+		if strings.Contains(got.String(), "can be expired") {
+			t.Errorf("Stripe's message leaked into %q", got.String())
+		}
+	}
+	if ExpireKey("0da4b77c-2c5b-40d4-9215-2510342da911") != "0da4b77c-2c5b-40d4-9215-2510342da911-expire" {
+		t.Fatal("expire key")
+	}
+}
+
 func TestNewClientRefusesLiveKeysOutsideProduction(t *testing.T) {
 	for _, key := range []string{"sk_live_x", "rk_live_x", "pk_test_x", "", "whsec_x"} {
 		if _, err := NewClient(ClientConfig{Key: key}); err == nil {

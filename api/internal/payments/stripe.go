@@ -40,6 +40,14 @@ const (
 	// Found and NotFound classify a retrieve.
 	Found    ResultKind = "found"
 	NotFound ResultKind = "not_found"
+	// Expired and NotOpen classify an expire request (with Rejected,
+	// Deferred, Unknown and Refused); all of them are stored as
+	// payment_attempt.result of kind 'expire'. Expired: Stripe expired the
+	// session now (or replays that answer for the same key). NotOpen: Stripe
+	// refused because the session is no longer open (already complete or
+	// expired): nothing to expire.
+	Expired ResultKind = "expired"
+	NotOpen ResultKind = "not_open"
 )
 
 // Result is one classified Stripe call. It never carries Stripe's error
@@ -56,6 +64,9 @@ type Result struct {
 type Provider interface {
 	CreateSession(ctx context.Context, idempotencyKey, form string) Result
 	RetrieveSession(ctx context.Context, id string) Result
+	// ExpireSession asks Stripe to expire an open session (K04: the
+	// 15-minute expire request), under an idempotency key.
+	ExpireSession(ctx context.Context, idempotencyKey, id string) Result
 }
 
 // Session is the part of a Checkout Session the worker reads.
@@ -242,17 +253,23 @@ func (c *Client) RetrieveSession(ctx context.Context, id string) Result {
 	return ClassifyRetrieve(status, data)
 }
 
-// ExpireSession expires an open session (sandbox proof and later cleanup).
-func (c *Client) ExpireSession(ctx context.Context, id string) Result {
+// ExpireSession asks Stripe to expire an open session under idempotencyKey
+// (the worker uses ExpireKey; repeating it is harmless: Stripe replays the
+// first answer for 24 hours, and a session that is no longer open is
+// refused).
+func (c *Client) ExpireSession(ctx context.Context, idempotencyKey, id string) Result {
 	if !sessionIDPattern.MatchString(id) {
 		return Result{Kind: Refused, Err: errors.New("payments: not a Checkout Session ID")}
 	}
-	status, data, err := c.do(ctx, http.MethodPost, sessionPath+"/"+id+"/expire", "", "")
+	status, data, err := c.do(ctx, http.MethodPost, sessionPath+"/"+id+"/expire", idempotencyKey, "")
 	if err != nil {
 		return Result{Kind: Unknown, Status: status, Err: err}
 	}
-	return ClassifyRetrieve(status, data)
+	return ClassifyExpire(status, data)
 }
+
+// ExpireKey is the idempotency key of a collection's expire request.
+func ExpireKey(collectionID string) string { return collectionID + "-expire" }
 
 // AccountID returns the account the key belongs to.
 func (c *Client) AccountID(ctx context.Context) (string, error) {
@@ -339,6 +356,39 @@ func ClassifyRetrieve(status int, body []byte) Result {
 	switch {
 	case status == http.StatusNotFound:
 		res.Kind = NotFound
+	case status == http.StatusTooManyRequests, status == http.StatusConflict:
+		res.Kind = Deferred
+	case status == http.StatusUnauthorized, status == http.StatusForbidden:
+		res.Kind = Refused
+	case status >= 400 && status < 500:
+		res.Kind = Rejected
+	default:
+		res.Kind = Unknown
+	}
+	return res
+}
+
+// ClassifyExpire interprets an expire response: 200 with the session is
+// Expired (NotOpen if Stripe returned it in another status); 400
+// invalid_request_error means the session is no longer open (NotOpen);
+// 404 and other definitive 4xx are Rejected; 401/403 Refused; 409/429
+// Deferred; anything else (5xx, undecodable) Unknown. Whatever the answer,
+// only the following retrieve decides the collection.
+func ClassifyExpire(status int, body []byte) Result {
+	if status == http.StatusOK {
+		s, err := decodeSession(body)
+		if err != nil {
+			return Result{Kind: Unknown, Status: status, Err: err}
+		}
+		if s.Status != "expired" {
+			return Result{Kind: NotOpen, Status: status, Session: s}
+		}
+		return Result{Kind: Expired, Status: status, Session: s}
+	}
+	res := Result{Status: status, Code: errorType(body)}
+	switch {
+	case status == http.StatusBadRequest && res.Code == "invalid_request_error":
+		res.Kind = NotOpen
 	case status == http.StatusTooManyRequests, status == http.StatusConflict:
 		res.Kind = Deferred
 	case status == http.StatusUnauthorized, status == http.StatusForbidden:

@@ -44,9 +44,15 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	return newHarnessAt(t, "")
+}
+
+// newHarnessAt migrates up to and including version target (all when "").
+func newHarnessAt(t *testing.T, target string) *harness {
+	t.Helper()
 	ctx := context.Background()
 	db := dbtest.New(t)
-	if _, err := migrate.Run(ctx, db.MigratorConn(t), migrations.FS); err != nil {
+	if _, err := migrate.RunTo(ctx, db.MigratorConn(t), migrations.FS, target); err != nil {
 		t.Fatal(err)
 	}
 	pool, err := pgxpool.New(ctx, db.LoginURL(t, "gk_api"))

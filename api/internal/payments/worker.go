@@ -24,21 +24,26 @@ const (
 	// ReconcileRecheck: a session that is not decided yet is retrieved
 	// again (a webhook brings the check forward).
 	ReconcileRecheck = 15 * time.Minute
+	// ExpireRetry: an expire request without an answer (no response, 5xx,
+	// 409, 429) is asked again with the same key this much later (beyond
+	// the 30-second admission guard of migration 0015).
+	ExpireRetry = time.Minute
 )
 
 // Attention reasons stored on the job (no personal data).
 const (
-	reasonPayload   = "stored payment payload refused by this build: not dispatched (see its attempts for any earlier ones)"
-	reasonAccount   = "payment collection belongs to another Stripe account than this worker's: not dispatched or recorded"
-	reasonReconcile = "payment session outcome unknown (idempotency conflict or window ended): manager reconciliation needed, never a blind new session"
-	reasonRecovery  = "recovery operation conflict for this payment collection"
-	reasonRefused   = "Stripe refused the request (credentials or permissions): fix the key, then requeue"
-	reasonRejected  = "Stripe rejected the Checkout Session request: the collection failed and the customer may start a new one"
-	reasonTooLate   = "payment never dispatched before its session would expire (worker delay): the collection failed without a Stripe call; the customer may start a new one"
-	reasonMode      = "Checkout Session created in the wrong Stripe mode: collection unknown, never confirmed"
-	reasonMismatch  = "Stripe evidence does not match the collection (amount, currency, account, mode or metadata): never confirmed; manager reconciliation"
-	reasonRetrieve  = "Stripe refused reading the Checkout Session: check the key, then requeue"
-	reasonStale     = "payment succeeded but the order already has a protected operation at this or a later version: nothing recorded; manager reconciliation"
+	reasonPayload       = "stored payment payload refused by this build: not dispatched (see its attempts for any earlier ones)"
+	reasonAccount       = "payment collection belongs to another Stripe account than this worker's: not dispatched or recorded"
+	reasonReconcile     = "payment session outcome unknown (idempotency conflict or window ended): manager reconciliation needed, never a blind new session"
+	reasonRecovery      = "recovery operation conflict for this payment collection"
+	reasonRefused       = "Stripe refused the request (credentials or permissions): fix the key, then requeue"
+	reasonRejected      = "Stripe rejected the Checkout Session request: the collection failed and the customer may start a new one"
+	reasonTooLate       = "payment never dispatched before its session would expire (worker delay): the collection failed without a Stripe call; the customer may start a new one"
+	reasonMode          = "Checkout Session created in the wrong Stripe mode: collection unknown, never confirmed"
+	reasonMismatch      = "Stripe evidence does not match the collection (amount, currency, account, mode or metadata): never confirmed; manager reconciliation"
+	reasonRetrieve      = "Stripe refused reading the Checkout Session: check the key, then requeue"
+	reasonStale         = "payment succeeded but the order already has a protected operation at this or a later version: nothing recorded; manager reconciliation"
+	reasonExpireRefused = "Stripe refused the 15-minute expire request (credentials or permissions): fix the key, then requeue"
 )
 
 // Worker is the job handler for payment collections: the protected
@@ -76,6 +81,11 @@ func (w *Worker) Handle(ctx context.Context, job jobs.Job) error {
 	case "settled", "no_session":
 		log.Info("payment reconcile has nothing to check", "status", b.Status, "collection_state", b.CollectionState)
 		return nil
+	case "closed":
+		// The never-dispatched cleanup closed the collection before its
+		// request was fixed: nothing was or will be sent.
+		log.Info("payment dispatch closed before any Stripe call", "collection_state", b.CollectionState)
+		return nil
 	default:
 		return fmt.Errorf("payments: unexpected job status %q", b.Status)
 	}
@@ -112,6 +122,9 @@ func (w *Worker) dispatch(ctx context.Context, log *slog.Logger, store leaseStor
 			return err
 		case status == "frozen":
 			return jobs.Defer(FreezeRecheck, recovery.ErrFrozen)
+		case status == "closed":
+			log.Info("payment dispatch closed before any Stripe call")
+			return nil
 		case status != "ready":
 			return fmt.Errorf("payments: unexpected fix status %q", status)
 		}
@@ -137,6 +150,12 @@ func (w *Worker) dispatch(ctx context.Context, log *slog.Logger, store leaseStor
 		}
 		if json.Unmarshal(outcome.Evidence, &ev) == nil && ev.Reason == reasonExpiredBeforeDispatch {
 			return jobs.Attention(reasonTooLate, nil)
+		}
+		if ev.Reason == reasonNeverDispatched {
+			// Closed by the never-dispatched cleanup before any call was
+			// admitted: zero Stripe calls; the hold review decides the order.
+			log.Info("payment dispatch closed before any Stripe call")
+			return nil
 		}
 		return jobs.Attention(reasonRejected, nil)
 	case err == nil:
@@ -198,6 +217,10 @@ func (w *Worker) effect(log *slog.Logger, store leaseStore, opID string, d Dispa
 			log.Warn("payment session would expire before dispatch; failed without a Stripe call")
 			b, err := json.Marshal(map[string]string{"reason": reasonExpiredBeforeDispatch})
 			return recovery.Outcome{Status: string(Rejected), Evidence: b}, err
+		case status == "closed":
+			// The never-dispatched cleanup won: no call may ever be made.
+			b, err := json.Marshal(map[string]string{"reason": reasonNeverDispatched})
+			return recovery.Outcome{Status: string(Rejected), Evidence: b}, err
 		case status != "ok":
 			return recovery.Outcome{}, &admitError{status: status}
 		}
@@ -239,6 +262,11 @@ func (w *Worker) effect(log *slog.Logger, store leaseStore, opID string, d Dispa
 // before any call because its session would expire too soon.
 const reasonExpiredBeforeDispatch = "expired_before_dispatch"
 
+// reasonNeverDispatched is the outcome evidence of a dispatch whose
+// collection the never-dispatched cleanup closed before any call was
+// admitted (migration 0015).
+const reasonNeverDispatched = "never_dispatched"
+
 // admitError means Stripe was not called: the dispatch was refused
 // admission right before the call ("frozen" or "expired").
 type admitError struct{ status string }
@@ -259,11 +287,50 @@ func errString(err error) string {
 	return err.Error()
 }
 
+// expire makes the K04 15-minute expire request when the database admits
+// it (pending, session last seen open, first admitted dispatch at least 15
+// minutes ago, not answered yet) and records the answer. A nil error means
+// the reconcile goes on to retrieve and verify, which alone decides; Stripe
+// refusing because the session is no longer open is fine. retry reports a
+// lost or deferred answer: the reconcile still verifies now, and a still
+// pending session asks again later with the same key (harmless).
+func (w *Worker) expire(ctx context.Context, log *slog.Logger, store leaseStore, b begin) (retry bool, err error) {
+	status, err := store.expireAdmit(ctx, b.CollectionID)
+	switch {
+	case err != nil:
+		return false, err
+	case status == "frozen":
+		return false, jobs.Defer(FreezeRecheck, recovery.ErrFrozen)
+	case status != "ok":
+		return false, nil
+	}
+	callCtx, cancel := context.WithTimeout(ctx, ProviderTimeout)
+	res := w.Provider.ExpireSession(callCtx, ExpireKey(b.CollectionID), b.SessionID)
+	cancel()
+	log.Info("stripe expire session call", "result", string(res.Kind), "http_status", res.Status,
+		"provider_code", res.Code, "error", errString(res.Err))
+	if err := store.recordExpire(ctx, b.CollectionID, res); err != nil {
+		return false, fmt.Errorf("payments: record expire request: %w", err)
+	}
+	switch res.Kind {
+	case Expired, NotOpen, Rejected:
+		return false, nil
+	case Refused:
+		return false, jobs.Attention(reasonExpireRefused, errors.New(res.String()))
+	default: // Unknown, Deferred: verify now, the same key later
+		return true, nil
+	}
+}
+
 func (w *Worker) reconcile(ctx context.Context, log *slog.Logger, store leaseStore, b begin) error {
+	log = log.With("session_id", b.SessionID)
+	retryExpire, err := w.expire(ctx, log, store, b)
+	if err != nil {
+		return err
+	}
 	callCtx, cancel := context.WithTimeout(ctx, ProviderTimeout)
 	res := w.Provider.RetrieveSession(callCtx, b.SessionID)
 	cancel()
-	log = log.With("session_id", b.SessionID)
 	log.Info("stripe retrieve session call", "result", string(res.Kind), "http_status", res.Status,
 		"provider_code", res.Code, "error", errString(res.Err))
 	var v Verdict
@@ -295,6 +362,9 @@ func (w *Worker) reconcile(ctx context.Context, log *slog.Logger, store leaseSto
 	log.Info("payment reconciled", "verdict", v.Kind, "reason", v.Reason, "collection_state", state, "command_id", cmd)
 	switch v.Kind {
 	case VerdictPending:
+		if retryExpire {
+			return jobs.Defer(ExpireRetry, errors.New("payments: session not decided yet; the expire request is asked again with the same key"))
+		}
 		return jobs.Defer(ReconcileRecheck, errors.New("payments: session not decided yet"))
 	case VerdictMismatch:
 		return jobs.Attention(reasonMismatch, errors.New(v.Reason))
@@ -567,4 +637,34 @@ func (s leaseStore) recordReconcile(ctx context.Context, collection, sessionID s
 		return "", "", gatewayErr(err)
 	}
 	return state, deref(cmd), nil
+}
+
+// expireAdmit asks whether the leased reconcile may request the session's
+// expiry now (business.payment_expire_admit): "ok", "skip" or "frozen".
+func (s leaseStore) expireAdmit(ctx context.Context, collection string) (string, error) {
+	var status string
+	err := s.db.QueryRow(ctx, "SELECT business.payment_expire_admit($1::uuid, $2::uuid, $3, $4::uuid)",
+		s.args(collection)...).Scan(&status)
+	return status, gatewayErr(err)
+}
+
+// recordExpire appends the expire request's answer, detached from the job
+// context (bounded) so evidence of a cancelled call is kept.
+func (s leaseStore) recordExpire(ctx context.Context, collection string, res Result) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	var (
+		no     int
+		status *int
+		code   *string
+	)
+	if res.Status != 0 {
+		status = &res.Status
+	}
+	if codePattern.MatchString(res.Code) {
+		code = &res.Code
+	}
+	err := s.db.QueryRow(ctx, `SELECT business.payment_expire_record($1::uuid, $2::uuid, $3, $4::uuid, $5, $6, $7)`,
+		s.args(collection, string(res.Kind), status, code)...).Scan(&no)
+	return gatewayErr(err)
 }
