@@ -584,11 +584,19 @@ func (s *Store) CreateNotice(ctx context.Context, subject, key string, in Notice
 		subject, key, BodyHash(CmdNoticeCreate, "", in), in.Body)
 }
 
-// CreateCake creates a draft cake, with a colour when ColourID is set.
+// CreateCake creates a draft cake, with a colour when ColourID is set. A
+// cake without a colour goes through the 0009 function (same command
+// identity and effect), so it needs no later schema.
 func (s *Store) CreateCake(ctx context.Context, subject, key string, in CakeInput) (Result, error) {
+	hash := BodyHash(CmdCakeCreate, "", in)
+	if in.ColourID == nil {
+		return s.command(ctx, CmdCakeCreate, `SELECT result_id::text, replayed
+			FROM business.catalog_cake_create($1::uuid, $2, $3, $4, $5)`,
+			subject, key, hash, in.Name, in.Description)
+	}
 	return s.command(ctx, CmdCakeCreate, `SELECT result_id::text, replayed
 		FROM business.catalog_cake_create($1::uuid, $2, $3, $4, $5, $6::uuid)`,
-		subject, key, BodyHash(CmdCakeCreate, "", in), in.Name, in.Description, in.ColourID)
+		subject, key, hash, in.Name, in.Description, *in.ColourID)
 }
 
 // UpdateCake changes a cake's name, description and/or colour.
@@ -603,14 +611,20 @@ func (s *Store) UpdateCake(ctx context.Context, subject, key, cakeID string, in 
 	if in.Description.Set {
 		description = &in.Description.Value
 	}
+	hash := BodyHash(CmdCakeUpdate, cakeID, in)
+	if !in.ColourID.Set {
+		// No colour change: the 0009 function leaves the colour as it is.
+		return s.command(ctx, CmdCakeUpdate, `SELECT result_id::text, replayed
+			FROM business.catalog_cake_update($1::uuid, $2, $3, $4::uuid, $5, $6, $7)`,
+			subject, key, hash, cakeID, in.ExpectedVersion, name, description)
+	}
 	var colour *string
-	if in.ColourID.Set && !in.ColourID.Null {
+	if !in.ColourID.Null {
 		colour = &in.ColourID.Value
 	}
 	return s.command(ctx, CmdCakeUpdate, `SELECT result_id::text, replayed
-		FROM business.catalog_cake_update($1::uuid, $2, $3, $4::uuid, $5, $6, $7, $8, $9::uuid)`,
-		subject, key, BodyHash(CmdCakeUpdate, cakeID, in), cakeID, in.ExpectedVersion, name, description,
-		in.ColourID.Set, colour)
+		FROM business.catalog_cake_update($1::uuid, $2, $3, $4::uuid, $5, $6, $7, true, $8::uuid)`,
+		subject, key, hash, cakeID, in.ExpectedVersion, name, description, colour)
 }
 
 // CreateColour adds a colour to the chef's list.

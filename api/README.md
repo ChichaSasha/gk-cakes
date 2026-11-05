@@ -921,8 +921,9 @@ has at most one colour (`colour_id`); an unknown or archived colour is 422
 "position"}` or `"colour": null` (no colour, or an archived one); staff reads
 add the colour's `id` and `archived_at`. Nothing is seeded: the sketch's
 starting list (Pink, Silver, Red, Chocolate, White) is for the chef to create
-(chef screens are GK-018). The 0009 cake create/update functions stay for the
-previous build and leave the colour unchanged; a body without `colour_id`
+(chef screens are GK-018). The 0009 cake create/update functions stay (the
+previous build uses them, and so does this API for a command without
+`colour_id`); they leave the colour unchanged, and a body without `colour_id`
 hashes as before, so a retry across a rolling deploy replays. Colours are
 public catalogue content, not personal data.
 
