@@ -450,6 +450,13 @@ func TestCheckoutRechecksAndGuards(t *testing.T) {
 		SourceRevisionSHA256: "b44d62dccb5defcafed270ced4ff29ad5f8cdd5194873c8c46e2597c2ec28a4b", Summary: "Later terms",
 		EffectiveAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339), ApproverEvidence: "test fixture"}
 	must[catalog.Result](t)(h.co.RecordPolicy(h.ctx, chef, "future", future))
+	// The API refuses a policy back-dated more than a minute by the database
+	// clock (422 effective_at) and records nothing.
+	backdated := future
+	backdated.EffectiveAt = time.Now().Add(-2 * time.Minute).UTC().Format(time.RFC3339)
+	if _, err := h.co.RecordPolicy(h.ctx, chef, "backdated", backdated); !strings.HasPrefix(invalidField(err), "effective_at:") {
+		t.Fatalf("policy back-dated two minutes: %v, want 422 effective_at", err)
+	}
 	if p := must[checkout.Policy](t)(h.co.CurrentPolicy(h.ctx)); p.ID != pol {
 		t.Fatalf("current policy = %s, want %s (the later one is not yet effective)", p.ID, pol)
 	}
