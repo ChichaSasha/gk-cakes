@@ -205,6 +205,45 @@ Creator's authorization; review in the morning).** Supabase sandbox `flbgymxjelz
   allowlisted callback; (3) staging and local development share this sandbox's
   allowlist; (4) auth emails have no Reply-To until a send-email hook exists.
 
+**GK-016 B1 Google sign-in (Owner: Creator; the agent finishes the Supabase side).**
+Requested in GK-016 B1; not set up yet. The Creator creates the Google OAuth client
+(Google requires the account owner); nothing is registered by the agent. Secret values
+go only into Keychain and Bitwarden, never chat, Git or Trello.
+
+1. [Google Cloud console](https://console.cloud.google.com/), signed in with the GK Cakes
+   Google account (MFA on): create or select one project for GK Cakes and note its
+   project ID for the card.
+2. Google Auth Platform → Branding (the OAuth consent screen): app name `GK Cakes`, user
+   support email `gk.cake.london@gmail.com` (or another mailbox the Creator controls),
+   developer contact email, authorized domain `gkcake.com`. No logo for now (an uploaded
+   logo needs Google's brand verification). Audience: External. Data access: only
+   `openid`, `.../auth/userinfo.email` and `.../auth/userinfo.profile` (non-sensitive;
+   nothing else). Publishing status: keep **Testing** for staging and add the test users'
+   Google addresses (only they can sign in); switch to **In production** only before
+   customers sign in with Google, once the home page and privacy policy on `gkcake.com`
+   are public (GK-005 wording). Record the chosen status on the card.
+3. Google Auth Platform → Clients → Create client → **Web application**, name
+   `GK Cakes staging (Supabase)`. Authorized JavaScript origins exactly
+   `https://staging.gkcake.com` and `https://gkcake.com`. Authorized redirect URI exactly
+   `https://flbgymxjelzexgoxrcss.supabase.co/auth/v1/callback` (the sandbox project used
+   by staging; no other URI). The production Supabase project's callback is added with
+   the first production release (GK-036), not now.
+4. Hand the client ID and secret to the agent through Keychain (each command prompts for
+   the value, so it stays out of the shell history), then copy both to Bitwarden
+   (`GK Cakes Staging — Google OAuth client`):
+   `security add-generic-password -a "$USER" -s gk-staging-supabase-GOOGLE_CLIENT_ID -w`
+   and
+   `security add-generic-password -a "$USER" -s gk-staging-supabase-GOOGLE_CLIENT_SECRET -w`.
+5. Tell the agent the Keychain items exist. With the Creator's go-ahead the agent enables
+   the Google provider in the Supabase sandbox (Authentication → Sign In / Providers →
+   Google) with these values, checks that the callback URL Supabase shows there equals
+   step 3, and verifies a staging sign-in with a test user. Staging self sign-up stays
+   off (above), so a Google account without an existing or invited GK Cakes account is
+   refused until the account designs (GK-016) are approved.
+
+Evidence for the card: project ID, client name, publishing status, the exact origins and
+redirect URI, and the Keychain item names (never the values).
+
 **GK-034 staging database backups (applied by the agent on 2026-11-04 with the Creator's
 authorization; review in the morning).** Supabase login `gk_backup_staging` (member of
 `gk_backup` only, read only); B2 key `gk-backup-staging` (bucket
