@@ -69,6 +69,11 @@ export interface BasketItem {
 	/** The variant or lot ID, as in the basket line. */
 	id: string;
 	ready: boolean;
+	/**
+	 * The recipe version whose allergens are shown. A quote must price this
+	 * same version (quoteMatchesItems), or the customer reviews again.
+	 */
+	recipeVersionId: string;
 	quantity: number;
 	cakeName: string;
 	flavour: string;
@@ -140,9 +145,16 @@ export async function resolveBasket(api: CheckoutApi, lines: BasketLine[]): Prom
 		// declaration) is not purchasable (K01).
 		if (!variant || !recipe || (!lot && !variant.purchasable))
 			throw new BasketProblem('unavailable');
+		// A ready cake was made to its own recipe version. The catalog shows
+		// only the variant's current version, so its allergens describe this
+		// cake only when the versions are the same; otherwise it can't be
+		// shown truthfully and is not offered here.
+		if (lot && lot.recipe_version_id !== recipe.recipe_version_id)
+			throw new BasketProblem('unavailable');
 		items.push({
 			id: (line.variantId ?? line.lotId) as string,
 			ready: Boolean(lot),
+			recipeVersionId: lot ? lot.recipe_version_id : recipe.recipe_version_id,
 			quantity: line.quantity,
 			cakeName: cake.name,
 			flavour: variant.flavour,
@@ -157,6 +169,21 @@ export async function resolveBasket(api: CheckoutApi, lines: BasketLine[]): Prom
 		});
 	}
 	return items;
+}
+
+/**
+ * Whether every quoted line prices the same recipe version whose allergens
+ * the page shows. A mismatch means the recipe changed after the page loaded:
+ * reload the catalog and ask the customer to check again.
+ */
+export function quoteMatchesItems(quote: Quote, items: BasketItem[]): boolean {
+	if (quote.lines.length !== items.length) return false;
+	return items.every((item) => {
+		const line = quote.lines.find((l) =>
+			item.ready ? l.lot_id === item.id : !l.lot_id && l.variant_id === item.id
+		);
+		return line !== undefined && line.recipe_version_id === item.recipeVersionId;
+	});
 }
 
 // ---------------------------------------------------------------- quotes
@@ -208,6 +235,28 @@ export async function requestQuote(
 	throw new ApiError(409, { code: 'QUOTE_EXPIRED', message: 'quote expired' });
 }
 
+/** Normalises a discount code as the API does (upper case, no surrounding spaces). */
+export function normalizeCode(code: string | null | undefined): string {
+	return (code ?? '').trim().toUpperCase();
+}
+
+/**
+ * Whether a quote is for exactly what the form now shows: the date, time,
+ * handover option and discount code. Anything else must not be submitted.
+ */
+export function quoteIsCurrent(
+	quote: Quote | null,
+	choice: { date: string; slotId: string; mode: FulfillmentMode; code: string | null }
+): quote is Quote {
+	return (
+		quote !== null &&
+		quote.date === choice.date &&
+		quote.slot.id === choice.slotId &&
+		quote.fulfillment_mode === choice.mode &&
+		normalizeCode(quote.discount?.code) === normalizeCode(choice.code)
+	);
+}
+
 /** Forget a quote choice so the next request makes a new quote (after PRICE_CHANGED and the like). */
 export function forgetQuote(keys: ActionKeys, req: QuoteRequest, token: string | undefined): void {
 	keys.forget(quoteAction(req, token ? 'account' : 'guest'));
@@ -240,6 +289,13 @@ export interface PlaceDeps {
 	paymentWaitMs?: number;
 	now?: () => number;
 	store?: Storage | null;
+}
+
+/** The guest's order capability could not be kept in this tab; no payment was started. */
+export class CapabilityNotStored extends Error {
+	constructor(readonly orderId: string) {
+		super('order capability not stored');
+	}
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -277,7 +333,11 @@ export async function placeOrder(
 	const who: Who = input.token
 		? { kind: 'account', token: input.token }
 		: { kind: 'guest', secret: input.proof as string };
-	if (guest) saveOrderCapability(orderId, input.proof as string, deps.store);
+	if (guest && !saveOrderCapability(orderId, input.proof as string, deps.store)) {
+		// Without it this tab could not show the order after paying: start no
+		// payment. Retrying replays this same checkout (same key and body).
+		throw new CapabilityNotStored(orderId);
+	}
 	rememberLastOrder(orderId, deps.store);
 
 	try {

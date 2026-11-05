@@ -15,6 +15,8 @@ export type Next =
 	| 'fix_input' // a field needs correcting
 	| 'sign_in' // the signed-in session ended
 	| 'start_again' // the basket can no longer be ordered as chosen
+	| 'key_reused' // an order was already started with other details: link it, or requote
+	| 'new_order' // this order can no longer be paid: a new order is needed
 	| 'none';
 
 export interface Problem {
@@ -91,6 +93,12 @@ export function problemFor(err: unknown): Problem {
 					'A payment for this order is already in progress. Please don’t pay again: check your order for the result.',
 				next: 'view_order'
 			};
+		case 'KEY_REUSED':
+			return {
+				message:
+					'An order was already started from this page with different details. View that order before paying, or review your new total to start a new one.',
+				next: 'key_reused'
+			};
 		case 'PAYMENT_REQUIRED':
 		case 'STALE_VERSION':
 		case 'CONFLICT':
@@ -115,6 +123,38 @@ export function problemFor(err: unknown): Problem {
 		next: 'retry',
 		reference: err.requestId || undefined
 	};
+}
+
+/**
+ * A refusal on the order page (payment or free confirmation of an existing
+ * order). A missed lead time or an expired price cannot be fixed on this
+ * order: the customer starts a new one.
+ */
+export function orderProblemFor(err: unknown): Problem {
+	if (err instanceof ApiError) {
+		switch (err.code) {
+			case 'LEAD_TIME':
+				return {
+					message:
+						'It’s now too late to pay for this date: we need at least 8 days (192 hours) from payment to make your cake. Nothing was charged. Please start a new order with a later date.',
+					next: 'new_order'
+				};
+			case 'QUOTE_EXPIRED':
+				return {
+					message:
+						'The price of this order was set more than 24 hours ago, so it can no longer be paid. Nothing was charged. Please start a new order.',
+					next: 'new_order'
+				};
+			case 'CONFLICT':
+			case 'STALE_VERSION':
+				return {
+					message:
+						'This order changed while you were looking at it. Its current status is shown above.',
+					next: 'none'
+				};
+		}
+	}
+	return problemFor(err);
 }
 
 function invalid(err: ApiError): Problem {

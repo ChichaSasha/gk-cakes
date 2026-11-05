@@ -4,8 +4,11 @@ import { orderCapability, lastOrder } from '../guest';
 import {
 	ActionKeys,
 	BasketProblem,
+	CapabilityNotStored,
 	forgetQuote,
 	placeOrder,
+	quoteIsCurrent,
+	quoteMatchesItems,
 	requestQuote,
 	resolveBasket,
 	startPaymentFromOrder,
@@ -204,7 +207,27 @@ describe('resolveBasket', () => {
 		expect(items[0].allergens[0].label).toBe('EGGS');
 		expect(items[0].size).toBe('S · 6 inches');
 		expect(items[0].servings).toBe('7–10 servings');
+		expect(items.map((i) => i.recipeVersionId)).toEqual(['r', 'r', 'r']);
 		expect(calls.filter((c) => c.name === 'cakesPage')).toHaveLength(2);
+	});
+
+	it('refuses a ready cake made to another recipe version than the one shown', async () => {
+		const lot = {
+			id: LOT,
+			kind: 'ready',
+			cake_id: 'c3',
+			cake_name: 'Cake c3',
+			variant_id: 'rv',
+			recipe_version_id: 'r-old',
+			flavour: 'Snickers',
+			size: { code: 's', label: 'S', diameter: '6 in' },
+			price_minor: 5000,
+			currency: 'GBP',
+			available: 1,
+			expires_at: 'x'
+		};
+		const api = fakeApi({ readyCakes: async () => [lot], cake: async (id) => cake(id, ['rv']) });
+		await expect(resolveBasket(api, [{ lotId: LOT, quantity: 1 }])).rejects.toThrow('unavailable');
 	});
 
 	it('refuses unknown, unpurchasable and sold-out cakes', async () => {
@@ -222,6 +245,85 @@ describe('resolveBasket', () => {
 		await expect(
 			resolveBasket(fakeApi({ readyCakes: async () => [] }), [{ lotId: LOT, quantity: 1 }])
 		).rejects.toThrow('unavailable');
+	});
+});
+
+describe('quoteMatchesItems', () => {
+	const line = (over: Partial<Quote['lines'][number]>) => ({
+		line_no: 1,
+		variant_id: V1,
+		lot_id: null,
+		recipe_version_id: 'r',
+		cake_id: 'c1',
+		cake_name: 'Cake',
+		flavour: 'f',
+		size_code: 's',
+		quantity: 1,
+		unit_price_minor: 9000,
+		discount_minor: 0,
+		net_minor: 9000,
+		...over
+	});
+	const item = {
+		id: V1,
+		ready: false,
+		recipeVersionId: 'r',
+		quantity: 1,
+		cakeName: 'Cake',
+		flavour: 'f',
+		size: 'S',
+		allergens: [],
+		composition: [],
+		coating: '',
+		notice: ''
+	};
+
+	it('accepts a quote pricing the recipe versions shown', () => {
+		expect(quoteMatchesItems(quote({ lines: [line({})] }), [item])).toBe(true);
+		const ready = { ...item, id: LOT, ready: true, recipeVersionId: 'r-lot' };
+		expect(
+			quoteMatchesItems(
+				quote({
+					lines: [
+						line({}),
+						line({ line_no: 2, variant_id: 'rv', lot_id: LOT, recipe_version_id: 'r-lot' })
+					]
+				}),
+				[item, ready]
+			)
+		).toBe(true);
+	});
+
+	it('refuses a quote for another recipe version or other lines', () => {
+		expect(quoteMatchesItems(quote({ lines: [line({ recipe_version_id: 'r2' })] }), [item])).toBe(
+			false
+		);
+		expect(quoteMatchesItems(quote({ lines: [] }), [item])).toBe(false);
+		expect(quoteMatchesItems(quote({ lines: [line({ variant_id: V2 })] }), [item])).toBe(false);
+		// A lot line never stands in for a made-to-order line of the same variant.
+		expect(quoteMatchesItems(quote({ lines: [line({ lot_id: LOT })] }), [item])).toBe(false);
+	});
+});
+
+describe('quoteIsCurrent', () => {
+	const choice = { date: '2026-10-22', slotId: 's', mode: 'collection' as const, code: null };
+
+	it('accepts only a quote for the date, time, option and code on screen', () => {
+		expect(quoteIsCurrent(quote(), choice)).toBe(true);
+		expect(quoteIsCurrent(null, choice)).toBe(false);
+		// The handover option changed while times reloaded: the old quote must not be submitted.
+		expect(quoteIsCurrent(quote(), { ...choice, mode: 'customer_courier' })).toBe(false);
+		expect(quoteIsCurrent(quote(), { ...choice, slotId: 'other' })).toBe(false);
+		expect(quoteIsCurrent(quote(), { ...choice, date: '2026-10-23' })).toBe(false);
+		expect(quoteIsCurrent(quote(), { ...choice, code: 'DEMO10' })).toBe(false);
+	});
+
+	it('compares discount codes as the API normalises them', () => {
+		const withCode = quote({
+			discount: { code: 'DEMO10', kind: 'percentage', basis_points: 1000 }
+		});
+		expect(quoteIsCurrent(withCode, { ...choice, code: ' demo10 ' })).toBe(true);
+		expect(quoteIsCurrent(withCode, choice)).toBe(false);
 	});
 });
 
@@ -410,6 +512,32 @@ describe('placeOrder', () => {
 		expect(got).toEqual({ kind: 'order', orderId: ORDER });
 		expect(calls.find((c) => c.name === 'confirmFree')?.args.slice(0, 2)).toEqual([ORDER, 2]);
 		expect(calls.some((c) => c.name === 'startPayment')).toBe(false);
+	});
+
+	it('starts no payment when the guest capability cannot be kept, and retrying replays the checkout', async () => {
+		const calls: Call[] = [];
+		const api = fakeApi(
+			{
+				checkout: async () => ({ order_id: ORDER, state: 'pending', poll_after_seconds: 3 }),
+				order: async () => order({ lifecycle: 'confirmation_pending' })
+			},
+			calls
+		);
+		const keys = counterKeys();
+		const input = { quote: quote(), proof, policyId: POLICY, contact };
+		const full = {
+			...memoryStore(),
+			setItem: () => {
+				throw new Error('quota');
+			}
+		} as Storage;
+		const err = await placeOrder(api, keys, input, { sleep: noSleep, store: full }).catch((e) => e);
+		expect(err).toBeInstanceOf(CapabilityNotStored);
+		expect((err as CapabilityNotStored).orderId).toBe(ORDER);
+		expect(calls.map((c) => c.name)).toEqual(['checkout']);
+		await placeOrder(api, keys, input, { sleep: noSleep, store: memoryStore() });
+		expect(calls[1].name).toBe('checkout');
+		expect(calls[1].args[1]).toBe(calls[0].args[1]);
 	});
 
 	it('throws refusals before the order exists and reuses the key when retried', async () => {

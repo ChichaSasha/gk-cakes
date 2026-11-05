@@ -106,7 +106,12 @@ a ready cake, each repeated once per cake (at most 20), plus an optional
 `?date=YYYY-MM-DD`. For example
 `/checkout?v=<variantId>&v=<variantId>&lot=<lotId>&date=2026-12-22`. Only IDs
 are read: names and allergens come from the public catalog (variants are found
-by scanning `GET /api/v1/cakes` pages), prices from the server's quote.
+by scanning `GET /api/v1/cakes` pages), prices from the server's quote. A
+ready cake is offered only when it was made to the variant's current recipe
+version (the only one whose allergens the catalog shows), and every quote must
+price the recipe versions shown; otherwise the catalog is reloaded and the
+confirmation tick-box cleared. Ready-only baskets still ask availability and
+times for one place (the APIs need a quantity of at least 1).
 
 **Checkout** has the five r01 sections and the order summary:
 
@@ -128,7 +133,12 @@ by scanning `GET /api/v1/cakes` pages), prices from the server's quote.
 5. Payment: six method labels and "Show all 17".
 
 The summary shows only the quote's totals (`subtotal_minor`, `discount_minor`,
-`total_minor`); nothing adds up money in the browser. Choosing a time creates
+`total_minor`); nothing adds up money in the browser. Only a quote for exactly
+the date, time, handover option and code on screen is shown or submitted:
+changing any of them drops the total until the new quote arrives, Continue
+waits while dates, times or the total load, and an out-of-date quote is
+refreshed with the tick-box cleared. A discount code needs a time first (it is
+checked by a quote). Failed date or quote requests offer "Try again". Choosing a time creates
 a quote (`POST /api/v1/checkout/quotes`); Continue validates the form (inline
 errors and an error summary), then `POST /api/v1/checkouts` with the consented
 policy, then `POST /api/v1/orders/{id}/payment` (or
@@ -138,7 +148,11 @@ plain words (`src/lib/checkout/messages.ts`): a changed price, an expired
 quote or changed terms refresh the total or terms and ask for review again; a
 taken time or a missed lead time asks for another time or date; a used-up
 code is removed; a payment already in progress says "don't pay again"; an
-unavailable service can be retried.
+unavailable service can be retried; a reused key (an order already started
+with other details) links that order. A problem after the order exists (for
+example a lead time missed while paying) is handed to the order page, which
+asks for a new order when the price window or lead time has passed. Back from
+Stripe via the back button resets a busy Continue.
 
 **Keys and guest secrets.** Every command has an `Idempotency-Key` per user
 action, reused when the same action is retried. A guest gets a fresh guest
@@ -146,8 +160,10 @@ proof (32 random bytes, unpadded base64url) for each new quote; the proof of
 the quote that became the order is kept as that order's capability in this
 tab's `sessionStorage` (`gk-order-capability:<orderId>`; never in a URL, log or
 analytics) and sent as `X-Quote-Proof` / `X-Order-Capability`. Signed-in
-customers use their access token instead. Closing the tab ends a guest's
-access to the order page (order emails come later).
+customers use their access token instead. A guest cannot check out when this
+tab cannot keep data, and no payment starts if the capability could not be
+saved. Closing the tab ends a guest's access to the order page (order emails
+come later).
 
 **Order page** reads `GET /api/v1/orders/{id}` and shows the lifecycle in
 customer words (`src/lib/checkout/order.ts`): waiting for payment with
@@ -156,8 +172,13 @@ customer words (`src/lib/checkout/order.ts`): waiting for payment with
 never claims success); "Payment received — confirming your order"; the
 confirmation with date, time, items, totals and refund deadline; "Payment
 received" with the chef to contact the customer about the date
-(`paid_awaiting_agreement`, no promise); cancellation reasons in plain words;
-and a refund line only as far as the API's refund block says (not served yet).
+(`paid_awaiting_agreement`: date and time shown as requested, not confirmed,
+and "If the date can't be agreed, you get everything you paid back");
+cancellation reasons in plain words; refused free confirmations worded by
+reason; and the refund (`refund.state` requested, pending, partly_returned,
+returned or needs_attention, with `target_minor` and `succeeded_minor`) only
+as far as the API says. The cancellation and refund terms appear only for
+accepted, paid orders.
 It polls while the state can change (from 3 s, backing off to 30 s, stopping
 after 5 minutes with a refresh button).
 

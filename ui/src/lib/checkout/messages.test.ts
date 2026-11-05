@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../api';
-import { problemFor } from './messages';
+import { orderProblemFor, problemFor } from './messages';
 
 const err = (status: number, code: string, message = '', retryable?: boolean) =>
 	new ApiError(status, { code, message, request_id: 'req-1', retryable });
@@ -77,5 +77,25 @@ describe('problemFor', () => {
 	it('never shows the API’s internal message for a refusal', () => {
 		const p = problemFor(err(409, 'PRICE_CHANGED', 'internal: recipe version 3 superseded'));
 		expect(p.message).not.toContain('internal');
+	});
+});
+
+describe('KEY_REUSED and order-page problems', () => {
+	it('explains that an order was already started', () => {
+		const p = problemFor(err(409, 'KEY_REUSED'));
+		expect(p.next).toBe('key_reused');
+		expect(p.message).toMatch(/already started/);
+	});
+
+	it('asks for a new order when a lead time or price window was missed on the order page', () => {
+		for (const code of ['LEAD_TIME', 'QUOTE_EXPIRED']) {
+			const p = orderProblemFor(err(409, code));
+			expect(p.next, code).toBe('new_order');
+			expect(p.message, code).toMatch(/start a new order/);
+			expect(p.message, code).toMatch(/Nothing was charged/);
+		}
+		expect(orderProblemFor(err(409, 'PAYMENT_IN_PROGRESS')).next).toBe('view_order');
+		expect(orderProblemFor(err(503, 'UNAVAILABLE', '', true)).next).toBe('retry');
+		expect(orderProblemFor(err(409, 'CONFLICT')).next).toBe('none');
 	});
 });

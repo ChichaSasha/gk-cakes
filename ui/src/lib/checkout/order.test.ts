@@ -152,6 +152,20 @@ describe('orderView: free orders', () => {
 		expect(refused.tone).toBe('warning');
 	});
 
+	it('words a refused free confirmation by its reason; a closed window needs a new order', () => {
+		const refused = (reason: string) =>
+			orderView(
+				order({ ...free, free_confirmation: { state: 'refused', reason, requested_at: 'x' } })
+			);
+		const closed = refused('window_closed');
+		expect(closed.action).toBe('none');
+		expect(closed.lines[0]).toMatch(/time to confirm this order has passed.*new order/);
+		const released = refused('holds_released');
+		expect(released.action).toBe('none');
+		expect(released.lines[0]).toMatch(/place on this date was released.*new order/);
+		expect(refused('order_changed').actionLabel).toBe('Try again');
+	});
+
 	it('confirms a free order without mentioning payment', () => {
 		const v = orderView(order({ ...free, lifecycle: 'confirmed' }));
 		expect(v.lines.join(' ')).toMatch(/free order is confirmed/);
@@ -171,8 +185,26 @@ describe('orderView: after payment', () => {
 		const v = orderView(order({ lifecycle: 'confirmed', paid_at: '2026-10-10T09:05:00Z' }));
 		expect(v.confirmed).toBe(true);
 		expect(v.tone).toBe('success');
-		expect(v.lines.join(' ')).toContain('Cancel before 11:00 (London time) on Sat 17 October');
 		expect(v.poll).toBe(false);
+		// The deadline appears once, in the details (refundTerms), not in the status lines.
+		expect(v.lines.join(' ')).not.toMatch(/Cancel before/);
+		expect(v.refundTerms).toBe('standard');
+		expect(v.promise).toBe(true);
+	});
+
+	it('shows refund terms only for accepted, paid orders', () => {
+		expect(orderView(order()).refundTerms).toBe('none');
+		expect(orderView(order({ lifecycle: 'confirmation_pending' })).refundTerms).toBe('none');
+		expect(
+			orderView(order({ lifecycle: 'confirmed', payment_requirement: 'none', total_minor: 0 }))
+				.refundTerms
+		).toBe('none');
+		expect(orderView(order({ lifecycle: 'completed' })).refundTerms).toBe('none');
+		expect(
+			orderView(order({ lifecycle: 'cancelled', cancel_reason: 'payment_not_completed' }))
+				.refundTerms
+		).toBe('none');
+		expect(orderView(order({ lifecycle: 'in_production' })).refundTerms).toBe('standard');
 	});
 
 	it('paid_awaiting_agreement: the chef will contact you, with no promise about the date', () => {
@@ -181,6 +213,10 @@ describe('orderView: after payment', () => {
 		expect(v.lines.join(' ')).toMatch(/chef will contact you about the date/);
 		expect(v.confirmed).toBe(false);
 		expect(v.lines.join(' ')).not.toMatch(/confirmed/i);
+		// The date is requested, not promised; everything back if it can't be agreed.
+		expect(v.promise).toBe(false);
+		expect(v.refundTerms).toBe('agreement');
+		expect(v.doNotPayAgain).toBe(true);
 	});
 
 	it('cancelled: says why in plain words and implies no refund', () => {
@@ -209,11 +245,23 @@ describe('orderView: after payment', () => {
 
 describe('refundLine', () => {
 	it('never claims money was returned unless the API says so', () => {
+		const r = (state: string, succeeded = 0) =>
+			refundLine(
+				order({
+					refund: { state, target_minor: 8100, succeeded_minor: succeeded, currency: 'GBP' }
+				})
+			);
 		expect(refundLine(order())).toBeUndefined();
-		expect(refundLine(order({ refund: { state: 'requested' } }))).toMatch(/^Refund requested/);
-		expect(refundLine(order({ refund: { state: 'pending' } }))).toMatch(/^Refund pending/);
-		expect(refundLine(order({ refund: { state: 'succeeded' } }))).toMatch(/^Refund returned/);
-		expect(refundLine(order({ refund: { state: 'something_new' } }))).not.toMatch(/returned/);
+		expect(r('requested')).toMatch(/^Refund of £81 requested/);
+		expect(r('pending')).toMatch(/^Refund of £81 pending/);
+		expect(r('pending')).not.toMatch(/returned to/);
+		expect(r('partly_returned', 4050)).toBe(
+			'£40.50 of £81 returned so far; the rest is still pending.'
+		);
+		expect(r('returned', 8100)).toBe('Refund of £81 returned to your payment method.');
+		expect(r('needs_attention')).toMatch(/needs a check by our team/);
+		expect(r('needs_attention')).not.toMatch(/returned/);
+		expect(r('something_new')).not.toMatch(/returned/);
 	});
 });
 

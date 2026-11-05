@@ -11,14 +11,17 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { ApiError } from '../../lib/api';
-	import { lastOrder } from '../../lib/guest';
+	import { canKeepCapability, lastOrder, saveOrderProblem } from '../../lib/guest';
 	import { madeToOrderQuantity, parseBasket } from '../../lib/checkout/basket';
 	import { accountToken, api, checkoutConfigured } from '../../lib/checkout/client';
 	import {
 		ActionKeys,
 		BasketProblem,
+		CapabilityNotStored,
 		forgetQuote,
 		placeOrder,
+		quoteIsCurrent,
+		quoteMatchesItems,
 		requestQuote,
 		resolveBasket,
 		type BasketItem,
@@ -42,7 +45,7 @@
 	const basket = parseBasket(page.url.searchParams);
 	const dayQuantity = Math.max(1, madeToOrderQuantity(basket.lines));
 	const keys = new ActionKeys();
-	const previousOrder = lastOrder();
+	let previousOrder = $state(lastOrder());
 	const WINDOW_DAYS = 31; // the availability API answers at most 31 dates
 	const MAX_WINDOWS = 6;
 
@@ -56,6 +59,7 @@
 	let nextWindow = $state('');
 	let windowsLoaded = $state(0);
 	let datesLoading = $state(false);
+	let datesFailed = $state(false);
 	let date = $state('');
 	let mode = $state<FulfillmentMode>('collection');
 	let slots = $state<Slot[]>([]);
@@ -67,6 +71,7 @@
 	let quote = $state<Quote | null>(null);
 	let proof: string | undefined;
 	let quoteLoading = $state(false);
+	let quoteFailed = $state(false);
 	let quoteRev = 0;
 
 	let codeInput = $state('');
@@ -101,15 +106,21 @@
 			? `${quote.discount.basis_points / 100}% off cakes`
 			: ''
 	);
-	const free = $derived(quote?.total_minor === 0);
+	// Only a quote for exactly the date, time, option and code on screen is
+	// shown as the total or submitted (a mode change must not pay an old quote).
+	const currentQuote = $derived(
+		quoteIsCurrent(quote, { date, slotId, mode, code: appliedCode }) ? quote : null
+	);
+	const updating = $derived(datesLoading || slotsLoading || quoteLoading);
+	const free = $derived(currentQuote?.total_minor === 0);
 	const payLabel = $derived(
 		submitting
 			? submitStatus
-			: !quote
+			: !currentQuote
 				? 'Continue to secure payment'
 				: free
 					? 'Continue · confirm your free order'
-					: `Continue to secure payment · ${formatMoney(quote.total_minor, quote.currency)}`
+					: `Continue to secure payment · ${formatMoney(currentQuote.total_minor, currentQuote.currency)}`
 	);
 
 	function request(code: string | null = appliedCode): QuoteRequest {
@@ -118,6 +129,16 @@
 
 	onMount(() => {
 		void start();
+		// Back from the payment page via the browser's back button: the page
+		// may come from the back/forward cache with Continue still busy.
+		const shown = (e: PageTransitionEvent) => {
+			if (!e.persisted) return;
+			submitting = false;
+			submitStatus = '';
+			previousOrder = lastOrder();
+		};
+		window.addEventListener('pageshow', shown);
+		return () => window.removeEventListener('pageshow', shown);
 	});
 
 	async function start() {
@@ -165,6 +186,7 @@
 
 	async function loadDates(initial = false) {
 		datesLoading = true;
+		datesFailed = false;
 		try {
 			let from = nextWindow || londonToday();
 			do {
@@ -180,6 +202,7 @@
 				await loadSlots();
 			}
 		} catch (e) {
+			datesFailed = true;
 			problem = problemFor(e);
 		} finally {
 			datesLoading = false;
@@ -227,11 +250,11 @@
 		}
 		const rev = ++quoteRev;
 		quoteLoading = true;
+		quoteFailed = false;
 		try {
 			const r = await requestQuote(api, keys, request(), token);
 			if (rev !== quoteRev) return;
-			quote = r.quote;
-			proof = r.proof;
+			await acceptQuote(r.quote, r.proof, rev);
 		} catch (e) {
 			if (rev !== quoteRev) return;
 			quote = null;
@@ -252,6 +275,7 @@
 				await loadSlots();
 				slotStatus = `${p.message} ${slotStatus}`;
 			} else {
+				quoteFailed = true;
 				problem = p;
 			}
 		} finally {
@@ -259,14 +283,64 @@
 		}
 	}
 
+	/**
+	 * Keeps a quote only when it prices the same recipe versions whose
+	 * allergens are shown. Otherwise the catalog is reloaded and the customer
+	 * checks again (the tick-box is cleared). Returns whether it was kept.
+	 */
+	async function acceptQuote(q: Quote, p: string | undefined, rev: number): Promise<boolean> {
+		if (!quoteMatchesItems(q, items)) {
+			reviewed = false;
+			try {
+				const fresh = await resolveBasket(api, basket.lines);
+				if (rev !== quoteRev) return false;
+				items = fresh;
+			} catch (e) {
+				if (e instanceof BasketProblem) {
+					block(
+						'A cake in your basket isn’t available to order online right now. Please go back and choose again.'
+					);
+					return false;
+				}
+				throw e;
+			}
+			if (!quoteMatchesItems(q, items)) {
+				quote = null;
+				quoteFailed = true;
+				problem = {
+					message: 'A cake’s details changed while you were ordering. Please try again.',
+					next: 'retry'
+				};
+				return false;
+			}
+			problem = {
+				message:
+					'A cake’s recipe or allergen information has just changed. Please check the allergens again and tick the box.',
+				next: 'none'
+			};
+		}
+		quote = q;
+		proof = p;
+		return true;
+	}
+
+	/** Drops the shown total until a quote for the new choice arrives. */
+	function staleQuote() {
+		quoteRev++;
+		quote = null;
+		quoteFailed = false;
+		quoteLoading = false;
+	}
+
 	async function chooseDate() {
 		clearError('date');
 		problem = null;
-		quote = null;
+		staleQuote();
 		await loadSlots();
 	}
 
 	async function chooseMode() {
+		staleQuote();
 		await loadSlots();
 	}
 
@@ -297,8 +371,10 @@
 		try {
 			const r = await requestQuote(api, keys, request(code), token);
 			if (rev !== quoteRev) return;
-			quote = r.quote;
-			proof = r.proof;
+			if (!(await acceptQuote(r.quote, r.proof, rev))) {
+				codeStatus = { text: 'Please apply the code again.', kind: '' };
+				return;
+			}
 			appliedCode = r.quote.discount?.code ?? code.toUpperCase();
 			codeInput = '';
 			const d = r.quote.discount;
@@ -370,18 +446,47 @@
 			errorBox?.focus();
 			return;
 		}
-		if (quoteLoading || !quote) {
+		if (updating) {
 			problem = { message: 'Your total is still updating. Please wait a moment.', next: 'none' };
 			await tick();
 			problemBox?.focus();
 			return;
 		}
+		if (!currentQuote) {
+			// The quote is for an earlier choice (or failed): get the current one
+			// and ask for review again, never submit the old one.
+			reviewed = false;
+			fieldErrors = {
+				...fieldErrors,
+				reviewed: 'Tick to confirm you’ve checked your order.'
+			};
+			problem = {
+				message:
+					'Your total was updated for your latest choices. Please review it and tick the box again.',
+				next: 'none'
+			};
+			await refreshQuote();
+			await tick();
+			problemBox?.focus();
+			return;
+		}
+		if (!token && !canKeepCapability()) {
+			problem = {
+				message:
+					'This browser isn’t keeping data for this site (for example in private browsing), so you couldn’t see your order after paying. Please allow site data or sign in, then try again.',
+				next: 'sign_in'
+			};
+			await tick();
+			problemBox?.focus();
+			return;
+		}
+		const reviewedQuote = currentQuote;
 		submitting = true;
 		submitStatus = free ? 'Placing your order…' : 'Opening secure payment…';
 		try {
 			const current = token ? ((await accountToken()) ?? token) : undefined;
 			const result = await placeOrder(api, keys, {
-				quote,
+				quote: reviewedQuote,
 				proof,
 				token: current,
 				policyId: policy.id,
@@ -396,9 +501,27 @@
 				window.location.assign(result.url);
 				return;
 			}
+			if (result.problem instanceof ApiError) {
+				// Shown on the order page (for example a lead time now missed).
+				saveOrderProblem(result.orderId, {
+					status: result.problem.status,
+					code: result.problem.code,
+					retryable: result.problem.retryable,
+					request_id: result.problem.requestId
+				});
+			}
 			await goto(resolve('/orders/[id]', { id: result.orderId }));
 		} catch (e) {
 			submitting = false;
+			previousOrder = lastOrder();
+			if (e instanceof CapabilityNotStored) {
+				await handle({
+					message:
+						'We couldn’t keep your order in this browser tab, so we haven’t started payment. Please allow site data for this site or sign in, then press Continue again.',
+					next: 'sign_in'
+				});
+				return;
+			}
 			// Ordering switched off on the API (CHECKOUT_ENABLED) answers 404.
 			await handle(
 				e instanceof ApiError && e.status === 404
@@ -411,6 +534,7 @@
 	async function handle(p: Problem) {
 		problem = p;
 		switch (p.next) {
+			case 'key_reused':
 			case 'requote':
 				forgetQuote(keys, request(), token);
 				reviewed = false;
@@ -495,10 +619,10 @@
 		</div>
 		<p><a href={resolve('/')}>Back to GK Cakes</a></p>
 	{:else}
-		{#if quote}
+		{#if currentQuote}
 			<a class="co-mobile-total" href="#sum-title">
 				<span>To pay now</span>
-				<strong>{formatMoney(quote.total_minor, quote.currency)}</strong>
+				<strong>{formatMoney(currentQuote.total_minor, currentQuote.currency)}</strong>
 				<span class="co-mobile-link">View order<span aria-hidden="true"> ↓</span></span>
 			</a>
 		{/if}
@@ -524,6 +648,10 @@
 						<p>{problem.message}</p>
 						{#if problem.next === 'sign_in'}
 							<a href={resolve('/sign-in')}>Sign in</a>
+						{/if}
+						{#if problem.next === 'key_reused' && previousOrder}
+							<a href={resolve('/orders/[id]', { id: previousOrder })}>View the order you started</a
+							>
 						{/if}
 						{#if problem.reference}
 							<span class="small">Reference: {problem.reference}</span>
@@ -556,9 +684,15 @@
 					{#if fieldErrors.date}<p id="date-error" class="field-error">{fieldErrors.date}</p>{/if}
 					<div class="date-row">
 						<p id="date-help" class="small co-status" role="status">
-							{#if datesLoading}Loading available dates…{:else if days.length === 0}No dates are
-								available online right now. Please contact us.{/if}
+							{#if datesLoading}Loading available dates…{:else if datesFailed}We couldn’t load the
+								dates.{:else if days.length === 0}No dates are available online right now. Please
+								contact us.{/if}
 						</p>
+						{#if datesFailed && !datesLoading}
+							<button type="button" class="text-link" onclick={() => loadDates(days.length === 0)}>
+								Try again
+							</button>
+						{/if}
 						{#if nextWindow && windowsLoaded < MAX_WINDOWS}
 							<button
 								type="button"
@@ -770,9 +904,9 @@
 					</h2>
 					<Allergens {items} />
 					<RefundTerms
-						startsAt={slot?.starts_at ?? null}
-						totalMinor={quote?.total_minor ?? null}
-						currency={quote?.currency}
+						startsAt={currentQuote?.slot.starts_at ?? slot?.starts_at ?? null}
+						totalMinor={currentQuote?.total_minor ?? null}
+						currency={currentQuote?.currency}
 						{mode}
 					/>
 					<p class="small">
@@ -804,8 +938,10 @@
 
 			<OrderSummary
 				{items}
-				{quote}
-				{quoteLoading}
+				quote={currentQuote}
+				quoteLoading={updating && Boolean(slotId)}
+				{quoteFailed}
+				onRetry={refreshQuote}
 				dateText={date ? dateLabel(date) : 'Choose a date'}
 				timeText={slot
 					? `${timeRange(slot.starts_at, slot.ends_at)} · London time`

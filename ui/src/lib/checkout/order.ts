@@ -3,7 +3,7 @@
 // (?payment=returned) never claims success by itself, a timer is never
 // proof that money failed, and a refund is "returned" only when the API
 // says so.
-import { deadlineLabel } from './format';
+import { formatMoney } from './format';
 import type { Order } from './types';
 
 export type OrderAction =
@@ -28,6 +28,17 @@ export interface OrderView {
 	confirmed: boolean;
 	/** A refund line, exactly as far as the API reports it. */
 	refund?: string;
+	/**
+	 * Whether the order's date and time are a promise. False while the date
+	 * still has to be agreed (paid_awaiting_agreement): show them as requested.
+	 */
+	promise: boolean;
+	/**
+	 * Which refund terms to show: the K05 cancellation terms for an accepted,
+	 * paid order; "everything back if the date can't be agreed" while the date
+	 * is open; none otherwise (nothing paid, cancelled or handed over).
+	 */
+	refundTerms: 'none' | 'standard' | 'agreement';
 }
 
 /** Whether url is Stripe's hosted Checkout page (the only place we send customers to pay). */
@@ -46,14 +57,15 @@ const DO_NOT_PAY = 'Please don’t pay again. We’ll update this page when we k
 /** The view of an order; returned is true after coming back from the payment page. */
 export function orderView(order: Order, opts: { returned?: boolean } = {}): OrderView {
 	const refund = refundLine(order);
-	const base = {
+	const base: Base = {
 		refund,
 		doNotPayAgain: false,
 		confirmed: false,
 		poll: false,
-		action: 'none' as const
+		action: 'none',
+		promise: true,
+		refundTerms: 'none'
 	};
-	const deadline = `Cancel before ${deadlineLabel(order.full_refund_deadline_at)} for a full refund of what you paid.`;
 
 	switch (order.lifecycle) {
 		case 'confirmed':
@@ -75,10 +87,13 @@ export function orderView(order: Order, opts: { returned?: boolean } = {}): Orde
 						: [
 								order.payment_requirement === 'none'
 									? 'Your free order is confirmed.'
-									: 'We’ve received your payment and your order is confirmed.',
-								deadline
+									: 'We’ve received your payment and your order is confirmed.'
 							],
-				confirmed: true
+				confirmed: true,
+				refundTerms:
+					order.lifecycle !== 'completed' && order.payment_requirement === 'full'
+						? 'standard'
+						: 'none'
 			};
 		case 'paid_awaiting_agreement':
 			return {
@@ -89,7 +104,9 @@ export function orderView(order: Order, opts: { returned?: boolean } = {}): Orde
 					'Your payment arrived after the time we need to prepare your cake for this date. The chef will contact you about the date.',
 					'Please don’t pay again.'
 				],
-				doNotPayAgain: true
+				doNotPayAgain: true,
+				promise: false,
+				refundTerms: 'agreement'
 			};
 		case 'confirmation_pending':
 			return {
@@ -122,7 +139,10 @@ export function orderView(order: Order, opts: { returned?: boolean } = {}): Orde
 	};
 }
 
-type Base = Pick<OrderView, 'refund' | 'doNotPayAgain' | 'confirmed' | 'poll' | 'action'>;
+type Base = Pick<
+	OrderView,
+	'refund' | 'doNotPayAgain' | 'confirmed' | 'poll' | 'action' | 'promise' | 'refundTerms'
+>;
 
 function cancelled(order: Order, base: Base): OrderView {
 	const lines: string[] = [];
@@ -155,15 +175,36 @@ function awaitingFree(order: Order, base: Base): OrderView {
 			poll: true
 		};
 	}
+	if (fc?.state === 'refused') {
+		// Reasons from the API: order_changed, holds_released, window_closed.
+		if (fc.reason === 'window_closed' || fc.reason === 'holds_released') {
+			return {
+				...base,
+				tone: 'error',
+				title: 'We couldn’t confirm your order',
+				lines: [
+					fc.reason === 'window_closed'
+						? 'The time to confirm this order has passed, so it can’t be confirmed now. Please start a new order.'
+						: 'Your place on this date was released, so this order can’t be confirmed. Please start a new order.'
+				]
+			};
+		}
+		return {
+			...base,
+			tone: 'warning',
+			title: 'We couldn’t confirm your order yet',
+			lines: [
+				'Something changed while we were confirming it. You can try again; if it still can’t be confirmed, please start a new order.'
+			],
+			action: 'confirm_free',
+			actionLabel: 'Try again'
+		};
+	}
 	return {
 		...base,
-		tone: fc?.state === 'refused' ? 'warning' : 'info',
-		title: fc?.state === 'refused' ? 'We couldn’t confirm your order yet' : 'Confirm your order',
-		lines: [
-			fc?.state === 'refused'
-				? 'Something changed while we were confirming it. You can try again; if it still can’t be confirmed, please start a new order.'
-				: 'Your order costs nothing to pay. Confirm it to book your date.'
-		],
+		tone: 'info',
+		title: 'Confirm your order',
+		lines: ['Your order costs nothing to pay. Confirm it to book your date.'],
 		action: 'confirm_free',
 		actionLabel: 'Confirm order'
 	};
@@ -245,18 +286,27 @@ function awaitingPayment(order: Order, base: Base, returned: boolean): OrderView
 export function refundLine(order: Order): string | undefined {
 	const r = order.refund;
 	if (!r) return undefined;
+	const currency = r.currency ?? order.currency;
+	const money = (minor: number | undefined) =>
+		Number.isSafeInteger(minor) ? formatMoney(minor as number, currency) : undefined;
+	const target = money(r.target_minor);
+	const done = money(r.succeeded_minor);
+	const of = target ? ` of ${target}` : '';
 	switch (r.state) {
 		case 'requested':
-			return 'Refund requested. We’ll update this page as it progresses.';
+			return `Refund${of} requested. We’ll update this page as it progresses.`;
 		case 'pending':
-		case 'processing':
-		case 'dispatched':
-			return 'Refund pending. We’ll update this page when it has been returned.';
-		case 'succeeded':
+			return `Refund${of} pending: we’ve asked our payment provider to return it. We’ll update this page when it has been returned.`;
+		case 'partly_returned':
+			return done && target
+				? `${done} of ${target} returned so far; the rest is still pending.`
+				: 'Part of your refund has been returned; the rest is still pending.';
 		case 'returned':
-			return 'Refund returned to your payment method.';
+			return `Refund${done ? ` of ${done}` : ''} returned to your payment method.`;
+		case 'needs_attention':
+			return `Your refund${of} needs a check by our team before we can send it. We’ll contact you if we need anything.`;
 		default:
-			return 'Refund requested. We’ll update this page as it progresses.';
+			return `Refund${of} requested. We’ll update this page as it progresses.`;
 	}
 }
 

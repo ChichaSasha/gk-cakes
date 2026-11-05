@@ -173,13 +173,16 @@ export type Lifecycle =
 	| 'cancelled';
 
 /**
- * A refund as the API will report it (full-return work, A3c2). Not served
- * yet; the page shows only what this block says.
+ * The order's refund (full-return core, GK-025 A3c2, business.order_get):
+ * the amount to return and how much has verifiably been returned.
  */
 export interface Refund {
-	state: string;
-	amount_minor?: number;
+	state: 'requested' | 'pending' | 'partly_returned' | 'returned' | 'needs_attention' | string;
+	target_minor: number;
+	succeeded_minor: number;
+	in_progress_minor?: number;
 	currency?: string;
+	requested_at?: string;
 }
 
 export interface Order {

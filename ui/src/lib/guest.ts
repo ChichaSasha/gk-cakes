@@ -77,3 +77,66 @@ export function lastOrder(store = tabStore()): string | undefined {
 		return undefined;
 	}
 }
+
+/** Whether this tab can keep a guest's order capability (storage may be off). */
+export function canKeepCapability(store = tabStore()): boolean {
+	if (!store) return false;
+	try {
+		store.setItem(`${ORDER_PREFIX}probe`, '1');
+		store.removeItem(`${ORDER_PREFIX}probe`);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+const PROBLEM_PREFIX = 'gk-order-problem:';
+
+/** What went wrong after an order was created, as the API reported it (no secrets). */
+export interface StoredProblem {
+	status: number;
+	code: string;
+	retryable: boolean;
+	request_id: string;
+}
+
+/** Hands a post-checkout problem to the order page (read once). */
+export function saveOrderProblem(
+	orderId: string,
+	problem: StoredProblem,
+	store = tabStore()
+): void {
+	if (!UUID.test(orderId) || !store) return;
+	try {
+		store.setItem(
+			PROBLEM_PREFIX + orderId,
+			JSON.stringify({
+				status: problem.status,
+				code: problem.code,
+				retryable: problem.retryable,
+				request_id: problem.request_id
+			})
+		);
+	} catch {
+		// best effort only
+	}
+}
+
+/** The problem handed over for this order, once. */
+export function takeOrderProblem(orderId: string, store = tabStore()): StoredProblem | undefined {
+	if (!UUID.test(orderId) || !store) return undefined;
+	try {
+		const raw = store.getItem(PROBLEM_PREFIX + orderId);
+		store.removeItem(PROBLEM_PREFIX + orderId);
+		const v = JSON.parse(raw ?? 'null') as Partial<StoredProblem> | null;
+		if (!v || typeof v.status !== 'number' || typeof v.code !== 'string') return undefined;
+		return {
+			status: v.status,
+			code: v.code,
+			retryable: v.retryable === true,
+			request_id: typeof v.request_id === 'string' ? v.request_id : ''
+		};
+	} catch {
+		return undefined;
+	}
+}

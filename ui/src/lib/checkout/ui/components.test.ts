@@ -18,6 +18,7 @@ const text = (html: string) =>
 const item: BasketItem = {
 	id: 'v1',
 	ready: false,
+	recipeVersionId: 'r',
 	quantity: 1,
 	cakeName: 'Chocolate swirl',
 	flavour: 'Snickers',
@@ -122,6 +123,24 @@ describe('OrderSummary', () => {
 		expect(t).toContain('Cakes£180.01');
 		expect(t).toContain('Discount · DEMO10 (10%)−£18');
 		expect(t).toContain('To pay now£162.01');
+	});
+
+	it('says Continue confirms a free order', () => {
+		const t = text(
+			render(OrderSummary, { props: { ...props, quote: { ...quote, total_minor: 0 } } }).body
+		);
+		expect(t).toContain('Pressing Continue confirms your free order.');
+		expect(t).not.toContain('when we receive the payment');
+	});
+
+	it('offers to try again when the total could not be fetched', () => {
+		const t = text(
+			render(OrderSummary, {
+				props: { ...props, quote: null, quoteFailed: true, onRetry: () => {} }
+			}).body
+		);
+		expect(t).toContain('We couldn’t get your total. Try again');
+		expect(t).not.toContain('Updating your total');
 	});
 
 	it('asks for a date and time before any total exists', () => {

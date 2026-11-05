@@ -9,7 +9,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { ApiError } from '../../../lib/api';
-	import { orderCapability } from '../../../lib/guest';
+	import { orderCapability, takeOrderProblem } from '../../../lib/guest';
 	import { accountToken, api, checkoutConfigured } from '../../../lib/checkout/client';
 	import { ActionKeys, startPaymentFromOrder, type Who } from '../../../lib/checkout/flow';
 	import {
@@ -20,7 +20,7 @@
 		sizeLabel,
 		timeRange
 	} from '../../../lib/checkout/format';
-	import { problemFor } from '../../../lib/checkout/messages';
+	import { orderProblemFor } from '../../../lib/checkout/messages';
 	import {
 		isPaymentPageUrl,
 		nextPollDelay,
@@ -37,6 +37,8 @@
 	let order = $state<Order | null>(null);
 	let unavailable = $state('');
 	let actionProblem = $state('');
+	/** A problem from checkout after this order was created (shown until the next action). */
+	let handoff = $state('');
 	let busy = $state(false);
 	let busyText = $state('');
 	let pollStopped = $state(false);
@@ -50,13 +52,33 @@
 
 	onMount(() => {
 		void start();
+		// Back from the payment page via the browser's back button: the page
+		// may come from the back/forward cache with a button still busy.
+		const shown = (e: PageTransitionEvent) => {
+			if (!e.persisted) return;
+			busy = false;
+			busyText = '';
+			refresh();
+		};
+		window.addEventListener('pageshow', shown);
 		return () => {
 			active = false;
 			clearTimeout(timer);
+			window.removeEventListener('pageshow', shown);
 		};
 	});
 
 	async function start() {
+		const handed = UUID.test(orderId) ? takeOrderProblem(orderId) : undefined;
+		if (handed) {
+			handoff = orderProblemFor(
+				new ApiError(handed.status, {
+					code: handed.code,
+					retryable: handed.retryable,
+					request_id: handed.request_id
+				})
+			).message;
+		}
 		if (!checkoutConfigured || !UUID.test(orderId)) {
 			unavailable = 'We can’t find this order.';
 			return;
@@ -92,7 +114,7 @@
 						: 'We can’t find this order. If you ordered as a guest, open it in the tab where you ordered.';
 				return;
 			}
-			actionProblem = problemFor(e).message;
+			actionProblem = orderProblemFor(e).message;
 		}
 		schedule();
 	}
@@ -124,6 +146,7 @@
 	async function act() {
 		if (!order || !view || !who || busy) return;
 		actionProblem = '';
+		handoff = '';
 		if (view.action === 'open_payment' && isPaymentPageUrl(view.checkoutUrl)) {
 			busy = true;
 			busyText = 'Opening secure payment…';
@@ -149,7 +172,7 @@
 				);
 			}
 		} catch (e) {
-			actionProblem = problemFor(e).message;
+			actionProblem = orderProblemFor(e).message;
 		}
 		busy = false;
 		busyText = '';
@@ -182,6 +205,9 @@
 						{#if view.refund}<p>{view.refund}</p>{/if}
 					</div>
 				</div>
+				{#if handoff}
+					<p class="co-errors" role="alert">{handoff}</p>
+				{/if}
 				{#if actionProblem}
 					<p class="co-errors" role="alert">{actionProblem}</p>
 				{/if}
@@ -206,8 +232,8 @@
 				{/if}
 				{#if pollStopped}
 					<p class="small" role="status">
-						We’re still waiting for a result. Please don’t pay again; refresh to check, or come back
-						later.
+						We’re still waiting for a result.{view.doNotPayAgain ? ' Please don’t pay again.' : ''}
+						Refresh to check, or come back later.
 					</p>
 				{:else if view.poll}
 					<p class="small">This page updates by itself.</p>
@@ -238,12 +264,16 @@
 				</ul>
 				<dl class="sum-meta">
 					<div>
-						<dt>Date</dt>
-						<dd>{dateLabel(order.date)}</dd>
+						<dt>{view.promise ? 'Date' : 'Requested date'}</dt>
+						<dd>{dateLabel(order.date)}{view.promise ? '' : ' (not confirmed yet)'}</dd>
 					</div>
 					<div>
-						<dt>Time</dt>
-						<dd>{timeRange(order.slot.starts_at, order.slot.ends_at)} · London time</dd>
+						<dt>{view.promise ? 'Time' : 'Requested time'}</dt>
+						<dd>
+							{timeRange(order.slot.starts_at, order.slot.ends_at)} · London time{view.promise
+								? ''
+								: ' (not confirmed yet)'}
+						</dd>
 					</div>
 					<div>
 						<dt>How you’ll get it</dt>
@@ -277,11 +307,15 @@
 						>{formatMoney(order.total_minor, order.currency)}</span
 					>
 				</div>
-				{#if order.lifecycle !== 'cancelled'}
-					<p class="small">
-						Full refund if you cancel before {momentLabel(order.full_refund_deadline_at)}. From then
-						on, or if the cake isn’t collected, 50% of what you paid, rounded in your favour; 100%
-						if we have to cancel.
+				{#if view.refundTerms === 'standard'}
+					<p class="small" id="refund-terms">
+						Cancel before {momentLabel(order.full_refund_deadline_at)} for a full refund of what you paid.
+						From then on, or if the cake isn’t collected, 50% of what you paid, rounded in your favour;
+						100% if we have to cancel.
+					</p>
+				{:else if view.refundTerms === 'agreement'}
+					<p class="small" id="refund-terms">
+						If the date can’t be agreed, you get everything you paid back.
 					</p>
 				{/if}
 				<p class="small">Order reference: <code>{order.id}</code></p>

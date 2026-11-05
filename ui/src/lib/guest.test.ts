@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+	canKeepCapability,
 	isGuestProof,
+	saveOrderProblem,
+	takeOrderProblem,
 	lastOrder,
 	newGuestProof,
 	orderCapability,
@@ -94,5 +97,37 @@ describe('order capabilities', () => {
 		expect(lastOrder(s)).toBe(order);
 		expect(isGuestProof(newGuestProof())).toBe(true);
 		expect(isGuestProof(null)).toBe(false);
+	});
+});
+
+describe('tab storage checks and handed-over problems', () => {
+	it('knows whether this tab can keep a capability', () => {
+		expect(canKeepCapability(memoryStore())).toBe(true);
+		expect(canKeepCapability(null)).toBe(false);
+		const full = {
+			...memoryStore(),
+			setItem: () => {
+				throw new Error('quota');
+			}
+		};
+		expect(canKeepCapability(full as Storage)).toBe(false);
+	});
+
+	it('hands a problem to the order page once, without anything but its code', () => {
+		const s = memoryStore();
+		saveOrderProblem(
+			order,
+			{ status: 409, code: 'LEAD_TIME', retryable: false, request_id: 'r1' },
+			s
+		);
+		expect(takeOrderProblem(order, s)).toEqual({
+			status: 409,
+			code: 'LEAD_TIME',
+			retryable: false,
+			request_id: 'r1'
+		});
+		expect(takeOrderProblem(order, s)).toBeUndefined();
+		s.setItem('gk-order-problem:' + order, '{bad');
+		expect(takeOrderProblem(order, s)).toBeUndefined();
 	});
 });

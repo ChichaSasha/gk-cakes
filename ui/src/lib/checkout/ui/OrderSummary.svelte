@@ -11,6 +11,9 @@
 		items: BasketItem[];
 		quote: Quote | null;
 		quoteLoading: boolean;
+		/** The last quote request failed: offer to try again. */
+		quoteFailed?: boolean;
+		onRetry?: () => void;
 		dateText: string;
 		timeText: string;
 		modeText: string;
@@ -23,6 +26,8 @@
 		items,
 		quote,
 		quoteLoading,
+		quoteFailed = false,
+		onRetry,
 		dateText,
 		timeText,
 		modeText,
@@ -108,10 +113,15 @@
 			<div class="totals total" id="sum-total">
 				<span>To pay now</span><span>{formatMoney(quote.total_minor, quote.currency)}</span>
 			</div>
+		{:else if quoteLoading}
+			<p class="small">Updating your total…</p>
+		{:else if quoteFailed}
+			<p class="small">We couldn’t get your total.</p>
+			{#if onRetry}
+				<button type="button" class="text-link" onclick={onRetry}>Try again</button>
+			{/if}
 		{:else}
-			<p class="small">
-				{quoteLoading ? 'Updating your total…' : 'Choose a date and time to see your total.'}
-			</p>
+			<p class="small">Choose a date and time to see your total.</p>
 		{/if}
 	</div>
 	<p class="small">In pounds (GBP). Decoration shown is included.</p>
@@ -122,7 +132,7 @@
 		</li>
 		<li>
 			{quote?.total_minor === 0
-				? 'Your order is confirmed only when you confirm it on the next page.'
+				? 'Pressing Continue confirms your free order.'
 				: 'Your order is confirmed only when we receive the payment.'}
 		</li>
 		<li>If a payment result is unclear, we check it for you. Please don’t pay twice.</li>
