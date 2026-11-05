@@ -564,8 +564,10 @@ $$;
 -- and settles it: succeeded; pending / requires_action (a reconcile in 15
 -- minutes); failed (Stripe's failed or canceled: the remaining obligation
 -- reopens; a new operation is reserved only by a later decision, never
--- automatically); rejected (a definitive 400: failed); a contradicting
--- object leaves it unknown with the mismatch and schedules a reconcile.
+-- automatically); rejected (a definitive 400: failed, and the collection's
+-- refunds are reconciled now: a refund made elsewhere is a common cause); a
+-- contradicting object leaves it unknown with the mismatch and schedules a
+-- reconcile.
 -- refund_recovery_reconcile (idempotency conflict, or the window ended
 -- before an answer) marks the recovery operation for reconciliation: an
 -- admitted operation stays unknown (a reconcile is scheduled), one never
@@ -1044,6 +1046,9 @@ BEGIN
     IF FOUND THEN
       PERFORM business.audit_record('system', NULL, 'refund.failed', 'order', o.order_id, NULL,
                                     pg_catalog.json_build_object('refund_operation_id', o.id, 'reason', 'rejected_by_stripe'));
+      -- A refusal may come from a refund made elsewhere (for example in
+      -- the dashboard): look at the payment intent's refunds now.
+      PERFORM business.refund_schedule_reconcile(o.collection_id, pg_catalog.now());
     END IF;
   ELSIF v_changed AND v_status <> 'settled' THEN
     v_reason := CASE

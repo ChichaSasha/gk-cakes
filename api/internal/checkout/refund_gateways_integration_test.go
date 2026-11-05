@@ -7,14 +7,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net/url"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/dbtest"
 	"github.com/ChichaSasha/gk-cakes/api/internal/jobs"
+	"github.com/ChichaSasha/gk-cakes/api/internal/payments"
 )
 
 // GK-025 A3c2: the lease-fenced refund gateway of migration 0016, driven
@@ -53,20 +52,14 @@ func (h *payHarness) refundJob(t *testing.T, purpose, target string) string {
 	return id
 }
 
-// refundPayload is the exact dispatch payload the refund worker builds.
+// refundPayload is the exact dispatch payload the refund worker builds
+// (payments.NewRefundPayload: the Go builder and the database's check agree).
 func refundPayload(r refundOp, amount int64) string {
-	v := url.Values{}
-	v.Set("payment_intent", r.PI)
-	v.Set("amount", strconv.FormatInt(amount, 10))
-	v.Set("reason", "requested_by_customer")
-	v.Set("metadata[order_id]", r.Order)
-	v.Set("metadata[collection_id]", r.Collection)
-	v.Set("metadata[refund_operation_id]", r.ID)
-	v.Set("metadata[environment]", "test")
-	b, _ := json.Marshal(map[string]any{"v": 1, "provider": "stripe", "kind": "refund", "environment": "test",
-		"account": stripeAccount, "livemode": false, "idempotency_key": r.ID, "refund_operation_id": r.ID,
-		"order_id": r.Order, "collection_id": r.Collection, "payment_intent_id": r.PI,
-		"amount_minor": amount, "request": v.Encode()})
+	b, err := payments.NewRefundPayload(payments.RefundRequest{OperationID: r.ID, OrderID: r.Order, CollectionID: r.Collection,
+		PaymentIntentID: r.PI, AmountMinor: amount, Environment: "test"}, stripeAccount)
+	if err != nil {
+		panic(err)
+	}
 	return string(b)
 }
 
@@ -639,5 +632,31 @@ func TestRefundEventsScheduleOneReconcile(t *testing.T) {
 	if got := h.count(t, `SELECT count(*) FROM business.refund_job rj JOIN business.job j ON j.id = rj.job_id
 		WHERE rj.collection_id = $1::uuid AND rj.purpose = 'reconcile' AND j.state IN ('queued', 'retry')`, coll); got != 1 {
 		t.Fatalf("%d waiting refund reconciles", got)
+	}
+}
+
+// A definitive refusal (400 invalid_request_error) fails the operation and
+// reconciles the collection's refunds at once (a refund made elsewhere is
+// a common cause).
+func TestRejectedRefundFailsAndReconciles(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d, coll := h.lateCapture(t, f, pol, "rej")
+	r := h.reservedRefund(t, coll)
+	job := h.claimOnly(t, h.refundJob(t, "dispatch", r.ID))
+	h.refundPrepared(t, job, r)
+	h.refundAdmit(t, job, r.ID)
+	h.refundAttempt(t, job, r.ID, "rejected", 400)
+	h.refundCommit(t, job, r.ID, `{"status":"rejected","evidence":{"http_status":400,"provider_code":"invalid_request_error"}}`)
+	h.finish(t, job, nil)
+	var reason string
+	if err := h.admin.QueryRow(h.ctx, "SELECT failure_reason FROM business.refund_operation WHERE id = $1::uuid AND state = 'failed'",
+		r.ID).Scan(&reason); err != nil || reason != "invalid_request_error" {
+		t.Fatalf("failed %q %v", reason, err)
+	}
+	h.refundJob(t, "reconcile", coll)
+	if v, raw := h.view(t, order, d); v.Refund == nil || v.Refund.State != "needs_attention" {
+		t.Fatalf("view %s", raw)
 	}
 }
