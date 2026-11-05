@@ -32,6 +32,12 @@ type Checkout interface {
 	StartProduction(ctx context.Context, subject, key, id string, in checkout.ProductionInput) (checkout.Started, error)
 	LatePayment(ctx context.Context, subject, key, id string, in checkout.LatePaymentInput) (catalog.Result, error)
 	RecordRefund(ctx context.Context, subject, key, id string, in checkout.RefundInput) (catalog.Result, error)
+	ResolveObservation(ctx context.Context, subject, key, orderID, observationID string, in checkout.ResolveObservationInput) (catalog.Result, error)
+	DecideOperation(ctx context.Context, subject, key, orderID, operationID string, in checkout.DecideOperationInput) (catalog.Result, error)
+	ClearRefundMismatch(ctx context.Context, subject, key, orderID, operationID string, in checkout.ClearMismatchInput) (catalog.Result, error)
+	ClearPaymentMismatch(ctx context.Context, subject, key, orderID, collectionID string, in checkout.NoteInput) (catalog.Result, error)
+	ReserveRemainder(ctx context.Context, subject, key, orderID, operationID string, in checkout.RemainderInput) (catalog.Result, error)
+	AttentionList(ctx context.Context, subject string) (checkout.Attention, error)
 	PayDeliveryRefund(ctx context.Context, subject, key, id string, in checkout.DeliveryRefundInput) (catalog.Result, error)
 	CurrentPolicy(ctx context.Context) (checkout.Policy, error)
 	RecordPolicy(ctx context.Context, subject, key string, in checkout.PolicyInput) (catalog.Result, error)
@@ -372,6 +378,73 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 			}
 			res, err := co.PayDeliveryRefund(r.Context(), a.Subject, key, r.PathValue("id"), in)
 			chefRefund(w, r, res, err)
+		}))
+		// K05 manager recovery decisions (chef): 200 {order_id, decision_id};
+		// re-reserving a remainder is 202 like a refund.
+		decided := func(w http.ResponseWriter, r *http.Request, res catalog.Result, err error) {
+			if errors.Is(err, checkout.ErrOrdersFrozen) {
+				writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Order changes are temporarily unavailable", true)
+				return
+			}
+			respondCommand(w, r, logger, http.StatusOK, res, err, func() (any, error) {
+				return map[string]string{"order_id": r.PathValue("id"), "decision_id": res.ID}, nil
+			})
+		}
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/refund-observations/{sub}/resolve", staff(id, logger, chef,
+			func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+				var in checkout.ResolveObservationInput
+				key, ok := readCommand(w, r, &in)
+				if !ok {
+					return
+				}
+				res, err := co.ResolveObservation(r.Context(), a.Subject, key, r.PathValue("id"), r.PathValue("sub"), in)
+				decided(w, r, res, err)
+			}))
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/refund-operations/{sub}/decide", staff(id, logger, chef,
+			func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+				var in checkout.DecideOperationInput
+				key, ok := readCommand(w, r, &in)
+				if !ok {
+					return
+				}
+				res, err := co.DecideOperation(r.Context(), a.Subject, key, r.PathValue("id"), r.PathValue("sub"), in)
+				decided(w, r, res, err)
+			}))
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/refund-operations/{sub}/clear-mismatch", staff(id, logger, chef,
+			func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+				var in checkout.ClearMismatchInput
+				key, ok := readCommand(w, r, &in)
+				if !ok {
+					return
+				}
+				res, err := co.ClearRefundMismatch(r.Context(), a.Subject, key, r.PathValue("id"), r.PathValue("sub"), in)
+				decided(w, r, res, err)
+			}))
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/payment-collections/{sub}/clear-mismatch", staff(id, logger, chef,
+			func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+				var in checkout.NoteInput
+				key, ok := readCommand(w, r, &in)
+				if !ok {
+					return
+				}
+				res, err := co.ClearPaymentMismatch(r.Context(), a.Subject, key, r.PathValue("id"), r.PathValue("sub"), in)
+				decided(w, r, res, err)
+			}))
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/refund-operations/{sub}/re-reserve", staff(id, logger, chef,
+			func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+				var in checkout.RemainderInput
+				key, ok := readCommand(w, r, &in)
+				if !ok {
+					return
+				}
+				res, err := co.ReserveRemainder(r.Context(), a.Subject, key, r.PathValue("id"), r.PathValue("sub"), in)
+				chefRefund(w, r, res, err)
+			}))
+		// The manager attention list: chef, or technical support read-only
+		// without amounts (K00); fulfillment has no access.
+		mux.HandleFunc("GET /api/v1/admin/attention", staff(id, logger, readers, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+			items, err := co.AttentionList(r.Context(), a.Subject)
+			respond(w, r, logger, http.StatusOK, map[string]any{"items": items}, err)
 		}))
 	}
 	mux.HandleFunc("POST /api/v1/admin/policies", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {

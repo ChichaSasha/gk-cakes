@@ -436,7 +436,10 @@ var conflictMessages = map[string]string{
 	"refund_limit":            "This refund is more than the money still held for this order or one of its payments.",
 	"reconciliation_required": "A refund or payment on this order needs reconciliation before more money is returned.",
 	"refund_in_progress":      "A refund for this order is still in progress. Wait for its outcome and try again.",
-	"no_refund_pending":       "No delivery refund is waiting for this order.",
+	"no_refund_pending":       "No refund is waiting for this order.",
+	"identity_unproven":       "The provider refund and the refund operation are not proven to be the same.",
+	"window_open":             "The refund's provider retry window has not ended yet.",
+	"evidence_required":       "This decision needs complete provider evidence that is not recorded yet.",
 }
 
 // catalogError maps catalog errors to K00 responses without SQL detail.
@@ -495,6 +498,12 @@ func catalogError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, e
 			code = "REFUND_IN_PROGRESS"
 		case "no_refund_pending":
 			code = "NO_REFUND_PENDING"
+		case "identity_unproven":
+			code = "IDENTITY_UNPROVEN"
+		case "window_open":
+			code = "WINDOW_OPEN"
+		case "evidence_required":
+			code = "EVIDENCE_REQUIRED"
 		}
 		writeError(w, r, http.StatusConflict, code, msg, false)
 	case errors.As(err, &inv):

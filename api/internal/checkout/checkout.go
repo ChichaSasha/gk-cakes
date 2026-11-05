@@ -415,6 +415,7 @@ var invalidFields = map[string]string{
 	"preview_invalid":           "preview_id", "reason_invalid": "reason",
 	"decision_invalid": "decision", "agreement_invalid": "customer_agreement",
 	"amount_invalid": "amount_minor", "currency_invalid": "currency", "allocations_invalid": "allocations",
+	"note_invalid": "note", "resolution_invalid": "resolution",
 }
 
 var invalidMessages = map[string]string{
@@ -426,7 +427,9 @@ var invalidMessages = map[string]string{
 	"proof_reused":          "must be fresh for each new quote",
 	"preview_invalid":       "must be a cancellation preview you requested for this order, with its preview_hash",
 	"reason_invalid":        "must be 1 to 500 characters on one line without surrounding spaces",
-	"decision_invalid":      "must be honour or full_return",
+	"decision_invalid":      "is not a decision this command accepts",
+	"note_invalid":          "must be 1 to 500 characters on one line without surrounding spaces",
+	"resolution_invalid":    "must be match (with refund_operation_id) or accept_external",
 	"agreement_invalid":     "must give channel, agreed_at (after the payment, not in the future) and evidence_ref to honour, and nothing for full_return",
 	"amount_invalid":        "must be 1 to 100000000 pence",
 	"currency_invalid":      "must be GBP",
@@ -437,7 +440,8 @@ var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "
 	"duplicate": true, "item_unavailable": true, "slot_unavailable": true, "price_changed": true,
 	"quote_expired": true, "policy_changed": true, "code_used_up": true, "payment_required": true, "lead_time": true,
 	"payment_in_progress": true, "preview_stale": true, "cancellation_not_eligible": true, "honour_too_late": true,
-	"refund_limit": true, "reconciliation_required": true, "refund_in_progress": true, "no_refund_pending": true}
+	"refund_limit": true, "reconciliation_required": true, "refund_in_progress": true, "no_refund_pending": true,
+	"identity_unproven": true, "window_open": true, "evidence_required": true}
 
 // conflictAliases name engine refusals in the customer's terms.
 var conflictAliases = map[string]string{"day_full": "slot_unavailable", "stock_unavailable": "item_unavailable"}

@@ -124,6 +124,40 @@ func (f *fakeCheckout) RecordRefund(_ context.Context, subject, _, id string, _ 
 	return catalog.Result{ID: "exc-" + id, Replayed: f.replayed}, nil
 }
 
+func (f *fakeCheckout) decision(subject string) (catalog.Result, error) {
+	f.calls++
+	f.subject = subject
+	if f.freeErr != nil {
+		return catalog.Result{}, f.freeErr
+	}
+	return catalog.Result{ID: "dec-1", Replayed: f.replayed}, nil
+}
+
+func (f *fakeCheckout) ResolveObservation(_ context.Context, subject, _, _, _ string, _ checkout.ResolveObservationInput) (catalog.Result, error) {
+	return f.decision(subject)
+}
+
+func (f *fakeCheckout) DecideOperation(_ context.Context, subject, _, _, _ string, _ checkout.DecideOperationInput) (catalog.Result, error) {
+	return f.decision(subject)
+}
+
+func (f *fakeCheckout) ClearRefundMismatch(_ context.Context, subject, _, _, _ string, _ checkout.ClearMismatchInput) (catalog.Result, error) {
+	return f.decision(subject)
+}
+
+func (f *fakeCheckout) ClearPaymentMismatch(_ context.Context, subject, _, _, _ string, _ checkout.NoteInput) (catalog.Result, error) {
+	return f.decision(subject)
+}
+
+func (f *fakeCheckout) ReserveRemainder(_ context.Context, subject, _, _, _ string, _ checkout.RemainderInput) (catalog.Result, error) {
+	return f.decision(subject)
+}
+
+func (f *fakeCheckout) AttentionList(_ context.Context, subject string) (checkout.Attention, error) {
+	f.subject = subject
+	return checkout.Attention(`[{"kind":"delivery_pending"}]`), nil
+}
+
 func (f *fakeCheckout) PayDeliveryRefund(_ context.Context, subject, _, id string, _ checkout.DeliveryRefundInput) (catalog.Result, error) {
 	f.calls++
 	f.subject = subject
@@ -686,5 +720,69 @@ func TestChefRefundRoutes(t *testing.T) {
 	if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, delivery, "chef", "k", body, nil); rec.Body.String() !=
 		`{"order_id":"o1","operation_id":"op-o1","state":"refund_pending","poll_after_seconds":3}`+"\n" {
 		t.Fatalf("delivery refund answer %q", rec.Body.String())
+	}
+}
+
+func TestRecoveryToolRoutes(t *testing.T) {
+	id := catalogIdentity()
+	id.actors["fulfil"] = identity.Actor{AccountID: "acc-ful", Subject: "sub-ful", Capabilities: []string{identity.Fulfillment}}
+	const op = "bbbbbbbb-1111-4111-8111-11111111111c"
+	base := "/api/v1/admin/orders/o1/"
+	for name, c := range map[string]struct {
+		path, auth, body string
+		status           int
+	}{
+		"match":              {"refund-observations/x/resolve", "chef", `{"expected_version":2,"resolution":"match","refund_operation_id":"` + op + `","note":"Same refund"}`, 200},
+		"accept":             {"refund-observations/x/resolve", "chef", `{"expected_version":2,"resolution":"accept_external","note":"Dashboard refund"}`, 200},
+		"accept with op":     {"refund-observations/x/resolve", "chef", `{"expected_version":2,"resolution":"accept_external","refund_operation_id":"` + op + `","note":"x"}`, 422},
+		"match without op":   {"refund-observations/x/resolve", "chef", `{"expected_version":2,"resolution":"match","note":"x"}`, 422},
+		"delete":             {"refund-observations/x/resolve", "chef", `{"expected_version":2,"resolution":"delete","note":"x"}`, 422},
+		"no note":            {"refund-observations/x/resolve", "chef", `{"expected_version":2,"resolution":"accept_external"}`, 422},
+		"support resolve":    {"refund-observations/x/resolve", "support", `{"expected_version":2,"resolution":"accept_external","note":"x"}`, 403},
+		"failed":             {"refund-operations/x/decide", "chef", `{"expected_version":2,"decision":"failed","note":"Complete list"}`, 200},
+		"succeeded":          {"refund-operations/x/decide", "chef", `{"expected_version":2,"decision":"succeeded","provider_refund_id":"re_123","note":"Dashboard"}`, 200},
+		"succeeded no id":    {"refund-operations/x/decide", "chef", `{"expected_version":2,"decision":"succeeded","note":"x"}`, 422},
+		"failed with id":     {"refund-operations/x/decide", "chef", `{"expected_version":2,"decision":"failed","provider_refund_id":"re_1","note":"x"}`, 422},
+		"bad id":             {"refund-operations/x/decide", "chef", `{"expected_version":2,"decision":"succeeded","provider_refund_id":"ch_1","note":"x"}`, 422},
+		"fulfillment decide": {"refund-operations/x/decide", "fulfil", `{"expected_version":2,"decision":"failed","note":"x"}`, 403},
+		"keep":               {"refund-operations/x/clear-mismatch", "chef", `{"expected_version":2,"decision":"keep","note":"Stale sighting"}`, 200},
+		"other":              {"refund-operations/x/clear-mismatch", "chef", `{"expected_version":2,"decision":"ignore","note":"x"}`, 422},
+		"payment":            {"payment-collections/x/clear-mismatch", "chef", `{"expected_version":2,"note":"Checked"}`, 200},
+		"payment no note":    {"payment-collections/x/clear-mismatch", "chef", `{"expected_version":2}`, 422},
+		"re-reserve":         {"refund-operations/x/re-reserve", "chef", `{"expected_version":2}`, 202},
+		"re-reserve note":    {"refund-operations/x/re-reserve", "chef", `{"expected_version":2,"note":"Card replaced"}`, 202},
+		"re-reserve support": {"refund-operations/x/re-reserve", "support", `{"expected_version":2}`, 403},
+	} {
+		if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, base+c.path, c.auth, "k", c.body, nil); rec.Code != c.status {
+			t.Errorf("%s: %d %s, want %d", name, rec.Code, rec.Body.String(), c.status)
+		}
+	}
+	rec := serveCheckout(t, &fakeCheckout{replayed: true}, id, http.MethodPost, base+"refund-operations/x/decide", "chef", "k",
+		`{"expected_version":2,"decision":"failed","note":"x"}`, nil)
+	if rec.Code != 200 || rec.Header().Get("Idempotent-Replayed") != "true" || rec.Body.String() != `{"decision_id":"dec-1","order_id":"o1"}`+"\n" {
+		t.Fatalf("replayed decision: %d %q", rec.Code, rec.Body.String())
+	}
+	for code, want := range map[string]string{"identity_unproven": "IDENTITY_UNPROVEN", "window_open": "WINDOW_OPEN", "evidence_required": "EVIDENCE_REQUIRED"} {
+		rec := serveCheckout(t, &fakeCheckout{freeErr: &catalog.ConflictError{Code: code}}, id, http.MethodPost, base+"refund-operations/x/decide",
+			"chef", "k", `{"expected_version":2,"decision":"failed","note":"x"}`, nil)
+		if rec.Code != 409 || !strings.Contains(rec.Body.String(), `"code":"`+want+`"`) {
+			t.Errorf("%s: %d %s", code, rec.Code, rec.Body.String())
+		}
+	}
+	if rec := serveCheckout(t, &fakeCheckout{freeErr: checkout.ErrOrdersFrozen}, id, http.MethodPost, base+"refund-observations/x/resolve", "chef", "k",
+		`{"expected_version":2,"resolution":"accept_external","note":"x"}`, nil); rec.Code != 503 {
+		t.Fatalf("frozen: %d", rec.Code)
+	}
+	for name, c := range map[string]struct {
+		auth   string
+		status int
+	}{"chef": {"chef", 200}, "support": {"support", 200}, "fulfillment": {"fulfil", 403}, "customer": {secretToken, 403}} {
+		rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodGet, "/api/v1/admin/attention", c.auth, "", "", nil)
+		if rec.Code != c.status {
+			t.Errorf("attention by %s: %d", name, rec.Code)
+		}
+		if c.status == 200 && rec.Body.String() != `{"items":[{"kind":"delivery_pending"}]}`+"\n" {
+			t.Errorf("attention body %q", rec.Body.String())
+		}
 	}
 }
