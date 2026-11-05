@@ -474,6 +474,8 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.manual_payout_outcome_request(uuid, uuid, text, text, integer, uuid, text, text, text, bigint, text, text, timestamp with time zone)",
 		"business.manual_payout_preview(uuid, uuid, uuid, text, text, timestamp with time zone)",
 		"business.manual_payout_request(uuid, uuid, text, text, integer, uuid, text, text, timestamp with time zone)",
+		// Order notices (0030): the API records the UI origin of order links.
+		"business.notice_settings_record(text, text)",
 		"business.order_cancel_request(uuid, bytea, uuid, text, text, integer, uuid, text, text, timestamp with time zone)",
 		"business.order_cancellation_preview(uuid, bytea, uuid, timestamp with time zone)",
 		"business.order_chef_cancel_request(uuid, uuid, text, text, integer, text, text, timestamp with time zone)",

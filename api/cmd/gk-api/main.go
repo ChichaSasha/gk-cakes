@@ -45,7 +45,13 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("api listening", "addr", ln.Addr().String(), "env", string(cfg.Env))
-	opts := httpapi.Options{UIOrigin: cfg.UIOrigin, DB: readiness(cfg.Env, pool, logger), Logger: logger}
+	// Order notices link to the UI: the settings are recorded now when
+	// possible, and readiness waits until they are (migration 0030).
+	if err := notifications.RecordSettings(ctx, pool, string(cfg.Env), cfg.UIOrigin); err != nil {
+		logger.Warn("notice settings not recorded yet; readiness retries", "error", err.Error())
+	}
+	opts := httpapi.Options{UIOrigin: cfg.UIOrigin, Logger: logger, DB: &notifications.SettingsGate{
+		Pinger: readiness(cfg.Env, pool, logger), DB: pool, Environment: string(cfg.Env), UIOrigin: cfg.UIOrigin}}
 	if cfg.Providers.EmailWebhookSecret.IsSet() {
 		webhook, err := notifications.NewWebhook(notifications.WebhookConfig{
 			DB: pool, Secret: cfg.Providers.EmailWebhookSecret.Reveal(), Environment: string(cfg.Env), Logger: logger,
