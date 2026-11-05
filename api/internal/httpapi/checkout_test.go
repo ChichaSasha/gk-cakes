@@ -27,6 +27,8 @@ type fakeCheckout struct {
 	replayed bool
 	filter   checkout.StaffOrderFilter
 	orderID  string
+	// unchanged answers moves as already at that time.
+	unchanged bool
 }
 
 func (f *fakeCheckout) CreateQuote(_ context.Context, subject string, digest []byte, _ string, _ checkout.QuoteInput) (catalog.Result, error) {
@@ -95,6 +97,24 @@ func (f *fakeCheckout) ChefCancel(_ context.Context, subject, _, _ string, _ che
 		return catalog.Result{}, f.freeErr
 	}
 	return catalog.Result{ID: "chef-cancel", Replayed: f.replayed}, nil
+}
+
+func (f *fakeCheckout) MovePickup(_ context.Context, id, subject string, digest []byte, _ string, _ checkout.PickupMoveInput) (checkout.Moved, error) {
+	f.calls++
+	f.subject, f.digest, f.orderID = subject, digest, id
+	if f.freeErr != nil {
+		return checkout.Moved{}, f.freeErr
+	}
+	return checkout.Moved{Result: catalog.Result{ID: "move-" + id, Replayed: f.replayed}, Unchanged: f.unchanged}, nil
+}
+
+func (f *fakeCheckout) ChangeAppointment(_ context.Context, subject, _, id string, _ checkout.AppointmentInput) (checkout.Moved, error) {
+	f.calls++
+	f.subject, f.digest, f.orderID = subject, nil, id
+	if f.freeErr != nil {
+		return checkout.Moved{}, f.freeErr
+	}
+	return checkout.Moved{Result: catalog.Result{ID: "appointment-" + id, Replayed: f.replayed}, Unchanged: f.unchanged}, nil
 }
 
 func (f *fakeCheckout) StartProduction(_ context.Context, subject, _, id string, _ checkout.ProductionInput) (checkout.Started, error) {

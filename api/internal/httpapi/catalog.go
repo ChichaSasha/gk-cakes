@@ -488,6 +488,9 @@ var conflictMessages = map[string]string{
 	"window_open":                "The refund's provider retry window has not ended yet.",
 	"evidence_required":          "This decision needs complete provider evidence that is not recorded yet.",
 	"manual_payout_not_eligible": "A manual payout needs a definitive provider refund failure on this payment first.",
+	// Appointment changes (K06).
+	"move_too_late":     "It is now less than six hours before your time, so it can't be changed here. Please contact the chef.",
+	"move_not_eligible": "The time of this order can't be changed here. Please contact the chef.",
 }
 
 // catalogError maps catalog errors to K00 responses without SQL detail.
@@ -554,6 +557,10 @@ func catalogError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, e
 			code = "EVIDENCE_REQUIRED"
 		case "manual_payout_not_eligible":
 			code = "MANUAL_PAYOUT_NOT_ELIGIBLE"
+		case "move_too_late":
+			code = "MOVE_TOO_LATE"
+		case "move_not_eligible":
+			code = "MOVE_NOT_ELIGIBLE"
 		}
 		writeError(w, r, http.StatusConflict, code, msg, false)
 	case errors.As(err, &inv):

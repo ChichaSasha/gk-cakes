@@ -361,6 +361,73 @@ type Choices struct {
 	FulfillmentMode  string    `json:"fulfillment_mode"`
 	DayStatus        string    `json:"day_status"`
 	Slots            []Slot    `json:"slots"`
+	// Pickup moves only (purpose=pickup_move).
+	Purpose     string       `json:"purpose,omitempty"`
+	OrderID     string       `json:"order_id,omitempty"`
+	CurrentSlot *CurrentSlot `json:"current_slot,omitempty"`
+	MoveUntil   *time.Time   `json:"move_until,omitempty"`
+}
+
+// CurrentSlot is the appointment an order has now (pickup move choices).
+type CurrentSlot struct {
+	ID       string    `json:"id"`
+	StartsAt time.Time `json:"starts_at"`
+	EndsAt   time.Time `json:"ends_at"`
+}
+
+// PurposePickupMove is the schedule purpose of an owned same-day move.
+const PurposePickupMove = "pickup_move"
+
+// MoveChoices returns the same-day move choices of an order for its owner
+// (subject) or a guest capability holder with "move_pickup" (digest), as of
+// now (K06 purpose=pickup_move): the order's day and mode, its current
+// slot, the six-hour cutoff and every published start of the day. The
+// order's own allocation is reused (no lead time, day capacity or new stock
+// filter). ErrNotFound when the order is not the caller's.
+func (s *Store) MoveChoices(ctx context.Context, subject string, digest []byte, orderID string) (Choices, error) {
+	if !catalog.ValidUUID(orderID) || (subject == "" && digest == nil) {
+		return Choices{}, catalog.ErrNotFound
+	}
+	var owner *string
+	if subject != "" {
+		owner, digest = &subject, nil
+	}
+	now := s.now().UTC()
+	c := Choices{AsOf: now, Timezone: Timezone, Purpose: PurposePickupMove, OrderID: orderID, Slots: []Slot{}}
+	rows, err := s.DB.Query(ctx, `SELECT order_day, order_mode, current_slot_id::text, current_starts_at, current_ends_at,
+		move_until, day_status, schedule_revision, slot_id::text, starts_at, ends_at, availability, reason_code
+		FROM business.schedule_move_slots($1::uuid, $2, $3::uuid, $4)`, owner, digest, orderID, now)
+	if err != nil {
+		return Choices{}, gatewayError("move choices", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			day          time.Time
+			cur          CurrentSlot
+			id           *string
+			starts, ends *time.Time
+			availability *string
+			sl           Slot
+		)
+		if err := rows.Scan(&day, &c.FulfillmentMode, &cur.ID, &cur.StartsAt, &cur.EndsAt, &c.MoveUntil, &c.DayStatus,
+			&c.ScheduleRevision, &id, &starts, &ends, &availability, &sl.ReasonCode); err != nil {
+			return Choices{}, gatewayError("move choices", err)
+		}
+		c.Date, c.CurrentSlot = day.Format(time.DateOnly), &cur
+		if id == nil {
+			continue // a day without starts
+		}
+		sl.ID, sl.StartsAt, sl.EndsAt, sl.Availability = *id, *starts, *ends, *availability
+		c.Slots = append(c.Slots, sl)
+	}
+	if err := rows.Err(); err != nil {
+		return Choices{}, gatewayError("move choices", err)
+	}
+	if c.CurrentSlot == nil {
+		return Choices{}, catalog.ErrNotFound
+	}
+	return c, nil
 }
 
 // Choices returns the appointment choices of a date for a new purchase in

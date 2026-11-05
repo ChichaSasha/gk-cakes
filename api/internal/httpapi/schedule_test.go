@@ -19,6 +19,10 @@ type fakeSchedule struct {
 	calls    int
 	lastMode string
 	lastQty  int
+	// MoveChoices: the caller it saw, and an error to answer with.
+	moveSubject string
+	moveDigest  []byte
+	moveErr     error
 }
 
 func (f *fakeSchedule) Availability(_ context.Context, _, _ time.Time, q int) (schedule.Availability, error) {
@@ -28,6 +32,14 @@ func (f *fakeSchedule) Availability(_ context.Context, _, _ time.Time, q int) (s
 func (f *fakeSchedule) Choices(_ context.Context, _ time.Time, mode string, q int) (schedule.Choices, error) {
 	f.lastMode, f.lastQty = mode, q
 	return schedule.Choices{Slots: []schedule.Slot{}}, nil
+}
+func (f *fakeSchedule) MoveChoices(_ context.Context, subject string, digest []byte, orderID string) (schedule.Choices, error) {
+	f.moveSubject, f.moveDigest = subject, digest
+	if f.moveErr != nil {
+		return schedule.Choices{}, f.moveErr
+	}
+	return schedule.Choices{Purpose: schedule.PurposePickupMove, OrderID: orderID, Date: "2026-11-14",
+		FulfillmentMode: schedule.Collection, Slots: []schedule.Slot{}}, nil
 }
 func (f *fakeSchedule) PublicLots(context.Context) ([]schedule.Lot, error) {
 	return []schedule.Lot{}, nil
