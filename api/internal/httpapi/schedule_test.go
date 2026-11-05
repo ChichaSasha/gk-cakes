@@ -200,7 +200,7 @@ func TestPickupMoveChoicesQuery(t *testing.T) {
 		status int
 	}{
 		"anonymous":         {base, "", nil, 404},
-		"malformed proof":   {base, "", map[string]string{OrderCapabilityHeader: "abc"}, 404},
+		"malformed proof":   {base, "", map[string]string{OrderCapabilityHeader: "not a proof!"}, 404},
 		"forged token":      {base, "forged", nil, 401},
 		"no order":          {"/api/v1/schedule?purpose=pickup_move", "", guest, 422},
 		"quantity":          {base + "&quantity=2", "", guest, 422},

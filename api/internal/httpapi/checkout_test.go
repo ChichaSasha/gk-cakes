@@ -305,7 +305,9 @@ func TestQuoteRoutes(t *testing.T) {
 	if rec := serveCheckout(t, co, id, http.MethodGet, "/api/v1/checkout/quotes/q", "", "", "", map[string]string{QuoteProofHeader: proof}); rec.Code != 200 {
 		t.Fatalf("read with proof: %d", rec.Code)
 	}
-	for name, hdr := range map[string]map[string]string{"none": nil, "malformed": {QuoteProofHeader: "abc"}} {
+	// The malformed proof cannot occur in hex or base64url log text (a
+	// request ID), so the no-proof-in-logs check cannot trip by chance.
+	for name, hdr := range map[string]map[string]string{"none": nil, "malformed": {QuoteProofHeader: "not a proof!"}} {
 		if rec := serveCheckout(t, co, id, http.MethodGet, "/api/v1/checkout/quotes/q", "", "", "", hdr); rec.Code != 404 {
 			t.Errorf("read with %s proof: %d", name, rec.Code)
 		}
