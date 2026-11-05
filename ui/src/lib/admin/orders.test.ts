@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { StaffApi } from './catalogue';
 import {
 	cakeText,
+	isManagerCase,
+	isReleasedUnpaid,
 	matchesSearch,
 	matchesStatus,
 	moneyText,
@@ -115,12 +117,21 @@ describe('filters and search', () => {
 		const confirming = row({ lifecycle: 'confirmation_pending' });
 		const late = row({ lifecycle: 'paid_awaiting_agreement' });
 		const cancelling = row({ lifecycle: 'cancellation_pending' });
-		const flagged = row({ needs_attention: true, attention: ['payment_unknown'] });
+		const flagged = row({ needs_attention: true, attention: ['refund_needs_attention'] });
 		expect(matchesStatus(pay, 'payment') && matchesStatus(confirming, 'payment')).toBe(true);
 		expect(matchesStatus(late, 'late')).toBe(true);
 		expect(matchesStatus(cancelling, 'cancelled')).toBe(true);
 		expect(matchesStatus(flagged, 'attention')).toBe(true);
 		expect(matchesStatus(row(), 'attention')).toBe(false);
+		// Paid late is the chef's own decision; an unknown payment is still being checked.
+		for (const flag of ['paid_awaiting_agreement', 'payment_unknown']) {
+			expect(matchesStatus(row({ needs_attention: true, attention: [flag] }), 'attention')).toBe(
+				false
+			);
+		}
+		for (const flag of ['refund_needs_attention', 'payment_mismatch', 'refund_quarantine']) {
+			expect(isManagerCase(row({ needs_attention: true, attention: [flag] }))).toBe(true);
+		}
 		expect(matchesStatus(row({ lifecycle: 'in_production' }), 'production')).toBe(true);
 		expect(matchesStatus(row({ lifecycle: 'ready' }), 'ready')).toBe(true);
 		expect(matchesStatus(row(), 'confirmed')).toBe(true);
@@ -131,6 +142,50 @@ describe('filters and search', () => {
 		expect(matchesSearch(row(), 'A1B2')).toBe(true);
 		expect(matchesSearch(row(), 'c3d4')).toBe(false);
 		expect(matchesSearch(row(), '')).toBe(true);
+	});
+});
+
+describe('role-safe wording, free orders and released orders (review fixes)', () => {
+	it('gives technical support only what its rows can tell', () => {
+		const supportRow = (over: Partial<StaffOrderRow>) =>
+			row({ payment_state: undefined, refund: undefined, total_minor: undefined, ...over });
+		expect(statusOf(supportRow({ lifecycle: 'awaiting_payment' }), 'technical_support').text).toBe(
+			'Waiting for payment'
+		);
+		expect(
+			statusOf(
+				supportRow({ lifecycle: 'cancelled', cancel_reason: 'payment_not_completed' }),
+				'technical_support'
+			)
+		).toMatchObject({ text: 'Released', released: false });
+	});
+
+	it('words free orders without payment', () => {
+		const free = (over: Partial<StaffOrderRow>) =>
+			row({ payment_requirement: 'none', total_minor: 0, payment_state: null, ...over });
+		expect(statusOf(free({ lifecycle: 'awaiting_payment' }), 'chef').text).toBe(
+			'Free · not confirmed yet'
+		);
+		expect(statusOf(free({ lifecycle: 'confirmation_pending' }), 'chef').text).toBe(
+			'Free · confirming the order'
+		);
+		expect(moneyText(free({ lifecycle: 'confirmation_pending' }))).toBe('Free');
+	});
+
+	it('marks released unpaid orders (hidden by default, Sasha r03 Q5) but not returned ones', () => {
+		const released = row({
+			lifecycle: 'cancelled',
+			cancel_reason: 'payment_not_completed',
+			payment_state: 'cancelled'
+		});
+		expect(isReleasedUnpaid(released, 'chef')).toBe(true);
+		expect(
+			isReleasedUnpaid(
+				{ ...released, refund: { state: 'pending', target_minor: 9000, succeeded_minor: 0 } },
+				'chef'
+			)
+		).toBe(false);
+		expect(isReleasedUnpaid(row(), 'chef')).toBe(false);
 	});
 });
 
@@ -179,13 +234,13 @@ describe('status, production and money (sketch wording)', () => {
 			'Payment result unknown'
 		);
 		expect(waiting({ attention: ['payment_mismatch'] })).toBe('Payment doesn’t match · held');
-		// Technical support has no payment_state: the link-sent wording.
+		// Technical support has no payment_state: the plain stage.
 		expect(
 			statusOf(
 				row({ lifecycle: 'awaiting_payment', payment_state: undefined }),
 				'technical_support'
 			).text
-		).toBe('Waiting for payment · link sent');
+		).toBe('Waiting for payment');
 	});
 
 	it('tells released unpaid orders from released orders whose money is returned', () => {
@@ -278,7 +333,10 @@ describe('status, production and money (sketch wording)', () => {
 			'Refund needs a manager'
 		);
 		expect(cancelled({ state: 'partly_returned', target_minor: 9000, succeeded_minor: 3500 })).toBe(
-			'£55 still owed'
+			'Partly refunded · £35 of £90'
+		);
+		expect(cancelled({ state: 'requested', target_minor: 4500, succeeded_minor: 0 })).toBe(
+			'Refund £45 owed · nothing sent yet'
 		);
 		expect(cancelled({ state: 'returned', target_minor: 4550, succeeded_minor: 4550 })).toBe(
 			'Refunded £45.50'

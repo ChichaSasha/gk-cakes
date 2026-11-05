@@ -69,17 +69,14 @@
 					{/each}
 				</ul>
 			</nav>
-			{#if view}
-				<div class="who">
-					<span class="avatar" aria-hidden="true">{LABELS[view].charAt(0)}</span>
-					<span
-						><strong>{LABELS[view]}</strong><small
-							><button class="link-button" type="button" onclick={onsignout}>Sign out</button
-							></small
-						></span
-					>
-				</div>
-			{/if}
+			<div class="who">
+				{#if view}<span class="avatar" aria-hidden="true">{LABELS[view].charAt(0)}</span>{/if}
+				<span
+					>{#if view}<strong>{LABELS[view]}</strong>{/if}<small
+						><button class="link-button" type="button" onclick={onsignout}>Sign out</button></small
+					></span
+				>
+			</div>
 		</aside>
 		<main id="main" class="main" tabindex="-1">
 			{@render children()}

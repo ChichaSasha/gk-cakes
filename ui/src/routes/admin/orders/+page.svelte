@@ -3,7 +3,8 @@
 	// handover date for chef, technical support and fulfilment, each seeing
 	// what the API gives their role. Read only for now: no order page or
 	// action yet. Search filters the loaded orders in the browser (the API has
-	// no text search, K09); nothing personal goes into the URL.
+	// no text search, K09); nothing personal goes into the URL. Released
+	// unpaid orders are hidden unless asked for (Sasha's answer to r03 Q5).
 	import { resolve } from '$app/paths';
 	import { goto, replaceState } from '$app/navigation';
 	import { page } from '$app/state';
@@ -14,6 +15,7 @@
 	import type { StaffApi } from '../../../lib/admin/catalogue';
 	import {
 		cakeText,
+		isReleasedUnpaid,
 		matchesSearch,
 		matchesStatus,
 		MODES,
@@ -24,6 +26,7 @@
 		shortId,
 		slotText,
 		staffOrders,
+		STATUS_FILTERS,
 		statusFilters,
 		statusOf,
 		viewOf,
@@ -40,6 +43,9 @@
 	const PERIODS = periods(today);
 	const params = page.url.searchParams;
 	const isPeriod = (v: string | null): v is Period => v !== null && v in PERIODS;
+	const isFilter = (v: string | null): v is StatusFilter =>
+		(STATUS_FILTERS as readonly string[]).includes(v ?? '');
+	const initialMode = params.get('mode') ?? '';
 
 	let api: StaffApi | null = null;
 	let view = $state<StaffView | null>(null);
@@ -49,21 +55,27 @@
 	let period = $state<Period>(
 		isPeriod(params.get('period')) ? (params.get('period') as Period) : 'upcoming'
 	);
-	let mode = $state(
-		params.get('mode') && MODES[params.get('mode') as string] ? (params.get('mode') as string) : ''
+	let mode = $state(MODES[initialMode] ? initialMode : '');
+	let filter = $state<StatusFilter>(
+		isFilter(params.get('filter')) ? (params.get('filter') as StatusFilter) : 'all'
 	);
-	let filter = $state<StatusFilter>('all');
+	let showReleased = $state(params.get('released') === 'shown');
 	let term = $state('');
 	let revision = 0;
 
 	const filters = $derived(view ? statusFilters(view) : []);
 	const showMoney = $derived(view === 'chef');
-	const shown = $derived(
-		(rows ?? []).filter(
+	const listed = $derived.by(() => {
+		const v = view;
+		if (!v || !rows) return { shown: [] as StaffOrderRow[], hidden: 0 };
+		const matching = rows.filter(
 			(o) =>
 				matchesSearch(o, term) && (!mode || o.fulfillment_mode === mode) && matchesStatus(o, filter)
-		)
-	);
+		);
+		if (showReleased) return { shown: matching, hidden: 0 };
+		const shown = matching.filter((o) => !isReleasedUnpaid(o, v));
+		return { shown, hidden: matching.length - shown.length };
+	});
 	const now = new Date();
 
 	async function load() {
@@ -76,11 +88,15 @@
 			rows = list;
 			phase = 'ready';
 		} catch (e) {
-			if (rev !== revision) return;
-			if (await ended(e)) return;
+			if (rev !== revision || (await ended(e))) return;
 			phase = 'error';
+			problemText =
+				e instanceof Error && e.message.startsWith('more than')
+					? 'There are too many orders in this range to show at once.'
+					: 'The orders could not be loaded right now.';
 		}
 	}
+	let problemText = $state('The orders could not be loaded right now.');
 
 	async function ended(e: unknown): Promise<boolean> {
 		if (e instanceof ApiError && e.signInRequired) {
@@ -96,12 +112,35 @@
 		return false;
 	}
 
+	/** Who is signed in (once), then the orders; Try again repeats whatever failed. */
+	async function start() {
+		if (!api) return;
+		if (!view) {
+			phase = 'loading';
+			try {
+				const me = await apiGet<Me>('/api/v1/admin/me', { baseUrl: api.baseUrl, token: api.token });
+				view = viewOf(me.capabilities);
+				if (!view) {
+					problem = 'This account has no staff access.';
+					return;
+				}
+			} catch (e) {
+				if (await ended(e)) return;
+				problemText = 'The orders could not be loaded right now.';
+				phase = 'error';
+				return;
+			}
+		}
+		await load();
+	}
+
 	function keepInUrl() {
 		const url = new URL(page.url.href);
-		url.searchParams.delete('period');
-		url.searchParams.delete('mode');
+		for (const k of ['period', 'mode', 'filter', 'released']) url.searchParams.delete(k);
 		if (period !== 'upcoming') url.searchParams.set('period', period);
 		if (mode) url.searchParams.set('mode', mode);
+		if (filter !== 'all') url.searchParams.set('filter', filter);
+		if (showReleased) url.searchParams.set('released', 'shown');
 		// eslint-disable-next-line svelte/no-navigation-without-resolve -- same page, query only
 		replaceState(url, {});
 	}
@@ -115,27 +154,12 @@
 		let active = true;
 		(async () => {
 			api = signInConfigured ? await staffApi() : null;
+			if (!active) return;
 			if (!api) {
-				if (active) await goto(resolve('/sign-in?next=/admin'), { replaceState: true });
+				await goto(resolve('/sign-in?next=/admin'), { replaceState: true });
 				return;
 			}
-			try {
-				const me = await apiGet<Me>('/api/v1/admin/me', {
-					baseUrl: api.baseUrl,
-					token: api.token
-				});
-				if (!active) return;
-				view = viewOf(me.capabilities);
-				if (!view) {
-					problem = 'This account has no staff access.';
-					return;
-				}
-			} catch (e) {
-				if (!active || (await ended(e))) return;
-				phase = 'error';
-				return;
-			}
-			await load();
+			await start();
 		})();
 		const unsubscribe = leaveOnSignOut(() => {
 			rows = null;
@@ -149,7 +173,12 @@
 
 	async function leave() {
 		rows = null;
-		await signOut();
+		const reached = await signOut();
+		if (!reached) {
+			problem =
+				'You are signed out on this device, but the sign-in service could not be reached to end the session everywhere.';
+			return;
+		}
 		await goto(resolve('/'), { replaceState: true });
 	}
 </script>
@@ -172,11 +201,11 @@
 		<section class="card" aria-label="Find orders">
 			<form class="filters" role="search" onsubmit={(e) => e.preventDefault()}>
 				<label class="field search-field"
-					><span>Search by name or order number</span><span class="search-box"
+					><span>Search by name or order ID</span><span class="search-box"
 						><ChefIcon name="search" /><input
 							type="search"
 							bind:value={term}
-							placeholder="e.g. Mia or the order's first characters"
+							placeholder="e.g. Mia or the ID’s first characters"
 							autocomplete="off"
 						/></span
 					></label
@@ -198,14 +227,21 @@
 							type="button"
 							class="filter-chip"
 							aria-pressed={filter === k}
-							onclick={() => (filter = k)}>{l}</button
+							onclick={() => {
+								filter = k;
+								keepInUrl();
+							}}>{l}</button
 						>
 					{/each}
 				</div>
+				<label class="check"
+					><input type="checkbox" bind:checked={showReleased} onchange={keepInUrl} /> Show released orders
+					that weren’t paid</label
+				>
 			</form>
 			<p class="small strong" aria-live="polite">
-				{phase === 'ready'
-					? `${shown.length} ${shown.length === 1 ? 'order' : 'orders'} · sorted by handover date and time`
+				{phase === 'ready' && view
+					? `${listed.shown.length} ${listed.shown.length === 1 ? 'order' : 'orders'} · sorted by handover date and time${listed.hidden ? ` · ${listed.hidden} released (not paid) hidden` : ''}`
 					: phase === 'loading'
 						? 'Loading orders…'
 						: ''}
@@ -213,11 +249,12 @@
 			{#if phase === 'error'}
 				<div class="banner banner-bad" role="alert">
 					<div>
-						<p>The orders could not be loaded right now.</p>
-						<button class="btn" type="button" onclick={() => void load()}>Try again</button>
+						<p>{problemText}</p>
+						<button class="btn" type="button" onclick={() => void start()}>Try again</button>
 					</div>
 				</div>
-			{:else if phase === 'ready'}
+			{:else if phase === 'ready' && view}
+				{@const v = view}
 				<div class="table-wrap">
 					<table class="table orders-table">
 						<caption class="sr-only">Orders matching the search</caption>
@@ -233,8 +270,8 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each shown as o (o.id)}
-								{@const status = statusOf(o, view ?? 'fulfillment')}
+							{#each listed.shown as o (o.id)}
+								{@const status = statusOf(o, v)}
 								<tr>
 									<td data-label="Order"
 										><span class="order-id strong" title={o.id}>{shortId(o.id)}</span></td
@@ -248,7 +285,7 @@
 									<td data-label="Handover"
 										>{shortDay(o.date)}<span class="block muted small">{slotText(o)}</span></td
 									>
-									<td data-label="Production">{productionText(o, view ?? 'fulfillment', now)}</td>
+									<td data-label="Production">{productionText(o, v, now)}</td>
 									<td data-label="Status"
 										><span class="pill pill-{status.stage}" class:pill-released={status.released}
 											>{#if status.stage === 'ready' || status.stage === 'done'}<ChefIcon
@@ -263,7 +300,7 @@
 								<tr>
 									<td colspan={showMoney ? 7 : 6} class="empty-row"
 										>No orders match{term.trim() ? ` “${term.trim()}”` : ''}. Try another name,
-										order number or date range.</td
+										order ID or date range.</td
 									>
 								</tr>
 							{/each}

@@ -172,6 +172,17 @@ export function periods(
 
 // ------------------------------------------------------- filter chips
 
+export const STATUS_FILTERS = [
+	'all',
+	'attention',
+	'payment',
+	'late',
+	'confirmed',
+	'production',
+	'ready',
+	'cancelled'
+] as const;
+
 export type StatusFilter =
 	'all' | 'attention' | 'payment' | 'late' | 'confirmed' | 'production' | 'ready' | 'cancelled';
 
@@ -200,7 +211,7 @@ export function matchesStatus(o: StaffOrderRow, f: StatusFilter): boolean {
 		case 'all':
 			return true;
 		case 'attention':
-			return o.needs_attention === true;
+			return isManagerCase(o);
 		case 'payment':
 			return o.lifecycle === 'awaiting_payment' || o.lifecycle === 'confirmation_pending';
 		case 'late':
@@ -214,6 +225,26 @@ export function matchesStatus(o: StaffOrderRow, f: StatusFilter): boolean {
 		case 'cancelled':
 			return o.lifecycle === 'cancelled' || o.lifecycle === 'cancellation_pending';
 	}
+}
+
+/**
+ * A case for a manager (the sketch's "Needs a manager" / money cases): a
+ * refund needing attention, a payment that doesn't match, or a refund made
+ * outside GK Cakes. Paid late is the chef's own decision (its own chip) and
+ * an unknown payment is still being checked (r03b2 Needs attention), so the
+ * API's broader needs_attention is not used.
+ */
+const MANAGER_FLAGS = ['refund_needs_attention', 'payment_mismatch', 'refund_quarantine'];
+export function isManagerCase(o: StaffOrderRow): boolean {
+	return (o.attention ?? []).some((f) => MANAGER_FLAGS.includes(f));
+}
+
+/**
+ * A released order nobody paid for. Sasha's answer to r03 Q5: hidden from
+ * the list by default, with a filter to show them.
+ */
+export function isReleasedUnpaid(o: StaffOrderRow, view: StaffView): boolean {
+	return statusOf(o, view).released;
 }
 
 /** The sketch's "How" choices, by the API's fulfilment mode. */
@@ -300,6 +331,7 @@ export function statusOf(
 	view: StaffView
 ): { stage: Stage; text: string; released: boolean } {
 	const stage = stageOf(o);
+	const free = o.payment_requirement === 'none';
 	if (stage === 'awaiting') {
 		if (o.attention?.includes('payment_mismatch')) {
 			return { stage, text: 'Payment doesn’t match · held', released: false };
@@ -307,8 +339,14 @@ export function statusOf(
 		if (o.attention?.includes('payment_unknown')) {
 			return { stage, text: WAITING.unknown, released: false };
 		}
+		if (free) return { stage, text: 'Free · not confirmed yet', released: false };
+		// Only the chef's rows carry the payment state; others get the plain stage.
+		if (view !== 'chef') return { stage, text: STAGES.awaiting, released: false };
 		const p = o.payment_state;
 		return { stage, text: (p && WAITING[p]) || 'Waiting for payment · link sent', released: false };
+	}
+	if (stage === 'confirming' && free) {
+		return { stage, text: 'Free · confirming the order', released: false };
 	}
 	if (stage === 'agreement') {
 		return {
@@ -318,6 +356,11 @@ export function statusOf(
 		};
 	}
 	if (stage === 'cancelled' && o.cancel_reason && RELEASED[o.cancel_reason]) {
+		if (view !== 'chef' && o.cancel_reason === 'payment_not_completed') {
+			// Without the chef's money keys the page can't tell "not paid" from a
+			// late payment being returned in full: say only what it knows.
+			return { stage, text: 'Released', released: false };
+		}
 		// Money that arrived for a released order is returned in full (r03b2).
 		const paid = o.refund != null || o.payment_state === 'succeeded';
 		return paid
@@ -360,6 +403,9 @@ export function moneyText(o: StaffOrderRow): string {
 	const cur = o.currency ?? 'GBP';
 	const m = (n: number) => formatMoney(n, cur);
 	const stage = stageOf(o);
+	if (o.payment_requirement === 'none' && stage !== 'cancelled' && stage !== 'cancelling') {
+		return 'Free';
+	}
 	if (stage === 'awaiting') {
 		if (o.attention?.includes('payment_mismatch')) return 'Doesn’t match · held';
 		const labels: Record<string, string> = {
@@ -377,15 +423,17 @@ export function moneyText(o: StaffOrderRow): string {
 			: 'Received · confirming';
 	}
 	if (stage === 'cancelled' || stage === 'cancelling') {
+		// Only the server's amounts, as they are (no amount is worked out here).
 		const r = o.refund;
 		if (!r) return stage === 'cancelling' ? 'Cancelling' : 'Nothing taken';
 		if (r.state === 'needs_attention') return 'Refund needs a manager';
 		if (r.state === 'pending') return `Refund ${m(r.target_minor)} · not confirmed`;
-		if (r.target_minor > r.succeeded_minor)
-			return `${m(r.target_minor - r.succeeded_minor)} still owed`;
+		if (r.state === 'requested') return `Refund ${m(r.target_minor)} owed · nothing sent yet`;
+		if (r.state === 'partly_returned') {
+			return `Partly refunded · ${m(r.succeeded_minor)} of ${m(r.target_minor)}`;
+		}
 		return `Refunded ${m(r.succeeded_minor)}`;
 	}
-	if (o.payment_requirement === 'none') return 'Free';
 	return o.total_minor != null ? m(o.total_minor) : '';
 }
 

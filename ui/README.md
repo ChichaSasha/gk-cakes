@@ -328,17 +328,29 @@ for chef, technical support and fulfilment, each seeing only what the API
 gives their role (money for the chef only; no attention flags for
 fulfilment). Filters: When (from today or before today, 93 days each, the
 API's longest range; this week; next week), How (handover mode) and the
-status chips; search matches the loaded orders by name or the start of the
-order ID in the browser (the API has no text search, K09) and is not put in
-the URL. Read only for now: no order page and no actions yet.
+status chips ("Needs a manager" = a refund needing attention, a mismatching
+payment or a refund made outside GK Cakes; paid late has its own chip);
+released orders nobody paid for are hidden unless "Show released orders that
+weren't paid" is ticked (Sasha's answer to r03 Q5). Search matches the
+loaded orders by name or the start of the order ID in the browser (the API
+has no text search, K09) and is not put in the URL; the When, How, status and
+released choices are. Technical support's rows carry no money, so its
+wording says only what it knows ("Waiting for payment", "Released"). Read
+only for now: no order page and no actions yet.
 
 Differences from the sketch, each because the API doesn't give it yet:
 no order number (the first 8 characters of the order ID are shown), no
 "Needs action" chip (collection-details emails), no "Dates by production" or
 "All dates", no source/extra/short-notice tags, no PEANUTS flag in the row, no
 "New order" button, and "Cancelling · not confirmed yet" for
-`cancellation_pending` (the sketch has no wording for it). The "later" label
-text is darker than the sketch's for contrast.
+`cancellation_pending` and "Free · not confirmed yet" / "Free · confirming
+the order" for free orders (the sketch has no wording for these). The money
+column is the chef's only (the API sends money to no other role; the sketch
+also showed it to technical support); a partly refunded order shows the
+server's two amounts ("Partly refunded · £35 of £90"), never a difference
+worked out here. Who is signed in shows the role (the API has no staff
+names); the brand links to Orders (Today isn't built). The "later" labels and
+input borders are darker than the sketch's for contrast.
 
 ## Dependency audit
 

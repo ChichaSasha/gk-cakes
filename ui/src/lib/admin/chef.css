@@ -68,6 +68,10 @@
 	grid-template-columns: 248px 1fr;
 	min-height: 100vh;
 }
+/* A wide table scrolls inside its card, never the page (sketch r01b). */
+.chef .layout > * {
+	min-width: 0;
+}
 .chef .sidebar {
 	position: sticky;
 	top: 0;
@@ -276,7 +280,7 @@
 	width: 100%;
 	min-height: 40px;
 	padding: 0 10px;
-	border: 1px solid #c9cdd3;
+	border: 1px solid #8a9099;
 	border-radius: 12px;
 	background: #fff;
 	color: var(--ink);
@@ -312,6 +316,19 @@
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
 }
+.chef .check {
+	display: flex;
+	grid-column: 1/-1;
+	gap: 8px;
+	align-items: center;
+	font-size: 13px;
+	font-weight: 500;
+}
+.chef .check input {
+	width: 18px;
+	height: 18px;
+	accent-color: var(--ink);
+}
 .chef .empty-row {
 	padding: 28px 10px !important;
 	color: var(--muted);
@@ -331,7 +348,7 @@
 	align-items: center;
 	gap: 6px;
 	padding: 0 10px;
-	border: 1px solid #c9cdd3;
+	border: 1px solid #8a9099;
 	border-radius: 12px;
 	background: #fff;
 }
@@ -512,6 +529,10 @@
 		gap: 8px;
 		padding: 4px 10px;
 		border: 0;
+	}
+	/* A long name never widens the phone card. */
+	.chef .orders-table td {
+		overflow-wrap: anywhere;
 	}
 	.chef .orders-table td::before {
 		content: attr(data-label);
