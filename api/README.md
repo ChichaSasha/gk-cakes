@@ -1642,7 +1642,7 @@ Migration `0022_production_late_payment.sql`.
 
 | Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
 | --- | --- | --- |
-| `POST /api/v1/admin/orders/{id}/start-production` | chef or fulfillment (K00) | `{expected_version}` with Idempotency-Key; 200 `{order_id, lifecycle: "in_production"}` (`Idempotent-Replayed: true` when production had already started); 503 during a restore freeze |
+| `POST /api/v1/admin/orders/{id}/start-production` | chef or fulfillment (K00) | `{expected_version}` with Idempotency-Key; 200 `{order_id, lifecycle}` (the order's current lifecycle; `Idempotent-Replayed: true` for the same key again, also during a restore freeze, or when production had already started); a new start is 503 during a restore freeze |
 | `POST /api/v1/admin/orders/{id}/late-payment` | chef | `{expected_version, decision: "honour" \| "full_return", customer_agreement: {channel, agreed_at, evidence_ref}}` (agreement required for honour, refused for full_return) with Idempotency-Key; 202 `decision_pending` |
 
 - **Production start (K05).** One transition per order
@@ -1657,28 +1657,41 @@ Migration `0022_production_late_payment.sql`.
   while a cancellation or late-payment decision on the order is unresolved
   (cancel-first); a manual start then conflicts. Production never changes
   the cancellation entitlement: the rate depends only on the cancel receipt
-  instant (start-first at the boundary is 50%, before it 100%). Not a K11
-  command: it changes no customer commitment or money, and the timer
-  re-derives a lost transition from the immutable anchor.
+  instant (start-first at the boundary is 50%, before it 100%). A start
+  bumps the order version, so a cancellation preview held from before it
+  must be refreshed (the cancel answers `STALE_VERSION`). Not a K11 command:
+  it changes no customer commitment or money. Accepted risk for review: on
+  a primary database loss, a manual start's effective time (and the start
+  itself, until the timer runs) can be lost; the timer re-derives only the
+  scheduled start (payment or free confirmation + 48 h).
 - **Late payment (K04 Q2).** A K11 order command `late_payment` on a
   `paid_awaiting_agreement` order. `honour` needs the customer's agreement
   (`channel` email | phone | instagram | whatsapp | in_person | other,
   `agreed_at` not after the receipt, `evidence_ref` 1–200 characters;
-  silence never counts) and commits `confirmed` when the order still has its
+  silence never counts; `agreed_at` not before the payment, else 422) and
+  is refused 409 `HONOUR_TOO_LATE` once the original handover is not after
+  the receipt instant. It commits `confirmed` when the order still has its
   original slot and committed holds (otherwise refused `holds_changed`); the
   production timer then follows from `paid_at` + 48 h. `full_return` cancels
   with `cancel_reason` `late_payment_returned` and a goal of 100% of the
-  actual paid aggregate, never 50%. The decision and agreement are stored
-  immutably (`business.late_payment_decision`), with the chef as the
-  feasibility recorder at the receipt instant.
+  actual paid aggregate, never 50%, and reads like a cancellation (the
+  `cancellation` block with reason `late_payment_returned`). The decision and
+  agreement are stored immutably (`business.late_payment_decision`), with the
+  chef as the feasibility recorder at the receipt instant.
 - **Allocation (K05).** `business.refund_plan` allocates a goal over the
   order's succeeded collections in stable order (cake, delivery, ID): each
   recorded floor first, then floor + largest remainder over the rest (9501p
   cake + 2000p delivery at 50% is 5751p: 4751p + 1000p). A new reservation
   for a collection is min(share − its S + R, its room, target − all S + R),
   never while it is blocked; skewed prior actuals while money is still owed
-  pause automatic allocation. `refund_reserve` and the cancellation preview
-  use it. Payment collections may be of kind `delivery` (data only: no
+  pause automatic allocation. Delivery refunds are chef-only (K05): a
+  delivery collection is reserved automatically only under a chef-recorded
+  floor; otherwise its share is a visible obligation, `delivery_pending_minor`
+  in the preview and the order's `refund` block (capped by what the goal
+  still needs), and the refund reads `partly_returned` until it is paid.
+  `refund_reserve` and the cancellation preview use it. An unexpired
+  identical preview of the same actor and order version is returned again
+  instead of a new row. Payment collections may be of kind `delivery` (data only: no
   delivery checkout creates them yet).
 - **Raised goal after a definitive outcome.** When an unresolved refund
   operation becomes succeeded or failed under a goal raised since it was
@@ -1688,16 +1701,25 @@ Migration `0022_production_late_payment.sql`.
   unchanged goal still waits for a person.
 - **Delivery failure floor (interim).** `business.refund_delivery_failure_record`
   (chef, `checkout.Store.RecordDeliveryFailure`; no HTTP route yet) records
-  a 100% floor on a succeeded delivery collection and raises the goal to the
-  floor plus what the other collections returned or reserved, capped by paid
-  (prior cake 6000p of 10000p + 2000p: goal 8000p, delivery 2000p sent
-  once).
+  a 100% floor on a succeeded delivery collection. The goal keeps its largest
+  policy target (`policy_target_minor`) apart from floors; its target is the
+  larger of the policy target and the floor plus each other collection's
+  larger of its policy share and S + R, capped by paid, never lowered. So
+  the order does not matter: cake 10000p + delivery 2000p at 50% with a
+  delivery floor is 7000p either way; with a prior cake return of 6000p it
+  is 8000p (delivery 2000p sent once).
 - **Tests.** Scheduled production jobs are due by the fixed test clock, so
   the integration harness claims them only when a test runs them
   (`holdProduction`).
 
-Not yet: admin partial refunds with allocations (the agreed exception goal)
-and chef-confirmed revised allocations after skewed prior actuals; the Q5
+Not yet: a chef action that pays the pending delivery share of an ordinary
+cancellation; admin partial refunds with allocations (the agreed exception goal)
+and chef-confirmed revised allocations after skewed prior actuals; the
+completed/no-show chef request that creates a financial case while
+preserving fulfillment history (K05); gating refund dispatch on the
+cancellation being secured (refunds are reserved and dispatched from the
+commit, as for the 0016 late-capture full return, each under its own K11
+dispatch protection); the Q5
 manual alternative payout; manager recovery tools (quarantine, contradicting
 evidence, `unknown` past its window, re-reserving a failed remainder under an
 unchanged goal); an HTTP route for the delivery failure and delivery

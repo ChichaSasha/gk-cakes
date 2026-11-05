@@ -93,13 +93,17 @@ func (f *fakeCheckout) ChefCancel(_ context.Context, subject, _, _ string, _ che
 	return catalog.Result{ID: "chef-cancel", Replayed: f.replayed}, nil
 }
 
-func (f *fakeCheckout) StartProduction(_ context.Context, subject, _, id string, _ checkout.ProductionInput) (catalog.Result, error) {
+func (f *fakeCheckout) StartProduction(_ context.Context, subject, _, id string, _ checkout.ProductionInput) (checkout.Started, error) {
 	f.calls++
 	f.subject = subject
 	if f.freeErr != nil {
-		return catalog.Result{}, f.freeErr
+		return checkout.Started{}, f.freeErr
 	}
-	return catalog.Result{ID: id, Replayed: f.replayed}, nil
+	lifecycle := "in_production"
+	if f.replayed {
+		lifecycle = "cancelled"
+	}
+	return checkout.Started{Result: catalog.Result{ID: id, Replayed: f.replayed}, Lifecycle: lifecycle}, nil
 }
 
 func (f *fakeCheckout) LatePayment(_ context.Context, subject, _, id string, _ checkout.LatePaymentInput) (catalog.Result, error) {
@@ -565,7 +569,7 @@ func TestProductionAndLatePaymentRoutes(t *testing.T) {
 	}
 	rec := serveCheckout(t, &fakeCheckout{replayed: true}, id, http.MethodPost, start, "chef", "k", `{"expected_version":3}`, nil)
 	if rec.Code != 200 || rec.Header().Get("Idempotent-Replayed") != "true" ||
-		rec.Body.String() != `{"lifecycle":"in_production","order_id":"o1"}`+"\n" {
+		rec.Body.String() != `{"lifecycle":"cancelled","order_id":"o1"}`+"\n" {
 		t.Fatalf("replayed start: %d %q", rec.Code, rec.Body.String())
 	}
 	if rec := serveCheckout(t, &fakeCheckout{freeErr: checkout.ErrOrdersFrozen}, id, http.MethodPost, start, "chef", "k",

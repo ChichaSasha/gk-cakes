@@ -560,9 +560,6 @@ BEGIN
   v_paid := business.order_paid_minor(v.order_id);
   v_target := business.cancellation_amount(v_paid, v_rate);
 
-  IF EXISTS (SELECT 1 FROM business.capacity_allocation a WHERE a.order_ref = v.order_id AND a.day = v_o.handover_day) THEN
-    PERFORM business.capacity_release(v.order_id, v_o.handover_day);
-  END IF;
   -- K03: the code use stays consumed (never restored).
   UPDATE business.orders o
   SET lifecycle = 'cancelled', cancel_reason = v_reason, cancelled_at = v.received_at,
@@ -590,6 +587,10 @@ BEGIN
                                                                  'target_minor', v_target, 'reason', v_reason));
     END IF;
     PERFORM business.refund_reserve(v.order_id);
+  END IF;
+  -- The day last (lock order K00: goal and refund operations before the day).
+  IF EXISTS (SELECT 1 FROM business.capacity_allocation a WHERE a.order_ref = v.order_id AND a.day = v_o.handover_day) THEN
+    PERFORM business.capacity_release(v.order_id, v_o.handover_day);
   END IF;
   PERFORM business.audit_record(CASE v.actor_kind WHEN 'guest' THEN 'system' ELSE v.actor_kind END, v.actor_account_id,
                                 'order.cancelled', 'order', v.order_id, NULL,

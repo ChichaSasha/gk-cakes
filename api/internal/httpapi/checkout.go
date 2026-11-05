@@ -29,7 +29,7 @@ type Checkout interface {
 	PreviewCancellation(ctx context.Context, id, subject string, digest []byte) (checkout.CancellationPreview, error)
 	Cancel(ctx context.Context, id, subject string, digest []byte, key string, in checkout.CancelInput) (catalog.Result, error)
 	ChefCancel(ctx context.Context, subject, key, id string, in checkout.ChefCancelInput) (catalog.Result, error)
-	StartProduction(ctx context.Context, subject, key, id string, in checkout.ProductionInput) (catalog.Result, error)
+	StartProduction(ctx context.Context, subject, key, id string, in checkout.ProductionInput) (checkout.Started, error)
 	LatePayment(ctx context.Context, subject, key, id string, in checkout.LatePaymentInput) (catalog.Result, error)
 	CurrentPolicy(ctx context.Context) (checkout.Policy, error)
 	RecordPolicy(ctx context.Context, subject, key string, in checkout.PolicyInput) (catalog.Result, error)
@@ -321,8 +321,8 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 					writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Order changes are temporarily unavailable", true)
 					return
 				}
-				respondCommand(w, r, logger, http.StatusOK, res, err, func() (any, error) {
-					return map[string]string{"order_id": res.ID, "lifecycle": "in_production"}, nil
+				respondCommand(w, r, logger, http.StatusOK, res.Result, err, func() (any, error) {
+					return map[string]string{"order_id": res.ID, "lifecycle": res.Lifecycle}, nil
 				})
 			}))
 		// K04 Q2 late payment: honour (with the customer's agreement) or full

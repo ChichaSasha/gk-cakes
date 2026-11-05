@@ -168,6 +168,8 @@ type refundView struct {
 	SucceededMinor int64 `json:"succeeded_minor"`
 	InProgress     int64 `json:"in_progress_minor"`
 	Currency       string
+	// GK-026: the delivery share waiting for the chef.
+	DeliveryPending int64 `json:"delivery_pending_minor"`
 }
 
 func (h *payHarness) view(t *testing.T, order string, d []byte) (releasedView, string) {

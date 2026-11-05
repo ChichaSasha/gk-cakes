@@ -35,6 +35,7 @@ type previewJSON struct {
 		CollectionID string `json:"collection_id"`
 		AmountMinor  int64  `json:"amount_minor"`
 	}
+	DeliveryPending      int64     `json:"delivery_pending_minor"`
 	FullRefundDeadlineAt time.Time `json:"full_refund_deadline_at"`
 	ComputedAt           time.Time `json:"computed_at"`
 	ExpiresAt            time.Time `json:"expires_at"`

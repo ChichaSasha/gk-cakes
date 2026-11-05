@@ -98,9 +98,18 @@ func TestManualStartThenTimerIsOneTransition(t *testing.T) {
 	if err != nil || res.Replayed || res.ID != order {
 		t.Fatalf("start: %+v %v", res, err)
 	}
-	if again, err := h.co.StartProduction(h.ctx, fulfilment, "s1", order, in); err != nil || !again.Replayed {
+	if again, err := h.co.StartProduction(h.ctx, fulfilment, "s1", order, in); err != nil || !again.Replayed || again.Lifecycle != "in_production" {
 		t.Fatalf("same key: %+v %v", again, err)
 	}
+	// During a restore freeze the same key still replays; a new one is refused.
+	h.owner(t, "SELECT business.recovery_set_freeze(true, 'restore drill')")
+	if again, err := h.co.StartProduction(h.ctx, fulfilment, "s1", order, in); err != nil || !again.Replayed {
+		t.Fatalf("replay while frozen: %+v %v", again, err)
+	}
+	if _, err := h.co.StartProduction(h.ctx, fulfilment, "s9", order, in); !errors.Is(err, checkout.ErrOrdersFrozen) {
+		t.Fatalf("new start while frozen: %v", err)
+	}
+	h.owner(t, "SELECT business.recovery_set_freeze(false, NULL)")
 	if again, err := h.co.StartProduction(h.ctx, chef, "s2", order, checkout.ProductionInput{ExpectedVersion: v.Version + 1}); err != nil || !again.Replayed {
 		t.Fatalf("already started: %+v %v", again, err)
 	}
@@ -241,7 +250,9 @@ func TestLatePaymentHonoured(t *testing.T) {
 	if v.Lifecycle != "paid_awaiting_agreement" {
 		t.Fatalf("order %s", raw)
 	}
-	agreement := &checkout.Agreement{Channel: "phone", AgreedAt: "2026-11-05T09:30:00Z", EvidenceRef: "Call note 12"}
+	// Paid at 2026-11-06 12:30:01Z; the chef decides half an hour later.
+	h.now = time.Date(2026, 11, 6, 13, 0, 0, 0, time.UTC)
+	agreement := &checkout.Agreement{Channel: "phone", AgreedAt: "2026-11-06T12:45:00Z", EvidenceRef: "Call note 12"}
 	honour := checkout.LatePaymentInput{ExpectedVersion: v.Version, Decision: "honour", CustomerAgreement: agreement}
 	for name, in := range map[string]checkout.LatePaymentInput{
 		"no agreement": {ExpectedVersion: v.Version, Decision: "honour"},
@@ -255,10 +266,20 @@ func TestLatePaymentHonoured(t *testing.T) {
 	}
 	// The database refuses what the API checks too, and a future agreement.
 	future := checkout.LatePaymentInput{ExpectedVersion: v.Version, Decision: "honour",
-		CustomerAgreement: &checkout.Agreement{Channel: "phone", AgreedAt: "2026-11-05T10:01:00Z", EvidenceRef: "x"}}
+		CustomerAgreement: &checkout.Agreement{Channel: "phone", AgreedAt: "2026-11-06T13:01:00Z", EvidenceRef: "x"}}
 	if _, err := h.co.LatePayment(h.ctx, chef, "f", order, future); !strings.HasPrefix(invalidField(err), "customer_agreement:") {
 		t.Fatalf("future agreement: %v", err)
 	}
+	before := checkout.LatePaymentInput{ExpectedVersion: v.Version, Decision: "honour",
+		CustomerAgreement: &checkout.Agreement{Channel: "phone", AgreedAt: "2026-11-06T12:00:00Z", EvidenceRef: "x"}}
+	if _, err := h.co.LatePayment(h.ctx, chef, "b", order, before); !strings.HasPrefix(invalidField(err), "customer_agreement:") {
+		t.Fatalf("agreement before the payment: %v", err)
+	}
+	h.now = time.Date(2026, 11, 14, 12, 30, 0, 0, time.UTC) // the original handover
+	if _, err := h.co.LatePayment(h.ctx, chef, "l", order, honour); conflict(err) != "honour_too_late" {
+		t.Fatalf("honour at the handover: %v", err)
+	}
+	h.now = time.Date(2026, 11, 6, 13, 0, 0, 0, time.UTC)
 	if _, err := h.co.LatePayment(h.ctx, chef, "n", order, checkout.LatePaymentInput{ExpectedVersion: v.Version, Decision: "honour"}); !strings.HasPrefix(invalidField(err), "customer_agreement:") {
 		t.Fatalf("no agreement at the database: %v", err)
 	}
@@ -323,7 +344,9 @@ func TestLatePaymentFullReturn(t *testing.T) {
 	}
 	v2, raw := h.cancelView(t, order, d)
 	if v2.Lifecycle != "cancelled" || *v2.CancelReason != "late_payment_returned" || v2.Refund == nil ||
-		v2.Refund.TargetMinor != 10000 || v2.Refund.State != "returned" || len(h.stripe.refundCreates()) != 1 {
+		v2.Refund.TargetMinor != 10000 || v2.Refund.State != "returned" || len(h.stripe.refundCreates()) != 1 ||
+		v2.Cancellation == nil || v2.Cancellation.State != "cancelled" || *v2.Cancellation.Reason != "late_payment_returned" ||
+		*v2.Cancellation.Rate != 100 || v2.Cancellation.RequestedBy != "chef" {
 		t.Fatalf("full return %s", raw)
 	}
 	if h.allocation(t, order) != "released" {
@@ -419,8 +442,9 @@ func (h *payHarness) seedDelivery(t *testing.T, order string, amount int64) stri
 }
 
 // K05 allocation across cake 9501p and delivery 2000p at 50%: 5751p
-// (half-up), cake 4751p + delivery 1000p (floor + largest remainder), each
-// sent once and independently.
+// (half-up), cake 4751p + delivery 1000p (floor + largest remainder). The
+// cake share is sent; the delivery share is a visible obligation pending the
+// chef (K05: delivery refunds are chef-only), never sent automatically.
 func TestFiftyPercentIsAllocatedAcrossCakeAndDelivery(t *testing.T) {
 	h := newPayHarness(t)
 	f := h.setup(t)
@@ -431,9 +455,14 @@ func TestFiftyPercentIsAllocatedAcrossCakeAndDelivery(t *testing.T) {
 	v, _ := h.cancelView(t, order, d)
 	h.now = cancelDeadline
 	p := h.preview(t, order, d)
-	if p.PaidMinor != 11501 || p.AmountMinor != 5751 || len(p.Allocations) != 2 || p.Allocations[0].CollectionID != cake ||
-		p.Allocations[0].AmountMinor != 4751 || p.Allocations[1].CollectionID != delivery || p.Allocations[1].AmountMinor != 1000 {
+	if p.PaidMinor != 11501 || p.AmountMinor != 5751 || len(p.Allocations) != 1 || p.Allocations[0].CollectionID != cake ||
+		p.Allocations[0].AmountMinor != 4751 || p.DeliveryPending != 1000 {
 		t.Fatalf("preview %+v", p)
+	}
+	// The same preview again (same actor, version and amounts) is reused.
+	if again := h.preview(t, order, d); again.PreviewID != p.PreviewID || again.PreviewHash != p.PreviewHash ||
+		h.count(t, "SELECT count(*) FROM business.cancellation_preview WHERE order_id = $1::uuid", order) != 1 {
+		t.Fatalf("second preview %+v", again)
 	}
 	h.withRefunds()
 	if _, err := h.cancel(order, d, "c", v.Version, p); err != nil {
@@ -443,15 +472,74 @@ func TestFiftyPercentIsAllocatedAcrossCakeAndDelivery(t *testing.T) {
 		t.Fatalf("cancel:\n%s", reasons(errs))
 	}
 	creates := h.stripe.refundCreates()
-	amounts := map[string]bool{}
-	for _, c := range creates {
-		amounts[h.stripe.refundForm(c).Get("amount")] = true
-	}
-	if len(creates) != 2 || !amounts["4751"] || !amounts["1000"] {
+	if len(creates) != 1 || h.stripe.refundForm(creates[0]).Get("amount") != "4751" || len(h.operations(t, delivery)) != 0 {
 		t.Fatalf("creates %v", creates)
 	}
-	if v, raw := h.cancelView(t, order, d); v.Refund.State != "returned" || v.Refund.SucceededMinor != 5751 {
-		t.Fatalf("returned %s", raw)
+	if v, raw := h.cancelView(t, order, d); v.Refund.State != "partly_returned" || v.Refund.SucceededMinor != 4751 ||
+		v.Refund.TargetMinor != 5751 || v.Refund.DeliveryPending != 1000 {
+		t.Fatalf("delivery pending %s", raw)
+	}
+}
+
+// A recorded delivery failure floor and the ordinary 50% policy combine the
+// same in either order: cake 10000p + delivery 2000p gives goal 7000p (cake
+// 5000p + delivery 2000p), each sent once.
+func TestDeliveryFloorAndPolicyCombineInEitherOrder(t *testing.T) {
+	for _, floorFirst := range []bool{true, false} {
+		name := "cancel then floor"
+		if floorFirst {
+			name = "floor then cancel"
+		}
+		t.Run(name, func(t *testing.T) {
+			h := newPayHarness(t)
+			f := h.setup(t)
+			pol := h.policy(t, "p1")
+			order, d := h.tenThousandOrder(t, f, pol, "fo")
+			cake := h.payNow(t, order, d, "fo")
+			delivery := h.seedDelivery(t, order, 2000)
+			h.withRefunds()
+			floor := func() {
+				if _, err := h.co.RecordDeliveryFailure(h.ctx, chef, "df", order, delivery); err != nil {
+					t.Fatal(err)
+				}
+				if errs := h.drain(t); len(errs) != 0 {
+					t.Fatalf("floor:\n%s", reasons(errs))
+				}
+			}
+			if floorFirst {
+				floor()
+			}
+			v, _ := h.cancelView(t, order, d)
+			h.now = cancelDeadline
+			p := h.preview(t, order, d)
+			if p.Rate != 50 || p.AmountMinor != 6000 {
+				t.Fatalf("preview %+v", p)
+			}
+			if _, err := h.cancel(order, d, "c", v.Version, p); err != nil {
+				t.Fatal(err)
+			}
+			if errs := h.drain(t); len(errs) != 0 {
+				t.Fatalf("cancel:\n%s", reasons(errs))
+			}
+			if !floorFirst {
+				floor()
+			}
+			if got := h.count(t, "SELECT target_minor FROM business.refund_goal WHERE order_id = $1::uuid", order); got != 7000 {
+				t.Fatalf("goal %d, want 7000", got)
+			}
+			if b := h.balance(t, cake); b.Succeeded != 5000 {
+				t.Fatalf("cake %+v", b)
+			}
+			if b := h.balance(t, delivery); b.Succeeded != 2000 {
+				t.Fatalf("delivery %+v", b)
+			}
+			if len(h.stripe.refundCreates()) != 2 || h.count(t, "SELECT business.refund_reserve($1::uuid)", order) != 0 {
+				t.Fatalf("creates %v", h.stripe.refundCreates())
+			}
+			if v, raw := h.cancelView(t, order, d); v.Refund.State != "returned" || v.Refund.DeliveryPending != 0 {
+				t.Fatalf("returned %s", raw)
+			}
+		})
 	}
 }
 

@@ -41,25 +41,32 @@ func (in ProductionInput) Validate() error {
 	return nil
 }
 
+// Started is the answer to a production start: the command result and the
+// order's current lifecycle.
+type Started struct {
+	catalog.Result
+	Lifecycle string
+}
+
 // StartProduction moves a confirmed order to in_production (chef or
 // fulfillment). Replayed is true for the same key again and when production
 // had already started (the timer or another request: one transition per
-// order).
-func (s *Store) StartProduction(ctx context.Context, subject, key, id string, in ProductionInput) (catalog.Result, error) {
+// order); Lifecycle is then the order's current one.
+func (s *Store) StartProduction(ctx context.Context, subject, key, id string, in ProductionInput) (Started, error) {
 	id = strings.ToLower(id)
 	if !catalog.ValidUUID(id) {
-		return catalog.Result{}, catalog.ErrNotFound
+		return Started{}, catalog.ErrNotFound
 	}
-	var r catalog.Result
-	err := s.DB.QueryRow(ctx, `SELECT result_id::text, replayed FROM business.order_production_start(
+	var r Started
+	err := s.DB.QueryRow(ctx, `SELECT result_id::text, replayed, lifecycle FROM business.order_production_start(
 		$1::uuid, $2::uuid, $3, $4, $5, $6)`,
-		subject, id, key, catalog.BodyHash(CmdStartProduction, id, in), in.ExpectedVersion, s.now().UTC()).Scan(&r.ID, &r.Replayed)
+		subject, id, key, catalog.BodyHash(CmdStartProduction, id, in), in.ExpectedVersion, s.now().UTC()).Scan(&r.ID, &r.Replayed, &r.Lifecycle)
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "GK503" {
-		return catalog.Result{}, ErrOrdersFrozen
+		return Started{}, ErrOrdersFrozen
 	}
 	if err != nil {
-		return catalog.Result{}, gatewayError("production start", err)
+		return Started{}, gatewayError("production start", err)
 	}
 	return r, nil
 }
