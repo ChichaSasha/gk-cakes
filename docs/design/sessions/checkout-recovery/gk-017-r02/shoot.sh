@@ -1,5 +1,6 @@
 #!/bin/sh
-# GK-017 r02 screenshots. Needs: python3 -m http.server 8792 --bind 127.0.0.1 --directory poc (from this folder).
+# GK-017 r02 screenshots. Needs, from this folder: python3 -m http.server 8792 --bind 127.0.0.1 --directory .
+# shot.html (next to this script) frames poc/<page> at an exact width; headless Chrome's window is at least 500 px wide.
 # Usage: sh shoot.sh  — writes screens/<name>-desktop.jpg and screens/<name>-mobile.jpg (JPEG 78 to keep the repository small).
 set -eu
 cd "$(dirname "$0")"
@@ -8,7 +9,7 @@ B=http://127.0.0.1:8792
 run() { perl -e "alarm 60; exec @ARGV" "$CHROME" "$@"; }  # a stuck headless run is stopped after 60 s
 mkdir -p screens
 shot() { name=$1; src=$2; for dev in desktop:1440 mobile:390; do d=${dev%%:*}; w=${dev#*:}
-  enc=$(python3 -c "import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1],safe=''))" "$src")
+  enc=$(python3 -c "import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1],safe=''))" "poc/$src")
   h=$(run --headless=new --disable-gpu --hide-scrollbars --window-size=$w,900 --virtual-time-budget=4000 --dump-dom "$B/shot.html?w=$w&src=$enc" 2>/dev/null | sed -n 's/.*<title>H=\([0-9]*\)<.*/\1/p')
   [ -n "$h" ] || { echo "no height for $name $d"; exit 1; }
   run --headless=new --disable-gpu --hide-scrollbars --window-size=$w,$h --virtual-time-budget=4000 --screenshot="screens/$name-$d.png" "$B/shot.html?w=$w&h=$h&src=$enc" 2>/dev/null
@@ -52,7 +53,7 @@ while read -r name src; do [ -n "$name" ] && shot "$name" "$src"; done <<'LIST'
 34-free-checkout recovery.html?state=free&v=checkout&shot=1
 35-free-confirm recovery.html?state=free&v=confirm&shot=1
 36-free-refused-try-again recovery.html?state=free&v=changed&shot=1
-37-free-refused-start-again recovery.html?state=free&v=closed&shot=1
+37-free-refused-time-passed recovery.html?state=free&v=closed&shot=1
 38-times-collection recovery.html?state=time-list&shot=1
 39-times-delivery-requestable recovery.html?state=time-list&v=delivery&shot=1
 40-times-loading recovery.html?state=time-list&v=loading&shot=1
@@ -62,4 +63,18 @@ while read -r name src; do [ -n "$name" ] && shot "$name" "$src"; done <<'LIST'
 44-order-collection-time-change recovery.html?state=order-time-change&v=collection&shot=1
 45-checkout-radio-times checkout.html?seed=pink&shot=1
 46-order-page-delivery order.html?example=true&mode=delivery&shot=1
+47-free-refused-place-released recovery.html?state=free&v=released&shot=1
+48-refund-requested-half recovery.html?state=refund&v=requested-half&shot=1
+49-refund-requested-with-delivery recovery.html?state=refund&v=requested-delivery&shot=1
+50-refund-q5-full recovery.html?state=refund&v=q5&shot=1
+51-refund-q5-delivery-paid recovery.html?state=refund&v=q5-paid&shot=1
+52-delivery-own-courier-chosen recovery.html?state=delivery-impossible&v=courier&shot=1
+53-delivery-collection-chosen-delivery-refund recovery.html?state=delivery-impossible&v=collection-paid&shot=1
+54-timeline-being-made recovery.html?state=timeline&shot=1
+55-timeline-delivery-being-made recovery.html?state=timeline&v=delivery&shot=1
+56-timeline-cancel-while-being-made recovery.html?state=timeline&v=cancel-production&shot=1
+57-timeline-no-show recovery.html?state=timeline&v=no-show&shot=1
+58-timeline-completed recovery.html?state=timeline&v=completed&shot=1
+59-timeline-completed-refund-via-chef recovery.html?state=timeline&v=completed-refund&shot=1
+60-timeline-delivery-failed recovery.html?state=timeline&v=delivery-failed&shot=1
 LIST
