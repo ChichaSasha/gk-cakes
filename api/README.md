@@ -1183,8 +1183,8 @@ them.
   longer awaits payment). A success observed later for one of its collections
   (real funds) is still recorded as `succeeded` with its evidence; its paid
   confirmation is refused (`order_changed`), the order stays `cancelled` and
-  the job goes to attention; the full return is recorded in the same
-  transaction (see "Full return" below). The order view
+  the job goes to attention; because the order is cancelled, the full return
+  is recorded in the same transaction (see "Full return" below). The order view
   shows `lifecycle: cancelled` with `cancel_reason` and `cancelled_at`, and
   nothing implies a refund. While a collection is still `pending` past its 15
   minutes the view keeps `payment.state: pending` (the UI says "Still checking
@@ -1262,7 +1262,17 @@ alternative) without a second subsystem.
   through the operation); any other (a dashboard refund, another amount) is
   **quarantined**: counted as exposure, and while unresolved it blocks every
   new refund dispatch for the collection (resolution columns exist; manager
-  tooling: Not yet).
+  tooling: Not yet). One that names an operation but contradicts its
+  amount, currency or payment intent is linked to it (`named_operation_id`):
+  while it stands, that admitted operation's unresolved amount is not
+  counted on top (its key can yield at most one refund). A matched refund
+  whose status later contradicts its decided operation (Stripe correcting a
+  `succeeded` refund to `failed`/`canceled`, a `failed` one turning out
+  otherwise, or any refund for a withdrawn operation) records the
+  contradiction on the operation: nothing becomes available, no automatic
+  payout or reopening, the order view says `needs_attention` and the worker
+  asks a manager (every reconcile also re-checks succeeded and failed
+  operations against Stripe's list).
 - **Accounting** (`business.refund_balance`, `refund_available`), per
   succeeded collection C: S = succeeded local operations + succeeded
   unmatched observations; R = unresolved local operations + pending
@@ -1273,14 +1283,18 @@ alternative) without a second subsystem.
   a local `unknown` 10000p, an external succeeded 5000p) gives allocation
   10000p, observation 5000p, available 0, possible exposure 15000p and no
   new dispatch (`TestRefundAccountingPreservesPossibleExposure`).
-- **Trigger.** A refused paid confirmation (the order was released, cancelled
-  or lost its holds before the success was recorded) records, in the same
-  transaction, the goal (target = every succeeded collection of the order;
-  raised if more is captured later) and reserves one operation per succeeded
-  collection for what is available, with its dispatch job. Idempotent. The
-  order is never reopened or fulfilled; the paid confirmation job still goes
-  to attention. `paid_awaiting_agreement` creates no goal (honour or full
-  return is a chef/customer decision: GK-026).
+- **Trigger.** A refused paid confirmation on a **cancelled** order (released
+  before the success was recorded) records, in the same transaction, the
+  goal (target = every succeeded collection of the order; raised if more is
+  captured later) and reserves one operation per succeeded collection for
+  what is available, with its dispatch job. Idempotent. The order is never
+  reopened or fulfilled; the paid confirmation job still goes to attention.
+  A refusal on an order that is not cancelled (confirmed by another
+  collection, awaiting payment after its holds were released) records no
+  goal: attention only, since refunding automatically could return the
+  confirmed collection too; `refund_late_capture` itself refuses a
+  non-cancelled order. `paid_awaiting_agreement` creates no goal (honour or
+  full return is a chef/customer decision: GK-026).
 - **Dispatch (worker, `payments.Refunds`, chained in `gk-worker`).** At the
   first dispatch (after the key and journal checks) the worker builds the
   exact `POST /v1/refunds` form (`payment_intent`, `amount` in pence,
@@ -1328,7 +1342,10 @@ order stays cancelled; a lost response retried with the same key and body,
 one refund; unknown past the window with no match stays unknown + attention,
 no second POST; pending → succeeded on its event; failed → the remainder
 reopens once under a new key; a dashboard refund quarantined, blocking
-dispatch; duplicate refund events counted once; a freeze defers).
+dispatch; duplicate refund events counted once; a freeze defers; a
+succeeded refund Stripe later reports failed needs a manager; a refund naming
+an operation with another amount counted once; a refusal on a confirmed
+order records no full return).
 
 Recorded decisions: a failed refund is never re-sent automatically (a later
 decision reserves the remainder: GK-026/manager); a reconcile never fails an
@@ -1353,6 +1370,14 @@ Not yet:
   so Evaluate keeps the collection `pending` and the order keeps its holds
   (the review looks again every 15 minutes) until a reviewed Evaluate rule
   or manager tooling exists;
+- an unmatched refund Stripe reports `failed` or `canceled` (for example a
+  failed dashboard refund) is quarantined like any other unmatched refund
+  and blocks the collection's dispatch until a manager resolves it, although
+  it returned no money (deliberately conservative);
+- the money of a refused paid confirmation on an order that is not
+  cancelled (confirmed by another collection, or awaiting payment after its
+  holds were released): attention only, no goal, until manager/chef tooling
+  (GK-026) decides it;
 - manager tooling for the full return: resolving quarantined observations,
   clearing contradicting evidence, deciding `unknown` refunds past their
   window and re-reserving a failed refund's remainder; the Q5 manual
