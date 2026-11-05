@@ -1,14 +1,22 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
+
+	// The home and discovery pages (GK-028) bring their own header.
+	const shopPage = $derived(
+		page.route.id === '/' || (page.route.id?.startsWith('/(shop)') ?? false)
+	);
 </script>
 
-<header>
-	<a class="brand" href={resolve('/')}>GK Cakes</a>
-	<nav aria-label="Account"><a href={resolve('/account')}>Your account</a></nav>
-</header>
+{#if !shopPage}
+	<header>
+		<a class="brand" href={resolve('/')}>GK Cakes</a>
+		<nav aria-label="Account"><a href={resolve('/account')}>Your account</a></nav>
+	</header>
+{/if}
 
 {@render children()}
 

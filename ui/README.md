@@ -209,6 +209,49 @@ presentational components are rendered on the server in tests
 (`svelte/server`). CI starts the built server and checks `/healthz` and the
 headers instead.
 
+## Discovery pages (GK-028)
+
+`/` (home), `/shop`, `/cakes/[id]`, `/sizes` and `/bag` follow the
+Creator-approved GK-016 r01c sketch (PR #21, `52fa680`) on the GK-015 r12
+visual foundation (styles in `src/lib/shop/shop.css`, scoped to `.shop`; the
+`(shop)` route group and the home page share `ShopShell`). They are public
+pages (cacheable, indexable; `/bag` has `noindex`) and read only the public
+catalogue (contracts K01): `GET /api/v1/cakes` (every page), `/cakes/{id}`,
+`/ready-cakes`, `/availability` and `/schedule`, anonymously. The server
+renders the first view through a universal load (8 s timeout); a failed load
+shows "Try again", never a crash, and a cake that is not active is a 404 with
+"This cake is no longer in our collection".
+
+- **Prices and allergens** are the server's: the recipe version's price for a
+  made-to-order size, the lot's own price for a ready-made cake; the exact
+  allergen declaration, prominent allergens called out ("Contains PEANUTS"),
+  and the shared-kitchen notice. A variant without a current recipe and its
+  declaration is shown but cannot be bought (K01). A ready-made cake is offered
+  only when made to the variant's current recipe version (as checkout), with
+  its stock left and the chef's collect-by time (the lot's expiry).
+- **Sizes and starting prices** is the owner's GK-002 base price list
+  (docs/creator/GK-002), a public guide; it is not used for any total.
+- **Date and time picker** (shared dialog on the cake page and bag): Collect /
+  Own courier (GK delivery shown disabled, as in checkout), a Monday-first
+  month labelled from `/availability` (places left for made-to-order cakes,
+  Closed, Too soon, Not open, Full, Too late after a ready-made cake's
+  collect-by date), times loaded automatically from `/schedule` with distinct
+  loading, no-times (next dates and "Contact the chef") and error ("Try
+  again") states, obsolete answers ignored, keyboard arrows and Page Up/Down.
+  "Use" checks the time again; a taken time is answered with fresh choices and
+  nothing is chosen for the customer.
+- **Bag** (`src/lib/shop/bag.ts`): catalogue keys (`v:<variantId>`,
+  `lot:<lotId>`, each once, at most 20), the date, handover choice and time,
+  in this tab's `sessionStorage` (`gk-shop-bag`; no prices, names or personal
+  data). The bag page rechecks every cake against the catalogue, removes (and
+  says so) what can no longer be bought, shows each current price and leaves
+  the total to checkout. "Review checkout" opens
+  `/checkout?v=…&lot=…&date=…` (see "Basket" above); checkout asks for the
+  time and handover again until it can read them.
+- **Not built yet:** cake photos (the catalogue has no images: a labelled
+  placeholder is shown), favourites, the custom request, reorder and the
+  account pages (GK-016 r02).
+
 ## Dependency audit
 
 `npm audit` reports low/moderate advisories in development tooling only
