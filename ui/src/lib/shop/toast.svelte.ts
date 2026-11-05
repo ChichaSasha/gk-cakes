@@ -13,7 +13,7 @@ class Toast {
 		this.timer = setTimeout(() => {
 			this.message = message;
 			this.timer = setTimeout(() => (this.message = ''), 4000);
-		}, 50);
+		}, 120);
 	}
 }
 

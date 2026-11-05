@@ -130,6 +130,9 @@ describe('device storage', () => {
 			[FAVOURITES_KEY]: JSON.stringify({ ids: [A], expires: '9999-01-01T00:00:00Z' })
 		});
 		expect(readFavourites(s, now)?.expires).toBe('2027-11-05T23:59:59.999Z');
+		// Stored capped, so it does not slide forward on later days.
+		expect(JSON.parse(s.data[FAVOURITES_KEY]).expires).toBe('2027-11-05T23:59:59.999Z');
+		expect(readFavourites(s, at('2027-11-06T00:00:00Z'))).toEqual(emptyFavourites());
 	});
 
 	it('starts each change from what is stored now, so expired favourites never come back', () => {

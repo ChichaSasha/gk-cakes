@@ -53,7 +53,8 @@ export type DeviceStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
 /**
  * The favourites stored on this device at `now`. An expired or damaged entry
- * is removed (reading never extends the year). Null when the browser does
+ * is removed and a cleaned one is written back (reading never extends the
+ * year; an expiry beyond a year from now is capped once and for all). Null when the browser does
  * not let this page use its storage.
  */
 export function readFavourites(storage: DeviceStorage, now: number): FavouritesState | null {
@@ -61,6 +62,10 @@ export function readFavourites(storage: DeviceStorage, now: number): FavouritesS
 		const raw = storage.getItem(FAVOURITES_KEY);
 		const state = parseFavourites(raw, now);
 		if (raw !== null && state.ids.length === 0) storage.removeItem(FAVOURITES_KEY);
+		else if (raw !== null && raw !== JSON.stringify(state)) {
+			// Keep the cleaned entry (a capped expiry, dropped bad IDs); this only shortens it.
+			storage.setItem(FAVOURITES_KEY, JSON.stringify(state));
+		}
 		return state;
 	} catch {
 		return null;
