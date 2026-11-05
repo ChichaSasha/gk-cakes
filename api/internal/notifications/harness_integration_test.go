@@ -183,6 +183,7 @@ type harness struct {
 	journal  *recovery.MemoryJournal
 	coord    *recovery.Coordinator
 	logs     *syncBuffer
+	allow    notifications.Allowlist // EMAIL_RECIPIENT_ALLOWLIST of new dispatchers
 
 	clockMu sync.Mutex
 	skew    time.Duration
@@ -244,7 +245,7 @@ func (h *harness) dispatcher() *notifications.Dispatcher {
 		h.t.Fatal(err)
 	}
 	d, err := notifications.NewDispatcher(notifications.DispatcherConfig{DB: h.pool, Coordinator: h.coord, Sender: client,
-		Environment: "test", Logger: h.logger()})
+		Environment: "test", Allowlist: h.allow, Logger: h.logger()})
 	if err != nil {
 		h.t.Fatal(err)
 	}

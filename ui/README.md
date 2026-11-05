@@ -209,6 +209,113 @@ presentational components are rendered on the server in tests
 (`svelte/server`). CI starts the built server and checks `/healthz` and the
 headers instead.
 
+## Discovery pages (GK-028)
+
+`/` (home), `/shop`, `/cakes/[id]`, `/sizes` and `/bag` follow the
+Creator-approved GK-016 r01c sketch (PR #21, `52fa680`) on the GK-015 r12
+visual foundation (styles in `src/lib/shop/shop.css`, scoped to `.shop`; the
+`(shop)` route group and the home page share `ShopShell`). They are public
+pages (cacheable, indexable; `/bag` has `noindex`) and read only the public
+catalogue (contracts K01): `GET /api/v1/cakes` (every page for the shop, the
+first four for the home page), `/cakes/{id}`,
+`/ready-cakes`, `/availability` and `/schedule`, anonymously. The server
+renders the first view through a universal load (8 s timeout); a failed load
+shows "Try again", never a crash, and a cake that is not active is a 404 with
+"This cake is no longer in our collection".
+
+- **Prices and allergens** are the server's: the recipe version's price for a
+  made-to-order size, the lot's own price for a ready-made cake; the exact
+  allergen declaration, prominent allergens called out ("Contains PEANUTS"),
+  and the shared-kitchen notice. A variant without a current recipe and its
+  declaration is shown but cannot be bought (K01). A ready-made cake is offered
+  only when made to the variant's current recipe version (as checkout), with
+  its stock left and the chef's collect-by time (the lot's expiry).
+- **Sizes and starting prices** is the owner's GK-002 base price list
+  (docs/creator/GK-002), a public guide; it is not used for any total.
+- **Date and time picker** (shared dialog on the shop, cake page and bag): Collect /
+  Own courier (GK delivery shown disabled, as in checkout), a Monday-first
+  month labelled from `/availability` (places left for made-to-order cakes,
+  Closed, Too soon, Not open, Full, Too late after a ready-made cake's
+  collect-by date), times loaded automatically from `/schedule` with distinct
+  loading, no-times (next dates and "Contact the chef") and error ("Try
+  again") states, obsolete answers ignored, keyboard arrows and Page Up/Down.
+  "Use" checks the time again; a taken time is answered with fresh choices and
+  nothing is chosen for the customer; closing the dialog during that check
+  is a cancel and saves nothing.
+- **Bag** (`src/lib/shop/bag.ts`): catalogue keys (`v:<variantId>`,
+  `lot:<lotId>`, each once, at most 20), the date, handover choice and time,
+  in this tab's `sessionStorage` (`gk-shop-bag`; no prices, names or personal
+  data). The bag page rechecks every cake against the catalogue, removes (and
+  says so) what can no longer be bought, shows each current price and leaves
+  the total to checkout. "Review checkout" opens
+  `/checkout?v=…&lot=…&date=…` (see "Basket" above); checkout asks for the
+  time and handover again until it can read them.
+- **Colour filter** (approved sketch): a Colour select on the shop, shown only
+  when at least one cake has a colour, filtering by its code; "Clear filters"
+  resets it. Each cake has at most one main colour, read by `colourOf` in
+  `src/lib/shop/catalog.ts` from
+  `"colour": {"code": "pink", "label": "Pink", "position": 10}` or `null` on
+  each cake (code `^[a-z0-9][a-z0-9-]{0,39}$` other than `all`, label 1–40
+  Unicode code points without surrounding whitespace, position an integer
+  0–10000; anything else counts as no colour). Colours are listed by position,
+  then label.
+- **Favourites** (`src/lib/shop/favourites.ts`, approved sketch): the heart
+  on every cake card saves or removes the cake on this device ("Saved on this
+  device for a year." / "Removed from favourites.", a polite status message).
+  Only cake IDs are kept, in `localStorage` (`gk-shop-favourites`, at most
+  200), until the end of the same London date one year after the last save or
+  removal (29 February clamps to 28 February; contracts K09); reading never
+  extends it, an expired or damaged entry is removed and a stored expiry
+  beyond a year from now is capped. They are read again before every change,
+  when the page is shown again and when another tab changes them, so
+  favourites that expired while a page stayed open never come back. A browser
+  that blocks storage gets "This browser cannot keep things on this device."
+  and nothing changes. `/favourites` (noindex) shows the saved cakes as
+  current shop cards, with the date they are kept until; cakes no longer in the
+  collection are left out, and removing one moves focus to the next heart.
+  Adding favourites to an account (K02 `PUT/DELETE /me/favourites/{cake_id}`)
+  comes with the account pages.
+- **Not built yet:** the custom request, reorder and the account pages
+  (GK-016 r02).
+
+### TODO (GK-028)
+
+- **TODO — cake photos.** The shop launches with labelled "Photo coming soon"
+  placeholders (Sasha's decision, 2026-11-05) because the public catalogue has
+  no images yet. Done when `GET /api/v1/cakes` and `/cakes/{id}` send each
+  cake's approved photo (K01 images: image revision, url, alt, width, height;
+  storage is SETUP.md provider row 04; owner photos in `docs/creator/GK-002`)
+  and `src/lib/shop/ui/CakePhoto.svelte` shows it everywhere a placeholder is
+  shown now (shop and home cards, cake page, bag rows). The placeholder stays
+  only for a cake without an approved photo. Also tracked in a TODO comment in
+  that component and on the GK-028 Trello card.
+- **TODO — colours in production.** The API sends each cake's `colour`
+  (`0028_catalog_colours.sql`, api/README "Catalog"), and the Colour filter
+  appears as soon as a cake has one (on staging: the confirmed list Pink,
+  Silver, Red, Chocolate, White, with Pink on the STAGING TEST cake). Still to
+  do: the chef creates that list in production and gives each cake a colour,
+  in the chef's catalogue screens (GK-018, not built yet). The shop needs no
+  change.
+
+## Staff catalogue (GK-018 groundwork)
+
+`src/lib/admin/catalogue.ts` is a typed client for the chef's catalogue in the
+staff API (api/README "Catalog"): reads (cakes in every state, all pages; one
+cake; a recipe version; flavours; the current allergen notice; colours;
+sizes, allergen codes and units) and commands (flavour, allergen notice,
+colour create/update, cake create/update/state, variant create/archive,
+recipe version create). Commands carry an Idempotency-Key and send exactly
+the fields given (a PATCH names only what changes; `colour_id: null` clears),
+path IDs must be UUIDs, and prices must be whole pence. `apiPatch` in
+`src/lib/api.ts` sends the PATCH commands. `src/lib/admin/session.ts` calls it
+with the signed-in staff member's token.
+
+`/admin/catalogue` (private, linked from `/admin`) is a plain read-only list
+of cakes by state (drafts, live, archived) with their colour and the sizes
+still offered, and the colour list. It is groundwork, not the chef's screens:
+those follow the GK-018 design once Sasha approves it (draft PR #15, r03b2 is
+not approved), and no catalogue change can be made from the UI yet.
+
 ## Dependency audit
 
 `npm audit` reports low/moderate advisories in development tooling only

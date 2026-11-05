@@ -29,7 +29,10 @@ directive() { # directive <policy> <name>
   tr ';' '\n' <<<"$1" | sed 's/^ *//' | grep -E "^$2( |$)" || true
 }
 
-for page in / /sign-in /account /admin /auth/callback /%61ccount /checkout /orders/00000000-0000-4000-8000-000000000000; do
+# Public pages (cacheable, indexable): the home and discovery pages (GK-028).
+public_pages=" / /shop /sizes /bag /favourites "
+
+for page in / /sign-in /account /admin /auth/callback /%61ccount /checkout /orders/00000000-0000-4000-8000-000000000000 /shop /sizes /bag /favourites; do
   h=$(headers "$page")
   csp=$(value "$h" content-security-policy)
   [[ -n "$csp" ]] || { fail "$page: no Content-Security-Policy"; continue; }
@@ -46,7 +49,7 @@ for page in / /sign-in /account /admin /auth/callback /%61ccount /checkout /orde
   done
   [[ "$(value "$h" x-content-type-options)" == nosniff ]] || fail "$page: no nosniff"
   [[ "$(value "$h" cross-origin-opener-policy)" == same-origin ]] || fail "$page: no Cross-Origin-Opener-Policy"
-  if [[ "$page" != / ]]; then
+  if [[ "$public_pages" != *" $page "* ]]; then
     [[ "$(value "$h" cache-control)" == no-store ]] || fail "$page: private page is cacheable"
     [[ "$(value "$h" referrer-policy)" == no-referrer ]] || fail "$page: private page sends a referrer"
     [[ "$(value "$h" x-robots-tag)" == *noindex* ]] || fail "$page: private page is indexable"

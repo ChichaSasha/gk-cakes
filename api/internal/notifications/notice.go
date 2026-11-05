@@ -180,6 +180,8 @@ func bareAddress(s string) bool {
 // Dispatch is a stored payload checked for sending.
 type Dispatch struct {
 	IdempotencyKey string
+	// To is the single recipient (for the staging allowlist).
+	To string
 	// Request is the exact provider request body.
 	Request []byte
 }
@@ -223,7 +225,30 @@ func ParseDispatch(stored []byte, env, intentID, key string) (Dispatch, error) {
 	if canonical, err := marshal(req); err != nil || !bytes.Equal(canonical, p.Request) {
 		return Dispatch{}, errors.New("notifications: stored request is not in canonical form")
 	}
-	return Dispatch{IdempotencyKey: key, Request: p.Request}, nil
+	return Dispatch{IdempotencyKey: key, To: req.To[0], Request: p.Request}, nil
+}
+
+// Allowlist is a staging recipient allowlist (EMAIL_RECIPIENT_ALLOWLIST):
+// lower-case exact addresses and "@domain" entries (that domain exactly,
+// not its subdomains). Empty allows every recipient; production must
+// leave it empty.
+type Allowlist []string
+
+// Allows reports whether addr, a bare address, may be sent to.
+func (a Allowlist) Allows(addr string) bool {
+	if len(a) == 0 {
+		return true
+	}
+	addr = strings.ToLower(addr)
+	if strings.Count(addr, "@") != 1 {
+		return false
+	}
+	for _, entry := range a {
+		if entry == addr || (strings.HasPrefix(entry, "@") && strings.HasSuffix(addr, entry)) {
+			return true
+		}
+	}
+	return false
 }
 
 func newUUID() string {

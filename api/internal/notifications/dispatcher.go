@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/jobs"
@@ -25,6 +26,7 @@ const (
 	reasonRecovery   = "recovery operation conflict for this notification"
 	reasonRefused    = "email provider refused the request: check the API key and the sending domain, then requeue"
 	reasonConflict   = "email provider reports this idempotency key used with a different body; outcome unknown"
+	reasonSuppressed = "notification suppressed (recipient not on EMAIL_RECIPIENT_ALLOWLIST) after an earlier send attempt: see its attempts; no further attempts"
 	reasonRejected   = "email rejected by the provider for this attempt: if the notice is failed, reach the recipient another way; if unknown, an earlier attempt may have been sent"
 	statusAccepted   = "accepted"
 	statusRejected   = "rejected"
@@ -37,6 +39,7 @@ type Dispatcher struct {
 	coord  *recovery.Coordinator
 	sender Sender
 	env    string
+	allow  Allowlist
 	log    *slog.Logger
 }
 
@@ -46,7 +49,10 @@ type DispatcherConfig struct {
 	Coordinator *recovery.Coordinator
 	Sender      Sender
 	Environment string // APP_ENV; payloads of any other environment are refused
-	Logger      *slog.Logger
+	// Allowlist is EMAIL_RECIPIENT_ALLOWLIST (outside production only):
+	// a notice to any other recipient is suppressed, never sent.
+	Allowlist Allowlist
+	Logger    *slog.Logger
 }
 
 // NewDispatcher returns a Dispatcher.
@@ -56,8 +62,14 @@ func NewDispatcher(cfg DispatcherConfig) (*Dispatcher, error) {
 		return nil, errors.New("notifications: dispatcher needs a database, a coordinator, a sender and a logger")
 	case !envPattern.MatchString(cfg.Environment) || cfg.Coordinator.Environment != cfg.Environment:
 		return nil, errors.New("notifications: dispatcher and recovery journal must use the same environment")
+	case cfg.Environment == "production" && len(cfg.Allowlist) > 0:
+		return nil, errors.New("notifications: a recipient allowlist is not allowed in production")
 	}
-	return &Dispatcher{db: cfg.DB, coord: cfg.Coordinator, sender: cfg.Sender, env: cfg.Environment, log: cfg.Logger}, nil
+	allow := make(Allowlist, len(cfg.Allowlist))
+	for i, entry := range cfg.Allowlist {
+		allow[i] = strings.ToLower(entry)
+	}
+	return &Dispatcher{db: cfg.DB, coord: cfg.Coordinator, sender: cfg.Sender, env: cfg.Environment, allow: allow, log: cfg.Logger}, nil
 }
 
 // Handle dispatches the leased job's notification intent; jobs of other kinds
@@ -84,6 +96,9 @@ func (d *Dispatcher) Handle(ctx context.Context, job jobs.Job) error {
 	if err != nil {
 		return jobs.Attention(reasonPayload, err)
 	}
+	if !d.allow.Allows(dispatch.To) {
+		return d.suppress(ctx, store, job, b.IntentID)
+	}
 	op := recovery.Operation{ID: b.Key, Kind: recovery.KindDispatch, AggregateID: b.IntentID,
 		Payload: b.Payload, ReplayUntil: b.ReplayUntil}
 	log := d.log.With("job_id", job.ID, "generation", job.Generation, "intent_id", b.IntentID)
@@ -102,6 +117,27 @@ func (d *Dispatcher) Handle(ctx context.Context, job jobs.Job) error {
 		}
 	}
 	return outcomeError(err)
+}
+
+// suppress records that the intent's recipient is outside the allowlist;
+// the provider is never called. Logs carry IDs only.
+func (d *Dispatcher) suppress(ctx context.Context, store leaseStore, job jobs.Job, intentID string) error {
+	var status string
+	err := store.db.QueryRow(ctx, "SELECT business.notification_dispatch_suppress($1::uuid, $2::uuid, $3)", store.args()...).Scan(&status)
+	if err != nil {
+		return gatewayErr(err)
+	}
+	d.log.Info("email suppressed: recipient not on the allowlist", "job_id", job.ID, "intent_id", intentID, "result", status)
+	switch status {
+	case "suppressed", "already", "settled":
+		return nil
+	case "suppressed_after_dispatch":
+		return jobs.Attention(reasonSuppressed, nil)
+	case "frozen":
+		return jobs.Defer(FreezeRecheck, recovery.ErrFrozen)
+	default:
+		return fmt.Errorf("notifications: unexpected suppression status %q", status)
+	}
 }
 
 // effect sends the stored request once and records the call. Accepted and

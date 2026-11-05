@@ -48,7 +48,7 @@ and staging/production reject local hosts and Unix sockets.
 | `APP_ENV`                | all        | `local`, `test`, `staging` or `production`                                                  |
 | `DATABASE_URL`           | api, worker | required secret; each process has its own login; add `sslrootcert=<path>` when the provider's CA is not in the system trust store |
 | `MIGRATION_DATABASE_URL` | gk-migrate | required secret, migration credential; never falls back to `DATABASE_URL`                   |
-| `UI_ORIGIN`              | api        | required exact origin for CORS; staging/production need public `https`                     |
+| `UI_ORIGIN`              | api        | required exact origin for CORS and order email links: `http(s)://host[:port]` with a plain DNS name or IPv4 host (no IPv6 literal, no underscore), at most 200 characters; staging/production need public `https` |
 | `PORT`                   | api        | default `8080`                                                                              |
 | `SHUTDOWN_TIMEOUT`       | api, worker | drain budget, default `20s`                                                                |
 | `PAYMENT_SECRET`         | api        | legacy placeholder, still validated (live keys only in production, test keys only elsewhere) but unused: the worker's `STRIPE_SECRET_KEY` is the payment key |
@@ -60,6 +60,7 @@ and staging/production reject local hosts and Unix sockets.
 | `AUTH_ISSUER`, `AUTH_PUBLISHABLE_KEY` | api | public identity-provider settings: the exact token issuer `https://<project>.supabase.co/auth/v1` and the publishable key `sb_publishable_...` (a secret key is refused); required in staging/production, otherwise both or neither; without them the authenticated `/api/v1` routes are not served, see [Identity](#identity-k00-gk-021) |
 | `CHECKOUT_ENABLED`       | api        | `true` serves `POST /api/v1/checkouts`, the free confirmation and the payment request; default off (`false`); turn it on only once a worker of the same release (with the hold review, GK-025 A3c1) runs |
 | `EMAIL_API_KEY`          | worker     | Resend sending key (`re_...`), redacted; see email dispatch below                          |
+| `EMAIL_RECIPIENT_ALLOWLIST` | api, worker | comma-separated exact addresses or `@domain` entries (that domain exactly; at most 50), compared lower-case. **Required in staging** (fails closed; staging uses `@gkcake.com`, plus the email-proof recipients if that workflow is run), **refused in production**, optional elsewhere (unset: no restriction). The API records it with the notice settings, so outside production an order notice to any other recipient is never queued, whichever worker build runs; the worker also suppresses any other recipient before calling the provider. See [Order notices](#order-notices-k08-k11-migration-0030) |
 | `RECOVERY_B2_KEY_ID`, `RECOVERY_B2_KEY` | worker | B2 application key for the recovery journal (key secret redacted); scope enforced at start, see [Recovery journal](#recovery-journal-k11-gk-024) |
 | `RECOVERY_ENCRYPTION_KEYS` | worker   | journal encryption keys `kid:base64(32 bytes)[,...]`, redacted                              |
 | `BACKUP_DATABASE_URL`    | gk-backup dump | the `gk_backup` login (read only), same rules as `DATABASE_URL` |
@@ -120,8 +121,8 @@ are provisioned per environment outside Git and granted exactly one group:
 | Group       | Purpose                       | Privileges                                                  |
 | ----------- | ----------------------------- | ----------------------------------------------------------- |
 | `gk_owner`  | owns business objects         | never granted to runtime; migration credential may `SET ROLE` |
-| `gk_api`    | API runtime                   | schema `USAGE`; `EXECUTE` on `email_event_record` (webhook evidence), `identity_resolve` and `identity_staff_list` (identity), the catalog, schedule, checkout and order gateway functions, and `payment_initiate` and `payment_event_record` (payments); the exact list is tested |
-| `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions (`job_claim`, `job_heartbeat`, `job_complete`, `job_release`, `job_fail`, `job_attention`), the lease-fenced notification gateway (`notification_dispatch_begin`, `notification_attempt_record`, `notification_recovery_*`) and the lease-fenced order-command gateway (`order_command_begin`, `order_command_reserve`, `order_command_prepared`, `order_command_apply`, `order_command_secured`, `order_command_frozen`) and the lease-fenced payment gateway (`payment_job_begin`, `payment_dispatch_admit`, `payment_attempt_record`, `payment_reconcile_record`, `payment_recovery_*`, `payment_expire_admit`, `payment_expire_record`, `payment_under_reconciliation`) and the order hold review (`order_hold_review_run`); the exact list is tested |
+| `gk_api`    | API runtime                   | schema `USAGE`; `EXECUTE` on `email_event_record` (webhook evidence), `identity_resolve` and `identity_staff_list` (identity), the catalog, schedule, checkout and order gateway functions, `payment_initiate` and `payment_event_record` (payments), and `notice_settings_record` (order notices); the exact list is tested |
+| `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions (`job_claim`, `job_heartbeat`, `job_complete`, `job_release`, `job_fail`, `job_attention`), the lease-fenced notification gateway (`notification_dispatch_begin`, `notification_attempt_record`, `notification_recovery_*`, `notification_dispatch_suppress`) and the lease-fenced order-command gateway (`order_command_begin`, `order_command_reserve`, `order_command_prepared`, `order_command_apply`, `order_command_secured`, `order_command_frozen`) and the lease-fenced payment gateway (`payment_job_begin`, `payment_dispatch_admit`, `payment_attempt_record`, `payment_reconcile_record`, `payment_recovery_*`, `payment_expire_admit`, `payment_expire_record`, `payment_under_reconciliation`) and the order hold review (`order_hold_review_run`); the exact list is tested |
 | `gk_backup` | backup reader                 | `SELECT` on business tables and future sequences, and on `gk_meta.schema_migration` (migration 0008) |
 
 The migration credential needs `CREATEROLE` and `CREATE` on the database.
@@ -588,6 +589,79 @@ after GK-021 and GK-023/025); after a restore, re-correlating `unmatched`
 events and applying `matched` events that arrived while their intent was
 still `queued` (GK-034 Milestone B).
 
+### Order notices (K08, K11, migration 0030)
+
+Customers get short transactional emails about their order (British English,
+plain text plus simple HTML in the GK Cakes colours, London time, whole pounds
+without decimals). Each is rendered in the database and enqueued through
+`business.notification_enqueue` (intent, job and audit) **inside the
+transaction of its transition**, so a notice exists exactly when its transition
+does:
+
+| Notice (template revision)            | Transition                                                                 |
+| ------------------------------------- | -------------------------------------------------------------------------- |
+| confirmed (`order-confirmed.v1`)      | `order_command_secured` secures a paid or free confirmation, or an honoured late payment (K11: never before the outcome envelope is acknowledged) |
+| payment received (`order-paid-late.v1`) | `order_command_secured` secures a `paid_awaiting_agreement` payment: no promise, the chef will contact, full return if no handover is agreed |
+| released (`order-released.v1`)        | the hold review releases an abandoned order, **only if a payment was actually dispatched to Stripe** (a collection with `dispatch_started_at`; never-dispatched ones do not count) or the customer asked to confirm a free order; an abandoned checkout that never got there is not emailed. No order link and no invitation to order again |
+| cancelled (`order-cancelled.v1`)      | `order_command_secured` secures a cancellation (customer, chef or late-payment return): reason, rate and the refund amount **requested** ("we will email you once it has been returned"), or "already returned" when the refund succeeded before the cancellation was secured; "no payment" when nothing was paid |
+| refund returned (`refund-returned.v1`) | the order's refund block (`order_refund_summary`) is `returned` with a positive target and the order is not `cancellation_pending`; one per refund-goal version, checked at commit by deferred constraint triggers on refund operations and observations, the goal, a secured cancellation and secured order commands (a published manual payout). Partial returns are not emailed |
+
+Manual payout instructions are never emailed. `business.order_notice` records
+each (order, kind, dedupe key: the command, the goal version, or `released`)
+once, so retries, K11 resumes, replays and duplicate provider events give one
+notice each. Its intent ID and idempotency key derive from the environment,
+order, kind and key, and every rendered input is persisted (the confirmation's
+refund sentence compares the deadline with the command's receipt, not the
+clock), so a transition replayed after a restore produces the same request
+under the same key and the provider deduplicates it. The recipient is the
+order's contact address (frozen in the payload); `recipient_id` is the order.
+Neither the audit trail nor `order_notice` holds personal data, and the
+greeting does not use the customer's name. A notice never rolls back its
+transition: an address the dispatcher would refuse (anything outside a
+conservative ASCII form), a recipient off the recorded allowlist, or a
+rendering/enqueue error is recorded as `not_queued` (detail `recipient`,
+`allowlist` or the SQLSTATE). Every outcome other than `queued` is audited on
+the order (`order.notice_not_queued`: kind, outcome, detail; in the staff
+audit summary) and, unless deliberate, raises the staff attention flag
+`notice_not_sent` (`order_attention_flags`, staff list and detail): a refused
+address, a rendering error, or `not_configured` once settings exist (a deploy
+window). The allowlist and a database whose API never recorded settings are
+not flagged.
+
+The order page link is `<UI_ORIGIN>/orders/<id>`, without any capability: guests
+are told to open it on the device and browser they ordered with (gap below).
+The API records `APP_ENV`, `UI_ORIGIN` and `EMAIL_RECIPIENT_ALLOWLIST` with
+`business.notice_settings_record` at start and on every readiness probe (one
+statement that writes only when something changed), and `/readyz` stays 503
+while that fails; a database without them records its notices as
+`not_configured` (no intent). The settings refuse what the configuration
+refuses (no allowlist in production, one required in staging, the origin form
+above). The deploy compatibility matrix expects the candidate API to write
+that row while becoming ready (`.github/scripts/compat-matrix.sh`, step 3).
+
+**Staging allowlist.** Two layers. First, in the database: outside
+production, `order_notice_enqueue` never queues a notice to a recipient off
+the recorded allowlist (`not_queued`, detail `allowlist`), so an old,
+failed or rolled-back worker build cannot send it either. Staging fails
+closed: the API and the worker refuse to start without
+`EMAIL_RECIPIENT_ALLOWLIST`, and staging settings without one are refused.
+Second, in the worker: the dispatcher checks the stored recipient of every
+notice (including ones not rendered by 0030, such as the email proof) before
+any provider call; another recipient is suppressed through
+`business.notification_dispatch_suppress` (lease-fenced, freeze first): the
+intent keeps its state with `suspended_reason` set, a
+`notification.suppressed` audit event (no personal data) is recorded and the
+job completes. If an earlier attempt was already made under another
+configuration, the job goes to attention instead. Production refuses the
+variable (API, worker, dispatcher and settings).
+
+The copy is the agent's draft for Creator review; changing it needs a new
+template revision (a new migration replacing `order_notice_render`). Gaps:
+guests have no emailed access to their order page until account claims exist;
+GK delivery wording is a placeholder until GK delivery agreements exist; date
+moves (K06) are not reflected (the original handover is shown); the chef's
+address email (about two days before collection) is not automated here.
+
 ## Database backups (K11, GK-034)
 
 Independent daily restore points, kept 30 days, separate from current order
@@ -877,8 +951,8 @@ use come with GK-032; real recipe data waits for GK-038's measurements.
 **Commands** need the chef capability and a current provider session, an
 `Idempotency-Key` header (1 to 128 visible ASCII characters) and, for an
 existing object, `expected_version`. Bodies are one UTF-8 JSON object with
-lower_snake_case keys, no unknown or repeated fields and no `null` (no catalog
-field is nullable; null is 422). The structural checks win: a `null` on an
+lower_snake_case keys, no unknown or repeated fields and no `null` (null is
+422) except on a field documented as nullable (only a cake's `colour_id`). The structural checks win: a `null` on an
 unknown field is 400 (unknown field), not 422; this holds for every command
 that reads its body this way (catalog, schedule and checkout). A key is scoped to (account, command, path
 resource); the same key and body return the original object, in its current
@@ -896,14 +970,36 @@ public business content, not personal data.
 | `GET /api/v1/admin/cakes`, `/admin/cakes/{id}` | chef, technical support | every state, with versions and archived variants |
 | `GET /api/v1/admin/recipes/versions/{id}` | chef, technical support | one immutable version with its lines |
 | `GET /api/v1/admin/flavours`, `/admin/allergen-notices/current`, `/admin/sizes` | chef, technical support | |
+| `GET /api/v1/admin/colours` | chef, technical support | every colour, archived included: `{id, code, label, position, archived_at, version}` by position, then label |
+| `POST /api/v1/admin/colours` | chef | `{code, label, position}` → 201; a used code (archived included) is 409 `DUPLICATE` |
+| `PATCH /api/v1/admin/colours/{id}` | chef | `{expected_version, label?, position?, archived?}` (at least one; none nullable; `code` cannot change); `archived: true` archives, `false` restores |
 | `POST /api/v1/admin/flavours` | chef | `{name}` |
 | `POST /api/v1/admin/allergen-notices` | chef | `{body}`: a new notice version |
-| `POST /api/v1/admin/cakes` | chef | `{name, description}`: a draft |
-| `PATCH /api/v1/admin/cakes/{id}` | chef | `{expected_version, name?, description?}` (not nullable) |
+| `POST /api/v1/admin/cakes` | chef | `{name, description, colour_id?}`: a draft; `colour_id` a colour ID or `null` (none) |
+| `PATCH /api/v1/admin/cakes/{id}` | chef | `{expected_version, name?, description?, colour_id?}`; name and description not nullable; `colour_id: null` clears the colour, absent keeps it |
 | `POST /api/v1/admin/cakes/{id}/state` | chef | `{expected_version, state: active\|archived}` |
 | `POST /api/v1/admin/cakes/{id}/variants` | chef | `{flavour_id, size_code, stock_mode}` |
 | `POST /api/v1/admin/variants/{id}/archive` | chef | `{expected_version}` |
 | `POST /api/v1/admin/recipes/versions` | chef | `{variant_id, expected_version, price_minor, servings_min, servings_max, coating, composition, allergen_notice_id, allergens, lines}` |
+
+**Colours** (`0028_catalog_colours.sql`; K01 amendment 2026-11-05, from the
+Creator-approved GK-016 r01c sketch) feed the shop's Colour filter. The chef
+keeps the list: a `code` (`^[a-z0-9][a-z0-9-]{0,39}$`, not `all`, the filter's
+"All colours" value; unique among all colours, archived ones included, and
+never changed), a `label` (1 to 40 Unicode code points, single line, no
+surrounding spaces: refused, not trimmed) and a `position` (0 to 10000, the
+filter order). Colours are archived, never deleted, and can be restored. A cake
+has at most one colour (`colour_id`); an unknown or archived colour is 422
+`INVALID_INPUT` (`colour_id is not an active colour`). Every cake in
+`GET /api/v1/cakes` and `/cakes/{id}` carries `"colour": {"code", "label",
+"position"}` or `"colour": null` (no colour, or an archived one); staff reads
+add the colour's `id` and `archived_at`. Nothing is seeded: the sketch's
+starting list (Pink, Silver, Red, Chocolate, White) is for the chef to create
+(chef screens are GK-018). The 0009 cake create/update functions stay (the
+previous build uses them, and so does this API for a command without
+`colour_id`); they leave the colour unchanged, and a body without `colour_id`
+hashes as before, so a retry across a rolling deploy replays. Colours are
+public catalogue content, not personal data.
 
 Errors: 400 `BAD_REQUEST` / `IDEMPOTENCY_KEY_REQUIRED`, 403 `FORBIDDEN`, 404,
 409 `STALE_VERSION` / `KEY_REUSED` / `DUPLICATE` / `CONFLICT`, 413, 422
@@ -1567,22 +1663,453 @@ Not yet:
   cancelled (confirmed by another collection, or awaiting payment after its
   holds were released): attention only, no goal, until manager/chef tooling
   (GK-026) decides it;
-- manager tooling for the full return: resolving quarantined observations,
+- (done in GK-026 B2, see "Chef refunds and recovery") manager tooling for the full return: resolving quarantined observations,
   clearing contradicting evidence, deciding `unknown` refunds past their
   window and re-reserving a failed refund's remainder; the Q5 manual
-  alternative (`manual_alternative` channel); customer/chef cancellation and
-  partial refund goals (GK-026); refund emails; a sandbox proof of a refund;
-- the chef's resolution of `paid_awaiting_agreement` (honour or full return)
-  and visible chef cases beyond job attention (A3c/GK-026); confirmation
-  emails;
+  alternative (`manual_alternative` channel); partial refund goals
+  (GK-026); refund emails; a sandbox proof of a refund;
+- visible chef cases beyond job attention (the late-payment decision itself
+  is GK-026 B1 part 2); confirmation emails;
 - payment-method configuration snapshot and drift detection, Q4 method
   qualification, Adaptive Pricing and presentment-currency evidence (any
   non-GBP session, intent or charge is a mismatch for now), delivery
-  collections;
+  collections from checkout (the kind exists since 0022);
 - manager reconciliation tooling for `unknown` collections and dispatches in
   `reconcile`;
 - journal readiness reaching the API: initiation is refused during a restore
   freeze, but an unreachable journal only makes the worker wait.
+
+## Cancellation (K05, GK-026 B1 part 1)
+
+Migration `0021_cancellation.sql`. Customer and chef cancellation of an
+accepted order, as a new K11 order command `cancel` through the A3a
+machinery (prepared envelope before the commit, outcome envelope before it
+is visible) and the A3c2 refund core (no second refund ledger). Owner rule
+BO-GK-001.ready_cancellation (`docs/creator/GK-001/decisions.json`): strictly
+before `full_refund_deadline_at` (original handover − 120 elapsed hours)
+returns 100% of the actual paid aggregate (after discounts); at equality or
+later exactly 50%; the chef's cancellation 100%; production never reduces it.
+
+| Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
+| --- | --- | --- |
+| `POST /api/v1/orders/{id}/cancellation-preview` | the owner (bearer) or the guest (`X-Order-Capability` with `cancel`) | no body (or `{}`); 200 `{preview_id, order_id, order_version, rate, paid_minor, amount_minor, currency, allocations[{collection_id, amount_minor}], full_refund_deadline_at, computed_at, expires_at, preview_hash}` |
+| `POST /api/v1/orders/{id}/cancel` | as above | `{expected_version, preview_id, preview_hash}` with Idempotency-Key; 202 `cancellation_pending` |
+| `POST /api/v1/admin/orders/{id}/cancel` | chef | `{expected_version, reason}` (1–500 characters, one line) with Idempotency-Key; 202 `cancellation_pending` |
+
+- **Preview.** Computed by the database at the request instant: the rate,
+  the paid aggregate (succeeded collections), the amount = nearest-penny
+  half-up of rate × paid (a half penny goes to the customer: 9501p at 50% is
+  4751p), the allocation as `refund_reserve` would reserve it, and a
+  10-minute expiry. Stored immutably with the order version, the actor and a
+  SHA-256 of its body.
+- **Cancel.** Under the order lock, at the persisted receipt instant: the
+  same actor's unexpired preview of the current version must still give the
+  same rate and amount. A preview that said 100% when the receipt is at or
+  after the deadline (the boundary was crossed since) is 409
+  `PREVIEW_STALE` (refresh and reconfirm); so is an expired one. An unknown
+  preview or wrong hash is 422 (`preview_id`). Eligible lifecycles:
+  `confirmed`, `in_production`, `ready`; otherwise 409
+  `CANCELLATION_NOT_ELIGIBLE` (awaiting payment keeps its release paths;
+  `paid_awaiting_agreement` is the chef's late-payment decision, part 2).
+  One cancellation at a time (`CONFLICT` while one is pending); the same
+  actor and key replays, the same key with another body is `KEY_REUSED`.
+- **Commit** (worker, `order_command_apply`): re-checks version, lifecycle
+  and that the acceptance is secured (otherwise refused `order_changed`,
+  version + 1 only); sets `cancelled`, `cancel_reason`
+  `customer_cancelled` | `chef_cancelled`, `cancelled_at` = the receipt
+  instant, releases the day place (`capacity_release`), keeps the code use
+  consumed (K03), records the order's refund goal (target, reason,
+  `policy_rate`, `paid_basis_minor`) and reserves the refund operations with
+  `refund_reserve` (C − S − R, aggregate remainder, one unresolved operation
+  per collection). The refund dispatch then runs as in the full return.
+- **Read model.** Until the outcome envelope is acknowledged the order reads
+  `cancellation_pending` without `cancel_reason`, `cancelled_at` or
+  `refund`; `cancellation` reports the latest cancel command (`state`
+  processing | cancelled | refused, `reason`, `rate`, `amount_minor`,
+  `requested_by` customer | chef, `requested_at`). The refund reads
+  `requested` until Stripe has it and `returned` only when every penny
+  succeeded.
+- A restore freeze defers the command (nothing committed); the request
+  itself is still recorded.
+
+### Production start, late payment and allocation (GK-026 B1 part 2)
+
+Migration `0022_production_late_payment.sql`.
+
+| Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
+| --- | --- | --- |
+| `POST /api/v1/admin/orders/{id}/start-production` | chef or fulfillment (K00) | `{expected_version}` with Idempotency-Key; 200 `{order_id, lifecycle}` (the order's current lifecycle; `Idempotent-Replayed: true` for the same key again, also during a restore freeze, or when production had already started); a new start is 503 during a restore freeze |
+| `POST /api/v1/admin/orders/{id}/late-payment` | chef | `{expected_version, decision: "honour" \| "full_return", customer_agreement: {channel, agreed_at, evidence_ref}}` (agreement required for honour, refused for full_return) with Idempotency-Key; 202 `decision_pending` |
+
+- **Production start (K05).** One transition per order
+  (`business.production_transition`, key `production_start:<order>`),
+  shared by the manual start (effective at the receipt instant) and the
+  timer job (worker kind `production`: due at `paid_at` or
+  `free_confirmed_at` + 48 h, effective at that scheduled instant, observed
+  when it ran). Whichever comes second changes nothing (the manual one
+  answers as a replay). Only `confirmed` → `in_production`; no ingredient is
+  deducted. The timer is scheduled when an order becomes visibly confirmed
+  (secured), reads the restore freeze first, is lease-fenced, and waits
+  while a cancellation or late-payment decision on the order is unresolved
+  (cancel-first); a manual start then conflicts. Production never changes
+  the cancellation entitlement: the rate depends only on the cancel receipt
+  instant (start-first at the boundary is 50%, before it 100%). A start
+  bumps the order version, so a cancellation preview held from before it
+  must be refreshed (the cancel answers `STALE_VERSION`). Not a K11 command:
+  it changes no customer commitment or money. Accepted risk for review: on
+  a primary database loss, a manual start's effective time (and the start
+  itself, until the timer runs) can be lost; the timer re-derives only the
+  scheduled start (payment or free confirmation + 48 h).
+- **Late payment (K04 Q2).** A K11 order command `late_payment` on a
+  `paid_awaiting_agreement` order. `honour` needs the customer's agreement
+  (`channel` email | phone | instagram | whatsapp | in_person | other,
+  `agreed_at` not after the receipt, `evidence_ref` 1–200 characters;
+  silence never counts; `agreed_at` not before the payment, else 422) and
+  is refused 409 `HONOUR_TOO_LATE` once the original handover is not after
+  the receipt instant. It commits `confirmed` when the order still has its
+  original slot and committed holds (otherwise refused `holds_changed`); the
+  production timer then follows from `paid_at` + 48 h. `full_return` cancels
+  with `cancel_reason` `late_payment_returned` and a goal of 100% of the
+  actual paid aggregate, never 50%, and reads like a cancellation (the
+  `cancellation` block with reason `late_payment_returned`). The decision and
+  agreement are stored immutably (`business.late_payment_decision`), with the
+  chef as the feasibility recorder at the receipt instant.
+- **Allocation (K05).** `business.refund_plan` allocates a goal over the
+  order's succeeded collections in stable order (cake, delivery, ID): each
+  recorded floor first, then floor + largest remainder over the rest (9501p
+  cake + 2000p delivery at 50% is 5751p: 4751p + 1000p). A new reservation
+  for a collection is min(share − its S + R, its room, target − all S + R),
+  never while it is blocked; skewed prior actuals while money is still owed
+  pause automatic allocation. Delivery refunds are chef-only (K05): a
+  delivery collection is reserved automatically only under a chef-recorded
+  floor; otherwise its share is a visible obligation, `delivery_pending_minor`
+  in the preview and the order's `refund` block (capped by what the goal
+  still needs), and the refund reads `partly_returned` until it is paid.
+  `refund_reserve` and the cancellation preview use it. An unexpired
+  identical preview of the same actor and order version is returned again
+  instead of a new row. Payment collections may be of kind `delivery` (data only: no
+  delivery checkout creates them yet).
+- **Raised goal after a definitive outcome.** When an unresolved refund
+  operation becomes succeeded or failed under a goal raised since it was
+  reserved, the whole remaining allocation is reserved once (10000p
+  captured, 2000p succeeded, 3000p unknown, goal raised to 10000p: nothing
+  sent; then success → 5000p once, failure → 8000p once). A failure under an
+  unchanged goal still waits for a person.
+- **Delivery failure floor (interim).** `business.refund_delivery_failure_record`
+  (chef, `checkout.Store.RecordDeliveryFailure`; no HTTP route yet) records
+  a 100% floor on a succeeded delivery collection. The goal keeps its largest
+  policy target (`policy_target_minor`) apart from floors; its target is the
+  larger of the policy target and the floor plus each other collection's
+  larger of its policy share and S + R, capped by paid, never lowered. So
+  the order does not matter: cake 10000p + delivery 2000p at 50% with a
+  delivery floor is 7000p either way; with a prior cake return of 6000p it
+  is 8000p (delivery 2000p sent once).
+- **Tests.** Scheduled production jobs are due by the fixed test clock, so
+  the integration harness claims them only when a test runs them
+  (`holdProduction`).
+
+Not yet (the delivery share action and the agreed exception goal: GK-026 B2
+below): chef-confirmed revised allocations after skewed prior actuals; the
+completed/no-show chef request that creates a financial case while
+preserving fulfillment history (K05); gating refund dispatch on the
+cancellation being secured (refunds are reserved and dispatched from the
+commit, as for the 0016 late-capture full return, each under its own K11
+dispatch protection); the Q5
+manual alternative payout; manager recovery tools (quarantine, contradicting
+evidence, `unknown` past its window, re-reserving a failed remainder under an
+unchanged goal); an HTTP route for the delivery failure and delivery
+collections from checkout; returning a sold ready cake to stock on
+cancellation; staff order reads; cancellation, production and refund emails;
+the UI (B2/B3).
+
+## Chef refunds and recovery (K05, GK-026 B2)
+
+Part 1: migrations `0023_b1_followups.sql` and `0024_chef_refunds.sql`.
+Both routes reuse the A3c2 ledger (`refund_goal`, `refund_operation`, the
+dispatch worker and its K11 protection per operation); there is no second
+refund ledger.
+
+| Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
+| --- | --- | --- |
+| `POST /api/v1/admin/orders/{id}/refunds` | chef | `{expected_version, amount_minor, currency: "GBP", allocations: [{collection_id, amount_minor}], reason}` with Idempotency-Key; 202 `{order_id, operation_id (the exception), state: "refund_pending", poll_after_seconds}` |
+| `POST /api/v1/admin/orders/{id}/delivery-refund` | chef | `{expected_version, collection_id}` with Idempotency-Key; 202 `{order_id, operation_id (the refund operation), state: "refund_pending", poll_after_seconds}` |
+
+- **Agreed exception (partial refund goal).** `amount_minor` 1–100000000
+  pence; 1–10 allocations, each a distinct succeeded collection of the order
+  (lower-case UUID), at least 1p, adding up to the amount (otherwise 422
+  `allocations`); reason 1–500 characters on one line (kept in
+  `business.refund_exception`, never in the audit detail or logs). Under the
+  order lock: 409 `RECONCILIATION_REQUIRED` while the order has an
+  unresolved quarantined refund observation, contradicting evidence on a
+  refund operation or payment collection, a refund in `requires_action`, an
+  unresolved refund whose dispatch is in K11 `reconcile`, or a payment
+  collection in `unknown`; 409 `REFUND_IN_PROGRESS` while any refund of the
+  order is unresolved (the explicit allocation is reserved against settled
+  balances, so no automatic reservation splits it); 409 `REFUND_LIMIT` when
+  the amount exceeds paid − S − R over the order or an allocation exceeds
+  its collection's room (C − S − R). Then the goal target becomes
+  min(paid, max(target, S + R) + amount), version + 1 (a new goal has reason
+  `chef_exception`), exactly the allocations are reserved as refund
+  operations under that version, the order version is bumped and the
+  exception is stored immutably. It is an obligation on top of what is owed:
+  a pending ordinary share stays pending. A later cancellation nets it (K05:
+  the policy target is cumulative): exceptions of 9500p on a 12000p order
+  cover a 50% cancellation (6000p), which then raises only the policy target
+  (audited `refund.policy_target_raised`) and sends nothing.
+- **Pending delivery share.** Reserves, for one unfloored succeeded delivery
+  collection, what `delivery_pending_minor` reports for it: min(its share −
+  its S + R, its room, what the goal still needs after everything returned,
+  reserved or automatically reservable). 404 for a collection of another
+  order, 409 `CONFLICT` for a cake or unpaid collection, 409
+  `NO_REFUND_PENDING` when nothing is pending, `REFUND_IN_PROGRESS` while
+  that collection has an unresolved refund, `RECONCILIATION_REQUIRED` as
+  above. Cake 9501p + delivery 2000p at 50%: the cancellation sends 4751p,
+  the chef's delivery refund 1000p once, and the refund reads `returned`.
+- **Both:** chef only (403 otherwise); 409 `STALE_VERSION`; the same key and
+  body replays (`Idempotent-Replayed: true`, also during a restore freeze),
+  another body is `KEY_REUSED`; a new request during a restore freeze is 503
+  and records nothing; 409 `CONFLICT` while a K11 command of the order is
+  not secured or a cancellation/late-payment decision is unresolved. Not
+  K11 order commands themselves (no customer commitment changes); each
+  reserved operation is protected under K11 before its first Stripe call.
+  Audited: `refund.exception_recorded` / `refund.delivery_paid`,
+  `refund.goal_recorded` / `refund.goal_raised`, `refund.reserved`.
+- **B1 follow-ups (0023).** After a failed refund the order's refund reads
+  `needs_attention` only when the goal lacks money beyond what is returned,
+  reserved and `delivery_pending_minor` (a pending chef delivery action is
+  not a failure); a policy target raised without raising the goal is audited
+  `refund.policy_target_raised`; the commit-time `honour_too_late` refusal
+  is audited `order.late_payment_refused`.
+- **Tests:** `internal/checkout/recovery_integration_test.go` (real
+  PostgreSQL, fake Stripe), `internal/httpapi` `TestChefRefundRoutes`.
+
+### Manager recovery tools (GK-026 B2 part 2, migration 0025)
+
+| Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
+| --- | --- | --- |
+| `POST /api/v1/admin/orders/{id}/refund-observations/{observation_id}/resolve` | chef | `{expected_version, resolution: "match" \| "accept_external", refund_operation_id (match only), note}`; 200 `{order_id, decision_id}` |
+| `POST /api/v1/admin/orders/{id}/refund-operations/{operation_id}/decide` | chef | `{expected_version, decision: "failed" \| "succeeded", provider_refund_id (succeeded only), note}`; 200 |
+| `POST /api/v1/admin/orders/{id}/refund-operations/{operation_id}/clear-mismatch` | chef | `{expected_version, decision: "keep" \| "failed" \| "succeeded", note}`; 200 |
+| `POST /api/v1/admin/orders/{id}/payment-collections/{collection_id}/clear-mismatch` | chef | `{expected_version, note}`; 200 |
+| `POST /api/v1/admin/orders/{id}/refund-operations/{operation_id}/re-reserve` | chef | `{expected_version, note?}`; 202 `refund_pending` |
+| `GET /api/v1/admin/attention` | chef; technical support (no amounts, audited `attention.viewed`) | 200 `{items: [{kind, order_id, collection_id, refund_operation_id, observation_id, job_id, reason, amount_minor, currency, window_ended, since}]}` |
+
+Every decision: Idempotency-Key (replays also during a restore freeze;
+another body `KEY_REUSED`), `expected_version` (the order version is
+bumped), 503 for a new decision during a restore freeze, `CONFLICT` while a
+K11 command of the order is unresolved, the note (1–500 characters, one
+line) stored immutably in `business.refund_recovery_decision` and kept out
+of the audit (`refund.recovery_decided`). No decision calls Stripe. A
+decision completes the order's refund jobs in attention that it settled (a
+dispatch now decided without contradiction, a reconcile whose collection
+has nothing unresolved, quarantined or contradicted; audited
+`refund.attention_settled`), and the attention list never shows such jobs.
+When a decision settles an operation whose dispatch K11 record is still
+prepared or in reconcile, a `refund_resolve` job (worker kind
+`refund_resolve`, after `refund`) records the outcome `manager_failed` |
+`manager_succeeded` (evidence: the decision ID and state) in the
+independent journal with `recovery.Coordinator.Resolve`, outside any
+transaction, and secures the record; a record already committed with
+another outcome is left alone. Deploy the worker with (or before) the API
+for this: an older worker backs these jobs off as unhandled.
+
+- **Resolve a quarantined observation.** `match` only when the identities
+  prove it (the refund's metadata names the operation or the operation
+  records that refund ID; same amount, `gbp`, the collection's payment
+  intent and Stripe account; no other refund matched to it; the operation
+  unresolved): the operation is settled by the refund's own status;
+  otherwise 409 `IDENTITY_UNPROVEN`. `accept_external` keeps the observation
+  (never deleted), lifts its block and counts its money as returned by its
+  own status; nothing new is reserved.
+- **Decide an `unknown` refund** only past its replay window (409
+  `WINDOW_OPEN`). `failed` needs complete-provider-list evidence of
+  non-execution (`business.refund_not_executed_proven`, migration 0027): a
+  complete reconcile listing after the window found nothing
+  (`refund_operation.not_found_at` ≥ `replay_until`; only the reconcile's
+  not_found verdict, which follows a complete list, sets it), no
+  observation names, matches or links the operation, it records no refund
+  ID, carries no contradiction and no refund object in its evidence (409
+  `EVIDENCE_REQUIRED`). `succeeded` needs the Stripe refund ID: an observed
+  refund of that ID is matched at once only when Stripe's record proves the
+  identity (its metadata names the operation, or the operation already
+  records that ID); otherwise the ID is recorded and the collection's
+  reconcile runs now, which verifies it at Stripe (complete list, then
+  `GET /v1/refunds/{id}`: amount, currency, payment intent) and matches an
+  unmatched observation of that ID to the operation (counted once) before
+  the operation is decided. An ID held by another operation, or observed on
+  another collection, is 409 `DUPLICATE`.
+- **Clear a contradiction.** On a refund operation: `keep` (the recorded
+  state stands), `failed` (its remainder reopens, nothing is re-sent): on an
+  unknown refund exactly the proof of a `failed` decision above (409
+  `WINDOW_OPEN`, then `EVIDENCE_REQUIRED`), on a succeeded refund only when
+  Stripe's record of that same refund (matched, same ID) is failed or
+  canceled; `succeeded` (only with a succeeded refund of the same ID and
+  amount matched to it, else `EVIDENCE_REQUIRED`). On a payment collection: only when it is succeeded
+  or failed (an unknown payment outcome is payment reconciliation, not a
+  note).
+- **Re-reserve a failed remainder.** The latest operation of its collection,
+  a failed provider refund; min(its amount, the collection's room, what the
+  goal still needs) on the same collection (so a failed agreed-exception
+  refund returns to the collection the chef chose); `REFUND_IN_PROGRESS`
+  while anything is unresolved on the collection, `RECONCILIATION_REQUIRED`
+  while anything on the order needs reconciliation, `NO_REFUND_PENDING` at
+  0, `CONFLICT` once superseded.
+- **Attention list.** Jobs in attention (their reason; the order when the
+  job belongs to one), unresolved quarantined observations, contradictions
+  on refunds and payment collections, unknown or requires_action refunds
+  (`window_ended`), failed refunds whose remainder is still owed
+  (`refund_failed_owed`, with the re-reservable amount), pending delivery
+  shares and unresolved manual payouts. Fulfillment has no access.
+- `refund_chef_admit` (B2 part 1) no longer requires a `secured` recovery
+  state (a never-confirmed order is `prepared`): it refuses only pending
+  confirmation/cancellation and unsecured K11 commands.
+- K05 card fixture (`TestCardFixtureResolvedByEvidence`): 10000p collection,
+  local unknown 10000p, external 5000p: match refused, the external 5000p
+  accepted (S 5000p, R 10000p, nothing sent), the unknown failed with the
+  complete-list evidence, the remainder re-reserved: exactly 5000p sent
+  once, the order reads `returned`.
+
+### Q5 manual alternative payout (GK-026 B2 part 2, migration 0026)
+
+| Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
+| --- | --- | --- |
+| `POST /api/v1/admin/orders/{id}/manual-payouts/preview` | chef | `{collection_id, unavailable_evidence_ref, recipient_evidence_ref}` (no key); 200 `{preview_id, order_id, order_version, collection_id, failed_refund_operation_id, amount_minor, currency, unavailable_evidence_ref, recipient_evidence_ref, computed_at, expires_at, preview_hash}` |
+| `POST /api/v1/admin/orders/{id}/manual-payouts` | chef | `{expected_version, preview_id, preview_hash}` with Idempotency-Key; 202 `payout_pending` (operation_id = the K11 command) |
+| `POST /api/v1/admin/orders/{id}/manual-payouts/{refund_operation_id}/outcome` | chef | `{expected_version, outcome, transfer_identity?, evidence_ref?, amount_minor?, currency?}` with Idempotency-Key; 202 `outcome_pending` |
+| `GET /api/v1/admin/orders/{id}/manual-payouts` | chef | 200 `{items: [{refund_operation_id, collection_id, state, amount_minor, currency, unavailable_evidence_ref, instructions, submitted_at, transfer_identity, decided_at, outcome_pending}]}` |
+
+- **Eligible only after definitive provider unavailability:** the
+  collection's latest decided refund is a definitive failure (and a provider
+  refund failed definitively on it), nothing unresolved
+  (`REFUND_IN_PROGRESS`), no reconciliation outstanding; otherwise 409
+  `MANUAL_PAYOUT_NOT_ELIGIBLE`.
+- **References only.** Evidence, recipient and transfer references: 1–200
+  visible characters; once spaces, hyphens and dots are removed, no run of
+  six or more digits and nothing IBAN-like (two letters, two digits, 11–30
+  letters or digits) (422); the evidence itself lives outside this system.
+  Never logged.
+- **Preview:** immutable for 10 minutes and the order version; the whole
+  remaining allocation (min(the failed refund's amount, the room, what the
+  goal still needs)); a changed recipient or amount is a new preview.
+- **Reservation:** a K11 order command `manual_payout` (prepared envelope
+  before the commit, outcome envelope before it is visible). The commit
+  re-checks everything under the order and collection locks and reserves
+  one refund operation with channel `manual_alternative` for the whole
+  amount (no dispatch job; the one-unresolved-per-collection rule blocks
+  provider refunds and other manual payouts), or refuses (`order_changed`,
+  `not_eligible`, `amount_changed`). The list shows `instructions` (amount,
+  GBP, recipient evidence reference, payment reference = the operation ID)
+  only once the reservation's outcome is secured (`protecting` before).
+- **Outcomes** (K11 order command `manual_payout_outcome`): `submitted`
+  (reserved → pending), `unknown` (pending → unknown: blocks every retry and
+  channel), `succeeded` (pending/unknown → succeeded; a transfer identity
+  unique across all manual payouts (409 `DUPLICATE`), an evidence reference,
+  exactly the reserved amount in GBP), `failed` (pending/unknown → failed
+  with evidence: the remainder is owed again, a new manual payout may
+  follow), `withdrawn` (reserved → cancelled: nothing was paid; needs an
+  evidence reference). Each is in
+  `business.manual_payout_event`. A success counts once (the operation's
+  S, no Stripe refund ID invented); until its outcome is secured the order
+  view reports it in progress, never `returned`.
+- **Restore freeze:** like the B1 order commands, the preview and the
+  request do not check the freeze (the request is recorded); the commit of
+  each K11 command checks it first and waits while frozen, so nothing is
+  reserved or recorded during a restore.
+- **Tests:** `internal/checkout/recovery_tools_integration_test.go`,
+  `manual_payout_integration_test.go`; `internal/httpapi`
+  `TestRecoveryToolRoutes`, `TestManualPayoutRoutes`.
+
+Not yet (after B2): the UI for all of this; refund and payout emails or
+notifications; protected storage of the evidence the references point to;
+journal resolution of a dispatch record that a reconcile (not a manager)
+decided after the window (it stays `reconcile`, as before B2);
+foreign-currency manual payouts (liability stays open);
+re-reserving a remainder by policy shares across collections (the
+remainder returns to the failed operation's collection); payment
+reconciliation of an `unknown` payment collection; chef-confirmed revised
+allocations after skewed prior actuals; a raised goal settling a manual payout
+reserves the remainder through the provider (it fails again if the
+provider is still unavailable, then needs another decision).
+
+## Staff order reads (K00, K09, migration 0029)
+
+| Route (served with or without `CHECKOUT_ENABLED`) | Who | Input / answer |
+| --- | --- | --- |
+| `GET /api/v1/admin/orders?from&to[&lifecycle][&needs_attention][&cursor][&limit]` | chef, technical support, fulfillment | `from`/`to`: London handover days, inclusive, required, at most 93 days (422); `lifecycle`: visible lifecycles, comma-separated and/or repeated (`awaiting_payment`, `confirmation_pending`, `paid_awaiting_agreement`, `confirmed`, `in_production`, `ready`, `completed`, `cancellation_pending`, `cancelled`); `needs_attention`: `true`/`false` (403 for fulfillment); `limit` 1–100 (default 50); 200 `{items, next_cursor?}` |
+| `GET /api/v1/admin/orders/{id}` | chef, technical support, fulfillment | 200 the order for the caller's view; 404 unknown (or outside fulfillment's scope) |
+
+- **Order.** By slot start, then placement, then ID; the opaque cursor is
+  that keyset, so pages stay stable when orders are added before the cursor
+  or change state between pages. No text search (no personal-data search).
+- **Lifecycle.** `lifecycle` is what the customer sees (K11:
+  `confirmation_pending` until a paid/free confirmation is secured,
+  `cancellation_pending` until a cancellation is; the cancel reason and the
+  refund block stay hidden meanwhile, as in `GET /orders/{id}`);
+  `raw_lifecycle` is the stored one. The filter uses the visible lifecycle.
+- **Attention flags** (`attention`, `needs_attention`): `refund_needs_attention`
+  (the refund block's `needs_attention`), `payment_unknown` (a collection
+  whose dispatch outcome is unknown), `payment_mismatch` (a collection with
+  contradicting evidence), `paid_awaiting_agreement` (K04 Q2),
+  `refund_quarantine` (an unresolved quarantined refund observation).
+- **Row:** `id`, `version`, `lifecycle`, `raw_lifecycle`, `date`, `slot
+  {id, starts_at, ends_at}`, `fulfillment_mode`, `placed_at`, `items [{line_no,
+  variant_id, lot_id, recipe_version_id, cake_name, flavour, size_code,
+  quantity}]`, `customer_full_name`, `cancel_reason`, `production {state:
+  not_scheduled|scheduled|started, scheduled_at, started_at, observed_at,
+  source}`; chef and support add the attention flags; the chef adds
+  `contact_email`, `payment_requirement`, `total_minor`, `currency`,
+  `payment_state` (latest collection, as the customer sees it), `paid_at`,
+  `free_confirmed_at` and `refund` (the customer's refund block: state,
+  target, succeeded, in progress, `delivery_pending_minor`).
+- **Detail (chef):** everything `GET /orders/{id}` returns with the same
+  values except the customer's payment link (`payment.checkout_url`), plus
+  `raw_lifecycle`, `recovery_state`, attention flags, `production`,
+  `collections [{id, kind, state, version, initiated_at, expires_at,
+  succeeded_at, mismatch_reason, cancel_reason, amount_minor, currency,
+  refunded_minor, refund_reserved_minor, provider_session_id,
+  payment_intent_id}]`, `refund_goal {id, version, reason, source, created_at,
+  updated_at, target_minor, policy_rate, paid_basis_minor, policy_target_minor,
+  remaining_minor, delivery_pending_minor, currency}`, `refund_operations [{id,
+  collection_id, channel, state, version, goal_version, failure_reason,
+  mismatch_reason, provider_status, record_state (the K11 dispatch record),
+  window_ended, created_at, settled_at, amount_minor, currency,
+  provider_refund_id}]`, `refund_observations [{id, collection_id, status,
+  source, quarantined, quarantine_reason, matched_operation_id,
+  named_operation_id, observed_at, resolved_at, amount_minor, currency,
+  provider_refund_id, resolution_note}]`, `commands [{id, kind, requested_by,
+  received_at, state, outcome_status, decision}]` (never notes, evidence or
+  payloads) and `audit [{action, occurred_at, actor_kind}]` (the latest 200,
+  never details or actors, without staff read events). `version` is the
+  `expected_version` of chef commands.
+- **Technical support** (K00 bounded access, no money authority; K09
+  "Sasha necessary support only"): the same states, reasons, times, IDs and
+  the customer's name, without amounts, currency or refund rates, contact
+  email, different payer name, provider references (Stripe session, payment
+  intent, refund IDs) or resolution notes; in the list also without the
+  payment state and refund block.
+- **Fulfillment** (K00 prepare/ready/dispatch/handover only): only orders
+  that were ever visibly confirmed (production scheduled or started; others
+  are absent from the list and 404); name, handover, items without prices,
+  lifecycle, cancel reason, production and `version` (for
+  `start-production`); no money, contact, attention, collections, refunds,
+  commands or audit.
+- **Redaction is in the database** (`business.order_staff_list`,
+  `business.order_staff_get`, the only two new `gk_api` functions): the view
+  is the caller's most privileged active capability (chef, then technical
+  support, then fulfillment); hidden keys are absent, not null.
+  `order_get` now renders through the same owner-internal `order_view`
+  (unchanged output).
+- **Audited reads.** Every staff read, chef included, appends an audit
+  event without personal data: `order.staff_listed` on the reader's account
+  (`{view, from, to, items}`) and `order.staff_viewed` on the order
+  (`{view}`). Nothing personal is logged.
+- **Tests:** `internal/checkout/staff_orders_integration_test.go`
+  (redaction per role, filters, pages, lifecycle mapping, each flag, refund
+  detail, 404s, range limits), `staff_orders_test.go`; `internal/httpapi`
+  `TestStaffOrderRoutes`.
+
+Not yet: text search; staff screens (UI); per-order scopes for fulfillment
+beyond "ever confirmed"; delivery addresses (no delivery checkout yet).
 
 ## Not yet verified
 

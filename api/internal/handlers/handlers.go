@@ -34,7 +34,7 @@ type Named struct {
 }
 
 // Kinds are the job kinds in the order the worker offers each job.
-var Kinds = []string{"order_command", "payment", "refund", "hold_review", "notification"}
+var Kinds = []string{"order_command", "payment", "refund", "refund_resolve", "hold_review", "production", "notification"}
 
 // New returns the worker's handlers in order (Kinds).
 func New(cfg Config) []Named {
@@ -51,8 +51,12 @@ func New(cfg Config) []Named {
 		// Refunds (the full-return core) share Stripe and the journal.
 		{"refund", (&payments.Refunds{DB: cfg.DB, Coordinator: cfg.Coordinator, Provider: cfg.Refunds,
 			Environment: cfg.Environment, Account: cfg.Account, Logger: cfg.Logger}).Handle},
+		// Manager refund decisions are journaled (K11); without it they wait.
+		{"refund_resolve", (&payments.RefundResolves{DB: cfg.DB, Coordinator: cfg.Coordinator, Logger: cfg.Logger}).Handle},
 		// Order hold reviews need neither Stripe nor the journal.
 		{"hold_review", (&checkout.HoldReviews{DB: cfg.DB, Logger: cfg.Logger}).Handle},
+		// Scheduled production starts need neither Stripe nor the journal.
+		{"production", (&checkout.Productions{DB: cfg.DB, Logger: cfg.Logger}).Handle},
 		{"notification", email},
 	}
 }

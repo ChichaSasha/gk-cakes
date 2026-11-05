@@ -266,7 +266,12 @@ type payHarness struct {
 	reviews *checkout.HoldReviews
 	webhook *payments.Webhook
 	refunds *payments.Refunds // chained by withRefunds
-	handler jobs.Handler
+	// resolves journals manager refund decisions (chained by withRefunds).
+	resolves *payments.RefundResolves
+	// productions runs scheduled production starts (chained always; claims
+	// take their jobs only with h.production).
+	productions *checkout.Productions
+	handler     jobs.Handler
 }
 
 func newPayHarness(t *testing.T) *payHarness {
@@ -286,14 +291,17 @@ func newPayHarness(t *testing.T) *payHarness {
 	}
 	reviews := &checkout.HoldReviews{DB: h.worker, Logger: logger}
 	refunds := &payments.Refunds{DB: h.worker, Coordinator: h.coord, Provider: client, Environment: "test", Account: stripeAccount, Logger: logger}
+	prod := &checkout.Productions{DB: h.worker, Logger: logger}
 	return &payHarness{commandHarness: h, stripe: fs, pay: pay, reviews: reviews, webhook: wh, refunds: refunds,
-		handler: jobs.Chain(h.cmds.Handle, pay.Handle, reviews.Handle)}
+		resolves:    &payments.RefundResolves{DB: h.worker, Coordinator: h.coord, Logger: logger},
+		productions: prod, handler: jobs.Chain(h.cmds.Handle, pay.Handle, reviews.Handle, prod.Handle)}
 }
 
 // step claims the next due job (false when none) and runs it, finalizing
 // the job as the jobs worker would; it returns the handler's error.
 func (h *payHarness) step(t *testing.T) (bool, error) {
 	t.Helper()
+	h.holdProduction(t)
 	h.workers++
 	job := jobs.Job{Worker: fmt.Sprintf("00000000-0000-4000-8000-%012d", h.workers)}
 	err := h.worker.QueryRow(h.ctx, `SELECT job_id::text, job_operation_id::text, job_generation
@@ -350,7 +358,8 @@ func (h *payHarness) drain(t *testing.T) []error {
 // claimable now: the passage of time.
 func (h *payHarness) due(t *testing.T) {
 	t.Helper()
-	h.owner(t, "UPDATE business.job SET next_attempt_at = now() WHERE state IN ('queued', 'retry')")
+	h.owner(t, `UPDATE business.job SET next_attempt_at = now() WHERE state IN ('queued', 'retry')
+		AND id NOT IN (SELECT job_id FROM business.production_timer_job)`)
 }
 
 // withoutRefundDispatch drops the errors of refund jobs no handler takes
