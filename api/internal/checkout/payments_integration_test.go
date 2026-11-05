@@ -346,6 +346,18 @@ func (h *payHarness) due(t *testing.T) {
 	h.owner(t, "UPDATE business.job SET next_attempt_at = now() WHERE state IN ('queued', 'retry')")
 }
 
+// withoutRefundDispatch drops the errors of refund jobs that no handler
+// takes yet (the refund worker is A3c2's second part).
+func withoutRefundDispatch(errs []error) []error {
+	var out []error
+	for _, err := range errs {
+		if !errors.Is(err, jobs.ErrNoHandler) {
+			out = append(out, err)
+		}
+	}
+	return out
+}
+
 func attention(errs []error) []string {
 	var out []string
 	for _, err := range errs {

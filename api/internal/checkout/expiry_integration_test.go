@@ -788,7 +788,7 @@ func TestUnknownAndSucceededCollectionsAreNeverReleased(t *testing.T) {
 		}
 		h.endHold(t, order)
 		h.due(t)
-		if errs := h.drain(t); len(errs) != 0 {
+		if errs := withoutRefundDispatch(h.drain(t)); len(errs) != 0 {
 			t.Fatal(errs)
 		}
 		if o := h.orderRow(t, order); o.Lifecycle != "awaiting_payment" || o.CancelReason != "" {
@@ -910,7 +910,7 @@ func TestHoldReviewRacesAPaidRecord(t *testing.T) {
 		h.finish(t, review, nil)
 		h.finish(t, rec, nil)
 		h.due(t)
-		errs := h.drain(t)
+		errs := withoutRefundDispatch(h.drain(t))
 		o := h.orderRow(t, order)
 		switch o.Lifecycle {
 		case "confirmed":
