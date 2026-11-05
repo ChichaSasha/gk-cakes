@@ -412,21 +412,44 @@ var invalidFields = map[string]string{
 	"idempotency_key_invalid": "Idempotency-Key", "proof_reused": "guest_proof", "contact_invalid": "contact",
 	"effective_invalid": "effective_at", "policy_invalid": "policy",
 	"expected_version_required": "expected_version",
+	"preview_invalid":           "preview_id", "reason_invalid": "reason",
+	"decision_invalid": "decision", "agreement_invalid": "customer_agreement",
+	"amount_invalid": "amount_minor", "currency_invalid": "currency", "allocations_invalid": "allocations",
+	"note_invalid": "note", "resolution_invalid": "resolution",
+	"evidence_ref_invalid": "evidence_ref", "outcome_invalid": "outcome", "payout_preview_invalid": "preview_id",
+	"range_invalid": "to", "page_limit_invalid": "limit", "lifecycle_invalid": "lifecycle", "cursor_invalid": "cursor",
 }
 
 var invalidMessages = map[string]string{
-	"code_unknown":          "is not a current code",
-	"code_requires_sign_in": "needs you to sign in (it is limited per customer)",
-	"code_not_applicable":   "applies to GK delivery only",
-	"expires_invalid":       "must be in the future",
-	"lines_duplicate":       "must not repeat a cake",
-	"proof_reused":          "must be fresh for each new quote",
+	"code_unknown":           "is not a current code",
+	"code_requires_sign_in":  "needs you to sign in (it is limited per customer)",
+	"code_not_applicable":    "applies to GK delivery only",
+	"expires_invalid":        "must be in the future",
+	"lines_duplicate":        "must not repeat a cake",
+	"proof_reused":           "must be fresh for each new quote",
+	"preview_invalid":        "must be a cancellation preview you requested for this order, with its preview_hash",
+	"reason_invalid":         "must be 1 to 500 characters on one line without surrounding spaces",
+	"decision_invalid":       "is not a decision this command accepts",
+	"note_invalid":           "must be 1 to 500 characters on one line without surrounding spaces",
+	"resolution_invalid":     "must be match (with refund_operation_id) or accept_external",
+	"evidence_ref_invalid":   "must be an evidence reference (1 to 200 visible characters; never bank details: no 6 or more digits once spaces, hyphens and dots are removed, nothing IBAN-like)",
+	"outcome_invalid":        "must be submitted, succeeded (with transfer_identity, evidence_ref, amount_minor, currency), failed or withdrawn (with evidence_ref), or unknown",
+	"payout_preview_invalid": "must be a manual payout preview you requested for this order, with its preview_hash",
+	"agreement_invalid":      "must give channel, agreed_at (after the payment, not in the future) and evidence_ref to honour, and nothing for full_return",
+	"amount_invalid":         "must be 1 to 100000000 pence",
+	"currency_invalid":       "must be GBP",
+	"range_invalid":          "must not be before from, and the range must be at most 93 days",
+	"page_limit_invalid":     "must be 1 to 100",
+	"lifecycle_invalid":      "must be distinct visible lifecycles",
+	"allocations_invalid":    "must name each succeeded payment collection of the order once, each at least 1 penny, adding up to amount_minor",
 }
 
 var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "state_conflict": true,
 	"duplicate": true, "item_unavailable": true, "slot_unavailable": true, "price_changed": true,
 	"quote_expired": true, "policy_changed": true, "code_used_up": true, "payment_required": true, "lead_time": true,
-	"payment_in_progress": true}
+	"payment_in_progress": true, "preview_stale": true, "cancellation_not_eligible": true, "honour_too_late": true,
+	"refund_limit": true, "reconciliation_required": true, "refund_in_progress": true, "no_refund_pending": true,
+	"identity_unproven": true, "window_open": true, "evidence_required": true, "manual_payout_not_eligible": true}
 
 // conflictAliases name engine refusals in the customer's terms.
 var conflictAliases = map[string]string{"day_full": "slot_unavailable", "stock_unavailable": "item_unavailable"}

@@ -19,16 +19,40 @@ import (
 // Policy fixture (labelled test data): GK-003 decision
 // BO-GK-003.cancellation_early and its revision_sha256 in decisions.json
 // (gk019-owner-r6); the summary is illustrative, not the approved wording.
+// It is inserted as the owner, effective an hour before the test clock:
+// the API refuses back-dated policies by the database clock, and the test
+// clock (h.now) is a fixed instant that real time has passed (GK-026: the
+// earlier fixture made every checkout test fail with policy_changed once
+// the wall clock passed h.now). RecordPolicy itself is tested separately.
 func (h *harness) policy(t *testing.T, key string) string {
 	t.Helper()
 	in := checkout.PolicyInput{SourceDecisionID: "BO-GK-003.cancellation_early",
 		SourceRevisionSHA256: "92751b1e4b59d9ec750e05776846849bf56679e5ef4e92c787b8296f3f487b70",
 		Summary:              "Cancel more than 120 hours before handover: full refund. Later: 50% of the amount paid.",
-		EffectiveAt:          time.Now().UTC().Add(-time.Second).Format(time.RFC3339), ApproverEvidence: "test fixture"}
+		EffectiveAt:          h.now.UTC().Add(-time.Hour).Format(time.RFC3339), ApproverEvidence: "test fixture " + key}
 	if err := in.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	return must[catalog.Result](t)(h.co.RecordPolicy(h.ctx, chef, key, in)).ID
+	var id string
+	tx, err := h.db.MigratorConn(t).Begin(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(h.ctx)
+	if _, err := tx.Exec(h.ctx, "SET LOCAL ROLE gk_owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.QueryRow(h.ctx, `INSERT INTO business.policy_version (id, source_decision_id,
+		source_revision_sha256, summary, approver_evidence, effective_at, recorded_by)
+		SELECT gen_random_uuid(), $1, $2, $3, $4, $5::timestamptz, a.id FROM business.account a WHERE a.provider_subject = $6::uuid
+		RETURNING id::text`, in.SourceDecisionID, in.SourceRevisionSHA256, in.Summary, in.ApproverEvidence, in.EffectiveAt,
+		chef).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	return id
 }
 
 type orderJSON struct {
@@ -424,8 +448,15 @@ func TestCheckoutRechecksAndGuards(t *testing.T) {
 	// Future policies are not current.
 	future := checkout.PolicyInput{SourceDecisionID: "BO-GK-003.cancellation_late",
 		SourceRevisionSHA256: "b44d62dccb5defcafed270ced4ff29ad5f8cdd5194873c8c46e2597c2ec28a4b", Summary: "Later terms",
-		EffectiveAt: h.now.Add(time.Hour).Format(time.RFC3339), ApproverEvidence: "test fixture"}
+		EffectiveAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339), ApproverEvidence: "test fixture"}
 	must[catalog.Result](t)(h.co.RecordPolicy(h.ctx, chef, "future", future))
+	// The API refuses a policy back-dated more than a minute by the database
+	// clock (422 effective_at) and records nothing.
+	backdated := future
+	backdated.EffectiveAt = time.Now().Add(-2 * time.Minute).UTC().Format(time.RFC3339)
+	if _, err := h.co.RecordPolicy(h.ctx, chef, "backdated", backdated); !strings.HasPrefix(invalidField(err), "effective_at:") {
+		t.Fatalf("policy back-dated two minutes: %v, want 422 effective_at", err)
+	}
 	if p := must[checkout.Policy](t)(h.co.CurrentPolicy(h.ctx)); p.ID != pol {
 		t.Fatalf("current policy = %s, want %s (the later one is not yet effective)", p.ID, pol)
 	}

@@ -798,6 +798,8 @@ func TestRuntimeRolesUseOnlyTheNotificationGateway(t *testing.T) {
 		"business.notification_recovery_secured(uuid, uuid, bigint, uuid)",
 		"business.notification_recovery_reconcile(uuid, uuid, bigint, uuid, text)",
 		"business.notification_recovery_frozen(uuid, uuid, bigint)",
+		// Order notices (0030): the staging allowlist suppression.
+		"business.notification_dispatch_suppress(uuid, uuid, bigint)",
 	}
 	ownerOnly := []string{
 		"business.audit_record(text, uuid, text, text, uuid, uuid, json)",
@@ -879,7 +881,14 @@ func TestRuntimeRolesUseOnlyTheNotificationGateway(t *testing.T) {
 		"business.refund_recovery_prepared(uuid, uuid, bigint, uuid)",
 		"business.refund_recovery_reconcile(uuid, uuid, bigint, uuid, text)",
 		"business.refund_recovery_reserve(uuid, uuid, bigint, uuid, text, uuid, integer, text, text, timestamp with time zone)",
-		"business.refund_recovery_secured(uuid, uuid, bigint, uuid)"}, worker...)
+		"business.refund_recovery_secured(uuid, uuid, bigint, uuid)",
+		// GK-026 B1 scheduled production start.
+		"business.production_timer_run(uuid, uuid, bigint)",
+		// GK-026 B2 journal resolution of a manager refund decision.
+		"business.refund_resolve_begin(uuid, uuid, bigint)",
+		"business.refund_resolve_committed(uuid, uuid, bigint, uuid, json, text)",
+		"business.refund_resolve_lookup(uuid, uuid, bigint, uuid, text, uuid, integer, text, text, timestamp with time zone)",
+		"business.refund_resolve_secured(uuid, uuid, bigint, uuid)"}, worker...)
 	slices.Sort(want)
 	if !slices.Equal(got, want) {
 		t.Errorf("gk_worker can execute %v, want exactly %v", got, want)

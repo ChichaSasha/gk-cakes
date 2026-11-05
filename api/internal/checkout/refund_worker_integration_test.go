@@ -35,6 +35,8 @@ type fakeRefunds struct {
 	status    int               // answer creates with this status (nothing created)
 	newStatus string            // status of created refunds (default succeeded)
 	page      int               // force this page size on lists (0: as asked)
+	lie       int64             // report this amount in create answers (0: the real one)
+	listFail  int               // answer lists with this status (0: list)
 }
 
 type fakeRefund struct {
@@ -101,7 +103,14 @@ func (f *fakeStripe) serveRefunds(w http.ResponseWriter, r *http.Request) {
 			_ = conn.Close()
 			return
 		}
-		_, _ = w.Write(fr.json(fr.byID[id]))
+		answer := fr.json(fr.byID[id])
+		if fr.lie != 0 {
+			var m map[string]any
+			_ = json.Unmarshal(answer, &m)
+			m["amount"] = fr.lie
+			answer, _ = json.Marshal(m)
+		}
+		_, _ = w.Write(answer)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/refunds/"):
 		re, ok := fr.byID[strings.TrimPrefix(r.URL.Path, "/v1/refunds/")]
 		if !ok {
@@ -112,6 +121,11 @@ func (f *fakeStripe) serveRefunds(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(fr.json(re))
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/refunds":
 		fr.lists++
+		if fr.listFail != 0 {
+			w.WriteHeader(fr.listFail)
+			_, _ = io.WriteString(w, `{"error":{"type":"api_error"}}`)
+			return
+		}
 		q := r.URL.Query()
 		pi, after := q.Get("payment_intent"), q.Get("starting_after")
 		limit, _ := strconv.Atoi(q.Get("limit"))
@@ -218,7 +232,7 @@ func (f *fakeStripe) refundForm(key string) url.Values {
 // withRefunds chains the refund worker (after the late capture: its
 // dispatch job waits for its first retry, a minute out).
 func (h *payHarness) withRefunds() {
-	h.handler = jobs.Chain(h.cmds.Handle, h.pay.Handle, h.refunds.Handle, h.reviews.Handle)
+	h.handler = jobs.Chain(h.cmds.Handle, h.pay.Handle, h.refunds.Handle, h.resolves.Handle, h.reviews.Handle, h.productions.Handle)
 }
 
 // operations is the collection's refund operations, oldest first.
