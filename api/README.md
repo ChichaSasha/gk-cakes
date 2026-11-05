@@ -1570,8 +1570,8 @@ Not yet:
 - manager tooling for the full return: resolving quarantined observations,
   clearing contradicting evidence, deciding `unknown` refunds past their
   window and re-reserving a failed refund's remainder; the Q5 manual
-  alternative (`manual_alternative` channel); customer/chef cancellation and
-  partial refund goals (GK-026); refund emails; a sandbox proof of a refund;
+  alternative (`manual_alternative` channel); partial refund goals
+  (GK-026); refund emails; a sandbox proof of a refund;
 - the chef's resolution of `paid_awaiting_agreement` (honour or full return)
   and visible chef cases beyond job attention (A3c/GK-026); confirmation
   emails;
@@ -1583,6 +1583,68 @@ Not yet:
   `reconcile`;
 - journal readiness reaching the API: initiation is refused during a restore
   freeze, but an unreachable journal only makes the worker wait.
+
+## Cancellation (K05, GK-026 B1 part 1)
+
+Migration `0021_cancellation.sql`. Customer and chef cancellation of an
+accepted order, as a new K11 order command `cancel` through the A3a
+machinery (prepared envelope before the commit, outcome envelope before it
+is visible) and the A3c2 refund core (no second refund ledger). Owner rule
+BO-GK-001.ready_cancellation (`docs/creator/GK-001/decisions.json`): strictly
+before `full_refund_deadline_at` (original handover − 120 elapsed hours)
+returns 100% of the actual paid aggregate (after discounts); at equality or
+later exactly 50%; the chef's cancellation 100%; production never reduces it.
+
+| Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
+| --- | --- | --- |
+| `POST /api/v1/orders/{id}/cancellation-preview` | the owner (bearer) or the guest (`X-Order-Capability` with `cancel`) | no body (or `{}`); 200 `{preview_id, order_id, order_version, rate, paid_minor, amount_minor, currency, allocations[{collection_id, amount_minor}], full_refund_deadline_at, computed_at, expires_at, preview_hash}` |
+| `POST /api/v1/orders/{id}/cancel` | as above | `{expected_version, preview_id, preview_hash}` with Idempotency-Key; 202 `cancellation_pending` |
+| `POST /api/v1/admin/orders/{id}/cancel` | chef | `{expected_version, reason}` (1–500 characters, one line) with Idempotency-Key; 202 `cancellation_pending` |
+
+- **Preview.** Computed by the database at the request instant: the rate,
+  the paid aggregate (succeeded collections), the amount = nearest-penny
+  half-up of rate × paid (a half penny goes to the customer: 9501p at 50% is
+  4751p), the allocation as `refund_reserve` would reserve it, and a
+  10-minute expiry. Stored immutably with the order version, the actor and a
+  SHA-256 of its body.
+- **Cancel.** Under the order lock, at the persisted receipt instant: the
+  same actor's unexpired preview of the current version must still give the
+  same rate and amount. A preview that said 100% when the receipt is at or
+  after the deadline (the boundary was crossed since) is 409
+  `PREVIEW_STALE` (refresh and reconfirm); so is an expired one. An unknown
+  preview or wrong hash is 422 (`preview_id`). Eligible lifecycles:
+  `confirmed`, `in_production`, `ready`; otherwise 409
+  `CANCELLATION_NOT_ELIGIBLE` (awaiting payment keeps its release paths;
+  `paid_awaiting_agreement` is the chef's late-payment decision, part 2).
+  One cancellation at a time (`CONFLICT` while one is pending); the same
+  actor and key replays, the same key with another body is `KEY_REUSED`.
+- **Commit** (worker, `order_command_apply`): re-checks version, lifecycle
+  and that the acceptance is secured (otherwise refused `order_changed`,
+  version + 1 only); sets `cancelled`, `cancel_reason`
+  `customer_cancelled` | `chef_cancelled`, `cancelled_at` = the receipt
+  instant, releases the day place (`capacity_release`), keeps the code use
+  consumed (K03), records the order's refund goal (target, reason,
+  `policy_rate`, `paid_basis_minor`) and reserves the refund operations with
+  `refund_reserve` (C − S − R, aggregate remainder, one unresolved operation
+  per collection). The refund dispatch then runs as in the full return.
+- **Read model.** Until the outcome envelope is acknowledged the order reads
+  `cancellation_pending` without `cancel_reason`, `cancelled_at` or
+  `refund`; `cancellation` reports the latest cancel command (`state`
+  processing | cancelled | refused, `reason`, `rate`, `amount_minor`,
+  `requested_by` customer | chef, `requested_at`). The refund reads
+  `requested` until Stripe has it and `returned` only when every penny
+  succeeded.
+- A restore freeze defers the command (nothing committed); the request
+  itself is still recorded.
+
+Not yet (part 2 and later): production start (manual and the +48 h timer)
+and its races, the late-payment resolution (honour or full return), the
+AC2 delivery-collection scenarios and K05 floor + largest-remainder
+allocation across cake and delivery collections (today all succeeded
+collections are cake collections and the allocation is per collection by
+ID), returning a sold ready cake to stock on cancellation, admin partial
+refunds with allocations, the Q5 manual alternative, manager recovery tools,
+cancellation emails and the UI (B2/B3).
 
 ## Not yet verified
 
