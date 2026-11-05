@@ -163,3 +163,57 @@ func TestStaffScheduleAuthorization(t *testing.T) {
 		t.Fatalf("resale with a price: %d, calls %d", rec.Code, sch.calls)
 	}
 }
+
+// GET /schedule?purpose=pickup_move: the order's owner or its guest
+// capability; date and mode only as the order's; nothing else applies.
+func TestPickupMoveChoicesQuery(t *testing.T) {
+	id := catalogIdentity()
+	base := "/api/v1/schedule?purpose=pickup_move&order_id=aaaaaaaa-1111-4111-8111-11111111111b"
+	serve := func(sch *fakeSchedule, path, auth string, hdr map[string]string) *httptest.ResponseRecorder {
+		h := NewHandler(Options{UIOrigin: "https://gkcake.com", DB: fakePinger{}, Identity: id, Schedule: sch,
+			Logger: slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))})
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if auth != "" {
+			req.Header.Set("Authorization", "Bearer "+auth)
+		}
+		for k, v := range hdr {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	guest := map[string]string{OrderCapabilityHeader: testProof}
+	sch := &fakeSchedule{}
+	rec := serve(sch, base, "", guest)
+	if rec.Code != 200 || len(sch.moveDigest) != 32 || sch.moveSubject != "" || !strings.Contains(rec.Body.String(), `"purpose":"pickup_move"`) ||
+		rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("guest choices: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := serve(sch, base, secretToken, nil); rec.Code != 200 || sch.moveDigest != nil || sch.moveSubject == "" {
+		t.Fatalf("owner choices: %d", rec.Code)
+	}
+	for name, c := range map[string]struct {
+		path   string
+		auth   string
+		hdr    map[string]string
+		status int
+	}{
+		"anonymous":         {base, "", nil, 404},
+		"malformed proof":   {base, "", map[string]string{OrderCapabilityHeader: "abc"}, 404},
+		"forged token":      {base, "forged", nil, 401},
+		"no order":          {"/api/v1/schedule?purpose=pickup_move", "", guest, 422},
+		"quantity":          {base + "&quantity=2", "", guest, 422},
+		"same date":         {base + "&date=2026-11-14&fulfillment_mode=collection", "", guest, 200},
+		"another date":      {base + "&date=2026-11-15", "", guest, 422},
+		"another mode":      {base + "&fulfillment_mode=gk_delivery", "", guest, 422},
+		"order for new buy": {"/api/v1/schedule?date=2026-11-14&fulfillment_mode=collection&order_id=x", "", nil, 200},
+	} {
+		if rec := serve(&fakeSchedule{}, c.path, c.auth, c.hdr); rec.Code != c.status {
+			t.Errorf("%s: %d %s, want %d", name, rec.Code, rec.Body.String(), c.status)
+		}
+	}
+	if rec := serve(&fakeSchedule{moveErr: catalog.ErrNotFound}, base, "", guest); rec.Code != 404 {
+		t.Fatalf("not the caller's order: %d", rec.Code)
+	}
+}

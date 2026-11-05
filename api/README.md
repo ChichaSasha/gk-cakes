@@ -1056,6 +1056,7 @@ is seeded: until the chef publishes a schedule version, every date is
 | --- | --- | --- |
 | `GET /api/v1/availability?from&to&quantity` | anyone | at most 31 dates; `{timezone, as_of, schedule_version, days[{date, status, remaining_places}]}`; status `open`, `full`, `lead_time`, `closed`, `outside_horizon` or `no_times` |
 | `GET /api/v1/schedule?date&fulfillment_mode&purpose=new_purchase&quantity` | anyone | `slots[{id, starts_at, ends_at, availability, reason_code}]`: `available`, `requestable` (GK delivery: subject to chef confirmation) or `unavailable` (`lead_time`, `full`, `closed`, `outside_horizon`); stable slot IDs per version; no per-slot cap; no hold |
+| `GET /api/v1/schedule?purpose=pickup_move&order_id` | the order's owner (bearer) or guest (`X-Order-Capability` with `move_pickup`) | the order's same-day move choices; see "Fulfillment and moves" |
 | `GET /api/v1/ready-cakes` | anyone | `{cakes: [...]}`: offered lots with stock left |
 | `GET /api/v1/admin/schedule` | chef, fulfilment, technical support | the current version; 404 before the first one |
 | `GET /api/v1/admin/days?from&to` | chef, fulfilment, technical support | `{timezone, days[...]}`: limit, override, version, committed, tentative, chef extras, workload, remaining, `online_closed` |
@@ -2110,6 +2111,104 @@ provider is still unavailable, then needs another decision).
 
 Not yet: text search; staff screens (UI); per-order scopes for fulfillment
 beyond "ever confirmed"; delivery addresses (no delivery checkout yet).
+
+## Fulfillment and moves (K06, GK-031 B1)
+
+Migration `0031_pickup_moves.sql`. Part 1: the customer's same-day pickup
+move and the chef's agreed date/time amendment, both K11 order commands
+through the A3a machinery (prepared envelope before the commit, outcome
+envelope before the change is visible). Owner inputs (recorded hashes):
+BO-GK-001.move_time `7f8b0043…`, BO-GK-001.move_date `b0fe9fea…`,
+BO-GK-001.refund_follows_move `31d16f84…` (`docs/creator/GK-001/decisions.json`
+sha256 `6d3112d8…`), owner data contract "move"
+(`docs/design/owner-data-contract.md` sha256 `e7179297…`). Fulfilment
+transitions (ready, dispatch, handover, no-show, delivery exception) are
+part 2.
+
+| Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
+| --- | --- | --- |
+| `POST /api/v1/orders/{id}/pickup` | the owner (bearer) or the guest (`X-Order-Capability` with `move_pickup`) | `{target_slot_id, expected_version}` with Idempotency-Key; 202 `move_pending`; 200 `{order_id, state: "unchanged"}` (with `Idempotent-Replayed`) when the order already has that time |
+| `POST /api/v1/admin/orders/{id}/appointment` | chef | `{expected_version, target_date, target_slot_id, customer_agreement {channel, agreed_at, evidence_ref}, feasibility_note}` with Idempotency-Key; 202 `appointment_change_pending` |
+| `GET /api/v1/schedule?purpose=pickup_move&order_id=…` | as the move | `{schedule_version, as_of, timezone, date, fulfillment_mode, day_status, purpose, order_id, current_slot, move_until, slots[{id, starts_at, ends_at, availability, reason_code}]}`; `date` / `fulfillment_mode` are optional and must be the order's (422 otherwise); nothing else applies |
+
+- **The appointment.** `original_handover_at` stays the immutable placement
+  anchor of `full_refund_deadline_at` (K05); the order's current appointment
+  is `handover_day`, `slot_id`, the new nullable `handover_starts_at` (NULL =
+  still the original start) and `handover_ends_at`. The production anchor
+  (payment or free confirmation + 48 h) never reads the appointment, so no
+  move resets it (K06 "Preserve original refund deadline and preparation
+  anchor").
+- **Customer move.** Collection and customer-courier orders only (no GK
+  delivery self-service, K06), lifecycle `confirmed`, `in_production` or
+  `ready` and secured; otherwise 409 `MOVE_NOT_ELIGIBLE`. At the persisted
+  receipt instant the current start must be at least 6 hours away, equality
+  allowed (409 `MOVE_TOO_LATE` otherwise); the target must be a published
+  start of the current schedule on the same London day that is not a closed
+  date, within the order's ready cakes' shelf life (409 `SLOT_UNAVAILABLE`).
+  No lead time, day capacity, booking horizon, new stock or per-slot count:
+  the order's own day place and ready cakes are reused. Stale version 409
+  `STALE_VERSION` (also for a second move at the same version while one is
+  pending: its operation holds that version); same key replays, another body
+  `KEY_REUSED`. A restore freeze refuses new requests (503, retryable); the
+  same key still replays.
+- **Deviation for Creator confirmation:** the target itself must also start
+  at least 6 hours after the receipt (equality allowed). BO-GK-001.move_time
+  states the cutoff against the current slot only; the agent added the same
+  margin for the target so a move cannot create a handover the kitchen has
+  less than six hours to prepare for. The projection marks such starts
+  `move_cutoff`.
+- **Chef amendment.** Any fulfilment mode, the same lifecycles. Requires the
+  customer's agreement (channel email | phone | instagram | whatsapp |
+  in_person | other, `agreed_at` after placement and not after the receipt,
+  evidence reference 1–200 characters; silence never counts) and a
+  feasibility note (1–500 characters, one line). The target is a published
+  start of the current schedule on a non-closed day, in the future, within
+  shelf life; no six-hour rule and no automatic next-day skip (BO-GK-001
+  move_date). A new day is admitted as the chef's decision: the old day's
+  allocation is released and the new day's committed (`standard` when the
+  committed standard cakes plus the order's fit the day's limit, otherwise
+  `chef_extra` with the feasibility note as `chef_evidence`, 0010's
+  classification). Returning to a day reuses its released row.
+- **Commit** (worker, `order_command_apply` → `order_appointment_commit`):
+  locks the order, the recovery operation, then the handover day(s) in date
+  order (slots are derived and have no rows: no per-slot cap, no slot table),
+  re-checks version, appointment, state, the receipt-time cutoff and that the
+  target is still published, then moves the appointment (and allocation),
+  version + 1, audit `order.pickup_moved` / `order.appointment_changed`; or
+  records a refusal (`order_changed`, `not_eligible`, `too_late`,
+  `slot_unavailable`; version + 1 only) and the original appointment stays.
+- **History.** `business.pickup_change` (owner data contract "move"): one
+  immutable row per accepted request with from/to day, slot, start and end,
+  schedule revision, actor kind and account, receipt, and for the chef the
+  agreement and feasibility note; the outcome is the command's recovery
+  operation.
+- **Read models.** Until the outcome is secured, `date` and `slot` show the
+  appointment being replaced and `appointment_change` reports `{kind
+  pickup_move | appointment_change, state processing | moved | refused,
+  reason, requested_by customer | chef, requested_at, to}`;
+  `pickup_move_until` is the current start − 6 h (collection and courier).
+  Staff detail adds `appointment_history` (every view; agreement and
+  feasibility note for the chef only) and, for technical support and
+  fulfilment, `appointment_change`. Staff list rows show the visible
+  appointment.
+- **Notices** (0030 machinery, in the transaction that secures the move,
+  once per command): `pickup_moved` (`pickup-moved.v1`) and
+  `appointment_changed` (`appointment-changed.v1`) with the new and previous
+  times in London time and the unchanged cancellation terms. Existing notices
+  now render the current appointment (a cancellation after a move says when
+  it was planned for); their template revisions are unchanged.
+- **Production** (manual and timer) waits while a move is unresolved, as for
+  a cancellation, so a move commits against the version it was accepted at.
+- **Tests:** `internal/checkout/appointments_integration_test.go` (AC1 two
+  orders to one start, stale / other-day / unknown targets keep the
+  original, K11 journal-down and outcome-down crash points, competing
+  versions, notices; AC2 exactly-six-hours, `MOVE_TOO_LATE`, target cutoff,
+  timer and manual start with one transition, 100/50 entitlement against the
+  original deadline; access and eligibility; projection with a full day and
+  sold-out lot; chef amendment with agreement, `chef_extra`, staff history
+  redaction, notice; freeze at the commit and a schedule change before the
+  commit), `internal/httpapi` `TestAppointmentRoutes`,
+  `TestPickupMoveChoicesQuery`.
 
 ## Not yet verified
 
