@@ -215,6 +215,23 @@ func TestCardFixtureResolvedByEvidence(t *testing.T) {
 	if view, raw := h.view(t, order, d); view.Refund == nil || view.Refund.State != "returned" {
 		t.Fatalf("view %s", raw)
 	}
+	// The decision is journaled for the dispatch's K11 record (outside any
+	// transaction, by the worker) and its attention job is settled.
+	var recState, recStatus, recDecision string
+	if err := h.admin.QueryRow(h.ctx, `SELECT state, outcome ->> 'status', outcome -> 'evidence' ->> 'decision_id'
+		FROM business.recovery_operation WHERE id = $1::uuid`, r.ID).Scan(&recState, &recStatus, &recDecision); err != nil ||
+		recState != "secured" || recStatus != "manager_failed" || recDecision == "" {
+		t.Fatalf("dispatch record %s %s %s %v", recState, recStatus, recDecision, err)
+	}
+	for _, i := range h.attention(t, chef, order) {
+		if i.Kind == "job_attention" && i.RefundOperationID != nil && *i.RefundOperationID == r.ID {
+			t.Fatalf("settled job still listed %+v", i)
+		}
+	}
+	if h.count(t, `SELECT count(*) FROM business.job j JOIN business.refund_job rj ON rj.job_id = j.id
+		WHERE rj.refund_operation_id = $1::uuid AND j.state = 'attention'`, r.ID) != 0 {
+		t.Fatal("the decided refund's dispatch job is still in attention")
+	}
 	if h.count(t, "SELECT count(*) FROM business.refund_recovery_decision WHERE order_id = $1::uuid", order) != 3 ||
 		h.auditCount(t, order, "refund.recovery_decided", "Dashboard") != 0 {
 		t.Fatal("decisions not recorded (or the note in the audit)")
@@ -278,12 +295,23 @@ func TestUnknownRefundMatchedToAnObservedRefund(t *testing.T) {
 		t.Fatalf("observed %+v", b)
 	}
 	v := h.version(t, order, d)
+	// The manager's ID alone does not prove the identity (the observed
+	// refund carries no metadata): it is recorded and verified by the
+	// reconcile, which matches the observation to the operation.
 	if _, err := h.co.DecideOperation(h.ctx, chef, "ok", order, r.ID, checkout.DecideOperationInput{ExpectedVersion: v,
 		Decision: "succeeded", ProviderRefundID: refundID, Note: "Same refund"}); err != nil {
 		t.Fatal(err)
 	}
+	if row := h.refundRow(t, r.ID); row.State != "unknown" || row.RefundID != refundID {
+		t.Fatalf("before verification %+v", row)
+	}
+	h.due(t)
+	h.drain(t)
 	if row := h.refundRow(t, r.ID); row.State != "succeeded" || row.RefundID != refundID {
-		t.Fatalf("matched %+v", row)
+		t.Fatalf("verified %+v", row)
+	}
+	if n := h.count(t, "SELECT count(*) FROM business.refund_observation WHERE matched_operation_id = $1::uuid", r.ID); n != 1 {
+		t.Fatalf("%d observations matched", n)
 	}
 	if b := h.balance(t, coll); b.Succeeded != 10000 || b.Exposure != 10000 || b.Quarantined {
 		t.Fatalf("counted once %+v", b)
@@ -373,4 +401,80 @@ func TestContradictionClearedAndRemainderReserved(t *testing.T) {
 		t.Fatalf("replay during the freeze: %+v %v", again, err)
 	}
 	h.owner(t, "SELECT business.recovery_set_freeze(false, NULL)")
+}
+
+// M1: a dispatch-time contradiction (Stripe answered with another amount)
+// leaves the refund unknown with contradicting evidence. Clearing it as
+// failed needs exactly the proof of a failed decision: refused inside the
+// window, refused after it without a complete listing, and once the
+// listing shows the refund (it did happen) the operation is decided by
+// Stripe's record and "failed" needs a failed record of that refund. No
+// second POST is ever sent.
+func TestDispatchMismatchClearedAsFailedNeedsTheProof(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d, coll := h.lateCapture(t, f, pol, "mm")
+	r := h.reservedRefund(t, coll)
+	h.withRefunds()
+	h.stripe.mu.Lock()
+	h.stripe.refunds.lie = 9000
+	h.stripe.refunds.listFail = 503
+	h.stripe.mu.Unlock()
+	h.due(t)
+	h.drain(t)
+	row := h.refundRow(t, r.ID)
+	if row.State != "unknown" || row.Mismatch == "" || len(h.stripe.refundCreates()) != 1 {
+		t.Fatalf("dispatch mismatch %+v %v", row, h.stripe.refundCreates())
+	}
+	clear := func(key string) error {
+		_, err := h.co.ClearRefundMismatch(h.ctx, chef, key, order, r.ID, checkout.ClearMismatchInput{
+			ExpectedVersion: h.version(t, order, d), Decision: "failed", Note: "Looks failed"})
+		return err
+	}
+	if err := clear("c1"); conflict(err) != "window_open" {
+		t.Fatalf("inside the window: %v", err)
+	}
+	h.owner(t, `UPDATE business.refund_operation SET first_dispatch_at = first_dispatch_at - interval '24 hours',
+		replay_until = replay_until - interval '24 hours', dispatch_started_at = dispatch_started_at - interval '24 hours'
+		WHERE id = $1::uuid`, r.ID)
+	h.owner(t, `UPDATE business.recovery_operation SET replay_until = replay_until - interval '24 hours' WHERE id = $1::uuid`, r.ID)
+	h.coord.Now = func() time.Time { return time.Now().Add(24 * time.Hour) }
+	if err := clear("c2"); conflict(err) != "evidence_required" {
+		t.Fatalf("after the window without a complete list: %v", err)
+	}
+	if _, err := h.co.DecideOperation(h.ctx, chef, "d1", order, r.ID, checkout.DecideOperationInput{
+		ExpectedVersion: h.version(t, order, d), Decision: "failed", Note: "x"}); conflict(err) != "evidence_required" {
+		t.Fatalf("decide failed on a contradicted refund: %v", err)
+	}
+	// The complete list shows the refund (metadata names the operation, the
+	// real amount): it is decided succeeded by Stripe's record.
+	h.stripe.mu.Lock()
+	h.stripe.refunds.listFail = 0
+	h.stripe.refunds.lie = 0
+	h.stripe.mu.Unlock()
+	h.due(t)
+	h.drain(t)
+	if row := h.refundRow(t, r.ID); row.State != "succeeded" || row.Mismatch == "" {
+		t.Fatalf("after the list %+v", row)
+	}
+	if err := clear("c3"); conflict(err) != "evidence_required" {
+		t.Fatalf("failed on a succeeded refund without a failed record: %v", err)
+	}
+	if _, err := h.co.ClearRefundMismatch(h.ctx, chef, "k", order, r.ID, checkout.ClearMismatchInput{
+		ExpectedVersion: h.version(t, order, d), Decision: "keep", Note: "Stripe's record shows the full amount"}); err != nil {
+		t.Fatal(err)
+	}
+	h.coord.Now = nil
+	h.due(t)
+	h.drain(t)
+	if len(h.stripe.refundCreates()) != 1 {
+		t.Fatalf("second POST: %v", h.stripe.refundCreates())
+	}
+	if b := h.balance(t, coll); b.Succeeded != 10000 || b.Exposure != 10000 {
+		t.Fatalf("counted once %+v", b)
+	}
+	if view, raw := h.view(t, order, d); view.Refund.State != "returned" {
+		t.Fatalf("view %s", raw)
+	}
 }

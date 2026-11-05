@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
+	"strings"
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/catalog"
 )
@@ -16,18 +17,21 @@ const (
 )
 
 // evidenceRef is a reference to protected evidence kept outside this
-// system: visible ASCII, at most 200 characters and no run of six or more
-// digits, so raw bank details (sort codes, account numbers, IBANs) are
-// refused (K05: no raw bank details anywhere). The database checks the
-// same.
+// system: visible ASCII, at most 200 characters; once spaces, hyphens and
+// dots are removed, no run of six or more digits and nothing IBAN-like, so
+// raw bank details (sort codes, account numbers, IBANs) are refused (K05: no
+// raw bank details anywhere). The database checks the same.
 var (
 	evidenceRefPattern = regexp.MustCompile(`^[\x21-\x7e]([\x20-\x7e]{0,198}[\x21-\x7e])?$`)
 	digitRun           = regexp.MustCompile(`[0-9]{6,}`)
+	ibanLike           = regexp.MustCompile(`(?i)[a-z]{2}[0-9]{2}[a-z0-9]{11,30}`)
+	refSeparators      = strings.NewReplacer(" ", "", "-", "", ".", "")
 )
 
 func evidenceRef(field, s string) error {
-	if !evidenceRefPattern.MatchString(s) || digitRun.MatchString(s) {
-		return invalid(field, "must be an evidence reference (1 to 200 visible characters, never bank details or a run of 6 or more digits)")
+	bare := refSeparators.Replace(s)
+	if !evidenceRefPattern.MatchString(s) || digitRun.MatchString(bare) || ibanLike.MatchString(bare) {
+		return invalid(field, "must be an evidence reference (1 to 200 visible characters; never bank details: no 6 or more digits once spaces, hyphens and dots are removed, nothing IBAN-like)")
 	}
 	return nil
 }
@@ -135,8 +139,8 @@ func (in ManualPayoutOutcomeInput) Validate() error {
 	if success && (in.AmountMinor < 1 || in.AmountMinor > maxRefundMinor) {
 		return invalid("amount_minor", "must be the reserved amount in pence")
 	}
-	if (success || in.Outcome == "failed") && in.EvidenceRef == "" {
-		return invalid("evidence_ref", "is required for succeeded and failed")
+	if (success || in.Outcome == "failed" || in.Outcome == "withdrawn") && in.EvidenceRef == "" {
+		return invalid("evidence_ref", "is required for succeeded, failed and withdrawn")
 	}
 	if in.TransferIdentity != "" {
 		if err := evidenceRef("transfer_identity", in.TransferIdentity); err != nil {

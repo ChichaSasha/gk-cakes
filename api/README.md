@@ -1803,7 +1803,19 @@ another body `KEY_REUSED`), `expected_version` (the order version is
 bumped), 503 for a new decision during a restore freeze, `CONFLICT` while a
 K11 command of the order is unresolved, the note (1–500 characters, one
 line) stored immutably in `business.refund_recovery_decision` and kept out
-of the audit (`refund.recovery_decided`). No decision calls Stripe.
+of the audit (`refund.recovery_decided`). No decision calls Stripe. A
+decision completes the order's refund jobs in attention that it settled (a
+dispatch now decided without contradiction, a reconcile whose collection
+has nothing unresolved, quarantined or contradicted; audited
+`refund.attention_settled`), and the attention list never shows such jobs.
+When a decision settles an operation whose dispatch K11 record is still
+prepared or in reconcile, a `refund_resolve` job (worker kind
+`refund_resolve`, after `refund`) records the outcome `manager_failed` |
+`manager_succeeded` (evidence: the decision ID and state) in the
+independent journal with `recovery.Coordinator.Resolve`, outside any
+transaction, and secures the record; a record already committed with
+another outcome is left alone. Deploy the worker with (or before) the API
+for this: an older worker backs these jobs off as unhandled.
 
 - **Resolve a quarantined observation.** `match` only when the identities
   prove it (the refund's metadata names the operation or the operation
@@ -1815,20 +1827,28 @@ of the audit (`refund.recovery_decided`). No decision calls Stripe.
   own status; nothing new is reserved.
 - **Decide an `unknown` refund** only past its replay window (409
   `WINDOW_OPEN`). `failed` needs complete-provider-list evidence of
-  non-execution: a complete reconcile listing after the window found
-  nothing (`last_observed_at` ≥ `replay_until`; an incomplete listing never
-  sets it) and no observation names, matches or carries its refund ID (409
-  `EVIDENCE_REQUIRED`). `succeeded` needs the Stripe refund ID: a refund
-  already observed under that ID is matched as above; otherwise the ID is
-  recorded and the collection's reconcile runs now, which verifies it at
-  Stripe (complete list, then `GET /v1/refunds/{id}`: amount, currency,
-  payment intent) before the operation is decided. An ID held by another
-  operation or observation is 409 `DUPLICATE`.
+  non-execution (`business.refund_not_executed_proven`, migration 0027): a
+  complete reconcile listing after the window found nothing
+  (`refund_operation.not_found_at` ≥ `replay_until`; only the reconcile's
+  not_found verdict, which follows a complete list, sets it), no
+  observation names, matches or links the operation, it records no refund
+  ID, carries no contradiction and no refund object in its evidence (409
+  `EVIDENCE_REQUIRED`). `succeeded` needs the Stripe refund ID: an observed
+  refund of that ID is matched at once only when Stripe's record proves the
+  identity (its metadata names the operation, or the operation already
+  records that ID); otherwise the ID is recorded and the collection's
+  reconcile runs now, which verifies it at Stripe (complete list, then
+  `GET /v1/refunds/{id}`: amount, currency, payment intent) and matches an
+  unmatched observation of that ID to the operation (counted once) before
+  the operation is decided. An ID held by another operation, or observed on
+  another collection, is 409 `DUPLICATE`.
 - **Clear a contradiction.** On a refund operation: `keep` (the recorded
-  state stands), `failed` (a succeeded or unknown refund corrected to
-  failed: its remainder reopens, nothing is re-sent), `succeeded` (only with
-  a succeeded refund of the same ID and amount matched to it, else
-  `EVIDENCE_REQUIRED`). On a payment collection: only when it is succeeded
+  state stands), `failed` (its remainder reopens, nothing is re-sent): on an
+  unknown refund exactly the proof of a `failed` decision above (409
+  `WINDOW_OPEN`, then `EVIDENCE_REQUIRED`), on a succeeded refund only when
+  Stripe's record of that same refund (matched, same ID) is failed or
+  canceled; `succeeded` (only with a succeeded refund of the same ID and
+  amount matched to it, else `EVIDENCE_REQUIRED`). On a payment collection: only when it is succeeded
   or failed (an unknown payment outcome is payment reconciliation, not a
   note).
 - **Re-reserve a failed remainder.** The latest operation of its collection,
@@ -1867,10 +1887,11 @@ of the audit (`refund.recovery_decided`). No decision calls Stripe.
   refund failed definitively on it), nothing unresolved
   (`REFUND_IN_PROGRESS`), no reconciliation outstanding; otherwise 409
   `MANUAL_PAYOUT_NOT_ELIGIBLE`.
-- **References only.** Evidence and recipient references: 1–200 visible
-  characters with no run of six or more digits (sort codes, account numbers
-  and IBANs are refused, 422); the evidence itself lives outside this
-  system. Never logged.
+- **References only.** Evidence, recipient and transfer references: 1–200
+  visible characters; once spaces, hyphens and dots are removed, no run of
+  six or more digits and nothing IBAN-like (two letters, two digits, 11–30
+  letters or digits) (422); the evidence itself lives outside this system.
+  Never logged.
 - **Preview:** immutable for 10 minutes and the order version; the whole
   remaining allocation (min(the failed refund's amount, the room, what the
   goal still needs)); a changed recipient or amount is a new preview.
@@ -1889,19 +1910,24 @@ of the audit (`refund.recovery_decided`). No decision calls Stripe.
   unique across all manual payouts (409 `DUPLICATE`), an evidence reference,
   exactly the reserved amount in GBP), `failed` (pending/unknown → failed
   with evidence: the remainder is owed again, a new manual payout may
-  follow), `withdrawn` (reserved → cancelled: nothing was paid). Each is in
+  follow), `withdrawn` (reserved → cancelled: nothing was paid; needs an
+  evidence reference). Each is in
   `business.manual_payout_event`. A success counts once (the operation's
   S, no Stripe refund ID invented); until its outcome is secured the order
   view reports it in progress, never `returned`.
+- **Restore freeze:** like the B1 order commands, the preview and the
+  request do not check the freeze (the request is recorded); the commit of
+  each K11 command checks it first and waits while frozen, so nothing is
+  reserved or recorded during a restore.
 - **Tests:** `internal/checkout/recovery_tools_integration_test.go`,
   `manual_payout_integration_test.go`; `internal/httpapi`
   `TestRecoveryToolRoutes`, `TestManualPayoutRoutes`.
 
 Not yet (after B2): the UI for all of this; refund and payout emails or
 notifications; protected storage of the evidence the references point to;
-journal-side resolution of a decided refund dispatch's K11 record (a
-manager decision is the local record; the dispatch's recovery operation
-stays `reconcile`); foreign-currency manual payouts (liability stays open);
+journal resolution of a dispatch record that a reconcile (not a manager)
+decided after the window (it stays `reconcile`, as before B2);
+foreign-currency manual payouts (liability stays open);
 re-reserving a remainder by policy shares across collections (the
 remainder returns to the failed operation's collection); payment
 reconciliation of an `unknown` payment collection; chef-confirmed revised

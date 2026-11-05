@@ -131,7 +131,8 @@ func TestManualAlternativePayout(t *testing.T) {
 	failed := h.failedProviderRefund(t, coll)
 
 	// Evidence references only: never bank details.
-	for _, ref := range []string{"12-34-56 12345678", "GB33BUKB20201555555555", "", " lead"} {
+	for _, ref := range []string{"12-34-56 12345678", "GB33BUKB20201555555555", "GB33 BUKB 2020 1555 5555 55", "12 34 56",
+		"sort 12.34.56", "acct-1234-5678", "", " lead"} {
 		if _, err := h.manualPreview(t, order, coll, ref); err == nil || conflict(err) != "" {
 			t.Errorf("recipient reference %q: %v", ref, err)
 		}
@@ -197,7 +198,7 @@ func TestManualAlternativePayout(t *testing.T) {
 		t.Fatalf("reserved %+v", b)
 	}
 
-	success := checkout.ManualPayoutOutcomeInput{Outcome: "succeeded", TransferIdentity: "bank-statement/2026-11/line-3",
+	success := checkout.ManualPayoutOutcomeInput{Outcome: "succeeded", TransferIdentity: "bank-statement/nov/line-3",
 		EvidenceRef: "evidence/case-7", AmountMinor: 10000, Currency: "GBP"}
 	if err := h.manualOutcome(t, order, d, op, "early", success); conflict(err) != "state_conflict" {
 		t.Fatalf("success before submission: %v", err)
@@ -275,7 +276,10 @@ func TestManualAlternativePayout(t *testing.T) {
 		t.Fatalf("after a failed transfer %+v", b)
 	}
 	op3 := h.reserveManual(t, order2, d2, coll2, "m3")
-	if err := h.manualOutcome(t, order2, d2, op3, "wd", checkout.ManualPayoutOutcomeInput{Outcome: "withdrawn"}); err != nil {
+	if err := h.manualOutcome(t, order2, d2, op3, "wd0", checkout.ManualPayoutOutcomeInput{Outcome: "withdrawn"}); !strings.HasPrefix(invalidField(err), "outcome:") {
+		t.Fatalf("withdrawn without evidence: %v", err)
+	}
+	if err := h.manualOutcome(t, order2, d2, op3, "wd", checkout.ManualPayoutOutcomeInput{Outcome: "withdrawn", EvidenceRef: "withdrawal-note/case-9"}); err != nil {
 		t.Fatal(err)
 	}
 	if b := h.balance(t, coll2); b.Reserved != 0 {

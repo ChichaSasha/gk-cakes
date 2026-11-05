@@ -266,6 +266,8 @@ type payHarness struct {
 	reviews *checkout.HoldReviews
 	webhook *payments.Webhook
 	refunds *payments.Refunds // chained by withRefunds
+	// resolves journals manager refund decisions (chained by withRefunds).
+	resolves *payments.RefundResolves
 	// productions runs scheduled production starts (chained always; claims
 	// take their jobs only with h.production).
 	productions *checkout.Productions
@@ -291,6 +293,7 @@ func newPayHarness(t *testing.T) *payHarness {
 	refunds := &payments.Refunds{DB: h.worker, Coordinator: h.coord, Provider: client, Environment: "test", Account: stripeAccount, Logger: logger}
 	prod := &checkout.Productions{DB: h.worker, Logger: logger}
 	return &payHarness{commandHarness: h, stripe: fs, pay: pay, reviews: reviews, webhook: wh, refunds: refunds,
+		resolves:    &payments.RefundResolves{DB: h.worker, Coordinator: h.coord, Logger: logger},
 		productions: prod, handler: jobs.Chain(h.cmds.Handle, pay.Handle, reviews.Handle, prod.Handle)}
 }
 
