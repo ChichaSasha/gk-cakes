@@ -1,11 +1,16 @@
-# GK-016 r02 — customer account: sign-in, orders, requests, adding older orders, profile and privacy
+# GK-016 r02b — customer account: sign-in, orders, requests, adding older orders, profile and privacy (Creator-approved 2026-11-05)
 
 2026-11-05. Card GK-016 (Owner: Agent, Kind: Design). r02 covers the **customer account** that r01/r01b left for
 later: sign-in and sign-up in one step (email link that creates the account on first use, plus "Continue with
 Google"), the account home (orders with clear states, requests, favourites), the entry into the order page, both
 ways of adding an older order, profile and contact details, and privacy (retention, the inactivity warning,
-deleting the account, signing out everywhere). **Not approved.** It needs exact-version Creator approval and then a
-fresh integration review (AC3). It is built on r01b (`122e9f9`), which is itself not yet approved.
+deleting the account, signing out everywhere).
+
+**r02b — Creator-approved 2026-11-05 (answers as suggested).** The Creator approved r02 (and r01b) with the open
+questions answered as suggested, plus three changes from the Creator-facing review; r02b applies them (see
+[r02b — Creator approval](#r02b--creator-approval-2026-11-05)). The branch now includes r01c (`52fa680`, merged), and
+the r01c copy changes (8-month requests, chef's collect-by date) are also in this folder's `poc/app.js`. The fresh
+integration review (AC3) is still to come.
 
 **Review round 1** (independent design reviewer, PR #31, REVISE on `ad72346`) is addressed in this revision; see
 [Review round 1 changes](#review-round-1-changes).
@@ -63,11 +68,12 @@ or the account token and shows the lifecycle titles reused here.
 
 ### Outputs (SHA-256, first 16 hex)
 
+r02b: `poc/r02.js` `7e45f8a9f0ad1f97`, `poc/app.js` `87a8ac0d4113db16` (with the r01c copy), `poc/styles.css` `c8ae7778e9feb446`, `shoot.sh` `7933017bac73511b`.
 Round 1: `poc/r02.js` `b1505f3606e3233f` (new; r02 first version `fe70ecdbf5744d88`), `poc/app.js` `948c856464ddbbd4`,
 `poc/styles.css` `7ed57f5e0c69a1cd` (was `7cdf8c4091f6c04c`), `shoot.sh` `15303a7aecdba3d8` (was `17c83540ad45e955`), `shot.html` `83c8d38d8a032110`; new pages `signin.html`, `claim.html`,
 `profile.html`, `privacy.html`, `states.html`; `account.html` and `order.html` now also load `r02.js`. All other
-`poc/` files and `poc/assets/` are byte-identical to r01b. `screens/` holds 118 JPEGs (59 views × desktop 1440 /
-mobile 390, about 20 MB).
+`poc/` files and `poc/assets/` are byte-identical to r01b/r01c. `screens/` holds 124 JPEGs (62 views × desktop 1440 /
+mobile 390, about  21MB), all re-shot for r02b (state numbers shifted with the three new delete steps).
 
 ## How the prototype is organised
 
@@ -77,7 +83,7 @@ mobile 390, about 20 MB).
   and show the order reference on "Order again". An r02 section is appended to `styles.css` (`acc-*` classes).
 - Each state is `page.html?state=…`. Every r02 page opens with the **design-review switcher** (striped yellow,
   dashed border, mono type, "Prototype only · design review · not part of the shop"): state picker grouped by
-  area, previous/next through all 56 states, "All states" (`states.html`), and a "Simulates" line with the API or
+  area, previous/next through all 59 states, "All states" (`states.html`), and a "Simulates" line with the API or
   provider event. Prototype-only hints inside pages use the same dashed yellow "Prototype" label. Neither is part
   of the shop design.
 - **Money**: every figure is an example server value (£90, £105, £285, £180 recorded by the chef, refund £45 of
@@ -105,40 +111,43 @@ mobile 390, about 20 MB).
 | 10 | `unavailable` | "Sign-in is not available right now. Please try again in a few minutes. You can still order without an account." | Try again |
 | 11 | `session-ended` | "Your session has ended. Please sign in again." (built wording) | As 1 |
 | 12 | `signed-out` | "You're signed out on this device." Favourites in this browser stay; hint about Sign out everywhere. | Sign in again; Back to the shop |
-| 13 | `home` | Account nav (Orders & requests · Favourites · Add an older order · Profile & contact · Privacy & your data · Sign out). **Your orders** (see [Order list mapping](#order-list-mapping)): *In progress* — GK-1123 "Waiting for payment" (Continue to payment), GK-1108 "Still checking payment" (don't pay again), GK-1096 "Payment received · date to agree" (date shown as requested, not confirmed), GK-1079 "Being made", GK-1071 "Ready to collect", GK-1087 "Confirmed", GK-1115 "Status not available", GK-1061 "Cancelled · refund pending" (£45 pending); *Past* — GK-1042 "Cancelled · refunded" (£90 returned), GK-1009 "Collected", GK-0931 "Collected · added by the chef" (£180 recorded by the chef). Coloured chip with a dot plus words (never colour alone). **Your requests**: GKR-7Q4M "Ready to send" (we can't see whether it was sent; copy again, same request), GKR-3HDX "Offer from the chef" (review and pay by a 24-hour example deadline), GKR-9WPL "Offer expired", GK-1120 "Add an order to your account · from its email link · Waiting for the chef" (only the reference the customer already has, no new details), GKC-28 older-order request "Waiting for the chef"; requests kept 6 months after the last conversation. **Your favourites**: "2 favourites on this device aren't in your account yet" merge choice + account favourites. "Ordered before?" card. | View order → order detail state; Continue to payment → `order-unpaid`; Order again → `reorder.html?order=GK-1009`; Copy request & open Instagram/email → status (same request, nothing sent); Review the offer → status (offer page belongs to GK-017/GK-018); Ask the chef for a new one → contact; Add to my account / Keep on this device only → status; View all favourites → favourites (signed in); Add an older order → `old-form` |
+| 13 | `home` | Account nav (Orders & requests · Favourites · Add an older order · Profile & contact · Privacy & your data · Sign out). **Your orders** (see [Order list mapping](#order-list-mapping)): *In progress* — GK-1123 "Waiting for payment" (Continue to payment), GK-1108 "Still checking payment" (don't pay again), GK-1096 "Payment received · date to agree" (date shown as requested, not confirmed), GK-1079 "Being prepared", GK-1071 "Ready to collect", GK-1087 "Confirmed", GK-1115 "Status not available", GK-1061 "Cancelled · refund pending" (£45 pending); *Past* (behind **Show past orders (3)**, `aria-expanded`; open in `chef-added`) — GK-1042 "Cancelled · refunded" (£90 returned), GK-1009 "Collected", GK-0931 "Collected · added by the chef" (£180 recorded by the chef). Coloured chip with a dot plus words (never colour alone). **Your requests**: GKR-7Q4M "Ready to send" (we can't see whether it was sent; copy again, same request), GKR-3HDX "Offer from the chef" (review and pay by a 24-hour example deadline), GKR-9WPL "Offer expired", GK-1120 "Add an order to your account · from its email link · Waiting for the chef" (only the reference the customer already has, no new details), GKC-28 older-order request "Waiting for the chef"; requests kept 6 months after the last conversation. **Your favourites**: "2 favourites on this device aren't in your account yet" merge choice + account favourites. "Ordered before?" card. | Show past orders / Hide past orders → toggles the past list; View order → order detail state; Continue to payment → `order-unpaid`; Order again → `reorder.html?order=GK-1009`; Copy request & open Instagram/email → status (same request, nothing sent); Review the offer → status (offer page belongs to GK-017/GK-018); Ask the chef for a new one → contact; Add to my account / Keep on this device only → status; View all favourites → favourites (signed in); Add an older order → `old-form` |
 | 14 | `empty` | New account: "No orders yet" + Shop cakes / Create your own + "Add an older order"; no requests; nothing saved. | Shop cakes; Create your own; Add an older order |
 | 15 | `kept` | Banner: "Welcome back. Your account was due to be deleted on Sat 5 December 2026 because it hadn't been used for 2 years. Signing in has kept it… at least another 24 months". | As 13 |
 | 16 | `chef-added` | Banner: "The chef added an order to your account, as you asked: GK-0931…"; that row highlighted "New". | View order GK-0931 → `order-older` |
 | 17 | `load-error` | Orders card: "We couldn't load your orders right now. Please try again." Requests and favourites still load. | Try again → `home` |
 | 18 | `disabled` | "This account is disabled. Please contact us if you think this is a mistake." (built wording), no account data. | Contact us; Sign out |
 | 19 | `signed-out-account` | Opening the account without a session: "Please sign in to see your account. After signing in you come back here." + sign-in form. | As 1 |
-| 20–30 | `order-unpaid`, `order-checking`, `order-agreement`, `order-confirmed`, `order-making`, `order-ready`, `order-refund`, `order-refunded`, `order-completed`, `order-unknown`, `order-older` | The order page layout (status card + "Order details" summary) with "← Your orders". Titles and lines follow the built order page and GK-017 r02: "Your order is waiting for payment" (place held 15 minutes; Continue to secure payment); "Still checking payment; do not pay again"; "Payment received" (requested date/time "not confirmed yet", never moved without agreement, everything back (£105) if no date is agreed); "Your order is confirmed" (own courier note, full-refund deadline example 10:00 Sun 22 Nov, 50% after); "Your cake is being made" (collection details about 48 h before; being made doesn't reduce the refund, 50% (£45) after the deadline); "Your cake is ready" (collect today 14:00–15:00); "This order was cancelled" + "Refund of £45 pending…" + why £45 (50% inside 120 hours); refund of £90 returned; "Your order is complete"; "We can't show this order's status right now" (no actions); older order "added by the chef… paid outside this website… nothing to pay or refund here" with chef-recorded values. | Continue to secure payment → toast (GK-025 opens Stripe); Contact us / Contact the chef; Change your time / Preview cancellation → r01b order page previews; Order again → reorder; Request something similar → custom request; Shop cakes |
+| 20–30 | `order-unpaid`, `order-checking`, `order-agreement`, `order-confirmed`, `order-making`, `order-ready`, `order-refund`, `order-refunded`, `order-completed`, `order-unknown`, `order-older` | The order page layout (status card + "Order details" summary) with "← Your orders". Titles and lines follow the built order page and GK-017 r02: "Your order is waiting for payment" (place held 15 minutes; Continue to secure payment); "Still checking payment; do not pay again"; "Payment received" (requested date/time "not confirmed yet", never moved without agreement, everything back (£105) if no date is agreed); "Your order is confirmed" (own courier note, full-refund deadline example 10:00 Sun 22 Nov, 50% after); "Your cake is being prepared" (collection details will show here about 48 h before; being prepared doesn't reduce the refund, 50% (£45) after the deadline); "Your cake is ready" (collect today 14:00–15:00); "This order was cancelled" + "Refund of £45 pending…" + why £45 (50% inside 120 hours); refund of £90 returned; "Your order is complete"; "We can't show this order's status right now" (no actions); older order "added by the chef… paid outside this website… nothing to pay or refund here" with chef-recorded values. | Continue to secure payment → toast (GK-025 opens Stripe); Contact us / Contact the chef; Change your time / Preview cancellation → r01b order page previews; Order again → reorder; Request something similar → custom request; Shop cakes |
 | 31 | `link-guest` | Guest order page from the private email link, not signed in. Card "Keep this order in your account": sign in, then open the email link again and choose "Add this order to my account"; the chef checks it; "We never add orders to an account automatically, even when the email address matches." | Sign in or create an account → `signin` |
 | 32 | `link-offer` | Same order while signed in: "Add this order to your account? …Ask to add it to anna@example.com and the chef will check it… Until she has, keep using the link in your email." Wrong account → Sign out. | **Add this order to my account** (busy label "Asking…") → `link-asked`; Not now → account |
-| 33 | `link-asked` | "Asked. The chef will check it and, if it matches, add it to your account. We'll email you either way. Until then, keep using the link in your email." Also listed under "Your requests". | Waiting for the chef (disabled); Back to your account; prototype outcomes → `link-added` / `link-declined` |
+| 33 | `link-asked` | "Asked. The chef will check it and, if it matches, add it to your account. You'll see the result here and under “Your requests”. Until then, keep using the link in your email." Also listed under "Your requests". | Waiting for the chef (disabled); Back to your account; prototype outcomes → `link-added` / `link-declined` |
 | 34 | `link-added` | "GK-1120 is now in your account… The private link in your email no longer works for this order: sign in to see it." | View in your account |
 | 35 | `link-yours` | "This order is already in your account." Reachable when the owning account (signed in) opens a guest link that was revoked when its own claim was approved: the API recognises the owner and says so instead of the generic dead link. Anyone else gets `link-dead`. | View in your account |
 | 36 | `link-declined` | "We couldn't add this order. The chef couldn't add the order you asked about to your account, so nothing was added. Please contact us… If the link in your order email still works, you can keep using it to see that order." No reason and no order details. | Contact us; Back to your account |
 | 37 | `link-dead` | "This order link doesn't work": may have been replaced, or already added to an account; contact us with the reference from the email. **No order details, no reference, no hint which account** — also covers "already in another account". | Contact us; Go to your account |
 | 38 | `old-form` | "Add an older order": for Instagram/email/in-person orders. Fields: Order reference from the chef (required, example IG-0613), How did you order (Instagram/Email/In person/Other), When was the cake for (optional month/year), A short note for the chef (required, ≤500; no card details or health information). Side: how it works (3 steps; no details shown until the chef adds it), guest orders use the email link, or ask the chef to add it. | Send to the chef → `old-pending` (after client checks); Cancel → account |
 | 39 | `old-errors` | Error summary + inline errors for reference and note; focus to the first. | As 38 |
-| 40 | `old-pending` | "Your request GKC-28 is waiting for the chef. Nothing has been added… we won't show any order details until she has checked it." What you sent (reference, how, when, note). | Back to your account; Withdraw this request → status |
+| 40 | `old-pending` | "Your request GKC-28 is waiting for the chef. Nothing has been added… we won't show any order details until she has checked it. You'll see the result here and under “Your requests”." What you sent (reference, how, when, note). | Back to your account; Withdraw this request → status |
 | 41 | `old-approved` | "The chef matched your request GKC-28 and added order GK-0931 (Instagram order, Sat 13 June 2026)". | View order GK-0931 → `order-older`; Back to your account → `chef-added` |
 | 42 | `old-declined` | "We couldn't add this order. The chef couldn't match request GKC-28 from the details given, so nothing was added. Please contact us…" Reveals nothing about whether an order exists. | Contact us; Back to your account |
-| 43 | `profile` | **Your details**: Full name (optional; prefilled at checkout, editable per order), Phone (optional; only if the chef needs to reach you), Instagram name (optional, private, "doesn't prove who you are and isn't used to sign in"). **Signing in**: email (sign-in links and order emails), Email link on, Google connected; Change sign-in email (disclosure). **Emails we send**: service emails needed for orders can't be switched off; no marketing. | Save changes → `profile-saved` (or inline errors); Send a confirmation link → `email-change-sent` |
+| 43 | `profile` | **Your details**: Full name (optional; prefilled at checkout, editable per order), Phone (optional; only if the chef needs to reach you); name filled in from Google if used, editable, Instagram name (optional, private, "doesn't prove who you are and isn't used to sign in"). **Signing in**: email (sign-in links and order emails), Email link on, Google connected, "One account per verified email address"; Change sign-in email (disclosure). **Emails we send**: sign-in links from the sign-in service; order and account emails can't be switched off once we send them; no marketing. | Save changes → `profile-saved` (or inline errors); Send a confirmation link → `email-change-sent` |
 | 44 | `profile-saved` | "Saved." | As 43 |
 | 45 | `profile-errors` | Error summary; phone "Enter a phone number like 07700 900123 or +44 7700 900123"; Instagram "letters, numbers, full stops and underscores". Errors are tied to the inputs (`aria-invalid`, hint + error in `aria-describedby`), also when shown live. | As 43 |
 | 46 | `profile-conflict` | "These details were changed somewhere else (perhaps in another tab)… loaded the latest… kept your phone number change. Check them and save again." The kept edit is outlined, with the saved value beside it; that note is in the phone input's `aria-describedby`. | Save changes |
 | 47 | `email-change-sent` | Confirmation link sent to the new address; changes when opened (30 minutes, this browser); keep using the old address until then; the old address is told. | — |
-| 48 | `privacy` | **Your data and how long we keep it** (active account, last sign-in today; table: account/profile/favourites/order list — 24 months in which you don't sign in or order → warning email → 30 days to sign in or order; details of your orders and messages (name, email, cake, date) until an unfinished order is done, then 2 years after handover/cancellation, even after account deletion (then unlinked); requests 6 months after last conversation; request photos 30 days after handover or 3 months with specific permission; payment records for the legal period, being confirmed; on this device favourites 1 year, draft 30 days without description/photos); "No analytics run on account pages". **Sign out everywhere**, **Delete your account**, **This device** (clear). | See the warning email → `warning-email`; Sign out everywhere… → `signout-all`; Delete my account… → `delete-review`; Clear this device → status |
-| 49 | `warning-email` | Example plain email, "with no tracking; the button opens the normal sign-in page": subject "Your GK Cake London account will be deleted on Sat 5 December 2026"; 2 years without sign-in or order; in 30 days; sign in to keep it; if nothing is done: account, profile and favourites deleted and orders no longer linked to an account; order details kept until 2 years after handover or cancellation, payment records for as long as the law requires; orders in progress carry on. | Sign in to keep my account → `signin`; prototype note → `kept` |
-| 50 | `delete-review` | **We delete**: account and sign-in (email link and Google), profile (name/phone/Instagram), account favourites, requests and their photos, the link between your orders and this account and the private order links. **We keep for your orders**: details of your orders (name, email, cake, date) — unfinished orders until they're done, then 2 years after handover or cancellation, no longer linked to an account; anything for an open dispute until resolved. **We keep because the law requires**: payment and refund records for the legal period (being confirmed), with as little personal information as possible. Messages also stay in Instagram/email. Backups cleared within 30 days; favourites in this browser stay until cleared. Tick "I understand that deleting my account can't be undone." (`aria-invalid` when missing). Footnote: "Your earlier orders and favourites won't be in the new account." | Delete my account → `deleted` (needs the tick; inline error otherwise); Keep my account → `privacy` |
+| 48 | `privacy` | **Your data and how long we keep it** (active account, last sign-in today; table: account/profile/favourites/order list — 24 months in which you don't sign in or order → warning email 30 days before deletion and a reminder 7 days before; details of your orders and messages (name, email, cake, date) until an unfinished order is done, then 2 years after handover/cancellation, even after account deletion (then unlinked); requests 6 months after last conversation; request photos 30 days after handover or 3 months with specific permission; payment records for the legal period, being confirmed; on this device favourites 1 year, draft 30 days without description/photos); "No analytics run on account pages". **Sign out everywhere**, **Delete your account**, **This device** (clear). | See the warning email → `warning-email`; Sign out everywhere… → `signout-all`; Delete my account… → `delete-review`; Clear this device → status |
+| 49 | `warning-email` | Two example plain emails, "with no tracking; the button opens the normal sign-in page": (1) warning 30 days before, subject "Your GK Cake London account will be deleted on Sat 5 December 2026"; (2) reminder 7 days before, subject "Reminder: your GK Cake London account will be deleted on Sat 5 December 2026". Both: 2 years without sign-in or order; sign in to keep it; if nothing is done: account, profile and favourites deleted and orders no longer linked to an account; order details kept until 2 years after handover or cancellation, payment records for as long as the law requires; orders in progress carry on. | Sign in to keep my account → `signin`; prototype note → `kept` |
+| 50 | `delete-review` | **We delete**: account and sign-in (email link and Google), profile (name/phone/Instagram), account favourites, requests and their photos, the link between your orders and this account and the private order links. **We keep for your orders**: details of your orders (name, email, cake, date) — unfinished orders until they're done, then 2 years after handover or cancellation, no longer linked to an account; anything for an open dispute until resolved. **We keep because the law requires**: payment and refund records for the legal period (being confirmed), with as little personal information as possible. Messages also stay in Instagram/email. Backups cleared within 30 days; favourites in this browser stay until cleared. Tick "I understand that deleting my account can't be undone." (`aria-invalid` when missing). Footnote: "Your earlier orders and favourites won't be in the new account." "Next, we ask you to sign in again (email link or Google) before anything is deleted." | Continue: confirm it's you → `delete-reauth` (needs the tick; inline error otherwise); Keep my account → `privacy` |
 | 51 | `delete-blocked` | "You can't delete your account yet. These orders still have money to settle: GK-1108 still checking a payment; GK-1096 payment received, date to agree; GK-1061 refund of £45 on its way." Contact line. Delete button disabled. | Order links → order detail; Back to your account |
-| 52 | `delete-warn` | "You have an upcoming order: GK-1087, Fri 27 November 2026, confirmed. If you delete your account now, the order still goes ahead, so we keep the name and email it needs. You won't be able to see, change or cancel it online; the chef will contact you by email." Extra required tick for the order. | Delete my account → `deleted` (both ticks); Keep my account |
-| 53 | `deleted` | "We've signed you out and deleted your account, profile, favourites and requests. Details of your orders are kept, no longer linked to an account, until 2 years after handover or cancellation (unfinished orders until they're done); payment records for as long as the law requires… last email to confirm… backups within 30 days." | Clear this device; Back to the shop |
-| 54 | `signout-all` | "Sign out everywhere? …this device and every other one. Orders and favourites aren't affected." | Sign out everywhere (busy label "Signing out…") → `signout-all-done`; Cancel |
-| 55 | `signout-all-done` | "You're signed out on all your devices. Other devices are asked to sign in again when they next check, usually within an hour (example; GK-021 confirms the timing)." Never claims instant revocation. | Sign in again |
-| 56 | `signout-all-partial` | Built wording: "You are signed out on this device, but the sign-in service could not be reached to end the session everywhere." | Sign in again |
+| 52 | `delete-warn` | "You have an upcoming order: GK-1087, Fri 27 November 2026, confirmed. If you delete your account now, the order still goes ahead, so we keep the name and email it needs. You won't be able to see, change or cancel it online; the chef will contact you about it." Extra required tick ("…I'll arrange anything about it with the chef directly"). | Continue: confirm it's you → `delete-reauth` (both ticks); Keep my account |
+| 53 | `delete-reauth` | "Confirm it's you": sign in again now; **nothing is deleted yet**; Email me a confirmation link, or Continue with Google (static); the link goes to anna@example.com, works once, in this browser, for 30 minutes. | Email me a confirmation link ("Sending…") → `delete-reauth-sent`; Continue with Google → `delete-final`; Keep my account |
+| 54 | `delete-reauth-sent` | "We've sent a confirmation link… open it in this browser within 30 minutes; it brings you back here to finish. Nothing is deleted yet. If you didn't mean to delete your account, just ignore the email." | Keep my account; prototype: opened → `delete-final`, after 30 minutes → `link-failed` |
+| 55 | `delete-final` | "You've signed in again. You can now delete your account." Short summary of what is deleted and kept; "This can't be undone."; confirmation open for 10 minutes (example), then sign in again. | **Delete my account** (danger, "Deleting…") → `deleted`; Keep my account |
+| 56 | `deleted` | "We've signed you out and deleted your account, profile, favourites and requests. Details of your orders are kept, no longer linked to an account, until 2 years after handover or cancellation (unfinished orders until they're done); payment records for as long as the law requires… backups within 30 days." (No confirmation-email promise until order/account emails exist, GK-031.) | Clear this device; Back to the shop |
+| 57 | `signout-all` | "Sign out everywhere? …this device and every other one. Orders and favourites aren't affected." | Sign out everywhere (busy label "Signing out…") → `signout-all-done`; Cancel |
+| 58 | `signout-all-done` | "You're signed out on all your devices. Other devices are asked to sign in again when they next check, usually within an hour (example; GK-021 confirms the timing)." Never claims instant revocation. | Sign in again |
+| 59 | `signout-all-partial` | Built wording: "You are signed out on this device, but the sign-in service could not be reached to end the session everywhere." | Sign in again |
 
 Also linked: `favourites.html?demo=signed-in` (r01b merge panel) and `reorder.html?order=GK-1009` (r01b order again).
 
@@ -168,7 +177,7 @@ cake, refund) is still open; **Past** once finished. ✎ = drawn in the prototyp
 | `awaiting_payment` · free refused `window_closed`/`holds_released`; `confirmation_pending` (free) | Couldn't confirm (red) / Confirming (grey) | Please start a new order. / We're confirming your free order. | View order | In progress |
 | `paid_awaiting_agreement` ✎ | Payment received · date to agree (amber) | Your payment arrived after the preparation time for this date. The chef will contact you about the date. (date shown "requested, not confirmed") | View order | In progress |
 | `confirmed` ✎ | Confirmed (green) | Collect at St Katharine Docks / Your courier collects / GK delivery confirmed by the chef. | View order | In progress |
-| `in_production` ✎ | Being made (green) | The chef is making your cake. We'll email you the collection details about 48 hours before. | View order | In progress |
+| `in_production` ✎ | Being prepared (green) | Your cake is being prepared. The collection details will show here about 48 hours before. | View order | In progress |
 | `ready` ✎ | Ready to collect (green); GK delivery: Ready for delivery | Your cake is ready. Collect it at St Katharine Docks at your time. | View order | In progress |
 | `completed` ✎ | Collected (grey); Delivered / Handed to your courier | Thank you for ordering with GK Cake London. | View order · Order again | Past |
 | `cancelled` · payment `created`/`pending`/`unknown` | Still checking payment (amber) | This order was cancelled, but we're still checking a payment for it. Please don't pay again. | View order | In progress |
@@ -216,22 +225,25 @@ that server running, `sh docs/design/sessions/discovery-account/gk-016-r02/shoot
 
 ## Deviations and decisions to note
 
-1. **Claim from the email link waits for the chef.** The brief lists "Add this order to my account, success";
-   K00 requires chef approval for every claim, so the sketch shows *asked → waiting for the chef → added*. If the
-   Creator wants the private link alone to be enough, `link-asked` collapses into `link-added` (question 1).
+1. **Claim from the email link waits for the chef** (K00; approved, answer 1): *asked → waiting for the chef →
+   added / couldn't add*.
 2. **"Already in another account" uses the generic dead-link screen.** Approving a claim revokes the guest link
    (K00), so a second person's link simply stops working; showing "in another account" would reveal something.
 3. **Customer sign-in shows email link + Google only.** The live page also has email + password (used by staff).
-   The sketch leaves password sign-in off the customer page (question 5).
+   Password sign-in stays staff-only and is not on the customer page (approved, answer 5).
 4. **Delete account: block vs warn.** Blocked while money is unsettled (payment being checked, paid awaiting a
-   date, refund in progress); allowed with a warning and an extra tick for a confirmed upcoming order (question 2).
+   date, refund in progress); allowed with a warning and an extra tick for a confirmed upcoming order (approved, answer 2), then a fresh sign-in
+   (answer 3).
 5. **Return after the email link.** Live returns only to `/account` or `/admin` and keeps a guest order capability
    only in the ordering tab, so the guest path says "sign in, then open the link in your email again" rather than
    promising to return to the order.
 6. **Order page reuse.** The account opens a compact order view with the built titles; GK-017 r02 owns the full
    order-page states (refund tracker, timeline, cancellation preview). Change time / Preview cancellation link to
    the r01b order page previews.
-7. Example dates are fixed (Nov–Dec 2026) except "Order again" (computed by r01b) and "last signed in today".
+7. **"Being prepared"** replaces "being made" in the account list and order entry (Creator-facing review). The built
+   order page (`order.ts`, "Your cake is being made") and GK-017 r02 still say "being made"; aligning them is a
+   follow-up for GK-025/GK-017.
+8. Example dates are fixed (Nov–Dec 2026) except "Order again" (computed by r01b) and "last signed in today".
 
 ## Gaps (outside this sketch)
 
@@ -250,6 +262,10 @@ that server running, `sh docs/design/sessions/discovery-account/gk-016-r02/shoot
   address already has an account (no account discovery); the change completes only from the new address; the old
   address is told; what happens to a linked Google identity after the email changes (keep it linked, or require
   Google to be reconnected when its email no longer matches) must be decided and tested.
+- The inactivity warning and reminder emails, and any order/account email, depend on email sending (GK-031); the
+  prototype makes no "we'll email you" promise elsewhere.
+- The fresh sign-in before deletion needs a recent-authentication check in GK-021/API (e.g. session issued within
+  10 minutes; example value) and the same email-link rules as sign-in.
 - A declined email-link claim (`link-declined`) leaves the guest link as it was; whether repeated requests are
   rate-limited is an API decision.
 
@@ -274,23 +290,47 @@ Independent design review, PR #31, REVISE on `ad72346`:
 
 Screenshots were all re-shot (state numbers shifted with the four new states).
 
+## r02b — Creator approval (2026-11-05)
+
+Checks (r02b, temporary harnesses): `node --check` on both scripts; all 62 views render one `h1`, no duplicate IDs,
+no element past the right edge at 390 px, and no "We'll email" text; Show past orders toggles (`aria-expanded`), open
+in `chef-added`; delete review → `delete-reauth` → `delete-reauth-sent`; Google → `delete-final` → "Deleting…" →
+`deleted`; request calendar reads "Thursday to Sunday, up to 8 months ahead". `check_planning_kit.py` passes.
+
+The Creator approved GK-016 r01b and r02 on 2026-11-05 "as suggested" (relayed by the planning master in this
+session; not a separate file). Applied by the same author worker (`llmplatform/claude-opus-5-5`), no corporate
+tools, after merging r01c (`52fa680`) into this branch.
+
+| # | Question | Creator answer | Where applied |
+| --- | --- | --- | --- |
+| 1 | Email-link claim: chef approval? | Keep chef approval (K00). | `link-offer`/`link-asked`/`link-added`/`link-declined` unchanged. |
+| 2 | Deleting with unfinished orders | Block while money is unsettled; allow with a warning for a confirmed upcoming order. | `delete-blocked`, `delete-warn` unchanged. |
+| 3 | Fresh sign-in before deleting? | Yes: a new email link or Google just before confirming. | New `delete-reauth`, `delete-reauth-sent`, `delete-final`; delete review/warn now "Continue: confirm it's you"; the destructive button moved to `delete-final`. |
+| 4 | Google + email link, Google name | One account per verified email; name prefilled from Google, editable. | `created-google` "(you can change it)"; profile name hint; Signing in card "One account per verified email address…". |
+| 5 | Password sign-in | Staff-only, not on the customer page. | Customer sign-in unchanged (email link + Google); deviation 3. |
+| 6 | Older-order proof | Keep "reference + how you ordered + roughly when + a note". | `old-form` unchanged. |
+| 7 | Amount on chef-added orders | Show it, labelled "recorded by the chef". | Account list and `order-older` unchanged. |
+| 8 | Chef offers and "Ready to send" | Keep both (24-hour deadline). | Requests card unchanged. |
+| 9 | Inactivity emails | One warning 30 days before deletion plus one reminder 7 days before. | Retention row; `warning-email` shows both emails. |
+| 10 | Profile fields | Name, phone, Instagram name, all optional. | `profile` unchanged. |
+| 11 | Order details after deletion | Keep 2 years after handover/cancellation, unlinked (K09). | Delete lists, `deleted`, retention row unchanged. |
+
+Creator-facing review changes:
+
+- **Past orders** on the account home are behind a **Show past orders (3)** button (`aria-expanded`, toggles the
+  list; open in `chef-added` so the new order is visible) to shorten the mobile page.
+- **"Your cake is being prepared"** replaces "The chef is making your cake" (list chip "Being prepared", line, order
+  entry title and refund note).
+- **No "We'll email you…" promises** until order emails exist (GK-031): link claim pending "You'll see the result
+  here and under “Your requests”"; older-order pending and how-it-works the same; being prepared "The collection
+  details will show here about 48 hours before"; deleted no longer mentions a confirmation email; delete-warn "the
+  chef will contact you about it"; profile "Emails we send" reworded. The approved inactivity emails remain as
+  designs (gap: GK-031).
+
+r01c copy carried into `poc/app.js`: request calendar "up to 8 months ahead", non-wedding ✱ after 2 months, wedding
+hint, date notes, ready-made "collect by …" without "(example)", "the chef's collect-by date", the usual 192-hour
+notice unless the chef approved shorter notice; "About this prototype" says r01c.
+
 ## Open questions for the Creator
 
-1. Adding an order from its private email link while signed in: should the chef still approve it (as sketched,
-   following the contract), or should the link alone add it straight away?
-2. Deleting an account with unfinished orders: is it right to **block** while a payment or refund is unsettled and
-   to **allow with a warning** when there is a confirmed upcoming order? Or block in both cases?
-3. Should deleting the account ask for a fresh sign-in (a new email link or Google) just before confirming?
-4. Google and email link with the same address: one account (as sketched), and may we fill in the name from Google?
-5. Password sign-in: keep it only for staff (separate from the customer page), or offer it to customers too?
-6. What reference does the chef give on Instagram/offline orders (the sketch uses an example "IG-0613")? Is
-   "reference + how you ordered + roughly when + a note" the right proof to ask for?
-7. Older orders added by the chef: show the amount she recorded ("£180 · recorded by the chef"), or no amount?
-8. Should the account list custom requests with a chef offer and its 24-hour deadline (as sketched), and is "Ready
-   to send" a clear label for a request we can't see being sent?
-9. Inactivity: one warning email 30 days before deletion (as sketched), or also a reminder closer to the date?
-10. Profile: are name, phone and Instagram name (all optional) the right fields, with phone used only when the chef
-    needs to reach the customer?
-11. Deleting an account keeps the details of the customer's orders (name, email, cake, date) until 2 years after
-    handover or cancellation, no longer linked to an account (K09 business rule). Should deletion erase those
-    order details earlier (keeping only the payment records the law requires), or is 2 years right?
+None open: questions 1–11 were answered on 2026-11-05 (see r02b above).

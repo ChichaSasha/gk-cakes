@@ -70,10 +70,13 @@ while read -r name src; do [ -n "$name" ] || continue; case "$name" in *"$F"*) s
 50-delete-review privacy.html?state=delete-review&shot=1
 51-delete-blocked privacy.html?state=delete-blocked&shot=1
 52-delete-warn privacy.html?state=delete-warn&shot=1
-53-deleted privacy.html?state=deleted&shot=1
-54-signout-all privacy.html?state=signout-all&shot=1
-55-signout-all-done privacy.html?state=signout-all-done&shot=1
-56-signout-all-partial privacy.html?state=signout-all-partial&shot=1
-57-reorder-from-account reorder.html?order=GK-1009&shot=1
-58-favourites-signed-in favourites.html?demo=signed-in&shot=1
+53-delete-reauth privacy.html?state=delete-reauth&shot=1
+54-delete-reauth-sent privacy.html?state=delete-reauth-sent&shot=1
+55-delete-final privacy.html?state=delete-final&shot=1
+56-deleted privacy.html?state=deleted&shot=1
+57-signout-all privacy.html?state=signout-all&shot=1
+58-signout-all-done privacy.html?state=signout-all-done&shot=1
+59-signout-all-partial privacy.html?state=signout-all-partial&shot=1
+60-reorder-from-account reorder.html?order=GK-1009&shot=1
+61-favourites-signed-in favourites.html?demo=signed-in&shot=1
 LIST
