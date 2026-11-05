@@ -205,6 +205,15 @@ func TestGatewayErrorMapping(t *testing.T) {
 	if err := gatewayError("x", pg("GK422", "flavour_unknown")); !errors.As(err, &inv) || inv.Field != "flavour_id" {
 		t.Errorf("GK422: %v", err)
 	}
+	for msg, field := range map[string]string{"colour_unknown": "colour_id", "code_invalid": "code",
+		"label_invalid": "label", "position_invalid": "position", "colour_invalid": "input"} {
+		if err := gatewayError("x", pg("GK422", msg)); !errors.As(err, &inv) || inv.Field != field {
+			t.Errorf("GK422 %s: %v, want field %s", msg, err, field)
+		}
+	}
+	if err := gatewayError("x", pg("GK422", "colour_unknown")); !errors.As(err, &inv) || inv.Message != "is not an active colour" {
+		t.Errorf("colour_unknown message: %v", err)
+	}
 	// A missing grant or a constraint failure is a fault, not a refusal.
 	for _, code := range []string{"42501", "23514", "08006"} {
 		err := gatewayError("x", pg(code, "detail"))
@@ -224,5 +233,151 @@ func TestSizes(t *testing.T) {
 	}
 	if _, ok := SizeByCode("S"); ok {
 		t.Fatal("size codes are case-sensitive")
+	}
+}
+
+func intp(n int) *int { return &n }
+
+func TestColourValidation(t *testing.T) {
+	const colourID = "11111111-1111-4111-8111-111111111111"
+	valid := ColourInput{Code: "pink", Label: "Pink", Position: intp(10)}
+	for name, in := range map[string]ColourInput{
+		"valid":          valid,
+		"position 0":     {Code: "pink", Label: "Pink", Position: intp(0)},
+		"position max":   {Code: "pink", Label: "Pink", Position: intp(MaxColourPosition)},
+		"40-char code":   {Code: strings.Repeat("a", 40), Label: "A", Position: intp(1)},
+		"digit first":    {Code: "1-tone", Label: "One tone", Position: intp(1)},
+		"hyphens":        {Code: "rose-gold", Label: "Rose gold", Position: intp(1)},
+		"40 code points": {Code: "x", Label: strings.Repeat("é", 40), Position: intp(1)},
+		"inner space":    {Code: "x", Label: "Dusty pink", Position: intp(1)},
+		"code all-ish":   {Code: "all-white", Label: "All white", Position: intp(1)},
+	} {
+		if err := in.Validate(); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	for name, c := range map[string]struct {
+		in    ColourInput
+		field string
+	}{
+		"empty code":        {ColourInput{Code: "", Label: "A", Position: intp(1)}, "code"},
+		"code all":          {ColourInput{Code: "all", Label: "All", Position: intp(1)}, "code"},
+		"upper-case code":   {ColourInput{Code: "Pink", Label: "A", Position: intp(1)}, "code"},
+		"hyphen first":      {ColourInput{Code: "-pink", Label: "A", Position: intp(1)}, "code"},
+		"underscore":        {ColourInput{Code: "rose_gold", Label: "A", Position: intp(1)}, "code"},
+		"41-char code":      {ColourInput{Code: strings.Repeat("a", 41), Label: "A", Position: intp(1)}, "code"},
+		"empty label":       {ColourInput{Code: "x", Label: "", Position: intp(1)}, "label"},
+		"41 code points":    {ColourInput{Code: "x", Label: strings.Repeat("é", 41), Position: intp(1)}, "label"},
+		"padded label":      {ColourInput{Code: "x", Label: " Pink", Position: intp(1)}, "label"},
+		"trailing nbsp":     {ColourInput{Code: "x", Label: "Pink\u00a0", Position: intp(1)}, "label"},
+		"leading bom":       {ColourInput{Code: "x", Label: "\ufeffPink", Position: intp(1)}, "label"},
+		"control char":      {ColourInput{Code: "x", Label: "Pi\u0007nk", Position: intp(1)}, "label"},
+		"c1 control":        {ColourInput{Code: "x", Label: "Pi\u0085nk", Position: intp(1)}, "label"},
+		"line separator":    {ColourInput{Code: "x", Label: "Pi\u2028nk", Position: intp(1)}, "label"},
+		"newline":           {ColourInput{Code: "x", Label: "Pi\nnk", Position: intp(1)}, "label"},
+		"no position":       {ColourInput{Code: "x", Label: "A"}, "position"},
+		"negative position": {ColourInput{Code: "x", Label: "A", Position: intp(-1)}, "position"},
+		"huge position":     {ColourInput{Code: "x", Label: "A", Position: intp(MaxColourPosition + 1)}, "position"},
+	} {
+		var inv *InvalidError
+		if err := c.in.Validate(); !errors.As(err, &inv) || inv.Field != c.field {
+			t.Errorf("%s: %v, want invalid %s", name, err, c.field)
+		}
+	}
+
+	for name, c := range map[string]struct {
+		in    ColourPatch
+		field string
+	}{
+		"no version":    {ColourPatch{Archived: Optional[bool]{Set: true, Value: true}}, "expected_version"},
+		"no fields":     {ColourPatch{ExpectedVersion: 1}, "label"},
+		"null label":    {ColourPatch{ExpectedVersion: 1, Label: Optional[string]{Set: true, Null: true}}, "label"},
+		"null position": {ColourPatch{ExpectedVersion: 1, Position: Optional[int]{Set: true, Null: true}}, "position"},
+		"null archived": {ColourPatch{ExpectedVersion: 1, Archived: Optional[bool]{Set: true, Null: true}}, "archived"},
+		"bad label":     {ColourPatch{ExpectedVersion: 1, Label: Optional[string]{Set: true, Value: "Pink "}}, "label"},
+		"bad position":  {ColourPatch{ExpectedVersion: 1, Position: Optional[int]{Set: true, Value: 10001}}, "position"},
+	} {
+		var inv *InvalidError
+		if err := c.in.Validate(); !errors.As(err, &inv) || inv.Field != c.field {
+			t.Errorf("patch %s: %v, want invalid %s", name, err, c.field)
+		}
+	}
+	for name, in := range map[string]ColourPatch{
+		"archive":  {ExpectedVersion: 2, Archived: Optional[bool]{Set: true, Value: true}},
+		"restore":  {ExpectedVersion: 2, Archived: Optional[bool]{Set: true, Value: false}},
+		"position": {ExpectedVersion: 2, Position: Optional[int]{Set: true, Value: 0}},
+		"all":      {ExpectedVersion: 2, Label: Optional[string]{Set: true, Value: "Blush"}, Position: Optional[int]{Set: true, Value: 5}, Archived: Optional[bool]{Set: true}},
+	} {
+		if err := in.Validate(); err != nil {
+			t.Errorf("patch %s: %v", name, err)
+		}
+	}
+
+	// A cake's colour: a canonical ID; null clears it on a patch.
+	bad := "not-an-id"
+	id := colourID
+	for name, c := range map[string]struct {
+		err   error
+		field string
+	}{
+		"create bad colour": {CakeInput{Name: "A", ColourID: &bad}.Validate(), "colour_id"},
+		"patch bad colour":  {CakePatch{ExpectedVersion: 1, ColourID: Optional[string]{Set: true, Value: "PINK"}}.Validate(), "colour_id"},
+	} {
+		var inv *InvalidError
+		if !errors.As(c.err, &inv) || inv.Field != c.field {
+			t.Errorf("%s: %v, want invalid %s", name, c.err, c.field)
+		}
+	}
+	for name, err := range map[string]error{
+		"create with colour":    CakeInput{Name: "A", ColourID: &id}.Validate(),
+		"patch colour only":     CakePatch{ExpectedVersion: 1, ColourID: Optional[string]{Set: true, Value: colourID}}.Validate(),
+		"patch clear colour":    CakePatch{ExpectedVersion: 1, ColourID: Optional[string]{Set: true, Null: true}}.Validate(),
+		"patch name and colour": CakePatch{ExpectedVersion: 1, Name: Optional[string]{Set: true, Value: "B"}, ColourID: Optional[string]{Set: true, Null: true}}.Validate(),
+	} {
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if got := (CakeInput{}).NullableFields(); len(got) != 1 || got[0] != "colour_id" {
+		t.Errorf("cake nullable fields = %v", got)
+	}
+	if got := (CakePatch{}).NullableFields(); len(got) != 1 || got[0] != "colour_id" {
+		t.Errorf("patch nullable fields = %v", got)
+	}
+}
+
+// Bodies without a colour hash exactly as before colours existed, so a
+// retry that reaches the previous build during a rolling deploy replays
+// instead of being refused as a reused key.
+func TestColourKeepsEarlierBodyHashes(t *testing.T) {
+	type cakeInputBefore struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	type cakePatchBefore struct {
+		ExpectedVersion int              `json:"expected_version"`
+		Name            Optional[string] `json:"name"`
+		Description     Optional[string] `json:"description"`
+	}
+	if BodyHash(CmdCakeCreate, "", CakeInput{Name: "A", Description: "d"}) != BodyHash(CmdCakeCreate, "", cakeInputBefore{Name: "A", Description: "d"}) {
+		t.Fatal("a create without a colour hashes differently from before")
+	}
+	p := CakePatch{ExpectedVersion: 2, Name: Optional[string]{Set: true, Value: "A"}}
+	if BodyHash(CmdCakeUpdate, "x", p) != BodyHash(CmdCakeUpdate, "x", cakePatchBefore{ExpectedVersion: 2, Name: p.Name}) {
+		t.Fatal("a patch without a colour hashes differently from before")
+	}
+	id := "11111111-1111-4111-8111-111111111111"
+	set := p
+	set.ColourID = Optional[string]{Set: true, Value: id}
+	clear := p
+	clear.ColourID = Optional[string]{Set: true, Null: true}
+	hashes := map[string]bool{
+		BodyHash(CmdCakeUpdate, "x", p): true, BodyHash(CmdCakeUpdate, "x", set): true, BodyHash(CmdCakeUpdate, "x", clear): true,
+	}
+	if len(hashes) != 3 {
+		t.Fatal("absent, set and cleared colours hash the same")
+	}
+	if BodyHash(CmdCakeCreate, "", CakeInput{Name: "A"}) == BodyHash(CmdCakeCreate, "", CakeInput{Name: "A", ColourID: &id}) {
+		t.Fatal("a create with a colour hashes as one without")
 	}
 }
