@@ -23,6 +23,7 @@ import (
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/catalog"
 	"github.com/ChichaSasha/gk-cakes/api/internal/checkout"
+	"github.com/ChichaSasha/gk-cakes/api/internal/dbtest"
 	"github.com/ChichaSasha/gk-cakes/api/internal/jobs"
 	"github.com/ChichaSasha/gk-cakes/api/internal/payments"
 	"github.com/ChichaSasha/gk-cakes/api/internal/recovery"
@@ -62,6 +63,8 @@ type fakeStripe struct {
 	// block (with arrived) holds a create request after it reached Stripe
 	// until the test lets it go.
 	block, arrived chan struct{}
+	// Refunds (GK-025 A3c2): see refund_worker_integration_test.go.
+	refunds fakeRefunds
 }
 
 type fakeAnswer struct {
@@ -80,7 +83,7 @@ type fakeSession struct {
 
 func newFakeStripe(t *testing.T) (*fakeStripe, *httptest.Server) {
 	f := &fakeStripe{t: t, sessions: map[string]*fakeSession{}, byKey: map[string]string{}, forms: map[string]string{},
-		expireByKey: map[string]fakeAnswer{}}
+		expireByKey: map[string]fakeAnswer{}, refunds: newFakeRefunds()}
 	srv := httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(srv.Close)
 	return f, srv
@@ -102,6 +105,8 @@ func (f *fakeStripe) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	switch {
+	case r.URL.Path == "/v1/refunds" || strings.HasPrefix(r.URL.Path, "/v1/refunds/"):
+		f.serveRefunds(w, r)
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/checkout/sessions/") && strings.HasSuffix(r.URL.Path, "/expire"):
 		key := r.Header.Get("Idempotency-Key")
 		f.expires = append(f.expires, key)
@@ -260,6 +265,7 @@ type payHarness struct {
 	pay     *payments.Worker
 	reviews *checkout.HoldReviews
 	webhook *payments.Webhook
+	refunds *payments.Refunds // chained by withRefunds
 	handler jobs.Handler
 }
 
@@ -279,7 +285,8 @@ func newPayHarness(t *testing.T) *payHarness {
 		t.Fatal(err)
 	}
 	reviews := &checkout.HoldReviews{DB: h.worker, Logger: logger}
-	return &payHarness{commandHarness: h, stripe: fs, pay: pay, reviews: reviews, webhook: wh,
+	refunds := &payments.Refunds{DB: h.worker, Coordinator: h.coord, Provider: client, Environment: "test", Account: stripeAccount, Logger: logger}
+	return &payHarness{commandHarness: h, stripe: fs, pay: pay, reviews: reviews, webhook: wh, refunds: refunds,
 		handler: jobs.Chain(h.cmds.Handle, pay.Handle, reviews.Handle)}
 }
 
@@ -335,7 +342,7 @@ func (h *payHarness) drain(t *testing.T) []error {
 			errs = append(errs, err)
 		}
 	}
-	t.Fatal("jobs never drained")
+	t.Fatalf("jobs never drained:\n%s", reasons(errs[max(0, len(errs)-6):]))
 	return nil
 }
 
@@ -344,6 +351,19 @@ func (h *payHarness) drain(t *testing.T) []error {
 func (h *payHarness) due(t *testing.T) {
 	t.Helper()
 	h.owner(t, "UPDATE business.job SET next_attempt_at = now() WHERE state IN ('queued', 'retry')")
+}
+
+// withoutRefundDispatch drops the errors of refund jobs no handler takes
+// (the refund worker is chained only by withRefunds, so gateway tests can
+// drive a refund job call by call).
+func withoutRefundDispatch(errs []error) []error {
+	var out []error
+	for _, err := range errs {
+		if !errors.Is(err, jobs.ErrNoHandler) {
+			out = append(out, err)
+		}
+	}
+	return out
 }
 
 func attention(errs []error) []string {
@@ -837,6 +857,7 @@ func TestWrongAmountGoesToAttentionAndProcessingStaysPending(t *testing.T) {
 	if len(errs) != 1 || !errors.As(errs[0], &de) || h.collection(t, coll).State != "pending" {
 		t.Fatalf("processing: %v %+v", errs, h.collection(t, coll))
 	}
+	amount := h.stripe.session(session).amount
 	h.stripe.pay(session, time.Date(2026, 11, 5, 10, 9, 0, 0, time.UTC))
 	h.stripe.session(session).amount = 100
 	h.deliver(t, "evt_completed", "checkout.session.completed", "checkout.session", session, coll, order)
@@ -854,6 +875,17 @@ func TestWrongAmountGoesToAttentionAndProcessingStaysPending(t *testing.T) {
 	// A new collection is not allowed while this one is unknown.
 	if _, err := h.start(order, d, "pay-2", 1); conflict(err) != "payment_in_progress" {
 		t.Fatalf("new collection while unknown: %v", err)
+	}
+	// A manager retry that now sees a matching paid session changes nothing
+	// and is never silent: attention again, nothing confirmed.
+	h.stripe.session(session).amount = amount
+	h.stripe.pay(session, time.Date(2026, 11, 5, 10, 9, 0, 0, time.UTC))
+	h.owner(t, "SELECT business.payment_schedule_reconcile($1::uuid, now())", coll)
+	if got := attention(h.drain(t)); len(got) != 1 || !strings.Contains(got[0], "under manager reconciliation") {
+		t.Fatalf("retry under reconciliation: %v", got)
+	}
+	if c := h.collection(t, coll); c.State != "unknown" || h.count(t, "SELECT count(*) FROM business.order_command WHERE order_id = $1::uuid", order) != 0 {
+		t.Fatalf("collection %+v; want unknown and no confirmation", c)
 	}
 }
 
@@ -930,6 +962,12 @@ func TestPaidSuccessAfterTheOrderChangedIsRefused(t *testing.T) {
 	// No second collection is possible for this order.
 	if _, err := h.start(order, d, "pay-2", 2); conflict(err) != "state_conflict" {
 		t.Fatalf("new collection after a success: %v", err)
+	}
+	// The order is not cancelled: no automatic full return (GK-025 A3c2).
+	if h.count(t, "SELECT count(*) FROM business.refund_goal WHERE order_id = $1::uuid", order) != 0 ||
+		h.count(t, "SELECT count(*) FROM business.refund_operation WHERE order_id = $1::uuid", order) != 0 ||
+		h.count(t, "SELECT count(*) FROM business.refund_late_capture($1::uuid) g WHERE g IS NOT NULL", order) != 0 {
+		t.Fatal("a full return was recorded for an order that is not cancelled")
 	}
 }
 
@@ -1361,4 +1399,114 @@ func TestDecidedCollectionsKeepTheirDecisionAndEvidence(t *testing.T) {
 	if after != before || !strings.Contains(before, `"charge_status":"succeeded"`) || !strings.Contains(mismatch, "charge_refunded") {
 		t.Fatalf("evidence %s -> %s, mismatch %s", before, after, mismatch)
 	}
+}
+
+// A stale mismatch verdict on a cancelled collection keeps it cancelled and
+// records only the mismatch (the worker sends the job to attention); the
+// money it may show is never hidden: the holds stay, no second collection
+// is allowed and the customer reads unknown ("still checking payment").
+func TestStaleMismatchKeepsACancelledCollectionCancelled(t *testing.T) {
+	cancelled := func(t *testing.T) (*payHarness, fixture, string, []byte, string, string) {
+		h := newPayHarness(t)
+		f := h.setup(t)
+		pol := h.policy(t, "p1")
+		order, d := h.paidOrder(t, f, pol)
+		coll, session := h.started(t, order, d)
+		h.stripe.session(session).status = "expired"
+		h.deliver(t, "evt_expired", "checkout.session.expired", "checkout.session", session, coll, order)
+		if errs := h.drain(t); len(errs) != 0 || h.collection(t, coll).State != "cancelled" {
+			t.Fatalf("expired: %v %+v", errs, h.collection(t, coll))
+		}
+		return h, f, order, d, coll, session
+	}
+	mismatch := func(t *testing.T, h *payHarness, coll, session string) {
+		t.Helper()
+		var before string
+		if err := h.admin.QueryRow(h.ctx, "SELECT evidence::text FROM business.payment_collection WHERE id = $1::uuid", coll).Scan(&before); err != nil {
+			t.Fatal(err)
+		}
+		reason := "amount does not match the collection"
+		ev := `{"session_id":"` + session + `","charge_status":"succeeded","amount_minor":100}`
+		if got := h.recordDirect(t, coll, session, "mismatch", ev, nil, &reason); got != "cancelled" {
+			t.Fatalf("stale mismatch moved a cancelled collection to %s", got)
+		}
+		var after, mismatchEv string
+		var mismatchReason *string
+		if err := h.admin.QueryRow(h.ctx, `SELECT evidence::text, mismatch_evidence::text, mismatch_reason
+			FROM business.payment_collection WHERE id = $1::uuid`, coll).Scan(&after, &mismatchEv, &mismatchReason); err != nil {
+			t.Fatal(err)
+		}
+		if after != before || !strings.Contains(mismatchEv, `"charge_status":"succeeded"`) || mismatchReason == nil || *mismatchReason != reason {
+			t.Fatalf("evidence %s -> %s, mismatch %v %s", before, after, mismatchReason, mismatchEv)
+		}
+		if got := h.count(t, `SELECT count(*) FROM business.audit_event WHERE action = 'payment.mismatch' AND subject_kind = 'order'
+			AND detail ->> 'collection_id' = $1::text`, coll); got != 1 {
+			t.Fatalf("%d payment.mismatch audits", got)
+		}
+	}
+	t.Run("before the release", func(t *testing.T) {
+		h, f, order, d, coll, session := cancelled(t)
+		mismatch(t, h, coll, session)
+		v, raw := h.view(t, order, d)
+		if v.Lifecycle != "awaiting_payment" || v.Payment == nil || v.Payment.State != "unknown" || v.Payment.CheckoutURL != nil {
+			t.Fatalf("customer view %s", raw)
+		}
+		if _, err := h.start(order, d, "pay-2", 1); conflict(err) != "payment_in_progress" {
+			t.Fatalf("new collection beside a mismatch: %v", err)
+		}
+		// The hold ends: the review keeps the holds and keeps looking.
+		h.endHold(t, order)
+		for range 3 {
+			h.due(t)
+			if errs := h.drain(t); len(withoutRefundDispatch(errs)) != 0 {
+				t.Fatal(errs)
+			}
+		}
+		if o := h.orderRow(t, order); o.Lifecycle != "awaiting_payment" {
+			t.Fatalf("order %+v", o)
+		}
+		if got := h.paidHolds(t, order, f.readyLot); got != "tentative/reserved 1r0s" {
+			t.Fatalf("holds %s", got)
+		}
+		if id, _ := h.reviewJob(t, order); id == "" {
+			t.Fatal("the review stopped looking at a collection under reconciliation")
+		}
+		if c := h.collection(t, coll); c.State != "cancelled" {
+			t.Fatalf("collection %+v", c)
+		}
+		// A manager retry (the collection is settled: nothing to retrieve)
+		// is never silent while the mismatch stands.
+		h.owner(t, "SELECT business.payment_schedule_reconcile($1::uuid, now())", coll)
+		if got := attention(h.drain(t)); len(got) != 1 || !strings.Contains(got[0], "under manager reconciliation") {
+			t.Fatalf("retry under reconciliation: %v", got)
+		}
+		// The gateway is lease-fenced.
+		var recID string
+		if err := h.admin.QueryRow(h.ctx, `SELECT j.id::text FROM business.payment_job pj JOIN business.job j ON j.id = pj.job_id
+			WHERE pj.collection_id = $1::uuid AND pj.purpose = 'reconcile' ORDER BY j.created_at DESC LIMIT 1`, coll).Scan(&recID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.worker.Exec(h.ctx, "SELECT business.payment_under_reconciliation($1::uuid, gen_random_uuid(), 1, $2::uuid)",
+			recID, coll); dbtest.SQLState(err) != "GK001" {
+			t.Fatalf("without the lease: %v, want GK001", err)
+		}
+	})
+	t.Run("after the release", func(t *testing.T) {
+		h, f, order, d, coll, session := cancelled(t)
+		h.endHold(t, order)
+		h.due(t)
+		if errs := h.drain(t); len(errs) != 0 || h.orderRow(t, order).Lifecycle != "cancelled" {
+			t.Fatalf("release: %v %+v", errs, h.orderRow(t, order))
+		}
+		mismatch(t, h, coll, session)
+		if o := h.orderRow(t, order); o.Lifecycle != "cancelled" || o.CancelReason != "payment_not_completed" {
+			t.Fatalf("order %+v", o)
+		}
+		if got := h.paidHolds(t, order, f.readyLot); got != "released/returned 0r0s" {
+			t.Fatalf("holds %s", got)
+		}
+		if v, raw := h.view(t, order, d); v.Payment == nil || v.Payment.State != "unknown" {
+			t.Fatalf("customer view %s", raw)
+		}
+	})
 }

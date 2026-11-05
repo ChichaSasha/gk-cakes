@@ -20,12 +20,14 @@
 		sizeLabel,
 		timeRange
 	} from '../../../lib/checkout/format';
-	import { orderProblemFor } from '../../../lib/checkout/messages';
+	import { orderProblemFor, type Problem } from '../../../lib/checkout/messages';
 	import {
 		isPaymentPageUrl,
+		newOrderQuery,
 		nextPollDelay,
 		orderView,
-		POLL_LIMIT_MS
+		POLL_LIMIT_MS,
+		withOrderProblem
 	} from '../../../lib/checkout/order';
 	import type { Order } from '../../../lib/checkout/types';
 
@@ -36,9 +38,16 @@
 
 	let order = $state<Order | null>(null);
 	let unavailable = $state('');
+	/** A refusal of this page's own action (kept until the next action). */
 	let actionProblem = $state('');
-	/** A problem from checkout after this order was created (shown until the next action). */
-	let handoff = $state('');
+	/** A failed read of the order (cleared by the next successful read). */
+	let loadProblem = $state('');
+	/**
+	 * A problem after this order was created: handed over from checkout, or a
+	 * dead end (lead time missed, price expired) answered to this page's own
+	 * action. Shown until the next action.
+	 */
+	let handoff = $state<Problem | null>(null);
 	let busy = $state(false);
 	let busyText = $state('');
 	let pollStopped = $state(false);
@@ -48,7 +57,11 @@
 	let pollStarted = 0;
 	let active = true;
 
-	const view = $derived(order ? orderView(order, { returned }) : null);
+	// A dead end (lead time missed, price expired) offers a new order
+	// instead of paying or confirming this one.
+	const view = $derived(
+		order ? withOrderProblem(orderView(order, { returned }), handoff?.next) : null
+	);
 
 	onMount(() => {
 		void start();
@@ -77,7 +90,7 @@
 					retryable: handed.retryable,
 					request_id: handed.request_id
 				})
-			).message;
+			);
 		}
 		if (!checkoutConfigured || !UUID.test(orderId)) {
 			unavailable = 'We can’t find this order.';
@@ -104,7 +117,7 @@
 			const o = await api.order(orderId, who);
 			if (!active) return;
 			order = o;
-			actionProblem = '';
+			loadProblem = '';
 		} catch (e) {
 			if (!active) return;
 			if (e instanceof ApiError && (e.status === 404 || e.status === 401)) {
@@ -114,7 +127,7 @@
 						: 'We can’t find this order. If you ordered as a guest, open it in the tab where you ordered.';
 				return;
 			}
-			actionProblem = orderProblemFor(e).message;
+			loadProblem = orderProblemFor(e).message;
 		}
 		schedule();
 	}
@@ -145,8 +158,15 @@
 
 	async function act() {
 		if (!order || !view || !who || busy) return;
+		if (view.action === 'new_order') {
+			const query = newOrderQuery(order);
+			busy = true;
+			busyText = 'Starting a new order…';
+			window.location.assign(query ? `${resolve('/checkout')}?${query}` : resolve('/'));
+			return;
+		}
 		actionProblem = '';
-		handoff = '';
+		handoff = null;
 		if (view.action === 'open_payment' && isPaymentPageUrl(view.checkoutUrl)) {
 			busy = true;
 			busyText = 'Opening secure payment…';
@@ -172,7 +192,10 @@
 				);
 			}
 		} catch (e) {
-			actionProblem = orderProblemFor(e).message;
+			const problem = orderProblemFor(e);
+			// A dead end stays shown and swaps the action for a new order.
+			if (problem.next === 'new_order') handoff = problem;
+			else actionProblem = problem.message;
 		}
 		busy = false;
 		busyText = '';
@@ -206,10 +229,13 @@
 					</div>
 				</div>
 				{#if handoff}
-					<p class="co-errors" role="alert">{handoff}</p>
+					<p class="co-errors" role="alert">{handoff.message}</p>
 				{/if}
 				{#if actionProblem}
 					<p class="co-errors" role="alert">{actionProblem}</p>
+				{/if}
+				{#if loadProblem}
+					<p class="co-errors" role="alert">{loadProblem}</p>
 				{/if}
 				{#if view.action !== 'none' || pollStopped}
 					<div class="order-actions">

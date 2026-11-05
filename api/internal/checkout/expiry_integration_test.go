@@ -18,6 +18,7 @@ import (
 	"github.com/ChichaSasha/gk-cakes/api/internal/jobs"
 	"github.com/ChichaSasha/gk-cakes/api/internal/migrate"
 	"github.com/ChichaSasha/gk-cakes/api/internal/payments"
+	"github.com/ChichaSasha/gk-cakes/api/internal/recovery"
 	"github.com/ChichaSasha/gk-cakes/api/internal/schedule"
 	"github.com/ChichaSasha/gk-cakes/api/migrations"
 	"github.com/jackc/pgx/v5"
@@ -157,6 +158,16 @@ type releasedView struct {
 		State       string
 		CheckoutURL *string `json:"checkout_url"`
 	}
+	Refund *refundView
+}
+
+// refundView is order_get's "refund" (GK-025 A3c2).
+type refundView struct {
+	State          string
+	TargetMinor    int64 `json:"target_minor"`
+	SucceededMinor int64 `json:"succeeded_minor"`
+	InProgress     int64 `json:"in_progress_minor"`
+	Currency       string
 }
 
 func (h *payHarness) view(t *testing.T, order string, d []byte) (releasedView, string) {
@@ -218,7 +229,7 @@ func TestExpireAtFifteenMinutesReleasesTheHolds(t *testing.T) {
 	}
 	v, raw := h.view(t, order, d)
 	if v.Lifecycle != "cancelled" || v.CancelReason == nil || *v.CancelReason != "payment_not_completed" || v.CancelledAt == nil ||
-		v.Payment == nil || v.Payment.State != "cancelled" || v.Payment.CheckoutURL != nil || strings.Contains(raw, "refund\"") {
+		v.Payment == nil || v.Payment.State != "cancelled" || v.Payment.CheckoutURL != nil || v.Refund != nil {
 		t.Fatalf("customer view %s", raw)
 	}
 	if got := h.count(t, "SELECT count(*) FROM business.audit_event WHERE action = 'order.released_unpaid' AND subject_id = $1::uuid", order); got != 1 {
@@ -501,7 +512,8 @@ func TestNeverDispatchedCleanupWinsAndNothingIsSent(t *testing.T) {
 			if fixed && h.recoveryState(t, res.ID) != "secured" {
 				t.Fatalf("dispatch %s, want secured with its never-dispatched outcome", h.recoveryState(t, res.ID))
 			}
-			if got := h.count(t, "SELECT count(*) FROM business.audit_event WHERE action = 'payment.failed' AND subject_id = $1::uuid", res.ID); got != 0 {
+			if got := h.count(t, `SELECT count(*) FROM business.audit_event WHERE action = 'payment.failed'
+				AND (subject_id = $1::uuid OR detail ->> 'collection_id' = $1::text)`, res.ID); got != 0 {
 				t.Fatalf("%d payment.failed audits", got)
 			}
 			// Admission after the cleanup is refused by the database itself.
@@ -513,6 +525,120 @@ func TestNeverDispatchedCleanupWinsAndNothingIsSent(t *testing.T) {
 				t.Fatalf("late admission: %s %v", status, err)
 			}
 			h.finish(t, job, nil)
+		})
+	}
+}
+
+// payDispatchJob is the collection's waiting dispatch job.
+func (h *payHarness) payDispatchJob(t *testing.T, coll string) string {
+	t.Helper()
+	var id string
+	if err := h.admin.QueryRow(h.ctx, `SELECT j.id::text FROM business.payment_job pj JOIN business.job j ON j.id = pj.job_id
+		WHERE pj.collection_id = $1::uuid AND pj.purpose = 'dispatch' AND j.state IN ('queued', 'retry')`, coll).Scan(&id); err != nil {
+		t.Fatalf("dispatch job of %s: %v", coll, err)
+	}
+	return id
+}
+
+// K11 (migration 0020): a restore freeze set on a live database while the
+// dispatch worker is between payment_job_begin and fix/admit wins over every
+// other answer ('ready', 'closed'): fix and admit answer 'frozen' (the
+// worker defers), nothing is fixed, admitted or recorded; after the freeze
+// lifts the job completes as it would have.
+func TestFreezeBetweenBeginAndFixOrAdmitDefersPaymentDispatch(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		fixed, closed bool
+	}{{"open", false, false}, {"closed", false, true}, {"closed fixed", true, true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newPayHarness(t)
+			f := h.setup(t)
+			pol := h.policy(t, "p1")
+			order, d := h.paidOrder(t, f, pol)
+			res, err := h.start(order, d, "pay-1", 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.fixed {
+				// Fixed and reserved; the prepared envelope keeps failing.
+				h.journal.Fail = func(op, name string) error {
+					if op == "put" && strings.HasSuffix(name, ".prepared") {
+						return errors.New("b2 unavailable")
+					}
+					return nil
+				}
+				if errs := h.drain(t); len(errs) != 1 || h.recoveryState(t, res.ID) != "reserved" {
+					t.Fatalf("journal down: %v", errs)
+				}
+				h.journal.Fail = nil
+			}
+			job := h.claimOnly(t, h.payDispatchJob(t, res.ID))
+			var (
+				status string
+				amount int64
+				dbNow  time.Time
+			)
+			if err := h.worker.QueryRow(h.ctx, "SELECT status, amount_minor, db_now FROM business.payment_job_begin($1::uuid, $2::uuid, $3)",
+				job.ID, job.Worker, job.Generation).Scan(&status, &amount, &dbNow); err != nil || status != "ready" {
+				t.Fatalf("begin %s %v", status, err)
+			}
+			if tc.closed {
+				// The never-dispatched cleanup closes the collection meanwhile.
+				h.age(t, res.ID)
+				h.endHold(t, order)
+				id, _ := h.reviewJob(t, order)
+				review := h.claimOnly(t, id)
+				if err := h.reviews.Handle(h.ctx, review); err != nil {
+					t.Fatal(err)
+				}
+				h.finish(t, review, nil)
+				if c := h.collection(t, res.ID); c.State != "cancelled" {
+					t.Fatalf("after the cleanup %+v", c)
+				}
+			}
+			h.owner(t, "SELECT business.recovery_set_freeze(true, 'restore drill')")
+			payload, err := payments.NewPayload(payments.SessionRequest{CollectionID: res.ID, OrderID: order, AmountMinor: amount,
+				Environment: "test", UIOrigin: uiOrigin, ExpiresAt: payments.SessionExpiry(dbNow)}, stripeAccount)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !tc.fixed {
+				if err := h.worker.QueryRow(h.ctx, "SELECT status FROM business.payment_dispatch_fix($1::uuid, $2::uuid, $3, $4::uuid, $5, $6)",
+					job.ID, job.Worker, job.Generation, res.ID, string(payload), dbNow).Scan(&status); err != nil || status != "frozen" {
+					t.Fatalf("fix while frozen: %s %v", status, err)
+				}
+			}
+			if err := h.worker.QueryRow(h.ctx, "SELECT business.payment_dispatch_admit($1::uuid, $2::uuid, $3, $4::uuid)",
+				job.ID, job.Worker, job.Generation, res.ID).Scan(&status); err != nil || status != "frozen" {
+				t.Fatalf("admit while frozen: %s %v", status, err)
+			}
+			wantOp := 0
+			if tc.fixed {
+				wantOp = 1
+			}
+			if got := h.count(t, `SELECT count(*) FROM business.payment_collection WHERE id = $1::uuid AND dispatch_started_at IS NULL
+				AND (first_dispatch_at IS NOT NULL) = $2`, res.ID, tc.fixed); got != 1 ||
+				h.count(t, "SELECT count(*) FROM business.recovery_operation WHERE id = $1::uuid AND state IN ('reserved')", res.ID) != wantOp ||
+				h.count(t, "SELECT count(*) FROM business.recovery_operation WHERE id = $1::uuid", res.ID) != wantOp ||
+				h.count(t, "SELECT count(*) FROM business.payment_attempt WHERE collection_id = $1::uuid", res.ID) != 0 {
+				t.Fatal("something was fixed, admitted or recorded while frozen")
+			}
+			// The worker defers; once the freeze lifts the job completes.
+			h.finish(t, job, jobs.Defer(payments.FreezeRecheck, nil))
+			h.owner(t, "SELECT business.recovery_set_freeze(false, NULL)")
+			h.due(t)
+			if errs := h.drain(t); len(errs) != 0 {
+				t.Fatalf("after the freeze: %v", errs)
+			}
+			c := h.collection(t, res.ID)
+			switch {
+			case !tc.closed && (c.State != "pending" || len(h.stripe.creates) != 1):
+				t.Fatalf("open: collection %+v, creates %v", c, h.stripe.creates)
+			case tc.closed && (c.State != "cancelled" || len(h.stripe.creates) != 0):
+				t.Fatalf("closed: collection %+v, creates %v", c, h.stripe.creates)
+			case tc.fixed && h.recoveryState(t, res.ID) != "secured":
+				t.Fatalf("dispatch %s, want secured with its never-dispatched outcome", h.recoveryState(t, res.ID))
+			}
 		})
 	}
 }
@@ -794,6 +920,15 @@ func TestUnknownAndSucceededCollectionsAreNeverReleased(t *testing.T) {
 		if o := h.orderRow(t, order); o.Lifecycle != "awaiting_payment" || o.CancelReason != "" {
 			t.Fatalf("order %+v", o)
 		}
+		// Not terminal: the refusal goes to a manager; nothing is refunded
+		// automatically (no goal, no operation).
+		if h.count(t, "SELECT count(*) FROM business.refund_goal WHERE order_id = $1::uuid", order) != 0 ||
+			h.count(t, "SELECT count(*) FROM business.refund_operation WHERE order_id = $1::uuid", order) != 0 {
+			t.Fatal("a full return was recorded for an order that is not cancelled")
+		}
+		if v, raw := h.view(t, order, d); v.Refund != nil {
+			t.Fatalf("view %s", raw)
+		}
 		if got := h.count(t, "SELECT count(*) FROM business.order_hold_review WHERE order_id = $1::uuid AND outcome = 'paid'", order); got != 1 {
 			t.Fatal("the review did not end as paid")
 		}
@@ -836,7 +971,9 @@ func TestLateSuccessAfterTheReleaseKeepsTheOrderCancelled(t *testing.T) {
 		!strings.Contains(evidence, `"charge_status":"succeeded"`) {
 		t.Fatalf("evidence %s %v", evidence, err)
 	}
-	if v, raw := h.view(t, order, d); v.Lifecycle != "cancelled" || strings.Contains(raw, "refund\"") {
+	// The full return is requested (GK-025 A3c2): nothing sent yet.
+	if v, raw := h.view(t, order, d); v.Lifecycle != "cancelled" || v.Refund == nil || v.Refund.State != "requested" ||
+		v.Refund.TargetMinor <= 0 || v.Refund.SucceededMinor != 0 || v.Refund.InProgress != v.Refund.TargetMinor {
 		t.Fatalf("view %s", raw)
 	}
 	if got := h.count(t, "SELECT count(*) FROM business.audit_event WHERE action = 'order.paid_confirmation_refused' AND subject_id = $1::uuid", order); got != 1 {
@@ -910,7 +1047,7 @@ func TestHoldReviewRacesAPaidRecord(t *testing.T) {
 		h.finish(t, review, nil)
 		h.finish(t, rec, nil)
 		h.due(t)
-		errs := h.drain(t)
+		errs := withoutRefundDispatch(h.drain(t))
 		o := h.orderRow(t, order)
 		switch o.Lifecycle {
 		case "confirmed":
@@ -964,6 +1101,77 @@ func TestRestoreFreezeDefersExpiryAndRelease(t *testing.T) {
 	}
 	if o := h.orderRow(t, order); o.Lifecycle != "cancelled" || len(h.expireCalls()) != 1 {
 		t.Fatalf("order %+v, expire calls %v", o, h.expireCalls())
+	}
+}
+
+// A restore freeze defers a hold review before any outcome (migration
+// 0019): one already decided, and one that would close now because its
+// order no longer awaits payment, both defer instead of completing, and
+// nothing is recorded or audited while frozen; after the freeze they
+// complete.
+func TestRestoreFreezeDefersADecidedHoldReview(t *testing.T) {
+	for _, tc := range []struct {
+		name, setup, outcome string
+	}{
+		{"decided", "UPDATE business.order_hold_review SET outcome = 'released', decided_at = now() WHERE order_id = $1::uuid", "released"},
+		{"order no longer awaits payment", `UPDATE business.orders SET lifecycle = 'cancelled', cancel_reason = 'payment_not_completed',
+			cancelled_at = now(), version = version + 1 WHERE id = $1::uuid`, "closed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newPayHarness(t)
+			f := h.setup(t)
+			pol := h.policy(t, "p1")
+			order, _ := h.paidOrder(t, f, pol)
+			id, _ := h.reviewJob(t, order)
+			if id == "" {
+				t.Fatal("no waiting hold review job")
+			}
+			h.owner(t, tc.setup, order)
+			review := func() string {
+				var outcome *string
+				if err := h.admin.QueryRow(h.ctx, "SELECT outcome FROM business.order_hold_review WHERE order_id = $1::uuid", order).
+					Scan(&outcome); err != nil {
+					t.Fatal(err)
+				}
+				if outcome == nil {
+					return ""
+				}
+				return *outcome
+			}
+			jobState := func() string {
+				var state string
+				if err := h.admin.QueryRow(h.ctx, "SELECT state FROM business.job WHERE id = $1::uuid", id).Scan(&state); err != nil {
+					t.Fatal(err)
+				}
+				return state
+			}
+			before, audits := review(), h.count(t, "SELECT count(*) FROM business.audit_event")
+
+			h.owner(t, "SELECT business.recovery_set_freeze(true, 'restore drill')")
+			job := h.claimOnly(t, id)
+			err := h.reviews.Handle(h.ctx, job)
+			var de *jobs.DeferError
+			if !errors.As(err, &de) || de.After != checkout.ReviewFreezeRecheck || !errors.Is(err, recovery.ErrFrozen) {
+				t.Fatalf("frozen: %v, want a freeze deferral", err)
+			}
+			h.finish(t, job, err)
+			if got := jobState(); got != "retry" && got != "queued" {
+				t.Fatalf("frozen: job %s", got)
+			}
+			if got := review(); got != before || h.count(t, "SELECT count(*) FROM business.audit_event") != audits {
+				t.Fatalf("frozen: review %q (was %q), audit events changed", got, before)
+			}
+
+			h.owner(t, "SELECT business.recovery_set_freeze(false, NULL)")
+			job = h.claimOnly(t, id)
+			if err := h.reviews.Handle(h.ctx, job); err != nil {
+				t.Fatalf("after the freeze: %v", err)
+			}
+			h.finish(t, job, nil)
+			if got := jobState(); got != "completed" || review() != tc.outcome {
+				t.Fatalf("after the freeze: job %s, review %q, want completed %q", got, review(), tc.outcome)
+			}
+		})
 	}
 }
 
@@ -1025,6 +1233,16 @@ func TestRejectedCollectionIsReleasedAfterTheHold(t *testing.T) {
 	}
 	if c := h.collection(t, res.ID); c.State != "failed" {
 		t.Fatalf("collection %+v", c)
+	}
+	// One payment.failed audit, on the order (the collection in its data)
+	// like every other payment audit.
+	if got := h.count(t, `SELECT count(*) FROM business.audit_event WHERE action = 'payment.failed'
+		AND subject_kind = 'order' AND subject_id = $1::uuid AND detail ->> 'collection_id' = $2::text
+		AND detail ->> 'reason' = 'rejected_by_stripe'`, order, res.ID); got != 1 {
+		t.Fatalf("%d payment.failed audits on the order", got)
+	}
+	if got := h.count(t, "SELECT count(*) FROM business.audit_event WHERE action = 'payment.failed'"); got != 1 {
+		t.Fatalf("%d payment.failed audits", got)
 	}
 	// Before the hold ends the review keeps the holds.
 	h.due(t)
@@ -1140,5 +1358,34 @@ func TestMigrationBackfillsHoldReviews(t *testing.T) {
 	}
 	if holdUntil.Before(lo) || holdUntil.After(hi) {
 		t.Fatalf("hold until %s, want between %s and %s (placed %s)", holdUntil, lo, hi, placed)
+	}
+}
+
+// Once Stripe has expired the session by itself (its expires_at passed),
+// no expire request is asked: the retrieve alone decides (cancelled).
+func TestNoExpireRequestAfterTheSessionExpiredByItself(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d := h.paidOrder(t, f, pol)
+	coll, session := h.started(t, order, d)
+	h.age(t, coll)
+	h.owner(t, "UPDATE business.payment_collection SET provider_expires_at = now() - interval '1 second' WHERE id = $1::uuid", coll)
+	h.stripe.session(session).status = "expired"
+	h.owner(t, "SELECT business.payment_schedule_reconcile($1::uuid, now())", coll)
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("reconcile: %v", errs)
+	}
+	if calls := h.expireCalls(); len(calls) != 0 {
+		t.Fatalf("expire calls %v", calls)
+	}
+	if got := h.expireAttempts(t, coll); len(got) != 0 {
+		t.Fatalf("expire attempts %v", got)
+	}
+	if got := h.count(t, "SELECT count(*) FROM business.payment_collection WHERE id = $1::uuid AND expire_requested_at IS NOT NULL", coll); got != 0 {
+		t.Fatal("the expire request was admitted")
+	}
+	if c := h.collection(t, coll); c.State != "cancelled" {
+		t.Fatalf("collection %+v", c)
 	}
 }

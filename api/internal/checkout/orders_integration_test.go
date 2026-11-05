@@ -540,3 +540,46 @@ func TestCodeArchivedDuringCheckout(t *testing.T) {
 		t.Fatalf("%d uses of an archived code", n)
 	}
 }
+
+// A quote's and an order's copied slot windows are checked even for a direct
+// insert (migration 0018): the window ends after it starts and the quote
+// names a schedule revision.
+func TestCopiedSlotWindowsAreChecked(t *testing.T) {
+	h := newCommandHarness(t)
+	f := h.setup(t)
+	order, _ := h.freeOrder(t, f, h.policy(t, "p1"))
+	// try copies the order's quote (and then the order onto the copy) with
+	// the given overrides in a transaction it rolls back.
+	try := func(quoteOverride, orderOverride string) error {
+		tx, err := h.admin.Begin(h.ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback(h.ctx)
+		if _, err := tx.Exec(h.ctx, `INSERT INTO business.checkout_quote
+			SELECT (jsonb_populate_record(q, jsonb_build_object('id', 'aaaaaaaa-0000-4000-8000-000000000018',
+			        'guest_proof_digest', NULL, 'owner_account_id', (SELECT id FROM business.account LIMIT 1)) || `+quoteOverride+`)).*
+			FROM business.checkout_quote q WHERE q.id = (SELECT quote_id FROM business.orders WHERE id = $1::uuid)`, order); err != nil {
+			return err
+		}
+		_, err = tx.Exec(h.ctx, `INSERT INTO business.orders
+			SELECT (jsonb_populate_record(o, jsonb_build_object('id', 'bbbbbbbb-0000-4000-8000-000000000018',
+			        'quote_id', 'aaaaaaaa-0000-4000-8000-000000000018') || `+orderOverride+`)).*
+			FROM business.orders o WHERE o.id = $1::uuid`, order)
+		return err
+	}
+	if err := try(`'{}'::jsonb`, `'{}'::jsonb`); err != nil {
+		t.Fatalf("unchanged copies: %v", err)
+	}
+	for name, err := range map[string]error{
+		"quote slot ends at its start": try(`jsonb_build_object('slot_ends_at', q.slot_starts_at)`, `'{}'::jsonb`),
+		"quote slot ends before":       try(`jsonb_build_object('slot_ends_at', q.slot_starts_at - interval '1 minute')`, `'{}'::jsonb`),
+		"quote schedule revision 0":    try(`jsonb_build_object('schedule_revision', 0)`, `'{}'::jsonb`),
+		"order handover ends at start": try(`'{}'::jsonb`, `jsonb_build_object('handover_ends_at', o.original_handover_at)`),
+		"order handover ends before":   try(`'{}'::jsonb`, `jsonb_build_object('handover_ends_at', o.original_handover_at - interval '1 minute')`),
+	} {
+		if dbtest.SQLState(err) != "23514" {
+			t.Errorf("%s: %v, want check_violation", name, err)
+		}
+	}
+}

@@ -87,7 +87,7 @@ const CommandFreezeRecheck = 5 * time.Minute
 const JournalRetry = 15 * time.Minute
 
 const (
-	reasonPaidRefused      = "payment succeeded for an order that can no longer accept it (changed or holds released): the money is kept; full return is needed (K04, A3c)"
+	reasonPaidRefused      = "payment succeeded for an order that can no longer accept it: money kept; full return recorded if the order is cancelled, otherwise a manager or chef decides (K04, K05)"
 	reasonPaidLate         = "payment succeeded after the lead time (paid_awaiting_agreement): the chef agrees a handover with the customer or the payment is fully returned (K04 Q2)"
 	reasonCommandPayload   = "order command payload does not match its operation"
 	reasonCommandRecovery  = "recovery operation conflict for this order command"

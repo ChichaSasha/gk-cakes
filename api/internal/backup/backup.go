@@ -318,6 +318,12 @@ func (l *limitedWriter) Write(p []byte) (int, error) {
 
 // Latest returns the newest complete backup's manifest.
 func Latest(ctx context.Context, store Store, sealer Sealer, env string) (Manifest, error) {
+	return Find(ctx, store, sealer, env, "")
+}
+
+// Find returns the manifest of the complete backup taken at stamp
+// (yyyymmdd-hhmmssz), or of the newest one when stamp is empty.
+func Find(ctx context.Context, store Store, sealer Sealer, env, stamp string) (Manifest, error) {
 	names, err := store.List(ctx, Root(env))
 	if err != nil {
 		return Manifest{}, fmt.Errorf("backup: list: %w", err)
@@ -333,6 +339,11 @@ func Latest(ctx context.Context, store Store, sealer Sealer, env string) (Manife
 	}
 	slices.Sort(manifests) // names start with a fixed-width UTC timestamp
 	name := manifests[len(manifests)-1]
+	if stamp != "" {
+		if name = manifestName(env, stamp); !slices.Contains(manifests, name) {
+			return Manifest{}, fmt.Errorf("backup: no complete backup %s", stamp)
+		}
+	}
 	sealed, err := store.Get(ctx, name)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("backup: read manifest: %w", err)
@@ -345,11 +356,29 @@ func Latest(ctx context.Context, store Store, sealer Sealer, env string) (Manife
 	if err := json.Unmarshal(body, &m); err != nil || m.V != 1 {
 		return Manifest{}, fmt.Errorf("backup: manifest %s is not readable", name)
 	}
-	stamp := m.CreatedAt.UTC().Format(stampLayout)
-	if m.Environment != env || name != manifestName(env, stamp) || m.Dump != Root(env)+stamp+"/dump.sealed" {
+	at := m.CreatedAt.UTC().Format(stampLayout)
+	if m.Environment != env || name != manifestName(env, at) || m.Dump != Root(env)+at+"/dump.sealed" {
 		return Manifest{}, fmt.Errorf("backup: manifest %s does not belong to %s at its own time", name, env)
 	}
 	return m, nil
+}
+
+// openDump reads and decrypts a backup's dump and checks it against its
+// manifest (size and SHA-256).
+func openDump(ctx context.Context, store Store, sealer Sealer, m Manifest) ([]byte, error) {
+	sealed, err := store.Get(ctx, m.Dump)
+	if err != nil {
+		return nil, fmt.Errorf("backup: read dump: %w", err)
+	}
+	archive, err := sealer.Open(m.Dump, sealed)
+	if err != nil {
+		return nil, fmt.Errorf("backup: open dump: %w", err)
+	}
+	sum := sha256.Sum256(archive)
+	if hex.EncodeToString(sum[:]) != m.DumpSHA256 || len(archive) != m.DumpBytes {
+		return nil, errors.New("backup: the dump does not match its manifest")
+	}
+	return archive, nil
 }
 
 // Report is the result of a restore check.
@@ -394,17 +423,9 @@ func (r *Restorer) Check(ctx context.Context) (Report, error) {
 	if rep.Age > maxAge {
 		return rep, fmt.Errorf("backup: the newest backup is %s old (more than %s): backups have stopped", rep.Age.Round(time.Minute), maxAge)
 	}
-	sealed, err := r.Store.Get(ctx, m.Dump)
+	archive, err := openDump(ctx, r.Store, r.Sealer, m)
 	if err != nil {
-		return rep, fmt.Errorf("backup: read dump: %w", err)
-	}
-	archive, err := r.Sealer.Open(m.Dump, sealed)
-	if err != nil {
-		return rep, fmt.Errorf("backup: open dump: %w", err)
-	}
-	sum := sha256.Sum256(archive)
-	if hex.EncodeToString(sum[:]) != m.DumpSHA256 || len(archive) != m.DumpBytes {
-		return rep, errors.New("backup: the dump does not match its manifest")
+		return rep, err
 	}
 	pgRestore := r.PgRestore
 	if pgRestore == "" {

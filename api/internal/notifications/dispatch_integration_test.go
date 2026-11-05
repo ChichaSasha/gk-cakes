@@ -863,7 +863,23 @@ func TestRuntimeRolesUseOnlyTheNotificationGateway(t *testing.T) {
 		// GK-025 A3c1 expire request and order hold review.
 		"business.order_hold_review_run(uuid, uuid, bigint)",
 		"business.payment_expire_admit(uuid, uuid, bigint, uuid)",
-		"business.payment_expire_record(uuid, uuid, bigint, uuid, text, integer, text)"}, worker...)
+		"business.payment_expire_record(uuid, uuid, bigint, uuid, text, integer, text)",
+		// GK-025 follow-ups: a collection under manager reconciliation.
+		"business.payment_under_reconciliation(uuid, uuid, bigint, uuid)",
+		// GK-025 A3c2 lease-fenced refund gateway.
+		"business.refund_attempt_record(uuid, uuid, bigint, uuid, text, integer, text)",
+		"business.refund_dispatch_admit(uuid, uuid, bigint, uuid)",
+		"business.refund_dispatch_fix(uuid, uuid, bigint, uuid, text, timestamp with time zone)",
+		"business.refund_job_begin(uuid, uuid, bigint)",
+		"business.refund_observation_record(uuid, uuid, bigint, uuid, text, bigint, text, text, text, uuid, timestamp with time zone)",
+		"business.refund_reconcile_operations(uuid, uuid, bigint, uuid)",
+		"business.refund_reconcile_record(uuid, uuid, bigint, uuid, text, text, text, json, text)",
+		"business.refund_recovery_committed(uuid, uuid, bigint, uuid, json, text)",
+		"business.refund_recovery_frozen(uuid, uuid, bigint)",
+		"business.refund_recovery_prepared(uuid, uuid, bigint, uuid)",
+		"business.refund_recovery_reconcile(uuid, uuid, bigint, uuid, text)",
+		"business.refund_recovery_reserve(uuid, uuid, bigint, uuid, text, uuid, integer, text, text, timestamp with time zone)",
+		"business.refund_recovery_secured(uuid, uuid, bigint, uuid)"}, worker...)
 	slices.Sort(want)
 	if !slices.Equal(got, want) {
 		t.Errorf("gk_worker can execute %v, want exactly %v", got, want)
