@@ -18,6 +18,7 @@
 	} from '../../../lib/shop/bag';
 	import { bag } from '../../../lib/shop/bag.svelte';
 	import {
+		coloursOf,
 		filterListings,
 		flavoursOf,
 		isSelection,
@@ -40,12 +41,15 @@
 	// Follows the URL (the footer's Order online and Ready-made links) and the control.
 	let selection = $derived<Selection>(fromUrl());
 	let flavour = $state('all');
+	let colour = $state('all');
 	let sort = $state<Sort>('featured');
 
 	const all = $derived(data.listings.ok ? data.listings.data.listings : []);
 	const ready = $derived(data.listings.ok ? data.listings.data.ready : []);
 	const flavours = $derived(flavoursOf(all));
-	const shown = $derived(filterListings(all, { selection, flavour, sort }));
+	// Shown only once the catalogue sends cake colours (see catalog.ts colourOf).
+	const colours = $derived(coloursOf(all));
+	const shown = $derived(filterListings(all, { selection, flavour, colour, sort }));
 
 	function keepSelectionInUrl() {
 		const url = new URL(page.url.href);
@@ -82,6 +86,7 @@
 	async function clear() {
 		selection = 'all';
 		flavour = 'all';
+		colour = 'all';
 		sort = 'featured';
 		keepSelectionInUrl();
 		await tick();
@@ -113,7 +118,7 @@
 			<p>The chef is preparing the collection. Please come back soon.</p>
 		</div>
 	{:else}
-		<div class="shop-controls">
+		<div class="shop-controls" class:with-colour={colours.length > 0}>
 			<label>
 				<span class="filter-label">Cake selection</span>
 				<select bind:this={selectionControl} bind:value={selection} onchange={keepSelectionInUrl}>
@@ -130,6 +135,15 @@
 					{#each flavours as f (f)}<option value={f}>{f}</option>{/each}
 				</select>
 			</label>
+			{#if colours.length > 0}
+				<label>
+					<span class="filter-label">Colour</span>
+					<select bind:value={colour}>
+						<option value="all">All colours</option>
+						{#each colours as c (c.code)}<option value={c.code}>{c.label}</option>{/each}
+					</select>
+				</label>
+			{/if}
 			<label>
 				<span class="filter-label">Sort by</span>
 				<select bind:value={sort}>

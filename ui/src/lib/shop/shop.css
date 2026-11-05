@@ -504,6 +504,10 @@
 	background: var(--glass);
 	box-shadow: var(--glass-ring), var(--sh-1);
 }
+/* With the Colour filter: four controls, as in the approved sketch. */
+.shop .shop-controls.with-colour {
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+}
 .shop .shop-controls label {
 	position: relative;
 	display: block;
@@ -1412,7 +1416,8 @@
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 26px 14px;
 	}
-	.shop .shop-controls {
+	.shop .shop-controls,
+	.shop .shop-controls.with-colour {
 		grid-template-columns: 1fr;
 	}
 	.shop .date-prompt {

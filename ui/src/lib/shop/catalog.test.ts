@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { cakeOptions, containsLine, filterListings, flavoursOf, listing } from './catalog';
+import {
+	cakeOptions,
+	colourOf,
+	coloursOf,
+	containsLine,
+	filterListings,
+	flavoursOf,
+	listing
+} from './catalog';
 import { cake, EGGS, ID, lot, MILK, PEANUTS, readyVariant, recipe, variant } from './test-fixtures';
 
 describe('cakeOptions', () => {
@@ -129,6 +137,55 @@ describe('filterListings', () => {
 		expect(f('all', 'all', 'price')).toEqual(['b', 'a', 'c']);
 		expect(f('all', 'all', 'name')).toEqual(['b', 'a', 'c']);
 		expect(flavoursOf(all)).toEqual(['Snickers', 'Vanilla']);
+	});
+});
+
+describe('cake colour (Colour filter)', () => {
+	const withColour = (id: string, colour: unknown) =>
+		listing({ ...cake({ id }), colour } as Parameters<typeof listing>[0], []);
+
+	it('reads only an exact {code, label} colour; anything else is no colour', () => {
+		expect(colourOf(cake())).toBeNull();
+		expect(colourOf({ ...cake(), colour: { code: 'pink', label: ' Pink ' } } as never)).toEqual({
+			code: 'pink',
+			label: 'Pink'
+		});
+		for (const bad of [
+			null,
+			'pink',
+			{ code: 'pink' },
+			{ code: 'Pink!', label: 'Pink' },
+			{ code: 'pink', label: '   ' },
+			{ code: 'pink', label: 'x'.repeat(41) },
+			{ code: 7, label: 'Pink' }
+		]) {
+			expect(colourOf({ ...cake(), colour: bad } as never)).toBeNull();
+		}
+	});
+
+	it('lists each colour once in first-seen order and filters by its code', () => {
+		const all = [
+			withColour('a', { code: 'pink', label: 'Pink' }),
+			withColour('b', null),
+			withColour('c', { code: 'silver', label: 'Silver' }),
+			withColour('d', { code: 'pink', label: 'Pink' })
+		];
+		expect(coloursOf(all)).toEqual([
+			{ code: 'pink', label: 'Pink' },
+			{ code: 'silver', label: 'Silver' }
+		]);
+		const ids = (colour: string) =>
+			filterListings(all, { selection: 'all', flavour: 'all', colour, sort: 'featured' }).map(
+				(l) => l.id
+			);
+		expect(ids('all')).toEqual(['a', 'b', 'c', 'd']);
+		expect(ids('pink')).toEqual(['a', 'd']);
+		expect(ids('silver')).toEqual(['c']);
+		expect(ids('red')).toEqual([]);
+	});
+
+	it('has no colours while the catalogue sends none (the filter stays hidden)', () => {
+		expect(coloursOf([listing(cake(), [])])).toEqual([]);
 	});
 });
 

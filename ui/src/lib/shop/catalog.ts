@@ -69,6 +69,32 @@ export function cakeOptions(cake: Cake, ready: ReadyCake[]): CakeOption[] {
 
 export type ListingStatus = 'made' | 'ready' | 'unavailable';
 
+/** A cake's main colour, as the chef labels it ("Pink", "Silver"). */
+export interface CakeColour {
+	code: string;
+	label: string;
+}
+
+const COLOUR_CODE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+
+/**
+ * The cake's colour for the shop's Colour filter (approved GK-016 r01c
+ * sketch). TODO(GK-028 colour filter): the public catalogue does not send a
+ * colour yet; the proposed API field is `"colour": {"code", "label"} | null`
+ * on each cake of GET /api/v1/cakes and /cakes/{id} (ui/README "Discovery
+ * pages"). Until then every cake reads null and the filter stays hidden.
+ * Anything that is not exactly that shape is ignored.
+ */
+export function colourOf(cake: Cake): CakeColour | null {
+	const c: unknown = (cake as Cake & { colour?: unknown }).colour;
+	if (typeof c !== 'object' || c === null) return null;
+	const { code, label } = c as Record<string, unknown>;
+	if (typeof code !== 'string' || typeof label !== 'string') return null;
+	const name = label.trim();
+	if (!COLOUR_CODE.test(code) || name.length === 0 || name.length > 40) return null;
+	return { code, label: name };
+}
+
 /** What a shop card shows for one listing. */
 export interface Listing {
 	id: string;
@@ -83,6 +109,7 @@ export interface Listing {
 	/** Ready-made cakes are among the buyable options. */
 	hasReady: boolean;
 	flavours: string[];
+	colour: CakeColour | null;
 	/** Prominent allergens of the buyable options, exactly as declared (K01: PEANUTS). */
 	prominent: string[];
 }
@@ -108,6 +135,7 @@ export function listing(cake: Cake, ready: ReadyCake[]): Listing {
 		status: hasMade ? 'made' : hasReady ? 'ready' : 'unavailable',
 		hasReady,
 		flavours: [...new Set(options.map((o) => o.flavour))],
+		colour: colourOf(cake),
 		prominent: [...prominent]
 	};
 }
@@ -122,7 +150,7 @@ export function isSelection(v: string | null): v is Selection {
 /** Shop filters and sorting. "Featured" keeps the API's order (newest first). */
 export function filterListings(
 	all: Listing[],
-	f: { selection: Selection; flavour: string; sort: Sort }
+	f: { selection: Selection; flavour: string; colour?: string; sort: Sort }
 ): Listing[] {
 	const shown = all.filter(
 		(l) =>
@@ -130,7 +158,8 @@ export function filterListings(
 				(f.selection === 'orderable' && l.status !== 'unavailable') ||
 				(f.selection === 'ready' && l.hasReady) ||
 				(f.selection === 'unavailable' && l.status === 'unavailable')) &&
-			(f.flavour === 'all' || l.flavours.includes(f.flavour))
+			(f.flavour === 'all' || l.flavours.includes(f.flavour)) &&
+			(!f.colour || f.colour === 'all' || l.colour?.code === f.colour)
 	);
 	if (f.sort === 'price') {
 		return [...shown].sort(
@@ -144,6 +173,19 @@ export function filterListings(
 /** Every flavour offered, in first-seen order. */
 export function flavoursOf(all: Listing[]): string[] {
 	return [...new Set(all.flatMap((l) => l.flavours))];
+}
+
+/** Every colour the cakes have, in first-seen order (one entry per code). */
+export function coloursOf(all: Listing[]): CakeColour[] {
+	const codes = new Set<string>();
+	const out: CakeColour[] = [];
+	for (const l of all) {
+		if (l.colour && !codes.has(l.colour.code)) {
+			codes.add(l.colour.code);
+			out.push(l.colour);
+		}
+	}
+	return out;
 }
 
 /** "7–10 servings". */
