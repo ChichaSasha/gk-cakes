@@ -157,6 +157,16 @@ type releasedView struct {
 		State       string
 		CheckoutURL *string `json:"checkout_url"`
 	}
+	Refund *refundView
+}
+
+// refundView is order_get's "refund" (GK-025 A3c2).
+type refundView struct {
+	State          string
+	TargetMinor    int64 `json:"target_minor"`
+	SucceededMinor int64 `json:"succeeded_minor"`
+	InProgress     int64 `json:"in_progress_minor"`
+	Currency       string
 }
 
 func (h *payHarness) view(t *testing.T, order string, d []byte) (releasedView, string) {
@@ -218,7 +228,7 @@ func TestExpireAtFifteenMinutesReleasesTheHolds(t *testing.T) {
 	}
 	v, raw := h.view(t, order, d)
 	if v.Lifecycle != "cancelled" || v.CancelReason == nil || *v.CancelReason != "payment_not_completed" || v.CancelledAt == nil ||
-		v.Payment == nil || v.Payment.State != "cancelled" || v.Payment.CheckoutURL != nil || strings.Contains(raw, "refund\"") {
+		v.Payment == nil || v.Payment.State != "cancelled" || v.Payment.CheckoutURL != nil || v.Refund != nil {
 		t.Fatalf("customer view %s", raw)
 	}
 	if got := h.count(t, "SELECT count(*) FROM business.audit_event WHERE action = 'order.released_unpaid' AND subject_id = $1::uuid", order); got != 1 {
@@ -794,6 +804,15 @@ func TestUnknownAndSucceededCollectionsAreNeverReleased(t *testing.T) {
 		if o := h.orderRow(t, order); o.Lifecycle != "awaiting_payment" || o.CancelReason != "" {
 			t.Fatalf("order %+v", o)
 		}
+		// Not terminal: the refusal goes to a manager; nothing is refunded
+		// automatically (no goal, no operation).
+		if h.count(t, "SELECT count(*) FROM business.refund_goal WHERE order_id = $1::uuid", order) != 0 ||
+			h.count(t, "SELECT count(*) FROM business.refund_operation WHERE order_id = $1::uuid", order) != 0 {
+			t.Fatal("a full return was recorded for an order that is not cancelled")
+		}
+		if v, raw := h.view(t, order, d); v.Refund != nil {
+			t.Fatalf("view %s", raw)
+		}
 		if got := h.count(t, "SELECT count(*) FROM business.order_hold_review WHERE order_id = $1::uuid AND outcome = 'paid'", order); got != 1 {
 			t.Fatal("the review did not end as paid")
 		}
@@ -836,7 +855,9 @@ func TestLateSuccessAfterTheReleaseKeepsTheOrderCancelled(t *testing.T) {
 		!strings.Contains(evidence, `"charge_status":"succeeded"`) {
 		t.Fatalf("evidence %s %v", evidence, err)
 	}
-	if v, raw := h.view(t, order, d); v.Lifecycle != "cancelled" || strings.Contains(raw, "refund\"") {
+	// The full return is requested (GK-025 A3c2): nothing sent yet.
+	if v, raw := h.view(t, order, d); v.Lifecycle != "cancelled" || v.Refund == nil || v.Refund.State != "requested" ||
+		v.Refund.TargetMinor <= 0 || v.Refund.SucceededMinor != 0 || v.Refund.InProgress != v.Refund.TargetMinor {
 		t.Fatalf("view %s", raw)
 	}
 	if got := h.count(t, "SELECT count(*) FROM business.audit_event WHERE action = 'order.paid_confirmation_refused' AND subject_id = $1::uuid", order); got != 1 {
@@ -910,7 +931,7 @@ func TestHoldReviewRacesAPaidRecord(t *testing.T) {
 		h.finish(t, review, nil)
 		h.finish(t, rec, nil)
 		h.due(t)
-		errs := h.drain(t)
+		errs := withoutRefundDispatch(h.drain(t))
 		o := h.orderRow(t, order)
 		switch o.Lifecycle {
 		case "confirmed":

@@ -62,6 +62,8 @@ type fakeStripe struct {
 	// block (with arrived) holds a create request after it reached Stripe
 	// until the test lets it go.
 	block, arrived chan struct{}
+	// Refunds (GK-025 A3c2): see refund_worker_integration_test.go.
+	refunds fakeRefunds
 }
 
 type fakeAnswer struct {
@@ -80,7 +82,7 @@ type fakeSession struct {
 
 func newFakeStripe(t *testing.T) (*fakeStripe, *httptest.Server) {
 	f := &fakeStripe{t: t, sessions: map[string]*fakeSession{}, byKey: map[string]string{}, forms: map[string]string{},
-		expireByKey: map[string]fakeAnswer{}}
+		expireByKey: map[string]fakeAnswer{}, refunds: newFakeRefunds()}
 	srv := httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(srv.Close)
 	return f, srv
@@ -102,6 +104,8 @@ func (f *fakeStripe) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	switch {
+	case r.URL.Path == "/v1/refunds" || strings.HasPrefix(r.URL.Path, "/v1/refunds/"):
+		f.serveRefunds(w, r)
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/checkout/sessions/") && strings.HasSuffix(r.URL.Path, "/expire"):
 		key := r.Header.Get("Idempotency-Key")
 		f.expires = append(f.expires, key)
@@ -260,6 +264,7 @@ type payHarness struct {
 	pay     *payments.Worker
 	reviews *checkout.HoldReviews
 	webhook *payments.Webhook
+	refunds *payments.Refunds // chained by withRefunds
 	handler jobs.Handler
 }
 
@@ -279,7 +284,8 @@ func newPayHarness(t *testing.T) *payHarness {
 		t.Fatal(err)
 	}
 	reviews := &checkout.HoldReviews{DB: h.worker, Logger: logger}
-	return &payHarness{commandHarness: h, stripe: fs, pay: pay, reviews: reviews, webhook: wh,
+	refunds := &payments.Refunds{DB: h.worker, Coordinator: h.coord, Provider: client, Environment: "test", Account: stripeAccount, Logger: logger}
+	return &payHarness{commandHarness: h, stripe: fs, pay: pay, reviews: reviews, webhook: wh, refunds: refunds,
 		handler: jobs.Chain(h.cmds.Handle, pay.Handle, reviews.Handle)}
 }
 
@@ -335,7 +341,7 @@ func (h *payHarness) drain(t *testing.T) []error {
 			errs = append(errs, err)
 		}
 	}
-	t.Fatal("jobs never drained")
+	t.Fatalf("jobs never drained:\n%s", reasons(errs[max(0, len(errs)-6):]))
 	return nil
 }
 
@@ -344,6 +350,19 @@ func (h *payHarness) drain(t *testing.T) []error {
 func (h *payHarness) due(t *testing.T) {
 	t.Helper()
 	h.owner(t, "UPDATE business.job SET next_attempt_at = now() WHERE state IN ('queued', 'retry')")
+}
+
+// withoutRefundDispatch drops the errors of refund jobs no handler takes
+// (the refund worker is chained only by withRefunds, so gateway tests can
+// drive a refund job call by call).
+func withoutRefundDispatch(errs []error) []error {
+	var out []error
+	for _, err := range errs {
+		if !errors.Is(err, jobs.ErrNoHandler) {
+			out = append(out, err)
+		}
+	}
+	return out
 }
 
 func attention(errs []error) []string {
@@ -930,6 +949,12 @@ func TestPaidSuccessAfterTheOrderChangedIsRefused(t *testing.T) {
 	// No second collection is possible for this order.
 	if _, err := h.start(order, d, "pay-2", 2); conflict(err) != "state_conflict" {
 		t.Fatalf("new collection after a success: %v", err)
+	}
+	// The order is not cancelled: no automatic full return (GK-025 A3c2).
+	if h.count(t, "SELECT count(*) FROM business.refund_goal WHERE order_id = $1::uuid", order) != 0 ||
+		h.count(t, "SELECT count(*) FROM business.refund_operation WHERE order_id = $1::uuid", order) != 0 ||
+		h.count(t, "SELECT count(*) FROM business.refund_late_capture($1::uuid) g WHERE g IS NOT NULL", order) != 0 {
+		t.Fatal("a full return was recorded for an order that is not cancelled")
 	}
 }
 
