@@ -25,7 +25,9 @@ const (
 // seedDispatchable writes one job of every dispatchable kind into a migrated
 // database, as the domain gateways would leave them (inserted directly, as
 // the superuser, with triggers off): an order command, a Stripe collection
-// dispatch, a refund dispatch, a hold review and a notification, all due;
+// dispatch, a refund dispatch, three hold reviews (undecided, already
+// decided, and undecided on an order that no longer awaits payment) and a
+// notification, all due;
 // a notification whose job is leased by a worker at backup time (running,
 // generation 3); a notification on a manager hold (suspended); and a
 // notification scheduled for later.
@@ -85,6 +87,35 @@ FROM unnest(ARRAY['0b1d0000-0000-4000-8000-000000000015', '0b1d0000-0000-4000-80
             ARRAY['0b1d0000-0000-4000-8000-0000000000a5', '`+seedRunning+`', '0b1d0000-0000-4000-8000-0000000000a7',
                   '0b1d0000-0000-4000-8000-0000000000a8']::uuid[]) AS u(i, j);
 UPDATE business.notification_intent SET suspended_reason = 'manager hold' WHERE id = '0b1d0000-0000-4000-8000-000000000018';
+-- Two more orders whose hold reviews would end without a freeze: one
+-- already decided, one undecided whose order no longer awaits payment.
+INSERT INTO business.checkout_quote (id, owner_account_id, idempotency_key, body_sha256, handover_day, slot_id, slot_starts_at,
+  slot_ends_at, schedule_revision, fulfillment_mode, subtotal_minor, discount_minor, total_minor, sent_at, expires_at)
+SELECT u.q, owner_account_id, u.k, body_sha256, handover_day, slot_id, slot_starts_at, slot_ends_at, schedule_revision,
+  fulfillment_mode, subtotal_minor, discount_minor, total_minor, sent_at, expires_at
+FROM business.checkout_quote,
+  (VALUES ('0b1d0000-0000-4000-8000-0000000000e2'::uuid, 'restore-quote-2'), ('0b1d0000-0000-4000-8000-0000000000e3'::uuid, 'restore-quote-3')) AS u(q, k)
+WHERE id = '0b1d0000-0000-4000-8000-0000000000e1';
+INSERT INTO business.orders (id, quote_id, body_sha256, customer_full_name, contact_email, payment_requirement, fulfillment_mode,
+  handover_day, slot_id, original_handover_at, handover_ends_at, full_refund_deadline_at, policy_version_id, subtotal_minor,
+  discount_minor, total_minor, placed_at, lifecycle, cancel_reason, cancelled_at)
+SELECT u.o, u.q, body_sha256, customer_full_name, contact_email, payment_requirement, fulfillment_mode, handover_day, slot_id,
+  original_handover_at, handover_ends_at, full_refund_deadline_at, policy_version_id, subtotal_minor, discount_minor, total_minor,
+  placed_at, u.lifecycle, u.reason, CASE WHEN u.reason IS NOT NULL THEN now() END
+FROM business.orders,
+  (VALUES ('0b1d0000-0000-4000-8000-0000000000f2'::uuid, '0b1d0000-0000-4000-8000-0000000000e2'::uuid, 'awaiting_payment', NULL),
+          ('0b1d0000-0000-4000-8000-0000000000f3'::uuid, '0b1d0000-0000-4000-8000-0000000000e3'::uuid, 'cancelled', 'payment_not_completed'))
+  AS u(o, q, lifecycle, reason)
+WHERE id = '0b1d0000-0000-4000-8000-0000000000f1';
+INSERT INTO business.order_hold_review (order_id, hold_until, outcome, decided_at) VALUES
+  ('0b1d0000-0000-4000-8000-0000000000f2', now() - interval '1 hour', 'released', now()),
+  ('0b1d0000-0000-4000-8000-0000000000f3', now() - interval '1 hour', NULL, NULL);
+INSERT INTO business.job (id, operation_id, next_attempt_at) VALUES
+  ('0b1d0000-0000-4000-8000-0000000000a9', '0b1d0000-0000-4000-8000-0000000000f2', now() - interval '1 minute'),
+  ('0b1d0000-0000-4000-8000-0000000000aa', '0b1d0000-0000-4000-8000-0000000000f3', now() - interval '1 minute');
+INSERT INTO business.order_hold_review_job (job_id, order_id) VALUES
+  ('0b1d0000-0000-4000-8000-0000000000a9', '0b1d0000-0000-4000-8000-0000000000f2'),
+  ('0b1d0000-0000-4000-8000-0000000000aa', '0b1d0000-0000-4000-8000-0000000000f3');
 COMMIT`)
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -162,9 +193,11 @@ func TestRestoreIsFrozenInTheSameTransaction(t *testing.T) {
 		t.Fatalf("report = %+v", rep)
 	}
 	s := rep.Synthetic
-	wantKinds := map[string]int{"order_command": 1, "payment": 1, "refund": 1, "hold_review": 1, "notification": 2}
-	if s.StaleLeaseCalls != 5 || s.StaleLeaseRefused != 5 || s.Claimable != 7 || s.NotDue != 1 || s.Claimed != 7 ||
-		s.DeferredFrozen != 6 || !maps.Equal(s.DeferredByKind, wantKinds) || s.HeldForAttention != 1 || s.Unowned != 0 || s.Violations != nil ||
+	// Hold reviews defer before any outcome, a decided one too (migration
+	// 0019): none completes or changes its review while frozen.
+	wantKinds := map[string]int{"order_command": 1, "payment": 1, "refund": 1, "hold_review": 3, "notification": 2}
+	if s.StaleLeaseCalls != 5 || s.StaleLeaseRefused != 5 || s.Claimable != 9 || s.NotDue != 1 || s.Claimed != 9 ||
+		s.DeferredFrozen != 8 || !maps.Equal(s.DeferredByKind, wantKinds) || s.HeldForAttention != 1 || s.Unowned != 0 || s.Violations != nil ||
 		s.ProviderCalls != 0 || s.JournalWrites != 0 || !s.TablesUnchanged || !s.RecoveryOperationsUnchanged ||
 		s.Reclaimed != 0 || !s.SyntheticLoginDropped {
 		t.Fatalf("synthetic dispatch = %+v", s)
@@ -359,7 +392,7 @@ func TestSyntheticDispatchCatchesAnUnfrozenRestore(t *testing.T) {
 	}
 	conn := target.MigratorConn(t)
 	rep, err := checkFrozen(ctx, conn, target.MigratorURL(), "test", nil)
-	if err == nil || rep.Violations["hold_review:completed"] != 1 || rep.Violations["notification:attention"] == 0 ||
+	if err == nil || rep.Violations["hold_review:completed"] != 3 || rep.Violations["notification:attention"] == 0 ||
 		rep.DeferredFrozen != 0 || rep.TablesUnchanged {
 		t.Fatalf("unfrozen jobs passed the synthetic dispatch check: %v (%+v)", err, rep)
 	}
