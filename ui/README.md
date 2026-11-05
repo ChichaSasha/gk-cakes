@@ -83,15 +83,99 @@ access token as `Authorization: Bearer` (never cookies or URLs).
   announcer), `object-src 'none'`, `frame-ancestors 'none'`, `base-uri` and
   `form-action 'self'`, and `connect-src 'self'` plus `PUBLIC_API_URL` and
   `PUBLIC_AUTH_URL`; `nosniff`; `Cross-Origin-Opener-Policy: same-origin`.
-  Private routes (decided by the matched route, not the raw path) add
+  Private routes (decided by the matched route, not the raw path: the
+  sign-in pages, `/account`, `/admin`, `/checkout` and `/orders/[id]`) add
   `no-store`, `no-referrer` and `X-Robots-Tag: noindex, nofollow`.
 - The bundle secret check needs no new variables: the `PUBLIC_*` values are
   public and read at start.
-- Styling is functional only until the account designs (GK-016) are approved.
+- Styling of the sign-in and account pages is functional only until the
+  account designs (GK-016) are approved.
 
 No browser test runner is configured yet; one is added when a runner is approved
-for the first interactive screens. CI starts the built server and checks
-`/healthz` instead.
+for the interactive screens. CI starts the built server and checks `/healthz`
+and the headers instead. GK-030 was checked locally by driving the built server
+in headless Chrome against a stub API (not committed; see the checkout section).
+
+## Checkout and order status (GK-030)
+
+Follows the approved checkout sketch GK-017 r01 and the GK-015 r12 visual
+foundation (Geist and Geist Mono in `static/fonts`, SIL Open Font License; styles
+in `src/lib/shop.css`, scoped to these pages). Both pages render only a shell on
+the server (`ssr = false`) and call the API from the browser; the API client is
+`src/lib/checkout.ts`, formatting is `src/lib/format.ts`.
+
+| Route          | What it does                                                                                                         |
+| -------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `/checkout`    | When and how, your details, discount code, before you pay, payment; places the order and starts payment              |
+| `/orders/[id]` | The order's authoritative status, polled until settled; opens Stripe Checkout; Stripe returns to `?payment=returned` |
+
+**Temporary basket entry.** Until the discovery pages (GK-016) are approved,
+the basket comes from the URL: `/checkout?item=<variant_id>&item=...&lot=<lot_id>`
+(a repeated ID adds one more of that cake; at most 20 cakes). Cake details,
+allergens and the kitchen notice come from the public catalog (`/api/v1/cakes`,
+paged until the variants are found; `/api/v1/ready-cakes` for lots). A cake
+without a current allergen declaration, or a ready cake made to a recipe
+other than the public one, blocks checkout (K01).
+
+**Flow.** Dates come from `/api/v1/availability` (31 days at a time, London
+calendar), times from `/api/v1/schedule` for the date and handover mode; a
+chosen time is kept when it is still offered. Every change of date, time, mode
+or code asks the server for a quote (`POST /api/v1/checkout/quotes`); the page
+shows only the server's totals. The refund deadline before checkout is the
+appointment start minus 120 elapsed hours in London time (the order page shows
+the order's own `full_refund_deadline_at`); the tick-box consents to the
+current policy version (`/api/v1/policies/current`), whose summary is shown.
+"Continue to secure payment" refreshes the quote when it is missing, stale or
+within a minute of expiry (a changed total stops for review), posts
+`/api/v1/checkouts` (202: payment pending, never accepted), reads the order for
+its version, and starts the payment (`/payment`) or, for £0, the free
+confirmation, then goes to the order page. That page opens the Stripe URL
+(`https://checkout.stripe.com` only) once it appears, but only straight after
+checkout or after the customer presses Continue there; a return from Stripe
+just shows the status. Refusals map to the sketch's messages: `PRICE_CHANGED`
+and `QUOTE_EXPIRED` show a fresh quote for review, `SLOT_UNAVAILABLE` and
+`LEAD_TIME` reload the times, `CODE_USED_UP` asks to remove the code,
+`POLICY_CHANGED` reloads the terms and asks to tick again,
+`PAYMENT_IN_PROGRESS` says not to pay again, and 503/network errors say to
+try again later.
+
+**Idempotency.** Each user action (quote, checkout, payment, free
+confirmation) has its own `Idempotency-Key`, reused when the same action is
+retried with the same body (a lost answer replays) and new when the body
+changes.
+
+**Guest capability storage (decision for Creator review).** A guest's quote
+proof (32 random bytes, fresh for every new quote) becomes the order's
+capability. After checkout it is kept in this origin's `localStorage` under
+`gk-order-capability:<order_id>` for 30 days (expired entries are removed on
+each save) and sent only as `X-Order-Capability`, never in a URL. `localStorage`
+rather than `sessionStorage` so the order page still works after the Stripe
+return in a new tab or a closed tab; the trade-off is that anyone using the
+same browser profile can open the order. It sits behind the same Content
+Security Policy as the sign-in session. Signed-in customers use their bearer
+token; a guest order placed before signing in falls back to the stored
+capability. A one-time hand-off (Stripe redirect allowed, message, poll hint)
+goes from checkout to the order page in `sessionStorage`.
+
+**Order page states.** Waiting for payment (Continue to secure payment, or
+start one when none is in progress), payment pending while the page is being
+prepared, "Still checking payment; do not pay again" (unknown, or pending
+without an open page), payment received with confirmation being secured,
+confirmed (date, time, items, totals, refund deadline), payment received with
+the chef to contact the customer about the date (`paid_awaiting_agreement`),
+cancelled with its reason and a link to start a new order with the same cakes,
+and a refund block when the API returns one (requested and returned so far;
+never "refunded" while pending). Polling starts at the API's
+`poll_after_seconds` and backs off to 30 seconds; it pauses in hidden tabs and
+stops on settled states.
+
+**Not built yet.** GK delivery (shown as not available online), resale lots
+and shorter lead times (not quotable), the full policies page and a contact
+link, cancelling or moving an order, the account order list, prefilled details
+for signed-in customers, a browser test runner, and the problem states the
+sketch deferred to r02 beyond the API refusals above. The 50% amount is not
+shown before payment (the client never computes amounts); the policy summary
+carries the rule. A lots-only basket still asks availability for one place.
 
 ## Dependency audit
 
