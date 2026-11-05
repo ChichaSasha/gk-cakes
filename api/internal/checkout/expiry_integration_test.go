@@ -511,7 +511,8 @@ func TestNeverDispatchedCleanupWinsAndNothingIsSent(t *testing.T) {
 			if fixed && h.recoveryState(t, res.ID) != "secured" {
 				t.Fatalf("dispatch %s, want secured with its never-dispatched outcome", h.recoveryState(t, res.ID))
 			}
-			if got := h.count(t, "SELECT count(*) FROM business.audit_event WHERE action = 'payment.failed' AND subject_id = $1::uuid", res.ID); got != 0 {
+			if got := h.count(t, `SELECT count(*) FROM business.audit_event WHERE action = 'payment.failed'
+				AND (subject_id = $1::uuid OR detail ->> 'collection_id' = $1::text)`, res.ID); got != 0 {
 				t.Fatalf("%d payment.failed audits", got)
 			}
 			// Admission after the cleanup is refused by the database itself.
@@ -1047,6 +1048,16 @@ func TestRejectedCollectionIsReleasedAfterTheHold(t *testing.T) {
 	if c := h.collection(t, res.ID); c.State != "failed" {
 		t.Fatalf("collection %+v", c)
 	}
+	// One payment.failed audit, on the order (the collection in its data)
+	// like every other payment audit.
+	if got := h.count(t, `SELECT count(*) FROM business.audit_event WHERE action = 'payment.failed'
+		AND subject_kind = 'order' AND subject_id = $1::uuid AND detail ->> 'collection_id' = $2::text
+		AND detail ->> 'reason' = 'rejected_by_stripe'`, order, res.ID); got != 1 {
+		t.Fatalf("%d payment.failed audits on the order", got)
+	}
+	if got := h.count(t, "SELECT count(*) FROM business.audit_event WHERE action = 'payment.failed'"); got != 1 {
+		t.Fatalf("%d payment.failed audits", got)
+	}
 	// Before the hold ends the review keeps the holds.
 	h.due(t)
 	if errs := h.drain(t); len(errs) != 0 || h.orderRow(t, order).Lifecycle != "awaiting_payment" {
@@ -1161,5 +1172,34 @@ func TestMigrationBackfillsHoldReviews(t *testing.T) {
 	}
 	if holdUntil.Before(lo) || holdUntil.After(hi) {
 		t.Fatalf("hold until %s, want between %s and %s (placed %s)", holdUntil, lo, hi, placed)
+	}
+}
+
+// Once Stripe has expired the session by itself (its expires_at passed),
+// no expire request is asked: the retrieve alone decides (cancelled).
+func TestNoExpireRequestAfterTheSessionExpiredByItself(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d := h.paidOrder(t, f, pol)
+	coll, session := h.started(t, order, d)
+	h.age(t, coll)
+	h.owner(t, "UPDATE business.payment_collection SET provider_expires_at = now() - interval '1 second' WHERE id = $1::uuid", coll)
+	h.stripe.session(session).status = "expired"
+	h.owner(t, "SELECT business.payment_schedule_reconcile($1::uuid, now())", coll)
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("reconcile: %v", errs)
+	}
+	if calls := h.expireCalls(); len(calls) != 0 {
+		t.Fatalf("expire calls %v", calls)
+	}
+	if got := h.expireAttempts(t, coll); len(got) != 0 {
+		t.Fatalf("expire attempts %v", got)
+	}
+	if got := h.count(t, "SELECT count(*) FROM business.payment_collection WHERE id = $1::uuid AND expire_requested_at IS NOT NULL", coll); got != 0 {
+		t.Fatal("the expire request was admitted")
+	}
+	if c := h.collection(t, coll); c.State != "cancelled" {
+		t.Fatalf("collection %+v", c)
 	}
 }

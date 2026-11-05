@@ -44,6 +44,7 @@ const (
 	reasonRetrieve      = "Stripe refused reading the Checkout Session: check the key, then requeue"
 	reasonStale         = "payment succeeded but the order already has a protected operation at this or a later version: nothing recorded; manager reconciliation"
 	reasonExpireRefused = "Stripe refused the 15-minute expire request (credentials or permissions): fix the key, then requeue"
+	reasonUnderReview   = "payment collection is under manager reconciliation (a recorded mismatch): this check changed nothing; the order's holds stay until a manager resolves it"
 )
 
 // Worker is the job handler for payment collections: the protected
@@ -80,7 +81,7 @@ func (w *Worker) Handle(ctx context.Context, job jobs.Job) error {
 		return jobs.Defer(FreezeRecheck, recovery.ErrFrozen)
 	case "settled", "no_session":
 		log.Info("payment reconcile has nothing to check", "status", b.Status, "collection_state", b.CollectionState)
-		return nil
+		return underReview(ctx, store, b)
 	case "closed":
 		// The never-dispatched cleanup closed the collection before its
 		// request was fixed: nothing was or will be sent.
@@ -360,17 +361,37 @@ func (w *Worker) reconcile(ctx context.Context, log *slog.Logger, store leaseSto
 		return err
 	}
 	log.Info("payment reconciled", "verdict", v.Kind, "reason", v.Reason, "collection_state", state, "command_id", cmd)
-	switch v.Kind {
-	case VerdictPending:
+	if v.Kind == VerdictMismatch {
+		return jobs.Attention(reasonMismatch, errors.New(v.Reason))
+	}
+	if err := underReview(ctx, store, b); err != nil {
+		return err
+	}
+	if v.Kind == VerdictPending {
 		if retryExpire {
 			return jobs.Defer(ExpireRetry, errors.New("payments: session not decided yet; the expire request is asked again with the same key"))
 		}
 		return jobs.Defer(ReconcileRecheck, errors.New("payments: session not decided yet"))
-	case VerdictMismatch:
-		return jobs.Attention(reasonMismatch, errors.New(v.Reason))
-	default:
+	}
+	return nil
+}
+
+// underReview sends a reconcile of a collection under manager
+// reconciliation (a recorded mismatch) to attention: whatever this check
+// saw, it changed nothing, and the hold review keeps the order's holds
+// until a manager resolves it (migration 0017). Never silent.
+func underReview(ctx context.Context, store leaseStore, b begin) error {
+	if b.Purpose != "reconcile" {
 		return nil
 	}
+	under, err := store.underReconciliation(ctx, b.CollectionID)
+	switch {
+	case err != nil:
+		return err
+	case under:
+		return jobs.Attention(reasonUnderReview, nil)
+	}
+	return nil
 }
 
 // leaseStore is the recovery.Store for one leased payment job; every call
@@ -646,6 +667,15 @@ func (s leaseStore) expireAdmit(ctx context.Context, collection string) (string,
 	err := s.db.QueryRow(ctx, "SELECT business.payment_expire_admit($1::uuid, $2::uuid, $3, $4::uuid)",
 		s.args(collection)...).Scan(&status)
 	return status, gatewayErr(err)
+}
+
+// underReconciliation reports whether the leased reconcile's collection
+// carries a recorded mismatch (business.payment_under_reconciliation).
+func (s leaseStore) underReconciliation(ctx context.Context, collection string) (bool, error) {
+	var under bool
+	err := s.db.QueryRow(ctx, "SELECT business.payment_under_reconciliation($1::uuid, $2::uuid, $3, $4::uuid)",
+		s.args(collection)...).Scan(&under)
+	return under, gatewayErr(err)
 }
 
 // recordExpire appends the expire request's answer, detached from the job

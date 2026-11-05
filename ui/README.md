@@ -149,9 +149,18 @@ quote or changed terms refresh the total or terms and ask for review again; a
 taken time or a missed lead time asks for another time or date; a used-up
 code is removed; a payment already in progress says "don't pay again"; an
 unavailable service can be retried; a reused key (an order already started
-with other details) links that order. A problem after the order exists (for
+with other details) links that order. Reviewing the new total and continuing
+then places a second order: the first one stays unpaid and keeps its place
+(day place, ready cake, code use) until the hold review releases it 15
+minutes after it was placed (API step 7, cancelled as
+`payment_not_completed`). A problem after the order exists (for
 example a lead time missed while paying) is handed to the order page, which
-asks for a new order when the price window or lead time has passed. Back from
+asks for a new order when the price window or lead time has passed: while
+that problem (`LEAD_TIME`, `QUOTE_EXPIRED`, handed over or answered to the
+page's own payment or confirmation) is shown, the page offers "Start a new
+order" (the same cakes, without the date) instead of starting a payment or
+"Confirm order"; a payment already under way (an open payment page, or "do not
+pay again") keeps its own wording and action. Back from
 Stripe via the back button resets a busy Continue.
 
 **Keys and guest secrets.** Every command has an `Idempotency-Key` per user
@@ -174,7 +183,9 @@ confirmation with date, time, items, totals and refund deadline; "Payment
 received" with the chef to contact the customer about the date
 (`paid_awaiting_agreement`: date and time shown as requested, not confirmed,
 and "If the date can't be agreed, you get everything you paid back");
-cancellation reasons in plain words; refused free confirmations worded by
+cancellation reasons in plain words (a cancelled order whose payment is still
+being checked reads "Still checking payment; do not pay again", never "not
+completed" or "start a new order"); refused free confirmations worded by
 reason; and the refund (`refund.state` requested, pending, partly_returned,
 returned or needs_attention, with `target_minor` and `succeeded_minor`) only
 as far as the API says. The cancellation and refund terms appear only for

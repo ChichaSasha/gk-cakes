@@ -4,13 +4,15 @@
 // proof that money failed, and a refund is "returned" only when the API
 // says so.
 import { formatMoney } from './format';
+import type { Next } from './messages';
 import type { Order } from './types';
 
 export type OrderAction =
 	| 'none'
 	| 'start_payment' // ask the API for a secure payment page
 	| 'open_payment' // go to the open payment page (checkoutUrl)
-	| 'confirm_free'; // confirm a £0 order
+	| 'confirm_free' // confirm a £0 order
+	| 'new_order'; // this order can no longer be paid or confirmed: start a new one
 
 export interface OrderView {
 	tone: 'info' | 'success' | 'warning' | 'error';
@@ -145,6 +147,19 @@ type Base = Pick<
 >;
 
 function cancelled(order: Order, base: Base): OrderView {
+	const state = order.payment?.state;
+	if (state === 'created' || state === 'pending' || state === 'unknown') {
+		// A payment whose result is not known yet (for example one under
+		// review): never "not completed", never "start a new order".
+		return {
+			...base,
+			tone: 'info',
+			title: 'Still checking payment; do not pay again',
+			lines: ['This order was cancelled, but we’re still checking a payment for it.', DO_NOT_PAY],
+			poll: true,
+			doNotPayAgain: true
+		};
+	}
 	const lines: string[] = [];
 	if (order.cancel_reason === 'payment_not_completed') {
 		lines.push(
@@ -280,6 +295,45 @@ function awaitingPayment(order: Order, base: Base, returned: boolean): OrderView
 		poll: true,
 		doNotPayAgain: true
 	};
+}
+
+/**
+ * The view while a dead-end problem is shown (a missed lead time or an
+ * expired price, handed over from checkout or answered to this page's own
+ * action: next 'new_order'). Nothing that would ask the API about this order
+ * again (start a payment, confirm) is offered: "Start a new order" instead.
+ * A payment already under way (an open payment page, or "do not pay again")
+ * keeps its own wording and action: money may be moving, so it is never
+ * replaced.
+ */
+export function withOrderProblem(view: OrderView, next: Next | undefined): OrderView {
+	if (next !== 'new_order' || view.doNotPayAgain) return view;
+	// An open payment page is a payment already under way (K03): kept.
+	if (view.action !== 'start_payment' && view.action !== 'confirm_free') return view;
+	return {
+		...view,
+		action: 'new_order',
+		actionLabel: 'Start a new order',
+		checkoutUrl: undefined
+	};
+}
+
+/**
+ * The checkout query for a new order with the same cakes
+ * (v=<variant> / lot=<lot>, repeated once per cake; see basket.ts), without
+ * this order's date. Undefined when the order lists no usable cakes.
+ */
+export function newOrderQuery(order: Order): string | undefined {
+	const q = new URLSearchParams();
+	for (const item of order.items ?? []) {
+		const n = Number.isSafeInteger(item.quantity) ? Math.min(Math.max(item.quantity, 0), 20) : 0;
+		for (let i = 0; i < n; i++) {
+			if (item.lot_id) q.append('lot', item.lot_id);
+			else if (item.variant_id) q.append('v', item.variant_id);
+		}
+	}
+	const query = q.toString();
+	return query ? query : undefined;
 }
 
 /** The refund line, worded only as far as the API's refund block goes. */

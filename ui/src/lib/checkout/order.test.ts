@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { isPaymentPageUrl, nextPollDelay, orderView, POLL_LIMIT_MS, refundLine } from './order';
-import type { Order, Payment } from './types';
+import { ApiError } from '../api';
+import { orderProblemFor } from './messages';
+import {
+	isPaymentPageUrl,
+	newOrderQuery,
+	nextPollDelay,
+	orderView,
+	POLL_LIMIT_MS,
+	refundLine,
+	withOrderProblem
+} from './order';
+import type { Order, OrderItem, Payment } from './types';
 
 const stripe = 'https://checkout.stripe.com/c/pay/cs_test_123';
 
@@ -240,6 +250,120 @@ describe('orderView: after payment', () => {
 			})
 		);
 		expect(v.lines.join(' ')).toMatch(/payment recorded.*don’t pay again/);
+	});
+
+	it('cancelled with a payment still being checked: do not pay again, never "not completed"', () => {
+		for (const state of ['unknown', 'pending', 'created'] as const) {
+			const v = orderView(
+				order({
+					lifecycle: 'cancelled',
+					cancel_reason: 'payment_not_completed',
+					payment: payment({ state, checkout_url: null })
+				})
+			);
+			expect(v.title).toBe('Still checking payment; do not pay again');
+			expect(v.doNotPayAgain).toBe(true);
+			expect(v.action).toBe('none');
+			expect(v.poll).toBe(true);
+			const text = `${v.title} ${v.lines.join(' ')}`;
+			expect(text).toMatch(/don’t pay again/);
+			expect(text).not.toMatch(/wasn’t completed/);
+			expect(text).not.toMatch(/new order/i);
+			// A dead end handed over never replaces it either.
+			expect(withOrderProblem(v, 'new_order')).toEqual(v);
+		}
+	});
+});
+
+describe('withOrderProblem: a dead end (lead time or price window passed)', () => {
+	const handed = (code: string) => orderProblemFor(new ApiError(409, { code })).next;
+
+	it('offers a new order instead of paying for LEAD_TIME and QUOTE_EXPIRED', () => {
+		for (const code of ['LEAD_TIME', 'QUOTE_EXPIRED']) {
+			for (const o of [
+				order(),
+				order({ payment: payment({ state: 'cancelled', checkout_url: null }) }),
+				order({ payment: payment({ state: 'failed', checkout_url: null }) })
+			]) {
+				const v = withOrderProblem(orderView(o), handed(code));
+				expect(v.action).toBe('new_order');
+				expect(v.actionLabel).toBe('Start a new order');
+				expect(v.actionLabel).not.toMatch(/pay/i);
+				expect(v.checkoutUrl).toBeUndefined();
+			}
+		}
+	});
+
+	it('offers a new order instead of confirming a free order', () => {
+		const free = order({ payment_requirement: 'none', total_minor: 0 });
+		expect(orderView(free).action).toBe('confirm_free');
+		expect(withOrderProblem(orderView(free), handed('QUOTE_EXPIRED')).action).toBe('new_order');
+	});
+
+	it('keeps the order’s own view without a dead-end problem', () => {
+		const v = orderView(order());
+		expect(withOrderProblem(v, undefined)).toEqual(v);
+		expect(withOrderProblem(v, handed('PAYMENT_IN_PROGRESS'))).toEqual(v);
+		expect(withOrderProblem(v, handed('SERVICE_UNAVAILABLE'))).toEqual(v);
+		expect(v.actionLabel).toBe('Continue to secure payment');
+	});
+
+	it('never replaces a payment under way or a decided order', () => {
+		// An open payment page that was never used is a payment under way (K03).
+		const open = orderView(order({ payment: payment() }));
+		expect(open.action).toBe('open_payment');
+		expect(open.actionLabel).toBe('Continue to secure payment');
+		expect(withOrderProblem(open, handed('LEAD_TIME'))).toEqual(open);
+		for (const o of [
+			order({ payment: payment({ state: 'pending' }) }),
+			order({ payment: payment({ state: 'unknown', checkout_url: null }) }),
+			order({ payment: payment({ state: 'succeeded', checkout_url: null }) }),
+			order({ lifecycle: 'confirmation_pending' }),
+			order({ lifecycle: 'confirmed' }),
+			order({ lifecycle: 'cancelled', cancel_reason: 'payment_not_completed' })
+		]) {
+			const v = orderView(o, { returned: o.payment?.state === 'pending' });
+			expect(withOrderProblem(v, handed('LEAD_TIME'))).toEqual(v);
+		}
+	});
+});
+
+describe('newOrderQuery', () => {
+	const item = (over: Partial<OrderItem>): OrderItem => ({
+		line_no: 1,
+		variant_id: '11111111-1111-4111-8111-111111111111',
+		lot_id: null,
+		cake_name: 'Honey',
+		flavour: 'Honey',
+		size_code: 'S',
+		quantity: 1,
+		unit_price_minor: 4500,
+		discount_minor: 0,
+		net_paid_minor: 4500,
+		...over
+	});
+
+	it('repeats each cake once per piece, ready cakes by lot, without the date', () => {
+		const q = newOrderQuery(
+			order({
+				items: [
+					item({ quantity: 2 }),
+					item({ line_no: 2, lot_id: '22222222-2222-4222-8222-222222222222' })
+				]
+			})
+		);
+		const p = new URLSearchParams(q);
+		expect(p.getAll('v')).toEqual([
+			'11111111-1111-4111-8111-111111111111',
+			'11111111-1111-4111-8111-111111111111'
+		]);
+		expect(p.getAll('lot')).toEqual(['22222222-2222-4222-8222-222222222222']);
+		expect(p.has('date')).toBe(false);
+	});
+
+	it('is undefined without cakes', () => {
+		expect(newOrderQuery(order({ items: [] }))).toBeUndefined();
+		expect(newOrderQuery(order({ items: null }))).toBeUndefined();
 	});
 });
 
