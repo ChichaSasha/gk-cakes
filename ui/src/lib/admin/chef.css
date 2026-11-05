@@ -1,0 +1,550 @@
+/* Chef workspace (GK-018 r03b2, Creator-approved 2026-11-05; draft PR #15
+   admin.css), scoped to .chef. GK-015 r12 tokens; system fonts as the live
+   checkout (the sketch's Geist files are not shipped). Only what the built
+   pages use is ported. */
+.chef {
+	--canvas: #f3f4f6;
+	--tile: #fbfbfc;
+	--glass: #ffffffb8;
+	--line: #dfe2e7;
+	--ink: #141416;
+	--muted: #5d626b;
+	--accent: #5b1a2e;
+	--focus: #2141c8;
+	--ok: #1f6b45;
+	--ok-bg: #e6f3ec;
+	--warn: #8a5300;
+	--warn-bg: #fdf1dc;
+	--bad: #a1252e;
+	--bad-bg: #fbe7e8;
+	--info: #334a7d;
+	--info-bg: #e8edf7;
+	--radius: 18px;
+	--shadow: 0 1px 2px #1414160d, 0 8px 24px #1414160a;
+	--sans: Geist, system-ui, -apple-system, 'Segoe UI', sans-serif;
+	--mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+	min-height: 100vh;
+	background: var(--canvas);
+	color: var(--ink);
+	font: 15px/1.5 var(--sans);
+}
+.chef *,
+.chef *::before,
+.chef *::after {
+	box-sizing: border-box;
+}
+.chef a {
+	color: inherit;
+}
+.chef :focus-visible {
+	outline: 3px solid var(--focus);
+	outline-offset: 2px;
+	border-radius: 8px;
+}
+.chef .skip {
+	position: absolute;
+	left: -999px;
+	top: 8px;
+	z-index: 50;
+	padding: 8px 12px;
+	border-radius: 10px;
+	background: #fff;
+}
+.chef .skip:focus {
+	left: 8px;
+}
+.chef .icon {
+	flex: none;
+	width: 20px;
+	height: 20px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.7;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+.chef .layout {
+	display: grid;
+	grid-template-columns: 248px 1fr;
+	min-height: 100vh;
+}
+.chef .sidebar {
+	position: sticky;
+	top: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 18px;
+	height: 100vh;
+	padding: 20px 14px;
+	border-right: 1px solid var(--line);
+	background: var(--glass);
+	-webkit-backdrop-filter: blur(22px) saturate(1.6);
+	backdrop-filter: blur(22px) saturate(1.6);
+}
+.chef .brand {
+	display: flex;
+	gap: 10px;
+	align-items: center;
+	padding: 4px 8px;
+	text-decoration: none;
+}
+.chef .brand img {
+	object-fit: contain;
+}
+.chef .brand strong {
+	display: block;
+	font-size: 15px;
+}
+.chef .brand small,
+.chef .who small {
+	display: block;
+	color: var(--muted);
+	font-size: 12px;
+}
+.chef .sidebar ul {
+	display: grid;
+	gap: 2px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.chef .sidebar a,
+.chef .nav-later {
+	display: flex;
+	gap: 10px;
+	align-items: center;
+	padding: 9px 10px;
+	border-radius: 12px;
+	font-weight: 500;
+	text-decoration: none;
+}
+.chef .sidebar a:hover {
+	background: #ffffffd9;
+}
+.chef .sidebar a[aria-current] {
+	background: #fff;
+	box-shadow: var(--shadow);
+	color: var(--accent);
+}
+.chef .nav-later {
+	color: #6b7079;
+	cursor: default;
+}
+.chef .nav-later small {
+	margin-left: auto;
+	padding: 0 7px;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	font-size: 11px;
+}
+.chef .who {
+	display: flex;
+	gap: 10px;
+	align-items: center;
+	margin-top: auto;
+	padding: 8px;
+}
+.chef .avatar {
+	display: grid;
+	place-items: center;
+	width: 34px;
+	height: 34px;
+	border-radius: 50%;
+	background: var(--accent);
+	color: #fff;
+	font-weight: 600;
+}
+.chef .main {
+	width: 100%;
+	max-width: 1240px;
+	padding: 28px clamp(16px, 3vw, 40px) 64px;
+	outline: none;
+}
+.chef .page-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-end;
+	gap: 16px;
+	margin: 0 0 20px;
+}
+.chef .eyebrow {
+	margin: 0 0 4px;
+	color: var(--muted);
+	font: 500 12px/1.4 var(--mono);
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+.chef h1 {
+	margin: 0;
+	font-size: clamp(26px, 3vw, 34px);
+	font-weight: 600;
+	line-height: 1.15;
+	letter-spacing: -0.02em;
+}
+.chef .muted {
+	color: var(--muted);
+}
+.chef .small {
+	font-size: 13px;
+}
+.chef .strong {
+	font-weight: 600;
+}
+.chef .block {
+	display: block;
+}
+.chef .bad-text {
+	color: var(--bad);
+}
+.chef .sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+	border: 0;
+}
+.chef .card {
+	margin-bottom: 18px;
+	padding: 20px;
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	background: var(--tile);
+	box-shadow: var(--shadow);
+}
+.chef .btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	min-height: 40px;
+	padding: 8px 16px;
+	border: 1px solid #c9cdd3;
+	border-radius: 999px;
+	background: #fff;
+	color: var(--ink);
+	font: 500 14px var(--sans);
+	text-decoration: none;
+	white-space: nowrap;
+	cursor: pointer;
+}
+.chef .btn:hover {
+	border-color: #9aa0a8;
+}
+.chef .btn:disabled {
+	opacity: 0.65;
+	cursor: default;
+}
+.chef .btn-primary {
+	border-color: var(--ink);
+	background: var(--ink);
+	color: #fff;
+}
+.chef .btn-primary:hover {
+	background: #2a2b30;
+}
+.chef .banner {
+	display: flex;
+	gap: 12px;
+	align-items: flex-start;
+	margin: 0 0 14px;
+	padding: 14px 16px;
+	border-radius: 14px;
+}
+.chef .banner p {
+	margin: 0 0 8px;
+}
+.chef .banner p:last-child {
+	margin-bottom: 0;
+}
+.chef .banner-bad {
+	background: var(--bad-bg);
+	color: #6d1820;
+}
+.chef .field {
+	display: grid;
+	gap: 6px;
+	margin: 4px 0 8px;
+	font-size: 13px;
+	font-weight: 500;
+}
+.chef .field select,
+.chef .field input {
+	width: 100%;
+	min-height: 40px;
+	padding: 0 10px;
+	border: 1px solid #c9cdd3;
+	border-radius: 12px;
+	background: #fff;
+	color: var(--ink);
+	font: 14px var(--sans);
+}
+.chef fieldset {
+	min-width: 0;
+	margin: 0 0 10px;
+	padding: 0;
+	border: 0;
+}
+.chef .table-wrap {
+	position: relative;
+	margin: 10px 0;
+	overflow-x: auto;
+}
+.chef .table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 14px;
+}
+.chef .table th,
+.chef .table td {
+	padding: 9px 10px;
+	border-bottom: 1px solid var(--line);
+	text-align: left;
+	vertical-align: top;
+}
+.chef .table thead th {
+	color: var(--muted);
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+.chef .empty-row {
+	padding: 28px 10px !important;
+	color: var(--muted);
+	text-align: center;
+}
+.chef .filters {
+	display: grid;
+	grid-template-columns: minmax(220px, 2fr) minmax(150px, 1fr) minmax(150px, 1fr);
+	gap: 8px 14px;
+	align-items: end;
+}
+.chef .filters .chips {
+	grid-column: 1/-1;
+}
+.chef .search-box {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 0 10px;
+	border: 1px solid #c9cdd3;
+	border-radius: 12px;
+	background: #fff;
+}
+.chef .search-box input {
+	min-height: 38px;
+	padding: 0 !important;
+	border: 0 !important;
+	outline: none;
+}
+.chef .search-box:focus-within {
+	outline: 3px solid var(--focus);
+	outline-offset: 2px;
+}
+.chef .chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+.chef .filter-chip {
+	min-height: 34px;
+	padding: 4px 13px;
+	border: 1px solid #c9cdd3;
+	border-radius: 999px;
+	background: #fff;
+	color: var(--ink);
+	font: 500 13px var(--sans);
+	cursor: pointer;
+}
+.chef .filter-chip[aria-pressed='true'] {
+	border-color: var(--ink);
+	background: var(--ink);
+	color: #fff;
+}
+.chef .pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 4px 11px;
+	border-radius: 999px;
+	background: #eceef1;
+	color: #3c4048;
+	font-size: 12.5px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+.chef .pill-icon {
+	width: 14px;
+	height: 14px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 2.2;
+}
+.chef .pill-ready,
+.chef .pill-done {
+	background: var(--ok-bg);
+	color: var(--ok);
+}
+.chef .pill-making {
+	background: #f4e9ee;
+	color: var(--accent);
+}
+.chef .pill-preparing,
+.chef .pill-awaiting,
+.chef .pill-confirming {
+	background: var(--info-bg);
+	color: var(--info);
+}
+.chef .pill-agreement {
+	background: var(--warn-bg);
+	color: var(--warn);
+}
+.chef .pill-cancelled {
+	background: var(--bad-bg);
+	color: var(--bad);
+}
+.chef .pill-confirmed,
+.chef .pill-released,
+.chef .pill-cancelling {
+	background: #eceef1;
+	color: #3c4048;
+}
+.chef .order-id {
+	font: 500 13px var(--mono);
+}
+.chef .foot {
+	margin: 12px 0 0;
+}
+@media (max-width: 1080px) {
+	.chef .filters {
+		grid-template-columns: 1fr 1fr;
+	}
+	.chef .filters .search-field {
+		grid-column: 1/-1;
+	}
+}
+@media (max-width: 860px) {
+	.chef .layout {
+		grid-template-columns: 1fr;
+	}
+	.chef .sidebar {
+		position: sticky;
+		top: 0;
+		z-index: 20;
+		flex-direction: row;
+		align-items: center;
+		gap: 10px;
+		height: auto;
+		padding: 8px 12px;
+		border-right: 0;
+		border-bottom: 1px solid var(--line);
+		overflow-x: auto;
+	}
+	.chef .brand span,
+	.chef .nav-later,
+	.chef .who .avatar,
+	.chef .who strong {
+		display: none;
+	}
+	/* Sign out stays reachable on phones. */
+	.chef .who {
+		flex: none;
+		margin: 0;
+		padding: 0;
+	}
+	.chef .brand {
+		padding: 0;
+	}
+	.chef .sidebar nav {
+		flex: 1;
+	}
+	.chef .sidebar ul {
+		display: flex;
+		gap: 4px;
+	}
+	.chef .sidebar a {
+		padding: 8px 10px;
+		white-space: nowrap;
+	}
+	.chef .main {
+		padding: 18px 14px 56px;
+	}
+	.chef .page-head {
+		flex-direction: column;
+		align-items: flex-start;
+	}
+	.chef .filters {
+		grid-template-columns: 1fr;
+	}
+	.chef .pill {
+		max-width: 100%;
+		white-space: normal;
+	}
+	.chef .btn {
+		max-width: 100%;
+		text-align: center;
+		white-space: normal;
+	}
+	.chef .orders-table thead {
+		display: none;
+	}
+	.chef .orders-table,
+	.chef .orders-table tbody,
+	.chef .orders-table tr,
+	.chef .orders-table td {
+		display: block;
+		width: 100%;
+	}
+	.chef .orders-table tr {
+		margin-bottom: 8px;
+		padding: 6px 4px;
+		border: 1px solid var(--line);
+		border-radius: 14px;
+		background: #fff;
+	}
+	.chef .orders-table td {
+		display: grid;
+		grid-template-columns: 96px minmax(0, 1fr);
+		gap: 8px;
+		padding: 4px 10px;
+		border: 0;
+	}
+	.chef .orders-table td::before {
+		content: attr(data-label);
+		color: var(--muted);
+		font-size: 12px;
+	}
+	.chef .orders-table td.empty-row {
+		display: block;
+	}
+	.chef .orders-table td.empty-row::before {
+		content: none;
+	}
+}
+@media (prefers-reduced-transparency: reduce) {
+	.chef .sidebar {
+		-webkit-backdrop-filter: none;
+		backdrop-filter: none;
+		background: #fbfbfc;
+	}
+}
+@media (forced-colors: active) {
+	.chef .filter-chip[aria-pressed='true'],
+	.chef .sidebar a[aria-current] {
+		outline: 3px solid Highlight;
+	}
+}
+.chef .link-button {
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--muted);
+	font: inherit;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+	cursor: pointer;
+}

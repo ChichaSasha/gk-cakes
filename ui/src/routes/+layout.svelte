@@ -9,9 +9,11 @@
 	const shopPage = $derived(
 		page.route.id === '/' || (page.route.id?.startsWith('/(shop)') ?? false)
 	);
+	// So do the chef workspace pages (GK-018 r03b2).
+	const chefPage = $derived(page.route.id?.startsWith('/admin/orders') ?? false);
 </script>
 
-{#if !shopPage}
+{#if !shopPage && !chefPage}
 	<header>
 		<a class="brand" href={resolve('/')}>GK Cakes</a>
 		<nav aria-label="Account"><a href={resolve('/account')}>Your account</a></nav>
