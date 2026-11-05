@@ -49,7 +49,9 @@
 	const flavours = $derived(flavoursOf(all));
 	// Shown only once the catalogue sends cake colours (see catalog.ts colourOf).
 	const colours = $derived(coloursOf(all));
-	const shown = $derived(filterListings(all, { selection, flavour, colour, sort }));
+	// A chosen colour no cake has any more filters nothing.
+	const activeColour = $derived(colours.some((c) => c.code === colour) ? colour : 'all');
+	const shown = $derived(filterListings(all, { selection, flavour, colour: activeColour, sort }));
 
 	function keepSelectionInUrl() {
 		const url = new URL(page.url.href);

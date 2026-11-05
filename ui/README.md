@@ -253,15 +253,18 @@ shows "Try again", never a crash, and a cake that is not active is a 404 with
 - **Colour filter** (approved sketch): a Colour select on the shop, shown only
   when at least one cake has a colour, filtering by its code; "Clear filters"
   resets it. Each cake has at most one main colour, read by `colourOf` in
-  `src/lib/shop/catalog.ts` from `"colour": {"code": "pink", "label": "Pink"}`
-  or `null` on each cake (code `^[a-z0-9][a-z0-9-]{0,39}$`, label 1–40
-  characters; anything else counts as no colour).
+  `src/lib/shop/catalog.ts` from
+  `"colour": {"code": "pink", "label": "Pink", "position": 10}` or `null` on
+  each cake (code `^[a-z0-9][a-z0-9-]{0,39}$` other than `all`, label 1–40
+  Unicode code points without surrounding whitespace, position an integer
+  0–10000; anything else counts as no colour). Colours are listed by position,
+  then label.
 - **Not built yet:** favourites, the custom request, reorder and the account
   pages (GK-016 r02).
 
 ### TODO (GK-028)
 
-- **TODO — cake photos.** The shop is live with labelled "Photo coming soon"
+- **TODO — cake photos.** The shop launches with labelled "Photo coming soon"
   placeholders (Sasha's decision, 2026-11-05) because the public catalogue has
   no images yet. Done when `GET /api/v1/cakes` and `/cakes/{id}` send each
   cake's approved photo (K01 images: image revision, url, alt, width, height;

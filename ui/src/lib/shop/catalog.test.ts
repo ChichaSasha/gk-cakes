@@ -141,47 +141,70 @@ describe('filterListings', () => {
 });
 
 describe('cake colour (Colour filter)', () => {
-	const withColour = (id: string, colour: unknown) =>
-		listing({ ...cake({ id }), colour } as Parameters<typeof listing>[0], []);
+	const pink = { code: 'pink', label: 'Pink', position: 10 };
+	const silver = { code: 'silver', label: 'Silver', position: 20 };
+	const withColour = (
+		id: string,
+		colour: unknown,
+		over: Partial<Parameters<typeof cake>[0]> = {}
+	) => listing({ ...cake({ id, ...over }), colour } as Parameters<typeof listing>[0], []);
 
-	it('reads only an exact {code, label} colour; anything else is no colour', () => {
+	it('reads only an exact {code, label, position} colour; anything else is no colour', () => {
 		expect(colourOf(cake())).toBeNull();
-		expect(colourOf({ ...cake(), colour: { code: 'pink', label: ' Pink ' } } as never)).toEqual({
-			code: 'pink',
-			label: 'Pink'
+		expect(colourOf({ ...cake(), colour: pink } as never)).toEqual(pink);
+		expect(colourOf({ ...cake(), colour: { ...pink, label: '🌸'.repeat(40) } } as never)).toEqual({
+			...pink,
+			label: '🌸'.repeat(40)
 		});
 		for (const bad of [
 			null,
 			'pink',
-			{ code: 'pink' },
-			{ code: 'Pink!', label: 'Pink' },
-			{ code: 'pink', label: '   ' },
-			{ code: 'pink', label: 'x'.repeat(41) },
-			{ code: 7, label: 'Pink' }
+			{ code: 'pink', label: 'Pink' },
+			{ ...pink, code: 'Pink!' },
+			{ ...pink, code: 'all' },
+			{ ...pink, code: 7 },
+			{ ...pink, label: '' },
+			{ ...pink, label: ' Pink' },
+			{ ...pink, label: 'x'.repeat(41) },
+			{ ...pink, position: 1.5 },
+			{ ...pink, position: -1 },
+			{ ...pink, position: '10' }
 		]) {
 			expect(colourOf({ ...cake(), colour: bad } as never)).toBeNull();
 		}
 	});
 
-	it('lists each colour once in first-seen order and filters by its code', () => {
+	it("lists each colour once in the chef's order and filters by its code", () => {
 		const all = [
-			withColour('a', { code: 'pink', label: 'Pink' }),
+			withColour('a', silver),
 			withColour('b', null),
-			withColour('c', { code: 'silver', label: 'Silver' }),
-			withColour('d', { code: 'pink', label: 'Pink' })
+			withColour('c', pink),
+			withColour('d', silver),
+			withColour('e', { code: 'blush', label: 'Blush', position: 10 })
 		];
-		expect(coloursOf(all)).toEqual([
-			{ code: 'pink', label: 'Pink' },
-			{ code: 'silver', label: 'Silver' }
-		]);
+		expect(coloursOf(all)).toEqual([{ code: 'blush', label: 'Blush', position: 10 }, pink, silver]);
 		const ids = (colour: string) =>
 			filterListings(all, { selection: 'all', flavour: 'all', colour, sort: 'featured' }).map(
 				(l) => l.id
 			);
-		expect(ids('all')).toEqual(['a', 'b', 'c', 'd']);
-		expect(ids('pink')).toEqual(['a', 'd']);
-		expect(ids('silver')).toEqual(['c']);
+		expect(ids('all')).toEqual(['a', 'b', 'c', 'd', 'e']);
+		expect(ids('silver')).toEqual(['a', 'd']);
+		expect(ids('pink')).toEqual(['c']);
 		expect(ids('red')).toEqual([]);
+	});
+
+	it('combines colour with selection and flavour', () => {
+		const all = [
+			withColour('made', pink),
+			withColour('off', pink, { variants: [variant({ purchasable: false, flavour: 'Vanilla' })] }),
+			withColour('silver', silver)
+		];
+		const ids = (selection: 'all' | 'orderable' | 'unavailable', flavour: string) =>
+			filterListings(all, { selection, flavour, colour: 'pink', sort: 'name' }).map((l) => l.id);
+		expect(ids('all', 'all')).toEqual(['made', 'off']);
+		expect(ids('orderable', 'all')).toEqual(['made']);
+		expect(ids('unavailable', 'all')).toEqual(['off']);
+		expect(ids('all', 'Vanilla')).toEqual(['off']);
 	});
 
 	it('has no colours while the catalogue sends none (the filter stays hidden)', () => {

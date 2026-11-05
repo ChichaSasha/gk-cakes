@@ -69,10 +69,12 @@ export function cakeOptions(cake: Cake, ready: ReadyCake[]): CakeOption[] {
 
 export type ListingStatus = 'made' | 'ready' | 'unavailable';
 
-/** A cake's main colour, as the chef labels it ("Pink", "Silver"). */
+/** A cake's main colour, as the chef labels and orders it ("Pink", "Silver"). */
 export interface CakeColour {
 	code: string;
 	label: string;
+	/** The chef's order of colours in the filter (lowest first). */
+	position: number;
 }
 
 const COLOUR_CODE = /^[a-z0-9][a-z0-9-]{0,39}$/;
@@ -80,19 +82,25 @@ const COLOUR_CODE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 /**
  * The cake's colour for the shop's Colour filter (approved GK-016 r01c
  * sketch). TODO(GK-028 colour filter): the public catalogue does not send a
- * colour yet; the proposed API field is `"colour": {"code", "label"} | null`
- * on each cake of GET /api/v1/cakes and /cakes/{id} (ui/README "Discovery
- * pages"). Until then every cake reads null and the filter stays hidden.
- * Anything that is not exactly that shape is ignored.
+ * colour yet; the proposed API field is
+ * `"colour": {"code", "label", "position"} | null` on each cake of
+ * GET /api/v1/cakes and /cakes/{id} (ui/README "Discovery pages"). Until then
+ * every cake reads null and the filter stays hidden. Anything that is not
+ * exactly that shape is ignored: code a slug other than "all" (the filter's
+ * "All colours" value), label 1–40 Unicode code points without surrounding
+ * whitespace, position an integer 0–10000.
  */
 export function colourOf(cake: Cake): CakeColour | null {
 	const c: unknown = (cake as Cake & { colour?: unknown }).colour;
 	if (typeof c !== 'object' || c === null) return null;
-	const { code, label } = c as Record<string, unknown>;
-	if (typeof code !== 'string' || typeof label !== 'string') return null;
-	const name = label.trim();
-	if (!COLOUR_CODE.test(code) || name.length === 0 || name.length > 40) return null;
-	return { code, label: name };
+	const { code, label, position } = c as Record<string, unknown>;
+	if (typeof code !== 'string' || !COLOUR_CODE.test(code) || code === 'all') return null;
+	if (typeof label !== 'string' || label !== label.trim()) return null;
+	const points = [...label].length;
+	if (points < 1 || points > 40) return null;
+	if (typeof position !== 'number' || !Number.isInteger(position)) return null;
+	if (position < 0 || position > 10000) return null;
+	return { code, label, position };
 }
 
 /** What a shop card shows for one listing. */
@@ -175,7 +183,7 @@ export function flavoursOf(all: Listing[]): string[] {
 	return [...new Set(all.flatMap((l) => l.flavours))];
 }
 
-/** Every colour the cakes have, in first-seen order (one entry per code). */
+/** Every colour the cakes have, once per code, in the chef's order (then by label). */
 export function coloursOf(all: Listing[]): CakeColour[] {
 	const codes = new Set<string>();
 	const out: CakeColour[] = [];
@@ -185,7 +193,7 @@ export function coloursOf(all: Listing[]): CakeColour[] {
 			out.push(l.colour);
 		}
 	}
-	return out;
+	return out.sort((a, b) => a.position - b.position || a.label.localeCompare(b.label, 'en-GB'));
 }
 
 /** "7–10 servings". */

@@ -4,7 +4,7 @@
 	// a labelled placeholder instead of guessing a photo for a listing. In a
 	// card or bag row the placeholder is decorative (the link names the cake).
 	//
-	// TODO(GK-028 photos): the shop went live with these placeholders by
+	// TODO(GK-028 photos): the shop launches with these placeholders by
 	// Sasha's decision (2026-11-05). Replace them with the approved photo once
 	// GET /api/v1/cakes and /cakes/{id} send it (K01 images; storage is
 	// SETUP.md provider row 04; owner photos in docs/creator/GK-002): render
