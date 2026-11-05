@@ -92,8 +92,9 @@ GK-021, which consumes its resource evidence.
    Store `DATABASE_URL` in backend environment; migration URL in CI migration environment.
 3. Configure managed identity with [redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls):
    at GK-021, use exact actual site/login callback and local dev URL from GK-020 and the selected identity implementation, no wildcard
-   production callback. Public `AUTH_URL`/publishable key are deliberate; issuer,
-   audience, JWKS trusted URL and signing algorithm are backend config. Creator
+   production callback. The API's `AUTH_ISSUER` and `AUTH_PUBLISHABLE_KEY` are public
+   by design (audience `authenticated`, ES256 keys from the issuer's JWKS are fixed in
+   code; see api/README.md "Identity"); staging values are set. Creator
    identifies first manager by verified account subject in GK-010; Agent GK-021 records local role,
    never user-editable metadata. Customer/provider account recovery remains personal.
 4. [Storage access policy](https://supabase.com/docs/guides/storage/security/access-control):
@@ -174,6 +175,126 @@ The steps below are the integration runbook, not evidence those tests have run.
    actionable; do not repeatedly send or call “accepted” inbox receipt. Rotate
    sender/API/webhook keys by environment; revoke unused grants. No marketing
    campaign or real customer message is authorized by this setup task.
+
+**GK-021 staging identity configuration (applied by the agent on 2026-11-04 with the
+Creator's authorization; review in the morning).** Supabase sandbox `flbgymxjelzexgoxrcss`
+(staging and local development) → Authentication:
+
+- Site URL `https://staging.gkcake.com`; redirect allowlist exactly
+  `https://staging.gkcake.com/auth/callback` and `http://localhost:5173/auth/callback`
+  (no wildcard). Verified: foreign, lookalike, plain-http and production hosts fall back
+  to the site URL; Supabase also accepts any path on the site URL's own host.
+- Self sign-up off on staging until the account designs (GK-016) are approved; accounts
+  are created by invitation (Authentication → Users → Invite) or by the admin API. The
+  invitation email links to `/auth/callback?token_hash=...&type=invite` (template changed
+  from the default implicit-flow link, which would put tokens in the URL). Minimum
+  password length 10; email links expire after 30 minutes.
+- Auth emails through Resend SMTP as `GK Cakes <orders@gkcake.com>` (send-only key
+  `gk-supabase-auth-staging`, Keychain `gk-staging-supabase-SMTP_PASSWORD`; copy it to
+  Bitwarden), at most 10 per hour. Supabase SMTP cannot set Reply-To
+  (`gk.cake.london@gmail.com`); a send-email hook through the API would.
+- Railway: `AUTH_ISSUER`, `AUTH_PUBLISHABLE_KEY` on gk-api-staging and `PUBLIC_API_URL`,
+  `PUBLIC_AUTH_URL`, `PUBLIC_AUTH_PUBLISHABLE_KEY` on gk-ui-staging (public values).
+- First sandbox manager `22ac712e-...` holds `chef` (Identity admin run 41767465184);
+  the sandbox test account `gk-test-staff@gkcake.com` holds `fulfillment`.
+- Production: a separate production identity project and its exact callbacks
+  (`https://gkcake.com/auth/callback`) come with the first production release (GK-036).
+- For Creator review: (1) the session (access and refresh tokens) persists in the
+  browser's localStorage, the provider's store, behind a strict Content Security Policy;
+  (2) Supabase accepts any path on the site URL's host as a redirect, not only the
+  allowlisted callback; (3) staging and local development share this sandbox's
+  allowlist; (4) auth emails have no Reply-To until a send-email hook exists.
+
+**GK-016 B1 Google sign-in (Owner: Creator; the agent finishes the Supabase side).**
+Requested in GK-016 B1; not set up yet. The Creator creates the Google OAuth client
+(Google requires the account owner); nothing is registered by the agent. Secret values
+go only into Keychain and Bitwarden, never chat, Git or Trello.
+
+1. [Google Cloud console](https://console.cloud.google.com/), signed in with the GK Cakes
+   Google account (MFA on): create or select one project for GK Cakes and note its
+   project ID for the card.
+2. Google Auth Platform → Branding (the OAuth consent screen): app name `GK Cakes`, user
+   support email `gk.cake.london@gmail.com` (or another mailbox the Creator controls),
+   developer contact email, authorized domain `gkcake.com`. No logo for now (an uploaded
+   logo needs Google's brand verification). Audience: External. Data access: only
+   `openid`, `.../auth/userinfo.email` and `.../auth/userinfo.profile` (non-sensitive;
+   nothing else). Publishing status: keep **Testing** for staging and add the test users'
+   Google addresses (only they can sign in); switch to **In production** only before
+   customers sign in with Google, once the home page and privacy policy on `gkcake.com`
+   are public (GK-005 wording). Record the chosen status on the card.
+3. Google Auth Platform → Clients → Create client → **Web application**, name
+   `GK Cakes staging (Supabase)`. Authorized JavaScript origins exactly
+   `https://staging.gkcake.com` and `https://gkcake.com`. Authorized redirect URI exactly
+   `https://flbgymxjelzexgoxrcss.supabase.co/auth/v1/callback` (the sandbox project used
+   by staging; no other URI). The production Supabase project's callback is added with
+   the first production release (GK-036), not now.
+4. Hand the client ID and secret to the agent through Keychain (each command prompts for
+   the value, so it stays out of the shell history), then copy both to Bitwarden
+   (`GK Cakes Staging — Google OAuth client`):
+   `security add-generic-password -a "$USER" -s gk-staging-supabase-GOOGLE_CLIENT_ID -w`
+   and
+   `security add-generic-password -a "$USER" -s gk-staging-supabase-GOOGLE_CLIENT_SECRET -w`.
+5. Tell the agent the Keychain items exist. With the Creator's go-ahead the agent enables
+   the Google provider in the Supabase sandbox (Authentication → Sign In / Providers →
+   Google) with these values, checks that the callback URL Supabase shows there equals
+   step 3, and verifies a staging sign-in with a test user. Staging self sign-up stays
+   off (above), so a Google account without an existing or invited GK Cakes account is
+   refused until the account designs (GK-016) are approved.
+
+Evidence for the card: project ID, client name, publishing status, the exact origins and
+redirect URI, and the Keychain item names (never the values).
+
+**GK-034 staging database backups (applied by the agent on 2026-11-04 with the Creator's
+authorization; review in the morning).** Supabase login `gk_backup_staging` (member of
+`gk_backup` only, read only); B2 key `gk-backup-staging` (bucket
+`gk-cakes-sandbox-backups-flbgymxjelzexgoxrcss`, prefix `database/`, list/read/write, no
+delete); a backup encryption key; all four as GitHub `staging` environment secrets
+(`STAGING_BACKUP_*`) with copies in the Creator's Keychain for Bitwarden. B2 lifecycle rule on
+`database/` only: hide after 30 days, delete one day later. Turn on with the repository
+variable `STAGING_BACKUP_ENABLED=true` only after the staging deploy that applies
+migration 0008 succeeds (the backup login reads the migration history from then on). Restores into
+`gk-cakes-restore-test` (GK-014) use a `postgres` password the agent resets through the Management
+API at restore time (Creator decision E1), kept in the Creator's Keychain as
+`gk-restore-test-DATABASE_PASSWORD` for Bitwarden; first verified 2026-11-05 (runbook and results:
+[api/README.md](api/README.md#restoring-into-the-isolated-restore-project-gk-034-milestone-b)).
+
+**GK-024 staging email setup (Owner: Creator; agent guides each step).** Needed
+before the staging worker sends and the webhook records evidence. Secret values
+go only into Bitwarden and sealed Railway variables, never chat, Git or Trello.
+
+1. Supabase sandbox, SQL editor: create the worker login and save its password
+   in Bitwarden (`GK Cakes Sandbox — gk_worker_staging`):
+   `CREATE ROLE gk_worker_staging LOGIN PASSWORD '<generated>' IN ROLE gk_worker;`
+   then run the two membership checks in [api/README.md](api/README.md#database-roles).
+   Its `DATABASE_URL` matches the API's (session pooler, `sslmode=verify-full`,
+   `sslrootcert=/etc/gk/supabase-root-2021.crt`) with this user.
+2. B2 key without delete, with the B2 CLI (the web console presets include delete):
+   `b2 key create --bucket gk-cakes-sandbox-backups-flbgymxjelzexgoxrcss --name-prefix recovery/ gk-recovery-staging listFiles,readFiles,writeFiles`.
+   Save the key ID and application key in Bitwarden.
+3. Recovery encryption key: `printf 'k1:%s\n' "$(openssl rand -base64 32)"`; save
+   it in Bitwarden (envelopes are unreadable without it).
+4. Railway, staging environment: new service `gk-worker-staging` from the public
+   image `ghcr.io/chichasasha/gk-cakes-api` (any current tag; the pipeline pins
+   the digest). Start command `/usr/local/bin/gk-worker`, no public domain, no
+   health check, one replica; keep the default restart policy (On Failure) and
+   draining time (the deploy fails if the worker restarts within 90 seconds of
+   starting). Sealed variables: `APP_ENV=staging`,
+   `DATABASE_URL` (step 1), `EMAIL_API_KEY` (the existing sandbox sending key),
+   `RECOVERY_B2_KEY_ID`, `RECOVERY_B2_KEY` (step 2), `RECOVERY_ENCRYPTION_KEYS`
+   (step 3). Deploy the staged changes; note the service ID.
+5. Resend → Webhooks → add endpoint `https://staging-api.gkcake.com/webhooks/email`
+   with `email.sent`, `email.delivered`, `email.delivery_delayed`,
+   `email.complained`, `email.bounced`, `email.failed`, `email.suppressed` (not
+   opens or clicks). Put its signing secret in the `gk-api-staging` service as
+   sealed `EMAIL_WEBHOOK_SECRET` and deploy the staged change; save it in Bitwarden.
+6. GitHub: `staging` environment variable `RAILWAY_WORKER_SERVICE_ID` (the worker
+   service, never the API's or UI's), repository variable
+   `STAGING_WORKER_ENABLED=true`. The worker is then deployed by the next
+   staging deploy, which runs on a merge to `main` (an older Staging run is
+   skipped once its commit is no longer the head of `main`). With Sasha's
+   go-ahead the agent runs the **Email proof** workflow (AC3); the
+   business-mailbox option sends one email that Sasha opens to check the
+   `GK Cakes` display name.
 
 ### Hosting, DNS, CI and monitoring — Railway Pro / GK-012–014,034
 

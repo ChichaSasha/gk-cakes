@@ -14,14 +14,23 @@
 #      that applies nothing must change nothing. The deployed API stays ready.
 #   3. candidate API ready on the result.
 #   4. deployed gk-migrate again (the other direction): succeeds and changes
-#      nothing.
+#      nothing (compared with the data after step 3: a ready API may have
+#      written its notice settings, below).
 #   5. both API builds allow the UI origin and refuse a foreign one (CORS).
 #   6. both gk-worker builds claim and release a job, freshly enqueued through
 #      business.job_enqueue on the result, via job_claim / job_release without
 #      errors, leaving it in retry without a lease.
 #   7. both UI builds serve /healthz and the home page.
-# API readiness is a database ping, and the UI calls no API endpoint yet: features
-# that add UI->API calls or new runtime database use extend these checks.
+# API readiness is a database ping (plus the login check outside local) and,
+# from migration 0030, recording the API's notice settings
+# (business.notice_settings_record: one row in business.notice_settings,
+# written only when it changes). So the first candidate API built with 0030
+# legitimately writes that row while becoming ready in step 3; step 3 checks
+# the row and step 4 compares against the data taken after it. The UI calls no
+# API endpoint yet: features that add UI->API calls or new runtime database
+# use extend these checks. The workers run without provider credentials and
+# the APIs without a webhook secret, so email dispatch and /webhooks/email
+# stay off; their gateway functions are covered by the integration suite only.
 #   compat-matrix.sh   (env: DEPLOYED_API CANDIDATE_API DEPLOYED_UI CANDIDATE_UI, image@sha256 refs)
 set -euo pipefail
 
@@ -272,11 +281,19 @@ pass "deployed API still ready after candidate migrations"
 # 3. Candidate API on the result.
 start_api candidate "$CANDIDATE_API" "$api_port_candidate"
 wait_200 "http://127.0.0.1:$api_port_candidate/readyz" '"status":"ready"' "candidate API on the resulting schema"
+# Readiness may have recorded the notice settings (migration 0030); a build
+# whose schema has that table must have its row now. Later steps compare
+# against the data as it is now, ready API included.
+if [[ "$(psql_q <<<"SELECT to_regclass('business.notice_settings') IS NOT NULL;")" == t ]]; then
+  settings=$(psql_q <<<"SELECT count(*) || '/' || coalesce(max(environment || ' ' || ui_origin), '') FROM business.notice_settings;")
+  [[ "$settings" == "1/test $ui_origin" ]] || fail "candidate API readiness left notice settings '$settings', want '1/test $ui_origin'"
+fi
+data_ready=$(data_snapshot)
 pass "candidate API ready on the resulting schema"
 
 # 4. The other direction.
 out=$(migrate_with "$DEPLOYED_API") || fail "deployed gk-migrate after candidate migrations: $out"
-[[ "$(data_snapshot)" == "$data_after" ]] || fail "deployed gk-migrate after candidate migrations changed data or history"
+[[ "$(data_snapshot)" == "$data_ready" ]] || fail "deployed gk-migrate after candidate migrations changed data or history"
 schema_snapshot >"$work/schema-again"
 cmp -s "$work/schema-after" "$work/schema-again" || fail "deployed gk-migrate after candidate migrations changed the schema"
 pass "deployed gk-migrate after candidate migrations changed nothing"

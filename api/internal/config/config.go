@@ -4,10 +4,12 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -75,7 +77,54 @@ type API struct {
 	UIOrigin        string
 	ShutdownTimeout time.Duration
 	Providers       Providers
+	Auth            Auth
+	// CheckoutEnabled serves POST /api/v1/checkouts (CHECKOUT_ENABLED=true).
+	// Off by default until payment and the release of unpaid holds exist
+	// (GK-025 A3): without them a checkout's holds would never be released.
+	CheckoutEnabled bool
+	// Stripe configures payment collection (STRIPE_ACCOUNT_ID) and the
+	// signed webhook (STRIPE_WEBHOOK_SECRET), both optional.
+	Stripe StripeAPI
+	// EmailRecipientAllowlist is EMAIL_RECIPIENT_ALLOWLIST (required in
+	// staging, refused in production). The API records it with the notice
+	// settings: outside production a notice to any other recipient is never
+	// queued (migration 0030), whichever worker build runs.
+	EmailRecipientAllowlist []string
 }
+
+// StripeAPI is the API's Stripe configuration: the account collections
+// are made in (and whose events the webhook stores), and the webhook
+// signing secret. The webhook needs the account.
+type StripeAPI struct {
+	AccountID     string
+	WebhookSecret Secret
+}
+
+// StripeWorker is the worker's Stripe configuration: the secret key (a
+// test-mode key outside production, a live one only in production) and the
+// account it belongs to. Both or neither; without them payment jobs wait.
+type StripeWorker struct {
+	SecretKey Secret
+	AccountID string
+}
+
+// Enabled reports whether the worker may call Stripe.
+func (s StripeWorker) Enabled() bool { return s.SecretKey.IsSet() }
+
+// Auth configures verification of the identity provider's access tokens
+// (Supabase, contracts K00). Both values are public. Required in staging and
+// production; elsewhere both or neither are set, and without them the API
+// serves no authenticated route.
+type Auth struct {
+	// Issuer is the exact token issuer, e.g. https://<ref>.supabase.co/auth/v1;
+	// the signing keys and the session check are read from it.
+	Issuer string
+	// PublishableKey is the provider's public client key (sb_publishable_...).
+	PublishableKey string
+}
+
+// Enabled reports whether token verification is configured.
+func (a Auth) Enabled() bool { return a.Issuer != "" }
 
 // Worker is the configuration of the maintenance/job process. It uses its own
 // DATABASE_URL value, provisioned with the worker credential.
@@ -83,7 +132,30 @@ type Worker struct {
 	Env             Env
 	DatabaseURL     Secret
 	ShutdownTimeout time.Duration
+	Email           EmailDispatch
+	Stripe          StripeWorker
+	// EmailRecipientAllowlist is EMAIL_RECIPIENT_ALLOWLIST: lower-case
+	// exact addresses and "@domain" entries. Outside production, when set,
+	// a notice to any other recipient is suppressed by the dispatcher (the
+	// second layer after the database) and never sent. Required in staging,
+	// refused in production, optional elsewhere.
+	EmailRecipientAllowlist []string
 }
+
+// EmailDispatch configures the worker's email engine: the Resend sending key
+// and the independent recovery journal every dispatch is written to first
+// (a B2 application key restricted to recovery/ and the envelope encryption
+// keys). Required in staging and production; elsewhere all or none are set,
+// and without them the worker dispatches no email.
+type EmailDispatch struct {
+	APIKey         Secret
+	B2KeyID        string
+	B2Key          Secret
+	EncryptionKeys Secret
+}
+
+// Enabled reports whether email dispatch is configured.
+func (e EmailDispatch) Enabled() bool { return e.APIKey.IsSet() }
 
 // Migrate is the configuration of the migration command. It never falls back
 // to the runtime DATABASE_URL.
@@ -107,9 +179,16 @@ func LoadAPI(getenv func(string) string) (API, error) {
 		PaymentSecret:        l.paymentSecret("PAYMENT_SECRET", cfg.Env),
 		PaymentWebhookSecret: l.optionalSecret("PAYMENT_WEBHOOK_SECRET"),
 		EmailAPIKey:          l.optionalSecret("EMAIL_API_KEY"),
-		EmailWebhookSecret:   l.optionalSecret("EMAIL_WEBHOOK_SECRET"),
+		EmailWebhookSecret:   l.webhookSecret("EMAIL_WEBHOOK_SECRET"),
 		StorageWriteKey:      l.optionalSecret("STORAGE_WRITE_KEY"),
 	}
+	cfg.Auth = l.auth(cfg.Env)
+	cfg.CheckoutEnabled = l.boolean("CHECKOUT_ENABLED")
+	cfg.Stripe = StripeAPI{AccountID: l.stripeAccount("STRIPE_ACCOUNT_ID"), WebhookSecret: l.stripeWebhookSecret("STRIPE_WEBHOOK_SECRET")}
+	if cfg.Stripe.WebhookSecret.IsSet() && cfg.Stripe.AccountID == "" {
+		l.fail("STRIPE_WEBHOOK_SECRET needs STRIPE_ACCOUNT_ID")
+	}
+	cfg.EmailRecipientAllowlist = l.recipientAllowlist(cfg.Env)
 	return cfg, l.err()
 }
 
@@ -122,7 +201,208 @@ func LoadWorker(getenv func(string) string) (Worker, error) {
 		ShutdownTimeout: l.duration("SHUTDOWN_TIMEOUT", defaultShutdownTimeout),
 	}
 	cfg.DatabaseURL = l.databaseURL("DATABASE_URL", cfg.Env)
+	cfg.Email = l.emailDispatch(cfg.Env)
+	cfg.Stripe = StripeWorker{SecretKey: l.paymentSecret("STRIPE_SECRET_KEY", cfg.Env), AccountID: l.stripeAccount("STRIPE_ACCOUNT_ID")}
+	if cfg.Stripe.SecretKey.IsSet() != (cfg.Stripe.AccountID != "") {
+		l.fail("STRIPE_SECRET_KEY and STRIPE_ACCOUNT_ID must be set together")
+	}
+	cfg.EmailRecipientAllowlist = l.recipientAllowlist(cfg.Env)
 	return cfg, l.err()
+}
+
+// Allowlist entries: an exact address (local@domain, a conservative
+// character set with no wildcard look-alikes) or "@domain"; the domain
+// needs a dot. Compared lower-case.
+var (
+	allowlistAddress = regexp.MustCompile(`^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)+$`)
+	allowlistDomain  = regexp.MustCompile(`^@[a-z0-9-]+(\.[a-z0-9-]+)+$`)
+)
+
+// recipientAllowlist reads EMAIL_RECIPIENT_ALLOWLIST: comma-separated exact
+// addresses or "@domain" entries. Staging requires it (fails closed:
+// "@gkcake.com"); production must leave it unset (real customers are never
+// filtered there); elsewhere it is optional.
+func (l *loader) recipientAllowlist(env Env) []string {
+	raw := l.get("EMAIL_RECIPIENT_ALLOWLIST")
+	if raw == "" {
+		if env == EnvStaging {
+			l.fail("EMAIL_RECIPIENT_ALLOWLIST is required in staging (for example @gkcake.com)")
+		}
+		return nil
+	}
+	if env == EnvProduction {
+		l.fail("EMAIL_RECIPIENT_ALLOWLIST must be unset in production")
+		return nil
+	}
+	var out []string
+	for _, entry := range strings.Split(raw, ",") {
+		entry = strings.ToLower(strings.TrimSpace(entry))
+		if !allowlistAddress.MatchString(entry) && !allowlistDomain.MatchString(entry) {
+			l.fail("EMAIL_RECIPIENT_ALLOWLIST must list exact addresses or @domain entries, separated by commas")
+			return nil
+		}
+		out = append(out, entry)
+	}
+	if len(out) > 50 {
+		l.fail("EMAIL_RECIPIENT_ALLOWLIST must have at most 50 entries")
+		return nil
+	}
+	return out
+}
+
+var b2KeyIDPattern = regexp.MustCompile(`^[A-Za-z0-9]{1,64}$`)
+
+func (l *loader) emailDispatch(env Env) EmailDispatch {
+	e := EmailDispatch{
+		APIKey:         l.optionalSecret("EMAIL_API_KEY"),
+		B2KeyID:        l.get("RECOVERY_B2_KEY_ID"),
+		B2Key:          l.optionalSecret("RECOVERY_B2_KEY"),
+		EncryptionKeys: l.optionalSecret("RECOVERY_ENCRYPTION_KEYS"),
+	}
+	set := 0
+	for _, ok := range []bool{e.APIKey.IsSet(), e.B2KeyID != "", e.B2Key.IsSet(), e.EncryptionKeys.IsSet()} {
+		if ok {
+			set++
+		}
+	}
+	const names = "EMAIL_API_KEY, RECOVERY_B2_KEY_ID, RECOVERY_B2_KEY and RECOVERY_ENCRYPTION_KEYS"
+	switch {
+	case set < 4 && env.deployed():
+		l.fail("%s are required in %s", names, env)
+	case set > 0 && set < 4:
+		l.fail("%s must be set together", names)
+	}
+	if e.APIKey.IsSet() && !strings.HasPrefix(e.APIKey.value, "re_") {
+		l.fail("EMAIL_API_KEY must be a Resend API key")
+	}
+	if e.B2KeyID != "" && !b2KeyIDPattern.MatchString(e.B2KeyID) {
+		l.fail("RECOVERY_B2_KEY_ID must be a B2 application key ID")
+	}
+	return e
+}
+
+// Backup is the configuration of the backup command (GK-034): the backup
+// login for dumps, or a disposable loopback database for restore checks, the
+// B2 key restricted to database/, and the backup encryption keys.
+type Backup struct {
+	Env            Env
+	DatabaseURL    Secret // BACKUP_DATABASE_URL, the gk_backup login (dump)
+	RestoreURL     Secret // RESTORE_DATABASE_URL, disposable and loopback (restore check)
+	B2KeyID        string
+	B2Key          Secret
+	EncryptionKeys Secret
+}
+
+// LoadBackup reads backup configuration; restore selects the restore check,
+// which needs RESTORE_DATABASE_URL instead of BACKUP_DATABASE_URL.
+func LoadBackup(getenv func(string) string, restore bool) (Backup, error) {
+	var l loader
+	l.getenv = getenv
+	cfg := Backup{
+		Env:            l.env(),
+		B2KeyID:        l.get("BACKUP_B2_KEY_ID"),
+		B2Key:          l.optionalSecret("BACKUP_B2_KEY"),
+		EncryptionKeys: l.optionalSecret("BACKUP_ENCRYPTION_KEYS"),
+	}
+	if restore {
+		cfg.RestoreURL = l.restoreURL("RESTORE_DATABASE_URL")
+		l.plainConnection("RESTORE_DATABASE_URL", cfg.RestoreURL)
+	} else {
+		cfg.DatabaseURL = l.databaseURL("BACKUP_DATABASE_URL", cfg.Env)
+		l.plainConnection("BACKUP_DATABASE_URL", cfg.DatabaseURL)
+	}
+	l.backupKeys(cfg)
+	return cfg, l.err()
+}
+
+func (l *loader) backupKeys(cfg Backup) {
+	switch {
+	case cfg.B2KeyID == "" || !cfg.B2Key.IsSet() || !cfg.EncryptionKeys.IsSet():
+		l.fail("BACKUP_B2_KEY_ID, BACKUP_B2_KEY and BACKUP_ENCRYPTION_KEYS are required")
+	case !b2KeyIDPattern.MatchString(cfg.B2KeyID):
+		l.fail("BACKUP_B2_KEY_ID must be a B2 application key ID")
+	}
+}
+
+// Restore is the configuration of gk-backup restore (GK-034): the backups
+// of APP_ENV are read with the backup key and restored into the isolated
+// restore database, reached with its migration credential.
+type Restore struct {
+	Backup
+	// TargetURL is RESTORE_TARGET_DATABASE_URL: the migration credential of
+	// the isolated restore database (same rules as MIGRATION_DATABASE_URL).
+	TargetURL Secret
+	// Name is RESTORE_BACKUP, a backup's UTC stamp (yyyymmdd-hhmmssz);
+	// empty selects the newest complete backup.
+	Name string
+}
+
+var backupStampPattern = regexp.MustCompile(`^[0-9]{8}-[0-9]{6}z$`)
+
+// LoadRestore reads the restore configuration. Production backups cannot be
+// restored with it yet: the complete domain restore is GK-035's.
+func LoadRestore(getenv func(string) string) (Restore, error) {
+	var l loader
+	l.getenv = getenv
+	cfg := Restore{Backup: Backup{
+		Env:            l.env(),
+		B2KeyID:        l.get("BACKUP_B2_KEY_ID"),
+		B2Key:          l.optionalSecret("BACKUP_B2_KEY"),
+		EncryptionKeys: l.optionalSecret("BACKUP_ENCRYPTION_KEYS"),
+	}}
+	if cfg.Env == EnvProduction {
+		l.fail("gk-backup restore does not restore production backups yet (GK-035)")
+	}
+	cfg.TargetURL = l.databaseURL("RESTORE_TARGET_DATABASE_URL", cfg.Env)
+	l.plainConnection("RESTORE_TARGET_DATABASE_URL", cfg.TargetURL)
+	// The synthetic dispatch check derives its temporary login's URL from
+	// the target's userinfo (user:password@host).
+	if u, err := url.Parse(cfg.TargetURL.value); cfg.TargetURL.IsSet() && (err != nil || u.User == nil || u.User.Username() == "" || u.Query().Has("user")) {
+		l.fail("RESTORE_TARGET_DATABASE_URL must name its user in the URL (postgres://user:password@host/db), not in the query")
+	}
+	if cfg.Name = l.get("RESTORE_BACKUP"); cfg.Name != "" && !backupStampPattern.MatchString(cfg.Name) {
+		l.fail("RESTORE_BACKUP must be a backup time such as 20261105-023000z")
+	}
+	l.backupKeys(cfg.Backup)
+	return cfg, l.err()
+}
+
+// plainConnection refuses URL parameters that the PostgreSQL client tools
+// honour but this validation does not see (hostaddr, service, passfile), or
+// that would put the password on a command line (password).
+func (l *loader) plainConnection(name string, s Secret) {
+	if !s.IsSet() {
+		return
+	}
+	u, err := url.Parse(s.value)
+	if err != nil {
+		return
+	}
+	for _, p := range []string{"password", "hostaddr", "service", "passfile"} {
+		if u.Query().Has(p) {
+			l.fail("%s must not set %s in its query", name, p)
+		}
+	}
+}
+
+// restoreURL accepts only a loopback PostgreSQL database: restore checks
+// load a backup into a disposable database, never into a shared one.
+func (l *loader) restoreURL(name string) Secret {
+	raw := l.get(name)
+	if raw == "" {
+		l.fail("%s is required", name)
+		return Secret{}
+	}
+	parsed, err := pgconn.ParseConfig(raw)
+	if err != nil || (!strings.HasPrefix(raw, "postgres://") && !strings.HasPrefix(raw, "postgresql://")) {
+		l.fail("%s is not a valid PostgreSQL URL", name)
+		return Secret{}
+	}
+	if !isLoopback(parsed.Host) || strings.HasPrefix(parsed.Host, "/") || len(parsed.Fallbacks) > 0 {
+		l.fail("%s must be a disposable database on a loopback address", name)
+		return Secret{}
+	}
+	return Secret{value: raw}
 }
 
 // LoadMigrate reads migration configuration using getenv.
@@ -237,8 +517,14 @@ func (l *loader) databaseURL(name string, env Env) Secret {
 	return Secret{value: raw}
 }
 
+// originPattern is the form order notices link to (business.notice_settings,
+// migration 0030), compared lower-case: a DNS name or IPv4 address, an
+// optional port, at most 200 bytes.
+var originPattern = regexp.MustCompile(`^https?://[a-z0-9.-]+(:[0-9]{1,5})?$`)
+
 // origin validates an exact browser origin: scheme://host[:port], no wildcard,
-// path, query or fragment. Deployed environments require public HTTPS origins.
+// path, query or fragment, in the form order notices accept. Deployed
+// environments require public HTTPS origins.
 func (l *loader) origin(name string, env Env) string {
 	raw := l.get(name)
 	if raw == "" {
@@ -251,6 +537,10 @@ func (l *loader) origin(name string, env Env) string {
 		l.fail("%s must be an exact origin such as https://example.com", name)
 		return ""
 	}
+	if len(raw) > 200 || !originPattern.MatchString(strings.ToLower(raw)) {
+		l.fail("%s must be an origin with a plain host name and optional port, at most 200 characters", name)
+		return ""
+	}
 	if env.deployed() && (u.Scheme != "https" || isLoopback(u.Hostname())) {
 		l.fail("%s must be a public https origin in %s", name, env)
 		return ""
@@ -258,7 +548,94 @@ func (l *loader) origin(name string, env Env) string {
 	return raw
 }
 
+var publishableKey = regexp.MustCompile(`^sb_publishable_[A-Za-z0-9_-]{16,}$`)
+
+// auth validates the identity provider settings: an exact https issuer
+// ending in /auth/v1 (http only for a loopback provider outside deployed
+// environments) and a publishable key, never a secret one.
+func (l *loader) auth(env Env) Auth {
+	a := Auth{Issuer: l.get("AUTH_ISSUER"), PublishableKey: l.get("AUTH_PUBLISHABLE_KEY")}
+	switch {
+	case a.Issuer == "" && a.PublishableKey == "":
+		if env.deployed() {
+			l.fail("AUTH_ISSUER and AUTH_PUBLISHABLE_KEY are required in %s", env)
+		}
+		return Auth{}
+	case a.Issuer == "" || a.PublishableKey == "":
+		l.fail("AUTH_ISSUER and AUTH_PUBLISHABLE_KEY must be set together")
+		return Auth{}
+	}
+	u, err := url.Parse(a.Issuer)
+	switch {
+	case err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
+		u.Path != "/auth/v1" || (u.Scheme != "https" && u.Scheme != "http"):
+		l.fail("AUTH_ISSUER must be the provider's auth URL, such as https://<project>.supabase.co/auth/v1")
+		return Auth{}
+	case env.deployed() && (u.Scheme != "https" || isLoopback(u.Hostname())):
+		l.fail("AUTH_ISSUER must be a public https URL in %s", env)
+		return Auth{}
+	case u.Scheme != "https" && !isLoopback(u.Hostname()):
+		l.fail("AUTH_ISSUER must use https for a non-local provider")
+		return Auth{}
+	}
+	if !publishableKey.MatchString(a.PublishableKey) {
+		l.fail("AUTH_PUBLISHABLE_KEY must be the provider's publishable key (sb_publishable_...), never a secret key")
+		return Auth{}
+	}
+	return a
+}
+
+// boolean reads an optional true/false switch (default false).
+func (l *loader) boolean(name string) bool {
+	switch l.get(name) {
+	case "", "false":
+		return false
+	case "true":
+		return true
+	}
+	l.fail("%s must be true or false", name)
+	return false
+}
+
 func (l *loader) optionalSecret(name string) Secret { return Secret{value: l.get(name)} }
+
+// webhookSecret checks a Svix signing secret: "whsec_" and at least 16
+// base64-encoded bytes.
+func (l *loader) webhookSecret(name string) Secret {
+	s := l.optionalSecret(name)
+	if !s.IsSet() {
+		return s
+	}
+	encoded, ok := strings.CutPrefix(s.value, "whsec_")
+	if raw, err := base64.StdEncoding.DecodeString(encoded); !ok || err != nil || len(raw) < 16 {
+		l.fail("%s must be a webhook signing secret (whsec_ followed by base64)", name)
+	}
+	return s
+}
+
+var (
+	stripeAccountPattern = regexp.MustCompile(`^acct_[A-Za-z0-9]{1,64}$`)
+	stripeWebhookPattern = regexp.MustCompile(`^whsec_[A-Za-z0-9+/=_-]{16,}$`)
+)
+
+// stripeAccount reads an optional Stripe account ID (acct_...).
+func (l *loader) stripeAccount(name string) string {
+	v := l.get(name)
+	if v != "" && !stripeAccountPattern.MatchString(v) {
+		l.fail("%s must be a Stripe account ID (acct_...)", name)
+		return ""
+	}
+	return v
+}
+
+// stripeWebhookSecret reads an optional Stripe signing secret (whsec_...).
+func (l *loader) stripeWebhookSecret(name string) Secret {
+	s := l.optionalSecret(name)
+	if s.IsSet() && !stripeWebhookPattern.MatchString(s.value) {
+		l.fail("%s must be a Stripe webhook signing secret (whsec_...)", name)
+	}
+	return s
+}
 
 // paymentSecret enforces Stripe key mode: live keys only in production, and
 // production only with live keys. Prefixes per Stripe API key conventions.

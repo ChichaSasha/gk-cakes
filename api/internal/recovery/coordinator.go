@@ -16,11 +16,20 @@ import (
 // Kind is the kind of protected operation.
 type Kind string
 
-// KindDispatch protects an outgoing provider effect (email now; payments and
-// refunds later) that is idempotent for its identity until ReplayUntil.
-// Accepted-command protection (order confirmation/changes) is designed with
-// GK-025 and is not supported yet.
-const KindDispatch Kind = "dispatch"
+// Operation kinds.
+const (
+	// KindDispatch protects an outgoing provider effect (email now; payments
+	// and refunds later) that is idempotent for its identity until
+	// ReplayUntil. Run it with Dispatch.
+	KindDispatch Kind = "dispatch"
+	// KindCommand protects an accepted domain command (an order confirmation
+	// or change, K11): its exact accepted payload is acknowledged in the
+	// independent journal before the domain commit, and its outcome before
+	// the result is exposed. The commit is local and idempotent for the
+	// operation's identity forever, so a command has no replay deadline. Run
+	// it with Command.
+	KindCommand Kind = "command"
+)
 
 // State is a protected operation's recovery phase.
 type State string
@@ -77,22 +86,40 @@ func (op Operation) validate() error {
 	switch {
 	case !uuidPattern.MatchString(op.ID) || !uuidPattern.MatchString(op.AggregateID):
 		return errors.New("recovery: operation and aggregate IDs must be lower-case UUIDs")
-	case op.Kind != KindDispatch:
+	case op.Kind != KindDispatch && op.Kind != KindCommand:
 		return fmt.Errorf("recovery: unsupported operation kind %q", op.Kind)
 	case op.PriorVersion < 0:
 		return errors.New("recovery: prior version must not be negative")
 	case !json.Valid(op.Payload):
 		return errors.New("recovery: payload must be JSON")
-	case op.ReplayUntil.IsZero():
+	case op.Kind == KindDispatch && op.ReplayUntil.IsZero():
 		return errors.New("recovery: a dispatch needs its provider replay deadline")
+	case op.Kind == KindCommand && !op.ReplayUntil.IsZero():
+		return errors.New("recovery: a command has no replay deadline")
 	}
 	return nil
 }
+
+// replayUntil is the replay deadline as recorded: none for a command.
+func (op Operation) replayUntil() *time.Time {
+	if op.Kind == KindCommand {
+		return nil
+	}
+	t := op.ReplayUntil
+	return &t
+}
+
+// ReplayUntilArg is the replay deadline as a store passes it (nil for a
+// command; the database records 'infinity').
+func (op Operation) ReplayUntilArg() *time.Time { return op.replayUntil() }
 
 func hashHex(b []byte) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
 }
+
+// HashHex is the hex SHA-256 used for payload and outcome hashes.
+func HashHex(b []byte) string { return hashHex(b) }
 
 // PayloadHash is the hex SHA-256 of the payload bytes.
 func (op Operation) PayloadHash() string { return hashHex(op.Payload) }
@@ -124,6 +151,10 @@ func (o Outcome) encode() (string, []byte, error) {
 	}
 	return hashHex(b), b, nil
 }
+
+// Encode returns the hash and canonical JSON a store records for the
+// outcome, refusing outcomes the recovery record cannot hold.
+func (o Outcome) Encode() (hash string, body []byte, err error) { return o.encode() }
 
 func sameOutcome(a, b Outcome) bool {
 	ha, _, errA := a.encode()
@@ -207,19 +238,46 @@ const (
 	phaseOutcome  = "outcome"
 )
 
+// envelopeVersion 2 carries the payload as opaque bytes (base64): JSON
+// re-encoding would escape or compact it, and a replay must send the exact
+// bytes. No version 1 envelope was ever written outside tests.
+const envelopeVersion = 2
+
 type envelope struct {
-	V            int             `json:"v"`
-	Environment  string          `json:"environment"`
-	Phase        string          `json:"phase"`
-	OperationID  string          `json:"operation_id"`
-	Kind         Kind            `json:"kind"`
-	AggregateID  string          `json:"aggregate_id"`
-	PriorVersion int             `json:"prior_version"`
-	PayloadHash  string          `json:"payload_hash"`
-	Payload      json.RawMessage `json:"payload,omitempty"`
-	ReplayUntil  *time.Time      `json:"replay_until,omitempty"`
-	Outcome      *Outcome        `json:"outcome,omitempty"`
-	SealedAt     time.Time       `json:"sealed_at"`
+	V            int        `json:"v"`
+	Environment  string     `json:"environment"`
+	Phase        string     `json:"phase"`
+	OperationID  string     `json:"operation_id"`
+	Kind         Kind       `json:"kind"`
+	AggregateID  string     `json:"aggregate_id"`
+	PriorVersion int        `json:"prior_version"`
+	PayloadHash  string     `json:"payload_hash"`
+	Payload      []byte     `json:"payload,omitempty"`
+	ReplayUntil  *time.Time `json:"replay_until,omitempty"`
+	Outcome      *Outcome   `json:"outcome,omitempty"`
+	SealedAt     time.Time  `json:"sealed_at"`
+}
+
+// matches reports whether an existing envelope belongs to the operation as
+// env describes it: same identity, and for a prepared envelope the same
+// payload bytes and replay deadline (a resume must never extend the
+// provider window).
+func (got envelope) matches(env envelope, phase string) bool {
+	switch {
+	case got.V != envelopeVersion || got.Phase != phase || got.OperationID != env.OperationID ||
+		got.PayloadHash != env.PayloadHash || got.AggregateID != env.AggregateID || got.PriorVersion != env.PriorVersion:
+		return false
+	case got.Kind != env.Kind:
+		return false
+	case phase == phasePrepared && env.Kind == KindCommand:
+		return hashHex(got.Payload) == env.PayloadHash && got.ReplayUntil == nil && env.ReplayUntil == nil
+	case phase == phasePrepared:
+		return hashHex(got.Payload) == env.PayloadHash && got.ReplayUntil != nil && env.ReplayUntil != nil &&
+			got.ReplayUntil.Equal(*env.ReplayUntil)
+	case phase == phaseOutcome:
+		return got.Outcome != nil && env.Outcome != nil && sameOutcome(*got.Outcome, *env.Outcome)
+	}
+	return false
 }
 
 // ensure makes sure the envelope for phase exists in the journal. When the
@@ -237,9 +295,7 @@ func (c *Coordinator) ensure(ctx context.Context, key, phase string, env envelop
 				return fmt.Errorf("recovery: existing %s envelope: %w", phase, err)
 			}
 			var got envelope
-			if err := json.Unmarshal(plain, &got); err != nil || got.OperationID != env.OperationID ||
-				got.PayloadHash != env.PayloadHash || got.Phase != phase ||
-				(phase == phaseOutcome && (got.Outcome == nil || !sameOutcome(*got.Outcome, *env.Outcome))) {
+			if err := json.Unmarshal(plain, &got); err != nil || !got.matches(env, phase) {
 				return fmt.Errorf("recovery: existing %s envelope for %s does not match the operation", phase, env.OperationID)
 			}
 			return nil
@@ -252,6 +308,10 @@ func (c *Coordinator) ensure(ctx context.Context, key, phase string, env envelop
 	plain, err := json.Marshal(env)
 	if err != nil {
 		return err
+	}
+	var check envelope
+	if err := json.Unmarshal(plain, &check); err != nil || !check.matches(env, phase) {
+		return fmt.Errorf("recovery: %s envelope for %s does not round-trip", phase, env.OperationID)
 	}
 	sealed, err := c.Sealer.Seal(name, plain)
 	if err != nil {
@@ -282,7 +342,7 @@ func (c *Coordinator) start(ctx context.Context, store Store, op Operation) (str
 		return "", Reservation{}, envelope{}, ErrStale
 	}
 	env := envelope{
-		V: 1, Environment: c.Environment, OperationID: op.ID, Kind: op.Kind,
+		V: envelopeVersion, Environment: c.Environment, OperationID: op.ID, Kind: op.Kind,
 		AggregateID: op.AggregateID, PriorVersion: op.PriorVersion, PayloadHash: op.PayloadHash(),
 	}
 	return key, res, env, nil
@@ -320,6 +380,9 @@ func (c *Coordinator) Dispatch(ctx context.Context, store Store, op Operation, e
 	if err := op.validate(); err != nil {
 		return Outcome{}, err
 	}
+	if op.Kind != KindDispatch {
+		return Outcome{}, errors.New("recovery: Dispatch runs dispatch operations only; use Command")
+	}
 	if _, err := c.EnvelopeKey(op); err != nil {
 		return Outcome{}, err
 	}
@@ -335,7 +398,7 @@ func (c *Coordinator) Dispatch(ctx context.Context, store Store, op Operation, e
 	if state == StateReserved {
 		prepared := env
 		prepared.Payload = op.Payload
-		prepared.ReplayUntil = &op.ReplayUntil
+		prepared.ReplayUntil = op.replayUntil()
 		// Always check for an existing copy: a restore replay reserves anew
 		// in a fresh database although the envelope already exists.
 		if err := c.ensure(ctx, key, phasePrepared, prepared, false); err != nil {
@@ -388,6 +451,90 @@ func (c *Coordinator) Dispatch(ctx context.Context, store Store, op Operation, e
 	}
 }
 
+// Apply performs an accepted command's domain commit: in one database
+// transaction it re-validates the command against the current aggregate,
+// changes the domain state (or decides a refusal) and records the outcome as
+// the operation's committed phase. It must be idempotent for the operation:
+// when the operation is already committed it returns the recorded outcome
+// and state without changing anything. An error leaves the operation
+// prepared (retryable).
+type Apply func(ctx context.Context) (Outcome, State, error)
+
+// Command runs an accepted command (KindCommand) to completion or to the
+// first failure, resuming from whatever phase a previous attempt reached:
+//
+//	reserve -> prepared envelope -> prepared -> domain commit (committed) ->
+//	outcome envelope -> secured
+//
+// The domain commit happens only after the exact accepted payload is
+// independently acknowledged, and only while outgoing effects are not
+// frozen (restore). Callers expose the committed result only once the
+// operation is secured (K11: a commit without the outcome acknowledgment
+// stays confirmation_pending). Errors other than ErrBusy, ErrStale,
+// ErrFrozen and ErrNeedsReconcile are retryable by calling Command again
+// with the same operation.
+func (c *Coordinator) Command(ctx context.Context, store Store, op Operation, apply Apply) (Outcome, error) {
+	if err := op.validate(); err != nil {
+		return Outcome{}, err
+	}
+	if op.Kind != KindCommand {
+		return Outcome{}, errors.New("recovery: Command runs command operations only; use Dispatch")
+	}
+	if err := c.checkFrozen(ctx, store); err != nil {
+		return Outcome{}, err
+	}
+	key, res, env, err := c.start(ctx, store, op)
+	if err != nil {
+		return Outcome{}, err
+	}
+	state, outcome := res.State, res.Outcome
+
+	if state == StateReserved {
+		prepared := env
+		prepared.Payload = op.Payload
+		if err := c.ensure(ctx, key, phasePrepared, prepared, false); err != nil {
+			return Outcome{}, err
+		}
+		if state, err = store.MarkPrepared(ctx, op); err != nil {
+			return Outcome{}, fmt.Errorf("recovery: mark prepared: %w", err)
+		}
+	}
+
+	if state == StatePrepared {
+		if err := c.checkFrozen(ctx, store); err != nil {
+			return Outcome{}, err
+		}
+		got, gotState, err := apply(ctx)
+		if err != nil {
+			return Outcome{}, fmt.Errorf("recovery: command commit: %w", err)
+		}
+		if _, _, err := got.encode(); err != nil {
+			return Outcome{}, fmt.Errorf("recovery: command outcome: %w", err)
+		}
+		state, outcome = gotState, &got
+	}
+
+	if state == StateCommitted {
+		if outcome == nil {
+			return Outcome{}, fmt.Errorf("recovery: committed operation %s has no recorded outcome", op.ID)
+		}
+		// Always check for an existing outcome envelope: the apply may have
+		// found the commit already recorded by an earlier attempt.
+		if state, err = c.secure(ctx, store, op, key, env, *outcome, false); err != nil {
+			return Outcome{}, err
+		}
+	}
+
+	switch {
+	case state == StateSecured && outcome != nil:
+		return *outcome, nil
+	case state == StateReconcile:
+		return Outcome{}, ErrNeedsReconcile
+	default:
+		return Outcome{}, fmt.Errorf("recovery: operation %s ended in unexpected state %q", op.ID, state)
+	}
+}
+
 func (c *Coordinator) reconcile(ctx context.Context, store Store, op Operation, reason string) error {
 	if _, err := store.MarkReconcile(ctx, op, reason); err != nil {
 		return fmt.Errorf("recovery: mark reconcile: %w", err)
@@ -401,7 +548,9 @@ func (c *Coordinator) reconcile(ctx context.Context, store Store, op Operation, 
 // frees the aggregate for a successor at the next prior version. It is
 // idempotent for the same outcome and refuses a different one.
 func (c *Coordinator) Resolve(ctx context.Context, store Store, op Operation, outcome Outcome) (Outcome, error) {
-	op.ReplayUntil = op.ReplayUntil.UTC().Truncate(time.Microsecond)
+	if !op.ReplayUntil.IsZero() {
+		op.ReplayUntil = op.ReplayUntil.UTC().Truncate(time.Microsecond)
+	}
 	if _, _, err := outcome.encode(); err != nil {
 		return Outcome{}, err
 	}
@@ -422,7 +571,7 @@ func (c *Coordinator) Resolve(ctx context.Context, store Store, op Operation, ou
 		return Outcome{}, fmt.Errorf("recovery: operation %s is not recorded; nothing to resolve", op.ID)
 	}
 	env := envelope{
-		V: 1, Environment: c.Environment, OperationID: op.ID, Kind: op.Kind,
+		V: envelopeVersion, Environment: c.Environment, OperationID: op.ID, Kind: op.Kind,
 		AggregateID: op.AggregateID, PriorVersion: op.PriorVersion, PayloadHash: op.PayloadHash(),
 	}
 	state, changed := res.State, false
@@ -471,9 +620,10 @@ func (c *Coordinator) Ready(ctx context.Context) error {
 
 // Pending returns, in journal order, the operations whose prepared envelope
 // has no outcome envelope: their effect may or may not have happened. After a
-// primary database loss, restore tooling resumes each with Dispatch and the
-// same Effect (provider-idempotent until ReplayUntil); after that deadline
-// Dispatch sends it to reconciliation instead of repeating it.
+// primary database loss, restore tooling resumes each dispatch with Dispatch
+// and the same Effect (provider-idempotent until ReplayUntil; after that
+// deadline Dispatch sends it to reconciliation instead of repeating it), and
+// each command with Command after checking the restored aggregate.
 func (c *Coordinator) Pending(ctx context.Context) ([]Operation, error) {
 	root, err := c.root()
 	if err != nil {
@@ -517,10 +667,13 @@ func (c *Coordinator) Pending(ctx context.Context) ([]Operation, error) {
 			return nil, fmt.Errorf("recovery: decode %s: %w", name, err)
 		}
 		op := Operation{ID: env.OperationID, Kind: env.Kind, AggregateID: env.AggregateID, PriorVersion: env.PriorVersion, Payload: env.Payload}
+		if env.Kind == KindCommand && env.ReplayUntil != nil {
+			return nil, fmt.Errorf("recovery: %s is a command with a replay deadline", name)
+		}
 		if env.ReplayUntil != nil {
 			op.ReplayUntil = *env.ReplayUntil
 		}
-		if op.PayloadHash() != env.PayloadHash || env.Phase != phasePrepared {
+		if env.V != envelopeVersion || op.PayloadHash() != env.PayloadHash || env.Phase != phasePrepared {
 			return nil, fmt.Errorf("recovery: %s does not match its payload hash", name)
 		}
 		if key, _ := c.EnvelopeKey(op); key != base {

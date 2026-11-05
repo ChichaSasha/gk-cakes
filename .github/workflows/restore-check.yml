@@ -1,0 +1,77 @@
+# GK-034 Milestone B: proves the newest staging backup restores
+# (api/cmd/gk-backup restore-check). It decrypts the newest complete backup,
+# checks it against its manifest, restores it into a disposable PostgreSQL
+# (a service container of the same pinned image CI uses) and compares the
+# migrations and every business table's row count. It fails when the newest
+# backup is more than 26 hours old, so stopped backups are noticed. Runs
+# after every successful backup, weekly, and on demand; only from main.
+name: Backup restore check
+
+on:
+  workflow_run:
+    workflows: [Database backup]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * *' # daily 06:00 UTC, in case the backup run itself stopped
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: backup-restore-check
+  cancel-in-progress: false
+
+jobs:
+  restore-check:
+    name: restore-check-staging
+    if: >-
+      github.ref == 'refs/heads/main' && vars.STAGING_BACKUP_ENABLED == 'true' &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: staging
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:17.11-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+        env:
+          POSTGRES_PASSWORD: restore_disposable
+          POSTGRES_DB: restore
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+      - name: pg_restore 17 from the same pinned image
+        env:
+          PG_IMAGE: postgres:17.11-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+        run: |
+          mkdir -p "$RUNNER_TEMP/pgbin"
+          printf '#!/bin/sh\nexec docker run --rm -i --network host -e PGPASSWORD -e PGAPPNAME %s pg_restore "$@"\n' \
+            "$PG_IMAGE" > "$RUNNER_TEMP/pgbin/pg_restore"
+          chmod +x "$RUNNER_TEMP/pgbin/pg_restore"
+          echo "PG_RESTORE=$RUNNER_TEMP/pgbin/pg_restore" >> "$GITHUB_ENV"
+      - name: Restore the newest backup and compare
+        working-directory: api
+        env:
+          APP_ENV: staging
+          RESTORE_DATABASE_URL: postgres://postgres:restore_disposable@127.0.0.1:5432/restore?sslmode=disable
+          BACKUP_B2_KEY_ID: ${{ secrets.STAGING_BACKUP_B2_KEY_ID }}
+          BACKUP_B2_KEY: ${{ secrets.STAGING_BACKUP_B2_KEY }}
+          BACKUP_ENCRYPTION_KEYS: ${{ secrets.STAGING_BACKUP_ENCRYPTION_KEYS }}
+        run: |
+          set -o pipefail
+          go run ./cmd/gk-backup restore-check | tee -a "$GITHUB_STEP_SUMMARY"

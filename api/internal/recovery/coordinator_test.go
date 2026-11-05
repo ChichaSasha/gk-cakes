@@ -51,7 +51,7 @@ func TestDispatchRejectsInvalidOperationsBeforeTouchingState(t *testing.T) {
 		"negative version":        func(o *Operation) { o.PriorVersion = -1 },
 		"payload not JSON":        func(o *Operation) { o.Payload = json.RawMessage(`{`) },
 		"dispatch without replay": func(o *Operation) { o.ReplayUntil = time.Time{} },
-		"command (not supported)": func(o *Operation) { o.Kind = "command" },
+		"command via Dispatch":    func(o *Operation) { o.Kind = KindCommand; o.ReplayUntil = time.Time{} },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -174,7 +174,10 @@ func pendingOp() Operation {
 
 func putPrepared(t *testing.T, c *Coordinator, name string, env envelope) {
 	t.Helper()
-	env.Phase, env.V, env.Environment = phasePrepared, 1, "test"
+	if env.V == 0 {
+		env.V = envelopeVersion
+	}
+	env.Phase, env.Environment = phasePrepared, "test"
 	plain, _ := json.Marshal(env)
 	sealed, err := c.Sealer.Seal(name, plain)
 	if err != nil {
@@ -211,6 +214,11 @@ func TestPendingRejectsTamperedOrMisplacedEnvelopes(t *testing.T) {
 			otherKey, _ := c.EnvelopeKey(other)
 			putPrepared(t, c, otherKey+".prepared", good) // fields say op, name says other
 		},
+		"unknown envelope version": func(c *Coordinator) {
+			old := good
+			old.V = 1
+			putPrepared(t, c, key+".prepared", old)
+		},
 		"copied ciphertext under another name": func(c *Coordinator) {
 			putPrepared(t, c, key+".prepared", good)
 			data, _ := c.Journal.Get(ctx, key+".prepared")
@@ -228,3 +236,61 @@ func TestPendingRejectsTamperedOrMisplacedEnvelopes(t *testing.T) {
 		})
 	}
 }
+
+// TestJournalKeepsTheExactPayloadBytes: JSON re-encoding would escape <, >
+// and & and compact whitespace; the journal must hand back the exact bytes
+// so a replay sends the identical request.
+func TestJournalKeepsTheExactPayloadBytes(t *testing.T) {
+	ctx := context.Background()
+	c, _ := testCoordinator(t)
+	op := pendingOp()
+	op.Payload = json.RawMessage("{\"from\": \"GK Cakes <orders@gkcake.com>\",\n  \"html\":\"<p>Tom & Jerry \u00a3 £</p>\"}")
+	op.ReplayUntil = time.Now().Add(time.Hour).UTC().Truncate(time.Microsecond)
+	store := &memStore{}
+	if _, err := c.Dispatch(ctx, store, op, func(context.Context) (Outcome, error) {
+		return Outcome{}, errors.New("timeout")
+	}); err == nil {
+		t.Fatal("expected the unknown outcome")
+	}
+	pending, err := c.Pending(ctx)
+	if err != nil || len(pending) != 1 {
+		t.Fatalf("Pending = %+v, %v", pending, err)
+	}
+	if !bytes.Equal(pending[0].Payload, op.Payload) || pending[0].PayloadHash() != op.PayloadHash() {
+		t.Fatalf("journal payload = %s, want the exact bytes %s", pending[0].Payload, op.Payload)
+	}
+}
+
+// memStore is a minimal in-memory Store for unit tests of one operation.
+type memStore struct {
+	state   State
+	outcome *Outcome
+}
+
+func (m *memStore) Reserve(context.Context, Operation, string) (Reservation, error) {
+	if m.state == "" {
+		m.state = StateReserved
+		return Reservation{Result: "reserved", State: m.state}, nil
+	}
+	return Reservation{Result: "existing", State: m.state, Outcome: m.outcome}, nil
+}
+func (m *memStore) Lookup(context.Context, Operation, string) (Reservation, error) {
+	return Reservation{Result: "existing", State: m.state, Outcome: m.outcome}, nil
+}
+func (m *memStore) MarkPrepared(context.Context, Operation) (State, error) {
+	m.state = StatePrepared
+	return m.state, nil
+}
+func (m *memStore) MarkCommitted(_ context.Context, _ Operation, o Outcome, _ bool) (State, bool, error) {
+	m.state, m.outcome = StateCommitted, &o
+	return m.state, true, nil
+}
+func (m *memStore) MarkSecured(context.Context, Operation) (State, error) {
+	m.state = StateSecured
+	return m.state, nil
+}
+func (m *memStore) MarkReconcile(context.Context, Operation, string) (State, error) {
+	m.state = StateReconcile
+	return m.state, nil
+}
+func (m *memStore) Frozen(context.Context) (bool, error) { return false, nil }

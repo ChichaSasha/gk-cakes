@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ChichaSasha/gk-cakes/api/internal/notifications"
 )
 
 type fakePinger struct{ err error }
@@ -187,5 +190,82 @@ func TestServeDrainsInFlightRequestsOnShutdown(t *testing.T) {
 	}
 	if _, err := http.Get("http://" + ln.Addr().String() + "/"); err == nil {
 		t.Fatal("server still accepts connections after shutdown")
+	}
+}
+
+type fakeWebhook struct {
+	result string
+	err    error
+	got    []byte
+	header http.Header
+}
+
+func (f *fakeWebhook) Receive(_ context.Context, h http.Header, body []byte) (string, error) {
+	f.got, f.header = body, h
+	return f.result, f.err
+}
+
+func webhookHandler(w EmailWebhook) http.Handler {
+	return NewHandler(Options{UIOrigin: "https://gkcake.com", DB: fakePinger{}, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), EmailWebhook: w})
+}
+
+func TestEmailWebhookAcknowledgesOnlyStoredDeliveries(t *testing.T) {
+	cases := []struct {
+		name      string
+		rcv       *fakeWebhook
+		status    int
+		code      string
+		retryable bool
+	}{
+		{"recorded", &fakeWebhook{result: "recorded"}, http.StatusOK, "", false},
+		{"duplicate", &fakeWebhook{result: "duplicate"}, http.StatusOK, "", false},
+		{"invalid signature", &fakeWebhook{err: fmt.Errorf("wrapped: %w", notifications.ErrInvalidSignature)}, http.StatusUnauthorized, "UNAUTHORIZED", false},
+		{"malformed event", &fakeWebhook{err: notifications.ErrMalformedEvent}, http.StatusBadRequest, "BAD_REQUEST", false},
+		{"storage failure", &fakeWebhook{err: errors.New("database down: ms.example@example.org")}, http.StatusServiceUnavailable, "UNAVAILABLE", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/webhooks/email", strings.NewReader(`{"type":"email.sent"}`))
+			req.Header.Set("svix-id", "msg_1")
+			rec := httptest.NewRecorder()
+			webhookHandler(tc.rcv).ServeHTTP(rec, req)
+			if rec.Code != tc.status {
+				t.Fatalf("status %d, want %d (%s)", rec.Code, tc.status, rec.Body.String())
+			}
+			if string(tc.rcv.got) != `{"type":"email.sent"}` || tc.rcv.header.Get("svix-id") != "msg_1" {
+				t.Fatalf("receiver got body %q, headers %v; want the raw body and headers", tc.rcv.got, tc.rcv.header)
+			}
+			if tc.code == "" {
+				var ok map[string]string
+				if err := json.Unmarshal(rec.Body.Bytes(), &ok); err != nil || ok["status"] != tc.rcv.result {
+					t.Fatalf("body %s, want status %q", rec.Body.String(), tc.rcv.result)
+				}
+				return
+			}
+			body := decodeError(t, rec)
+			if body.Error.Code != tc.code || body.Error.Retryable != tc.retryable || strings.Contains(rec.Body.String(), "example.org") {
+				t.Fatalf("error body %s", rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestEmailWebhookRefusesOversizedBodiesAndIsAbsentWhenUnconfigured(t *testing.T) {
+	rcv := &fakeWebhook{result: "recorded"}
+	rec := httptest.NewRecorder()
+	big := strings.Repeat("x", notifications.MaxWebhookBytes+1)
+	webhookHandler(rcv).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/webhooks/email", strings.NewReader(big)))
+	if rec.Code != http.StatusRequestEntityTooLarge || rcv.got != nil {
+		t.Fatalf("oversized body: status %d, receiver called %v", rec.Code, rcv.got != nil)
+	}
+	rec = httptest.NewRecorder()
+	webhookHandler(rcv).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/webhooks/email", nil))
+	if rec.Code != http.StatusNotFound && rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET /webhooks/email = %d, want 404 or 405", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	newTestHandler(fakePinger{}).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/webhooks/email", strings.NewReader("{}")))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unconfigured webhook: status %d, want 404", rec.Code)
 	}
 }

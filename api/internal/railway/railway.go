@@ -19,7 +19,10 @@ import (
 // DefaultEndpoint is Railway's public GraphQL API.
 const DefaultEndpoint = "https://backboard.railway.com/graphql/v2"
 
-var digestRef = regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}$`)
+var (
+	digestRef    = regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}$`)
+	startCommand = regexp.MustCompile(`^/[a-z0-9/_.-]{1,200}$`)
+)
 
 // Request selects what to deploy where.
 type Request struct {
@@ -27,12 +30,26 @@ type Request struct {
 	EnvironmentID   string
 	Image           string // must be pinned: name@sha256:<64 hex>
 	HealthcheckPath string // optional; Railway marks SUCCESS only once it answers
+	// StartCommand optionally overrides the image ENTRYPOINT (exec form), for
+	// example /usr/local/bin/gk-worker for the worker service.
+	StartCommand string
+	// Settle keeps watching after SUCCESS and fails if the deployment crashes
+	// within it: the check for a process with no health endpoint.
+	Settle time.Duration
+	// StartLine optionally names the log message the process writes once at
+	// each start (for example "worker starting"); during Settle it is counted
+	// like Railway's own container-start line, so a restart is caught even if
+	// the platform line is missing.
+	StartLine string
 }
 
 // Result reports the deployment Railway created.
 type Result struct {
 	DeploymentID string
 	Status       string
+	// Warnings note checks that could not be made (for example a deployment
+	// log the token cannot read during a settle period).
+	Warnings []string
 }
 
 // Deployer talks to the Railway API with an environment-scoped project token.
@@ -43,6 +60,9 @@ type Deployer struct {
 	PollInterval time.Duration
 	Timeout      time.Duration
 }
+
+// maxResponseBytes bounds a GraphQL response (log pages are the largest).
+const maxResponseBytes = 8 << 20
 
 // healthcheckTimeoutSeconds bounds how long Railway waits for the health path.
 const healthcheckTimeoutSeconds = 120
@@ -61,7 +81,142 @@ const (
 	statusQuery = `query gkStatus($id: String!) {
   deployment(id: $id) { id status meta }
 }`
+	// environmentLogs is anchored: beforeDate/beforeLimit select the logs
+	// between the oldest date and the anchor, afterDate/afterLimit those after
+	// it (the Railway CLI reads a window the same way).
+	logsQuery = `query gkLogs($environmentId: String!, $anchorDate: String!, $beforeDate: String!, $beforeLimit: Int!) {
+  environmentLogs(environmentId: $environmentId, anchorDate: $anchorDate, beforeDate: $beforeDate,
+    beforeLimit: $beforeLimit, afterDate: $anchorDate, afterLimit: 0) { timestamp message attributes { key value } }
+}`
+	// startsQuery reads the newest lines of one deployment's runtime log.
+	// Railway writes a "Starting Container" line when it starts the
+	// deployment's container (one per start in the staging logs of
+	// 2026-11-03; a line per restart-policy restart is assumed, not yet
+	// observed), so a crash and restart under the restart policy shows a
+	// second one while the status stays SUCCESS. Request.StartLine adds the
+	// process's own start line as a second count. (Railway's
+	// deploymentInstanceExecutions listed no execution for a running staging
+	// worker, so it cannot show restarts.)
+	startsQuery = `query gkStarts($deploymentId: String!, $limit: Int!) {
+  deploymentLogs(deploymentId: $deploymentId, limit: $limit) { message }
+}`
 )
+
+// MaxLogLines is the most lines EnvironmentLogs requests (Railway's maximum).
+const MaxLogLines = 5000
+
+// EnvironmentLogs returns the environment's log lines between since and
+// until, oldest first, each as its message followed by its attributes
+// (key=value). complete is false when the limit was reached, so older lines
+// in the window may be missing.
+func (d *Deployer) EnvironmentLogs(ctx context.Context, environmentID string, since, until time.Time) (lines []string, complete bool, err error) {
+	if d.ProjectToken == "" || environmentID == "" || !since.Before(until) {
+		return nil, false, errors.New("railway: logs need a token, an environment ID and a time window")
+	}
+	var out struct {
+		Logs []struct {
+			Message    string `json:"message"`
+			Attributes []struct {
+				Key   string `json:"key"`
+				Value string `json:"value"`
+			} `json:"attributes"`
+		} `json:"environmentLogs"`
+	}
+	if err := d.call(ctx, logsQuery, map[string]any{
+		"environmentId": environmentID, "anchorDate": until.UTC().Format(time.RFC3339Nano),
+		"beforeDate": since.UTC().Format(time.RFC3339Nano), "beforeLimit": MaxLogLines,
+	}, &out); err != nil {
+		return nil, false, fmt.Errorf("railway: environment logs: %w", err)
+	}
+	lines = make([]string, 0, len(out.Logs))
+	for _, l := range out.Logs {
+		var b strings.Builder
+		b.WriteString(l.Message)
+		for _, a := range l.Attributes {
+			b.WriteString(" " + a.Key + "=" + attributeValue(a.Value))
+		}
+		lines = append(lines, b.String())
+	}
+	return lines, len(out.Logs) < MaxLogLines, nil
+}
+
+// attributeValue undoes the JSON encoding Railway may apply to attribute
+// values (a string arrives as "value", quotes included); anything else is
+// kept as sent.
+func attributeValue(v string) string {
+	if strings.HasPrefix(v, `"`) {
+		var s string
+		if json.Unmarshal([]byte(v), &s) == nil {
+			return s
+		}
+	}
+	return v
+}
+
+// containerStart is the platform log line for one container start.
+const containerStart = "Starting Container"
+
+// Container-start check results.
+const (
+	startsSteady  = "steady"
+	startsBad     = "bad"
+	startsUnknown = "unknown" // no start line yet, or the log page was full
+)
+
+// starts counts the starts in deploymentID's log, as the larger of Railway's
+// container-start lines and the process's own start lines (startLine, when
+// set): one means the first container still runs (the service has one
+// replica), more mean it was restarted. For an unknown result the reason says
+// why.
+func (d *Deployer) starts(ctx context.Context, deploymentID, startLine string) (string, string, error) {
+	var out struct {
+		Logs []struct {
+			Message string `json:"message"`
+		} `json:"deploymentLogs"`
+	}
+	if err := d.call(ctx, startsQuery, map[string]any{"deploymentId": deploymentID, "limit": MaxLogLines}, &out); err != nil {
+		return "", "", err
+	}
+	platform, own := 0, 0
+	for _, l := range out.Logs {
+		msg := strings.TrimSpace(l.Message)
+		switch {
+		case strings.EqualFold(msg, containerStart):
+			platform++
+		case startLine != "" && (msg == startLine || jsonMessage(msg) == startLine):
+			own++
+		}
+	}
+	n := max(platform, own)
+	switch {
+	case n > 1:
+		return startsBad, fmt.Sprintf("it started %d times (restarted)", n), nil
+	case len(out.Logs) >= MaxLogLines:
+		return startsUnknown, "the deployment log page was full, so earlier starts may be missing", nil
+	case startLine != "" && own == 0:
+		// A named start line that never matches must not leave the check
+		// resting silently on Railway's line alone.
+		return startsUnknown, fmt.Sprintf("the process start line %q did not appear in the deployment log", startLine), nil
+	case n == 0:
+		return startsUnknown, "no start line appeared in the deployment log", nil
+	}
+	return startsSteady, "", nil
+}
+
+// jsonMessage returns the "msg" of a structured (slog JSON) log line, for a
+// log that arrives unparsed; "" otherwise.
+func jsonMessage(line string) string {
+	if !strings.HasPrefix(line, "{") {
+		return ""
+	}
+	var v struct {
+		Msg string `json:"msg"`
+	}
+	if json.Unmarshal([]byte(line), &v) != nil {
+		return ""
+	}
+	return v.Msg
+}
 
 var failed = map[string]bool{"FAILED": true, "CRASHED": true, "REMOVED": true, "REMOVING": true, "SKIPPED": true}
 
@@ -79,6 +234,12 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 	}
 
 	input := map[string]any{"source": map[string]any{"image": req.Image}}
+	if req.StartCommand != "" {
+		if !startCommand.MatchString(req.StartCommand) {
+			return Result{}, fmt.Errorf("railway: start command %q must be an absolute executable path", req.StartCommand)
+		}
+		input["startCommand"] = req.StartCommand
+	}
 	if req.HealthcheckPath != "" {
 		input["healthcheckPath"] = req.HealthcheckPath
 		input["healthcheckTimeout"] = healthcheckTimeoutSeconds
@@ -109,6 +270,13 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 
 	res := Result{DeploymentID: deployed.ID}
 	deadline := time.Now().Add(d.Timeout)
+	var settleUntil time.Time // set once SUCCESS is first seen
+	startsChecked := req.Settle > 0
+	startsSeen := false // the latest read succeeded and counted exactly one start
+	startsWhy := ""     // why the latest read was inconclusive or failed
+	startsRead := false // the deployment log was read at least once
+	var startErr error  // the last failed read
+	startErrors := 0    // consecutive failed reads
 	pollErrors := 0
 	for {
 		var st struct {
@@ -131,10 +299,49 @@ func (d *Deployer) Deploy(ctx context.Context, req Request) (Result, error) {
 				return res, fmt.Errorf("railway: deployment %s runs image %q, not the requested %q", deployed.ID, img, req.Image)
 			}
 			switch {
-			case res.Status == "SUCCESS":
-				return res, nil
+			case failed[res.Status] && !settleUntil.IsZero():
+				return res, fmt.Errorf("railway: deployment %s ended %s within %s of SUCCESS", deployed.ID, res.Status, req.Settle)
 			case failed[res.Status]:
 				return res, fmt.Errorf("railway: deployment %s ended %s", deployed.ID, res.Status)
+			case res.Status == "SUCCESS" && req.Settle <= 0:
+				return res, nil
+			case res.Status == "SUCCESS":
+				if settleUntil.IsZero() {
+					settleUntil = time.Now().Add(req.Settle)
+					if end := settleUntil.Add(d.PollInterval); end.After(deadline) {
+						deadline = end // a late SUCCESS still gets its full settle period
+					}
+				}
+				if startsChecked {
+					state, why, serr := d.starts(ctx, deployed.ID, req.StartLine)
+					switch {
+					case serr != nil:
+						// The decision rests on the latest attempt: a failed read
+						// voids an earlier steady one, so read errors at the end of
+						// the period give a warning rather than a silent pass.
+						startErr, startsSeen = serr, false
+						startsWhy = "the latest deployment-log read failed: " + serr.Error()
+						if startErrors++; startErrors >= maxPollErrors {
+							startsChecked = false
+							res.Warnings = append(res.Warnings, "deployment log not readable; settle checked the deployment status only: "+serr.Error())
+						}
+					case state == startsBad:
+						return res, fmt.Errorf("railway: deployment %s is not running steadily within %s of SUCCESS: %s", deployed.ID, req.Settle, why)
+					default:
+						startErrors, startsRead = 0, true
+						startsSeen, startsWhy = state == startsSteady, why
+					}
+				}
+				if time.Now().After(settleUntil) {
+					switch {
+					case !startsChecked || startsSeen:
+					case !startsRead && startErr != nil:
+						res.Warnings = append(res.Warnings, "deployment log not readable; settle checked the deployment status only: "+startErr.Error())
+					default:
+						res.Warnings = append(res.Warnings, "restart check inconclusive: "+startsWhy+"; settle checked the deployment status only")
+					}
+					return res, nil
+				}
 			}
 		}
 		if time.Now().After(deadline) {
@@ -191,7 +398,7 @@ func (d *Deployer) call(ctx context.Context, query string, vars map[string]any, 
 		return err
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
 		return err
 	}

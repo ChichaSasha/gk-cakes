@@ -5,13 +5,21 @@ import (
 	"context"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/ChichaSasha/gk-cakes/api/internal/catalog"
+	"github.com/ChichaSasha/gk-cakes/api/internal/checkout"
 	"github.com/ChichaSasha/gk-cakes/api/internal/config"
 	"github.com/ChichaSasha/gk-cakes/api/internal/database"
 	"github.com/ChichaSasha/gk-cakes/api/internal/httpapi"
+	"github.com/ChichaSasha/gk-cakes/api/internal/identity"
+	"github.com/ChichaSasha/gk-cakes/api/internal/notifications"
+	"github.com/ChichaSasha/gk-cakes/api/internal/payments"
+	"github.com/ChichaSasha/gk-cakes/api/internal/schedule"
 )
 
 func main() {
@@ -37,10 +45,84 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("api listening", "addr", ln.Addr().String(), "env", string(cfg.Env))
-	handler := httpapi.NewHandler(httpapi.Options{UIOrigin: cfg.UIOrigin, DB: pool, Logger: logger})
+	// Order notices link to the UI: the settings are recorded now when
+	// possible, and readiness waits until they are (migration 0030).
+	if err := notifications.RecordSettings(ctx, pool, string(cfg.Env), cfg.UIOrigin, cfg.EmailRecipientAllowlist); err != nil {
+		logger.Warn("notice settings not recorded yet; readiness retries", "error", err.Error())
+	}
+	opts := httpapi.Options{UIOrigin: cfg.UIOrigin, Logger: logger, DB: &notifications.SettingsGate{
+		Pinger: readiness(cfg.Env, pool, logger), DB: pool, Environment: string(cfg.Env), UIOrigin: cfg.UIOrigin,
+		Allowlist: cfg.EmailRecipientAllowlist}}
+	if cfg.Providers.EmailWebhookSecret.IsSet() {
+		webhook, err := notifications.NewWebhook(notifications.WebhookConfig{
+			DB: pool, Secret: cfg.Providers.EmailWebhookSecret.Reveal(), Environment: string(cfg.Env), Logger: logger,
+		})
+		if err != nil {
+			logger.Error("email webhook", "error", err.Error())
+			os.Exit(2)
+		}
+		opts.EmailWebhook = webhook
+		logger.Info("email webhook enabled", "path", "/webhooks/email")
+	} else {
+		logger.Info("email webhook not configured; /webhooks/email is not served")
+	}
+	if cfg.Stripe.WebhookSecret.IsSet() {
+		webhook, err := payments.NewWebhook(payments.WebhookConfig{
+			DB: pool, Secret: cfg.Stripe.WebhookSecret.Reveal(), Environment: string(cfg.Env), Account: cfg.Stripe.AccountID,
+			Logger: logger,
+		})
+		if err != nil {
+			logger.Error("stripe webhook", "error", err.Error())
+			os.Exit(2)
+		}
+		opts.StripeWebhook = webhook
+		logger.Info("stripe webhook enabled", "path", "/webhooks/stripe")
+	} else {
+		logger.Info("stripe webhook not configured; /webhooks/stripe is not served")
+	}
+	if cfg.CheckoutEnabled && cfg.Stripe.AccountID == "" {
+		logger.Warn("checkout enabled without STRIPE_ACCOUNT_ID; payment requests answer 503")
+	}
+	if cfg.Auth.Enabled() {
+		opts.Identity = identityService(cfg.Auth, pool)
+		logger.Info("identity enabled", "issuer", cfg.Auth.Issuer)
+	} else {
+		logger.Info("identity not configured; authenticated /api/v1 routes are not served")
+	}
+	opts.Catalog = &catalog.Store{DB: pool}
+	opts.Schedule = &schedule.Store{DB: pool}
+	opts.Checkout = &checkout.Store{DB: pool, Env: string(cfg.Env), StripeAccount: cfg.Stripe.AccountID, UIOrigin: cfg.UIOrigin}
+	opts.CheckoutEnabled = cfg.CheckoutEnabled
+	handler := httpapi.NewHandler(opts)
 	if err := httpapi.Serve(ctx, ln, handler, cfg.ShutdownTimeout); err != nil {
 		logger.Error("serve", "error", err.Error())
 		os.Exit(1)
 	}
 	logger.Info("api stopped")
+}
+
+// apiGroup is the only group a deployed API's login may hold.
+const apiGroup = "gk_api"
+
+// readiness is the database check behind /readyz, the Railway health check.
+// Outside local development it stays unavailable with any login other than a
+// least-privilege gk_api one, so such a deploy never becomes ready and the
+// previous deployment keeps serving.
+func readiness(env config.Env, pool database.Pool, logger *slog.Logger) httpapi.Pinger {
+	if env == config.EnvLocal { // only local development may use another login
+		return pool
+	}
+	return &database.LoginGate{Pool: pool, Group: apiGroup, Logger: logger}
+}
+
+// identityService verifies the provider's tokens and resolves accounts
+// through the gk_api login. Provider calls have their own short budget
+// (proposed provider timeout 5s) inside the request deadline.
+func identityService(a config.Auth, db identity.Querier) *identity.Service {
+	client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: identity.NoRedirects}
+	return &identity.Service{
+		Verifier:  &identity.Verifier{Issuer: a.Issuer, HTTP: client},
+		Sessions:  &identity.SessionChecker{Issuer: a.Issuer, PublishableKey: a.PublishableKey, HTTP: client},
+		Directory: &identity.Directory{DB: db},
+	}
 }

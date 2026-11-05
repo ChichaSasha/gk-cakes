@@ -1,0 +1,60 @@
+# GK-034 Milestone B: the daily independent database backup of staging
+# (api/cmd/gk-backup dump). pg_dump of the business schema and the migration
+# history, taken by the read-only backup login in one snapshot with per-table
+# row counts, sealed with the backup encryption keys and stored in the B2
+# backup bucket under database/staging/ (a key restricted to database/, no
+# delete; a B2 lifecycle rule keeps 30 days). The restore check runs after
+# every successful backup. Runs only from main, and only once
+# STAGING_BACKUP_ENABLED is true.
+name: Database backup
+
+on:
+  schedule:
+    - cron: '30 2 * * *' # 02:30 UTC daily
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: backup-staging
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: backup-staging
+    if: github.ref == 'refs/heads/main' && vars.STAGING_BACKUP_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: staging
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+      - name: Install the Supabase CA the backup credential names
+        run: sudo install -D -m 0644 api/certs/supabase-root-2021.crt /etc/gk/supabase-root-2021.crt
+      - name: pg_dump 17 from a pinned PostgreSQL image
+        env:
+          PG_IMAGE: postgres:17.11-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+        run: |
+          mkdir -p "$RUNNER_TEMP/pgbin"
+          printf '#!/bin/sh\nexec docker run --rm -i --network host -v /etc/gk:/etc/gk:ro -e PGPASSWORD -e PGAPPNAME %s pg_dump "$@"\n' \
+            "$PG_IMAGE" > "$RUNNER_TEMP/pgbin/pg_dump"
+          chmod +x "$RUNNER_TEMP/pgbin/pg_dump"
+          echo "PG_DUMP=$RUNNER_TEMP/pgbin/pg_dump" >> "$GITHUB_ENV"
+      - name: Back up
+        working-directory: api
+        env:
+          APP_ENV: staging
+          BACKUP_DATABASE_URL: ${{ secrets.STAGING_BACKUP_DATABASE_URL }}
+          BACKUP_B2_KEY_ID: ${{ secrets.STAGING_BACKUP_B2_KEY_ID }}
+          BACKUP_B2_KEY: ${{ secrets.STAGING_BACKUP_B2_KEY }}
+          BACKUP_ENCRYPTION_KEYS: ${{ secrets.STAGING_BACKUP_ENCRYPTION_KEYS }}
+        run: |
+          set -o pipefail
+          go run ./cmd/gk-backup dump | tee -a "$GITHUB_STEP_SUMMARY"

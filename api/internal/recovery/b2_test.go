@@ -400,3 +400,117 @@ func TestNewB2RequiresCredentialsAndRoot(t *testing.T) {
 		}
 	}
 }
+
+// TestB2ExpiredUploadTokenDiscardsIdleTargets: an expired upload token
+// likely means the idle targets expired too, so the pool is emptied and only
+// the fresh target is kept.
+func TestB2ExpiredUploadTokenDiscardsIdleTargets(t *testing.T) {
+	ctx := context.Background()
+	f := newFakeB2(t)
+	j := f.journal(t)
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := j.Put(ctx, fmt.Sprintf("recovery/test/w/%d", i), []byte("v")); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if len(j.uploads) < 2 {
+		t.Fatalf("idle targets after concurrent puts = %d; the test needs at least 2", len(j.uploads))
+	}
+	f.mu.Lock()
+	f.expireUploadToken = true
+	f.mu.Unlock()
+	if err := j.Put(ctx, "recovery/test/x", []byte("v")); err != nil {
+		t.Fatal(err)
+	}
+	if len(j.uploads) != 1 {
+		t.Fatalf("idle targets after an expired upload token = %d, want only the fresh one", len(j.uploads))
+	}
+}
+
+// TestB2TargetFromASupersededAuthorizationIsDropped: a target obtained
+// before a re-authorization is not returned to the pool.
+func TestB2TargetFromASupersededAuthorizationIsDropped(t *testing.T) {
+	ctx := context.Background()
+	j := newFakeB2(t).journal(t)
+	if err := j.Put(ctx, "recovery/test/warm", []byte("v")); err != nil {
+		t.Fatal(err)
+	}
+	up, err := j.takeUpload(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.authorize(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	j.returnUpload(up)
+	if len(j.uploads) != 0 {
+		t.Fatalf("idle targets = %d, want the superseded one dropped", len(j.uploads))
+	}
+	fresh, err := j.takeUpload(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j.returnUpload(fresh)
+	if len(j.uploads) != 1 {
+		t.Fatalf("idle targets = %d, want the current authorization's target kept", len(j.uploads))
+	}
+}
+
+// TestB2AreaScopesTheKey: the database backups use the same client with the
+// "database/" area; their key must be restricted to that area or the root,
+// and a recovery key is refused there (and the other way round, above).
+func TestB2AreaScopesTheKey(t *testing.T) {
+	area := func(f *fakeB2, root string) *B2 {
+		t.Helper()
+		j, err := NewB2(B2Config{KeyID: fakeKeyID, Key: fakeKey, Root: root, Area: "database/", AuthURL: f.srv.URL, HTTP: f.srv.Client()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return j
+	}
+	for _, prefix := range []string{"database/", "database/test/"} {
+		f := newFakeB2(t)
+		f.namePrefix = prefix
+		if err := area(f, "database/test/").Ping(context.Background()); err != nil {
+			t.Errorf("database key restricted to %q: %v", prefix, err)
+		}
+	}
+	f := newFakeB2(t) // restricted to recovery/
+	if err := area(f, "database/test/").Ping(context.Background()); err == nil || !strings.Contains(err.Error(), `"database/"`) {
+		t.Fatalf("recovery key in the database area: %v, want refused", err)
+	}
+	for name, cfg := range map[string]B2Config{
+		"root outside the area": {Root: "recovery/test/", Area: "database/"},
+		"nested area":           {Root: "database/test/", Area: "database/test/"},
+		"area without slash":    {Root: "database/test/", Area: "database"},
+		"upper-case area":       {Root: "Database/test/", Area: "Database/"},
+	} {
+		cfg.KeyID, cfg.Key = fakeKeyID, fakeKey
+		if _, err := NewB2(cfg); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+// TestB2NeverTruncatesObjects: an object larger than the read limit is
+// refused on upload, and a larger download is an error, never a cut-off body.
+func TestB2NeverTruncatesObjects(t *testing.T) {
+	f := newFakeB2(t)
+	j := f.journal(t)
+	big := make([]byte, MaxObjectBytes+1)
+	if err := j.Put(context.Background(), "recovery/test/big", big); err == nil || !strings.Contains(err.Error(), "could not be read back") {
+		t.Fatalf("Put of %d bytes: %v", len(big), err)
+	}
+	f.mu.Lock()
+	f.files["recovery/test/big"] = big
+	f.mu.Unlock()
+	if got, err := j.Get(context.Background(), "recovery/test/big"); err == nil || got != nil {
+		t.Fatalf("Get of an oversized object: %d bytes, %v; want an error", len(got), err)
+	}
+}

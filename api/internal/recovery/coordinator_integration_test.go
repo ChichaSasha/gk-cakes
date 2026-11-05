@@ -666,6 +666,39 @@ func TestResolveNeverReservesAnUnknownOperation(t *testing.T) {
 	}
 }
 
+// TestLookupRefusesADifferentIdentity: the read-only lookup applies the
+// same identity check as reserve, so Resolve cannot act on an operation
+// recorded with a different payload or deadline.
+func TestLookupRefusesADifferentIdentity(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	store := h.store()
+	op := h.dispatchOp(63)
+	if _, err := h.coord.Dispatch(ctx, store, op, h.effect(op, nil)); err != nil {
+		t.Fatal(err)
+	}
+	key, err := h.coord.EnvelopeKey(op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res, err := store.Lookup(ctx, op, key); err != nil || res.Result != "existing" || res.State != recovery.StateSecured {
+		t.Fatalf("Lookup of the recorded operation = %+v, %v", res, err)
+	}
+	changed := op
+	changed.Payload = json.RawMessage(`{"provider":"resend","changed":true}`)
+	later := op
+	later.ReplayUntil = op.ReplayUntil.Add(time.Minute)
+	for name, other := range map[string]recovery.Operation{"payload": changed, "deadline": later} {
+		_, err := store.Lookup(ctx, other, key)
+		if got := dbtest.SQLState(err); got != "23505" {
+			t.Errorf("Lookup with a different %s: SQLSTATE %q (%v), want 23505", name, got, err)
+		}
+		if _, err := h.coord.Resolve(ctx, store, other, recovery.Outcome{Status: "abandoned"}); err == nil {
+			t.Errorf("Resolve with a different %s succeeded", name)
+		}
+	}
+}
+
 // TestPhaseTransitionsAreGuarded: a reserved operation cannot go to
 // reconcile (its effect never ran) and committing requires the right phase.
 func TestPhaseTransitionsAreGuarded(t *testing.T) {
@@ -885,6 +918,29 @@ func TestPrimaryLossReplaysFromIndependentJournal(t *testing.T) {
 	}
 }
 
+// TestResumeNeverExtendsTheReplayWindow: after a primary loss, a database
+// that re-anchored the dispatch with a later deadline cannot reuse the
+// journal's prepared envelope; the resume stops instead of replaying past the
+// provider's idempotency window.
+func TestResumeNeverExtendsTheReplayWindow(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	op := h.dispatchOp(64)
+	lose := true
+	if _, err := h.coord.Dispatch(ctx, h.store(), op, h.effect(op, &lose)); err == nil {
+		t.Fatal("expected the unknown outcome")
+	}
+	restored := mustStore(t, ownerConn(t, dbtest.New(t)))
+	later := op
+	later.ReplayUntil = op.ReplayUntil.Add(6 * time.Hour)
+	if _, err := h.coord.Dispatch(ctx, restored, later, h.effect(later, nil)); err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("resume with a later deadline: err = %v, want the prepared envelope refused", err)
+	}
+	if h.provider.count() != 1 {
+		t.Fatalf("sends = %d, want only the original one", h.provider.count())
+	}
+}
+
 // TestRuntimeRolesCannotUseRecoveryInternals: the coordinator functions are
 // owner-only; only the backup reader may read the tables (as for every
 // business table).
@@ -895,6 +951,7 @@ func TestRuntimeRolesCannotUseRecoveryInternals(t *testing.T) {
 	reads := []string{"SELECT * FROM business.recovery_operation", "SELECT * FROM business.recovery_freeze"}
 	calls := []string{
 		"SELECT * FROM business.recovery_reserve(gen_random_uuid(), 'dispatch', gen_random_uuid(), 0, repeat('a', 64), 'k', now())",
+		"SELECT * FROM business.recovery_lookup(gen_random_uuid(), 'dispatch', gen_random_uuid(), 0, repeat('a', 64), 'k', now())",
 		"SELECT business.recovery_mark_prepared(gen_random_uuid())",
 		"SELECT * FROM business.recovery_mark_committed(gen_random_uuid(), '{}'::json, repeat('a', 64), false)",
 		"SELECT business.recovery_mark_secured(gen_random_uuid())",
@@ -919,6 +976,51 @@ func TestRuntimeRolesCannotUseRecoveryInternals(t *testing.T) {
 	for _, sql := range reads {
 		if _, err := backup.Exec(ctx, sql); err != nil {
 			t.Errorf("gk_backup: %q: %v, want the backup reader to read it", sql, err)
+		}
+	}
+}
+
+// Commands have no replay deadline (recorded as 'infinity'); dispatches
+// must have a finite one; the command is secured with its outcome like a
+// dispatch.
+func TestCommandOperationsRecordNoReplayDeadline(t *testing.T) {
+	h := newHarness(t)
+	c := h.coord
+	ctx := context.Background()
+	op := recovery.Operation{ID: uuidAt(901), Kind: recovery.KindCommand, AggregateID: uuidAt(902), PriorVersion: 1,
+		Payload: json.RawMessage(`{"command":"test"}`)}
+	store := h.store()
+	committed := false
+	apply := func(ctx context.Context) (recovery.Outcome, recovery.State, error) {
+		o := recovery.Outcome{Status: "confirmed"}
+		state, _, err := store.MarkCommitted(ctx, op, o, false)
+		committed = true
+		return o, state, err
+	}
+	if got, err := c.Command(ctx, store, op, apply); err != nil || got.Status != "confirmed" || !committed {
+		t.Fatalf("Command = %+v, %v", got, err)
+	}
+	var kind, replay string
+	if err := h.owner.QueryRow(ctx, "SELECT kind, replay_until::text FROM business.recovery_operation WHERE id = $1::uuid", op.ID).
+		Scan(&kind, &replay); err != nil || kind != "command" || replay != "infinity" || h.state(op.ID) != "secured" {
+		t.Fatalf("recorded %s %s %s (%v)", kind, replay, h.state(op.ID), err)
+	}
+	// Resuming the secured command (same identity) finds it.
+	if got, err := c.Command(ctx, store, op, apply); err != nil || got.Status != "confirmed" {
+		t.Fatalf("resume = %+v, %v", got, err)
+	}
+	for name, c := range map[string]struct{ sql, state string }{
+		"dispatch without deadline": {`INSERT INTO business.recovery_operation (id, kind, aggregate_id, prior_version, payload_hash, envelope_key, replay_until)
+			VALUES (gen_random_uuid(), 'dispatch', gen_random_uuid(), 0, repeat('a', 64), 'k1', NULL)`, "23502"},
+		"dispatch with infinity": {`INSERT INTO business.recovery_operation (id, kind, aggregate_id, prior_version, payload_hash, envelope_key, replay_until)
+			VALUES (gen_random_uuid(), 'dispatch', gen_random_uuid(), 0, repeat('a', 64), 'k2', 'infinity')`, "23514"},
+		"command with deadline": {`INSERT INTO business.recovery_operation (id, kind, aggregate_id, prior_version, payload_hash, envelope_key, replay_until)
+			VALUES (gen_random_uuid(), 'command', gen_random_uuid(), 0, repeat('a', 64), 'k3', now())`, "23514"},
+		"reserve a command with deadline": {`SELECT * FROM business.recovery_reserve(gen_random_uuid(), 'command', gen_random_uuid(), 0,
+			repeat('a', 64), 'k4', now())`, "22023"},
+	} {
+		if _, err := h.owner.Exec(ctx, c.sql); dbtest.SQLState(err) != c.state {
+			t.Errorf("%s: %v, want SQLSTATE %s", name, err, c.state)
 		}
 	}
 }
