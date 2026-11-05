@@ -40,10 +40,12 @@
 -- Accounting (K05), per collection C (succeeded cake collections now):
 -- S = succeeded local operations + succeeded unmatched observations; R =
 -- unresolved local operations + pending/requires_action unmatched
--- observations; each provider refund counted once (an unresolved operation
--- admitted and named by an unresolved quarantined observation that
--- contradicts it, an amount, currency or payment intent mismatch, is
--- counted through that observation only while it stands). room = max(0, C - S - R);
+-- observations; each provider refund counted once. A quarantined refund
+-- that names an operation but contradicts its amount, currency or payment
+-- intent cannot be that operation's result, so it adds to the exposure
+-- beside the operation's own allocation (never clipped). A refund matched
+-- to a failed or withdrawn operation (a contradiction) counts by its own
+-- status (succeeded in S, pending/requires_action in R). room = max(0, C - S - R);
 -- exposure = S + R (the money that may have gone back). A new operation may
 -- take min(room, goal remaining) where goal remaining = max(0, target - the
 -- order's S + R), and only when the collection has no unresolved operation
@@ -206,11 +208,9 @@ CREATE TABLE business.refund_observation (
   metadata_operation_id uuid NULL,
   matched_operation_id  uuid NULL REFERENCES business.refund_operation (id),
   -- A quarantined refund that names a local operation of the collection but
-  -- contradicts it (amount, currency or payment intent): while it stands,
-  -- (and counted: succeeded, pending or requires_action) that operation's
-  -- unresolved amount, once admitted, is not counted again (K05: each
-  -- provider refund counted once; the operation's key can yield at most one
-  -- refund).
+  -- contradicts it (amount, currency or payment intent): a link for
+  -- reporting and manager tooling only. It cannot be the operation's result,
+  -- so the accounting counts both (K05: possible exposure, no clipping).
   named_operation_id    uuid NULL REFERENCES business.refund_operation (id),
   quarantined           boolean NOT NULL,
   quarantine_reason     text NULL CHECK (quarantine_reason IN ('unmatched', 'amount_mismatch', 'currency_mismatch',
@@ -242,10 +242,10 @@ CREATE UNIQUE INDEX refund_observation_matched_idx ON business.refund_observatio
 
 -- Owner-internal: the K05 balance of one collection (see the header).
 -- paid is the collection's amount once succeeded (0 otherwise); local and
--- external split the exposure between local operations and unmatched
--- observations (an admitted unresolved operation named by a standing
--- contradicting observation counts through the observation only); unresolved: an
--- unresolved local operation exists;
+-- external split the exposure between local operations and observations
+-- (unmatched ones, and matched ones whose operation is failed or withdrawn:
+-- by the refund's own status); unresolved: an unresolved local operation
+-- exists;
 -- quarantined: an unresolved quarantined observation exists.
 CREATE FUNCTION business.refund_balance(p_collection uuid)
 RETURNS TABLE (paid_minor bigint, succeeded_minor bigint, reserved_minor bigint, local_minor bigint,
@@ -261,20 +261,20 @@ AS $$
   ), l AS (
     SELECT coalesce(sum(o.amount_minor) FILTER (WHERE o.state = 'succeeded'), 0)::bigint AS s,
            coalesce(sum(o.amount_minor) FILTER (WHERE o.state IN ('reserved', 'submitting', 'pending', 'unknown',
-                                                                  'requires_action')
-                                                  AND NOT (o.dispatch_started_at IS NOT NULL
-                                                  AND EXISTS (SELECT 1 FROM business.refund_observation n
-                                                                  WHERE n.named_operation_id = o.id
-                                                                    AND n.resolved_at IS NULL
-                                                                    AND n.status IN ('succeeded', 'pending',
-                                                                                     'requires_action')))), 0)::bigint AS r,
+                                                                  'requires_action')), 0)::bigint AS r,
            coalesce(bool_or(o.state IN ('reserved', 'submitting', 'pending', 'unknown', 'requires_action')), false) AS u
     FROM business.refund_operation o WHERE o.collection_id = p_collection
   ), x AS (
+    -- Unmatched observations, and observations matched to an operation that
+    -- counts nothing itself (failed or withdrawn: a contradiction, its money
+    -- is still real), by the refund's own status.
     SELECT coalesce(sum(b.amount_minor) FILTER (WHERE b.status = 'succeeded'), 0)::bigint AS s,
            coalesce(sum(b.amount_minor) FILTER (WHERE b.status IN ('pending', 'requires_action')), 0)::bigint AS r,
-           coalesce(bool_or(b.resolved_at IS NULL), false) AS q
-    FROM business.refund_observation b WHERE b.collection_id = p_collection AND b.matched_operation_id IS NULL
+           coalesce(bool_or(b.resolved_at IS NULL) FILTER (WHERE b.matched_operation_id IS NULL), false) AS q
+    FROM business.refund_observation b
+    LEFT JOIN business.refund_operation mo ON mo.id = b.matched_operation_id
+    WHERE b.collection_id = p_collection
+      AND (b.matched_operation_id IS NULL OR mo.state IN ('failed', 'cancelled'))
   )
   SELECT c.paid, l.s + x.s, l.r + x.r, l.s + l.r, x.s + x.r, l.s + l.r + x.s + x.r,
          GREATEST(0, c.paid - l.s - l.r - x.s - x.r),

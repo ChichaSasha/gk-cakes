@@ -1263,20 +1263,24 @@ alternative) without a second subsystem.
   **quarantined**: counted as exposure, and while unresolved it blocks every
   new refund dispatch for the collection (resolution columns exist; manager
   tooling: Not yet). One that names an operation but contradicts its
-  amount, currency or payment intent is linked to it (`named_operation_id`):
-  while it stands, that admitted operation's unresolved amount is not
-  counted on top (its key can yield at most one refund). A matched refund
+  amount, currency or payment intent is linked to it (`named_operation_id`,
+  for reporting and manager tooling only): it cannot be that operation's
+  result, so it adds to the exposure beside the operation's own allocation
+  (never clipped). A matched refund
   whose status later contradicts its decided operation (Stripe correcting a
   `succeeded` refund to `failed`/`canceled`, a `failed` one turning out
   otherwise, or any refund for a withdrawn operation) records the
   contradiction on the operation: nothing becomes available, no automatic
   payout or reopening, the order view says `needs_attention` and the worker
   asks a manager (every reconcile also re-checks succeeded and failed
-  operations against Stripe's list).
+  operations against Stripe's list). A refund matched to a failed or
+  withdrawn operation still counts by its own status (succeeded in S,
+  pending in R).
 - **Accounting** (`business.refund_balance`, `refund_available`), per
   succeeded collection C: S = succeeded local operations + succeeded
-  unmatched observations; R = unresolved local operations + pending
-  unmatched observations; each provider refund counted once. A new
+  observations not counted through an operation (unmatched, or matched to a
+  failed/withdrawn one); R = unresolved local operations + pending such
+  observations; each provider refund counted once. A new
   operation may take min(max(0, C − S − R), goal remaining) and only with no
   unresolved operation, no unresolved quarantined observation and no
   contradicting evidence on the collection. The K05 fixture (10000p capture,
@@ -1343,8 +1347,9 @@ one refund; unknown past the window with no match stays unknown + attention,
 no second POST; pending → succeeded on its event; failed → the remainder
 reopens once under a new key; a dashboard refund quarantined, blocking
 dispatch; duplicate refund events counted once; a freeze defers; a
-succeeded refund Stripe later reports failed needs a manager; a refund naming
-an operation with another amount counted once; a refusal on a confirmed
+succeeded refund Stripe later reports failed needs a manager; a failed
+refund Stripe later reports succeeded is counted as returned; a refund naming
+an operation with another amount adds to the exposure; a refusal on a confirmed
 order records no full return).
 
 Recorded decisions: a failed refund is never re-sent automatically (a later
@@ -1374,6 +1379,10 @@ Not yet:
   failed dashboard refund) is quarantined like any other unmatched refund
   and blocks the collection's dispatch until a manager resolves it, although
   it returned no money (deliberately conservative);
+- a contradiction recorded on an operation stays until manager tooling
+  clears it: even a stale sighting (for example a `pending` status seen for
+  a refund already recorded `succeeded`) flags the operation and blocks new
+  refunds for its collection permanently until then;
 - the money of a refused paid confirmation on an order that is not
   cancelled (confirmed by another collection, or awaiting payment after its
   holds were released): attention only, no goal, until manager/chef tooling

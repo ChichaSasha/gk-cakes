@@ -647,10 +647,11 @@ func TestSucceededRefundThatFailsLaterNeedsAManager(t *testing.T) {
 }
 
 // A refund naming a local operation but with another amount is quarantined
-// and linked to that operation: the possible exposure counts it once (the
-// operation's key can yield at most one refund), never the operation's
-// allocation on top, while the observation stands; nothing is sent.
-func TestRefundNamingAnOperationWithAnotherAmountIsCountedOnce(t *testing.T) {
+// and linked to that operation (reporting only). It cannot be the result of
+// the operation's key, whose admitted request may still create its own
+// refund, so the possible exposure keeps both (K05: no clipping); nothing
+// is sent while it stands.
+func TestRefundNamingAnOperationWithAnotherAmountAddsToExposure(t *testing.T) {
 	h := newPayHarness(t)
 	f := h.setup(t)
 	pol := h.policy(t, "p1")
@@ -677,17 +678,57 @@ func TestRefundNamingAnOperationWithAnotherAmountIsCountedOnce(t *testing.T) {
 		AND quarantine_reason = 'amount_mismatch' AND named_operation_id = $2::uuid`, coll, r.ID); n != 1 {
 		t.Fatalf("%d linked observations", n)
 	}
-	if b := h.balance(t, coll); b.Succeeded != 5000 || b.Reserved != 0 || b.Exposure != 5000 || b.Room != 5000 ||
-		b.Available != 0 || !b.Unresolved || !b.Quarantined {
+	if b := h.balance(t, coll); b.Succeeded != 5000 || b.Reserved != 10000 || b.External != 5000 || b.Exposure != 15000 ||
+		b.Room != 0 || b.Available != 0 || !b.Unresolved || !b.Quarantined {
 		t.Fatalf("balance %+v", b)
 	}
 	if h.count(t, "SELECT business.refund_reserve($1::uuid)", order) != 0 || len(h.stripe.refundCreates()) != 1 {
 		t.Fatal("dispatched or reserved under quarantine")
 	}
-	// Once a manager resolves the observation, the operation counts again.
-	h.owner(t, `UPDATE business.refund_observation SET resolved_at = now(), resolution_note = 'reviewed'
-		WHERE collection_id = $1::uuid`, coll)
-	if b := h.balance(t, coll); b.Reserved != 10000 || b.Exposure != 15000 || b.Available != 0 {
-		t.Fatalf("after the resolution %+v", b)
+}
+
+// A refund matched to an operation that failed, which Stripe later reports
+// succeeded (a contradiction), is real money: the balance counts it by the
+// refund's own status (returned), nothing is available and the order view
+// needs attention; nothing is paid out again.
+func TestRefundOfAFailedOperationThatSucceedsLaterIsCounted(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d, coll := h.lateCapture(t, f, pol, "revive")
+	r := h.reservedRefund(t, coll)
+	h.withRefunds()
+	h.stripe.mu.Lock()
+	h.stripe.refunds.newStatus = "pending"
+	h.stripe.mu.Unlock()
+	h.due(t)
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("pending:\n%s", reasons(errs))
+	}
+	h.stripe.setRefund("re_fake1", "failed", "lost_or_stolen_card")
+	h.refundEvent(t, "evt_re_failed", "refund.failed", "re_fake1")
+	if errs := h.drain(t); len(attention(errs)) != 1 || h.refundRow(t, r.ID).State != "failed" {
+		t.Fatalf("failed:\n%s", reasons(errs))
+	}
+	if b := h.balance(t, coll); b.Exposure != 0 || b.Available != 10000 {
+		t.Fatalf("after the failure %+v", b)
+	}
+	h.stripe.setRefund("re_fake1", "succeeded", "")
+	h.refundEvent(t, "evt_re_updated", "refund.updated", "re_fake1")
+	errs := h.drain(t)
+	if got := attention(errs); len(got) != 1 || len(errs) != 1 || !strings.Contains(got[0], "decided refund otherwise") {
+		t.Fatalf("contradiction:\n%s", reasons(errs))
+	}
+	if row := h.refundRow(t, r.ID); row.State != "failed" || row.Mismatch == "" {
+		t.Fatalf("operation %+v", row)
+	}
+	if b := h.balance(t, coll); b.Succeeded != 10000 || b.Exposure != 10000 || b.Room != 0 || b.Available != 0 {
+		t.Fatalf("balance %+v", b)
+	}
+	if v, raw := h.view(t, order, d); v.Refund == nil || v.Refund.State != "needs_attention" || v.Refund.SucceededMinor != 10000 {
+		t.Fatalf("view %s", raw)
+	}
+	if h.count(t, "SELECT business.refund_reserve($1::uuid)", order) != 0 || len(h.stripe.refundCreates()) != 1 {
+		t.Fatal("paid out again")
 	}
 }
