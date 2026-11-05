@@ -496,6 +496,117 @@ func TestExternalRefundQuarantineBlocksDispatch(t *testing.T) {
 	}
 }
 
+// K11 (migration 0020): a restore freeze set on a live database while the
+// refund worker is between refund_job_begin and fix/admit wins over every
+// other answer ('ready', 'closed', 'settled'): fix and admit answer 'frozen'
+// (the worker defers) and nothing is fixed, admitted or recorded; after the
+// freeze lifts the same calls answer as they would have and the job
+// completes.
+func TestFreezeBetweenBeginAndFixOrAdmitDefersRefundDispatch(t *testing.T) {
+	// Each case has its own database: a late capture drains every due job.
+	start := func(t *testing.T, key string) (*payHarness, refundOp, jobs.Job) {
+		t.Helper()
+		h := newPayHarness(t)
+		f := h.setup(t)
+		_, _, coll := h.lateCapture(t, f, h.policy(t, "p1"), key)
+		r := h.reservedRefund(t, coll)
+		return h, r, h.claimOnly(t, h.refundJob(t, "dispatch", r.ID))
+	}
+	freeze := func(t *testing.T, h *payHarness, on bool) {
+		t.Helper()
+		if on {
+			h.owner(t, "SELECT business.recovery_set_freeze(true, 'restore drill')")
+		} else {
+			h.owner(t, "SELECT business.recovery_set_freeze(false, NULL)")
+		}
+	}
+	unfixed := func(t *testing.T, h *payHarness, op string) {
+		t.Helper()
+		if h.count(t, "SELECT count(*) FROM business.refund_operation WHERE id = $1::uuid AND payload IS NULL AND dispatch_started_at IS NULL", op) != 1 ||
+			h.count(t, "SELECT count(*) FROM business.recovery_operation WHERE id = $1::uuid", op) != 0 {
+			t.Fatal("fixed or reserved while frozen")
+		}
+	}
+
+	t.Run("ready", func(t *testing.T) {
+		h, r, job := start(t, "frz-ready")
+		b, err := h.refundBegin(t, job)
+		if err != nil || b.Status != "ready" {
+			t.Fatalf("begin %+v %v", b, err)
+		}
+		freeze(t, h, true)
+		if status, _, err := h.refundFix(t, job, r.ID, refundPayload(r, r.Amount), b.DBNow); err != nil || status != "frozen" {
+			t.Fatalf("fix while frozen %s %v", status, err)
+		}
+		if got := h.refundAdmit(t, job, r.ID); got != "frozen" {
+			t.Fatalf("admit while frozen %s", got)
+		}
+		unfixed(t, h, r.ID)
+		freeze(t, h, false)
+		if status, payload, err := h.refundFix(t, job, r.ID, refundPayload(r, r.Amount), b.DBNow); err != nil || status != "ready" || payload == "" {
+			t.Fatalf("fix after the freeze %s %v", status, err)
+		}
+		h.finish(t, job, jobs.Defer(payments.FreezeRecheck, nil))
+	})
+
+	t.Run("closed", func(t *testing.T) {
+		h, r, job := start(t, "frz-closed")
+		b, err := h.refundBegin(t, job)
+		if err != nil || b.Status != "ready" {
+			t.Fatalf("begin %+v %v", b, err)
+		}
+		// Withdrawn meanwhile, before any request was fixed.
+		h.owner(t, "UPDATE business.refund_operation SET state = 'cancelled', settled_at = now() WHERE id = $1::uuid", r.ID)
+		freeze(t, h, true)
+		if status, _, err := h.refundFix(t, job, r.ID, refundPayload(r, r.Amount), b.DBNow); err != nil || status != "frozen" {
+			t.Fatalf("fix while frozen %s %v", status, err)
+		}
+		if got := h.refundAdmit(t, job, r.ID); got != "frozen" {
+			t.Fatalf("admit while frozen %s", got)
+		}
+		unfixed(t, h, r.ID)
+		freeze(t, h, false)
+		if status, _, err := h.refundFix(t, job, r.ID, refundPayload(r, r.Amount), b.DBNow); err != nil || status != "closed" {
+			t.Fatalf("fix after the freeze %s %v", status, err)
+		}
+		h.finish(t, job, nil)
+		if row := h.refundRow(t, r.ID); row.State != "cancelled" || row.Started {
+			t.Fatalf("row %+v", row)
+		}
+	})
+
+	t.Run("settled", func(t *testing.T) {
+		h, r, job := start(t, "frz-settled")
+		h.refundPrepared(t, job, r)
+		// Decided meanwhile (as a reconcile would), before any call.
+		h.owner(t, `UPDATE business.refund_operation SET state = 'failed', failure_reason = 'expired_or_canceled_card',
+			settled_at = now() WHERE id = $1::uuid`, r.ID)
+		freeze(t, h, true)
+		if got := h.refundAdmit(t, job, r.ID); got != "frozen" {
+			t.Fatalf("admit while frozen %s", got)
+		}
+		if row := h.refundRow(t, r.ID); row.State != "failed" || row.Started || h.recoveryState(t, r.ID) != "prepared" {
+			t.Fatalf("while frozen %+v (%s)", row, h.recoveryState(t, r.ID))
+		}
+		freeze(t, h, false)
+		if got := h.refundAdmit(t, job, r.ID); got != "settled" {
+			t.Fatalf("admit after the freeze %s", got)
+		}
+		if state, _ := h.refundCommit(t, job, r.ID, `{"status":"settled","evidence":{"source":"database"}}`); state != "committed" {
+			t.Fatalf("committed %s", state)
+		}
+		if got := h.refundText(t, "SELECT business.refund_recovery_secured($1::uuid, $2::uuid, $3, $4::uuid)",
+			job.ID, job.Worker, job.Generation, r.ID); got != "secured" {
+			t.Fatalf("secured %s", got)
+		}
+		h.finish(t, job, nil)
+		if row := h.refundRow(t, r.ID); row.State != "failed" || row.Started ||
+			h.count(t, "SELECT count(*) FROM business.refund_attempt WHERE refund_operation_id = $1::uuid", r.ID) != 0 {
+			t.Fatalf("row %+v", row)
+		}
+	})
+}
+
 // A lost answer never becomes a failure on a timer: past the window the
 // dispatch goes to reconciliation, the complete list has no refund for it
 // and the operation stays unknown (manager); nothing new is reserved. One

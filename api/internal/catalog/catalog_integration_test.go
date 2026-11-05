@@ -446,7 +446,7 @@ func TestGatewayRefusesSeparatorsInCatalogText(t *testing.T) {
 			$1::uuid, $2, $3, $4::uuid, 1, 9000, 7, 10, $5, ARRAY[$6]::text[], $7::uuid, $8::json, $9::json, $10)`,
 			chefSubject, key, sha, f.variant, coating, composition, f.notice, string(allergens), string(lines), strings.Repeat("b", 64))
 	}
-	for _, bad := range []string{" ", " ", "", "", "", ""} {
+	for _, bad := range []string{"\u2028", "\u2029", "\u0085", "\u009f", "\x7f", "\r"} {
 		q := fmt.Sprintf("%U", []rune(bad)[0])
 		for name, err := range map[string]error{
 			"flavour name":     flavour("f"+q, "Vanilla"+bad+"Raspberry"),
@@ -496,7 +496,7 @@ func TestRecipeSnapshotColumnsAreChecked(t *testing.T) {
 		"empty flavour":      insert(10, "", "s", "made_to_order", "{Vanilla sponge}"),
 		"padded flavour":     insert(11, " Vanilla", "s", "made_to_order", "{Vanilla sponge}"),
 		"long flavour":       insert(12, strings.Repeat("v", 81), "s", "made_to_order", "{Vanilla sponge}"),
-		"separator flavour":  insert(13, "Vanilla Raspberry", "s", "made_to_order", "{Vanilla sponge}"),
+		"separator flavour":  insert(13, "Vanilla\u2028Raspberry", "s", "made_to_order", "{Vanilla sponge}"),
 		"unknown size":       insert(14, "Vanilla", "huge", "made_to_order", "{Vanilla sponge}"),
 		"unknown stock mode": insert(15, "Vanilla", "s", "frozen", "{Vanilla sponge}"),
 		"NULL item":          insert(16, "Vanilla", "s", "made_to_order", "{Vanilla sponge,NULL}"),
