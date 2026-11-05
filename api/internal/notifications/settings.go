@@ -4,16 +4,24 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync/atomic"
 )
 
-// RecordSettings records this environment and the UI origin of order page
-// links (business.notice_settings_record, migration 0030): order notices are
-// rendered in the database, inside the transaction of their transition, and
-// a database without these settings records its notices as not_configured.
-func RecordSettings(ctx context.Context, db Querier, env, uiOrigin string) error {
+// RecordSettings records this environment, the UI origin of order page
+// links and the recipient allowlist (EMAIL_RECIPIENT_ALLOWLIST; required in
+// staging, empty in production) with business.notice_settings_record
+// (migration 0030). Order notices are rendered in the database inside the
+// transaction of their transition: a database without these settings
+// records its notices as not_configured, and outside production a notice to
+// a recipient off the allowlist is never queued. The call writes only when
+// something changed.
+func RecordSettings(ctx context.Context, db Querier, env, uiOrigin string, allowlist []string) error {
+	entries := make([]string, len(allowlist))
+	for i, e := range allowlist {
+		entries[i] = strings.ToLower(e)
+	}
 	var one int
-	err := db.QueryRow(ctx, "SELECT 1 FROM business.notice_settings_record($1, $2)", env, strings.ToLower(uiOrigin)).Scan(&one)
+	err := db.QueryRow(ctx, "SELECT 1 FROM business.notice_settings_record($1, $2, $3::text[])",
+		env, strings.ToLower(uiOrigin), entries).Scan(&one)
 	if err != nil {
 		return fmt.Errorf("notifications: record notice settings: %w", err)
 	}
@@ -21,9 +29,10 @@ func RecordSettings(ctx context.Context, db Querier, env, uiOrigin string) error
 }
 
 // SettingsGate is the API's readiness check: after Pinger succeeds it
-// records the notice settings once (RecordSettings), and it reports ready
-// only when they have been recorded, so a deploy never serves before its
-// order notices can be rendered.
+// records the notice settings (RecordSettings) on every probe, which costs
+// one statement and writes nothing unless they changed, so settings lost
+// with a restored database or changed by a redeploy are recorded again
+// before the API reports ready.
 type SettingsGate struct {
 	Pinger interface {
 		Ping(ctx context.Context) error
@@ -31,20 +40,13 @@ type SettingsGate struct {
 	DB          Querier
 	Environment string
 	UIOrigin    string
-	recorded    atomic.Bool
+	Allowlist   []string
 }
 
-// Ping checks the database and records the settings until that succeeds.
+// Ping checks the database, then records the settings.
 func (g *SettingsGate) Ping(ctx context.Context) error {
 	if err := g.Pinger.Ping(ctx); err != nil {
 		return err
 	}
-	if g.recorded.Load() {
-		return nil
-	}
-	if err := RecordSettings(ctx, g.DB, g.Environment, g.UIOrigin); err != nil {
-		return err
-	}
-	g.recorded.Store(true)
-	return nil
+	return RecordSettings(ctx, g.DB, g.Environment, g.UIOrigin, g.Allowlist)
 }

@@ -103,6 +103,10 @@ func TestLoadAPIRejectsInvalidValues(t *testing.T) {
 		{"wildcard origin", merge(validLocalAPI, map[string]string{"UI_ORIGIN": "*"}), "UI_ORIGIN"},
 		{"origin with path", merge(validLocalAPI, map[string]string{"UI_ORIGIN": "http://localhost:5173/admin"}), "UI_ORIGIN"},
 		{"origin with trailing slash", merge(validLocalAPI, map[string]string{"UI_ORIGIN": "http://localhost:5173/"}), "UI_ORIGIN"},
+		// The form order notices link to (business.notice_settings, 0030).
+		{"origin with an IPv6 host", merge(validLocalAPI, map[string]string{"UI_ORIGIN": "http://[::1]:5173"}), "UI_ORIGIN"},
+		{"origin with an underscore", merge(validLocalAPI, map[string]string{"UI_ORIGIN": "http://my_host:5173"}), "UI_ORIGIN"},
+		{"origin longer than 200 bytes", merge(validLocalAPI, map[string]string{"UI_ORIGIN": "https://" + strings.Repeat("a", 200) + ".com"}), "UI_ORIGIN"},
 		{"invalid port", merge(validLocalAPI, map[string]string{"PORT": "70000"}), "PORT"},
 		{"invalid shutdown timeout", merge(validLocalAPI, map[string]string{"SHUTDOWN_TIMEOUT": "soon"}), "SHUTDOWN_TIMEOUT"},
 		{"non-positive shutdown timeout", merge(validLocalAPI, map[string]string{"SHUTDOWN_TIMEOUT": "0s"}), "SHUTDOWN_TIMEOUT"},
@@ -125,7 +129,8 @@ func TestLoadAPIRejectsInvalidValues(t *testing.T) {
 }
 
 func TestLoadAPIRejectsUnsafeProductionTestMixing(t *testing.T) {
-	staging := merge(validProductionAPI, map[string]string{"APP_ENV": "staging", "UI_ORIGIN": "https://staging.gkcake.com"})
+	staging := merge(validProductionAPI, map[string]string{"APP_ENV": "staging", "UI_ORIGIN": "https://staging.gkcake.com",
+		"EMAIL_RECIPIENT_ALLOWLIST": "@gkcake.com"})
 	cases := []struct {
 		name    string
 		env     map[string]string
@@ -234,8 +239,9 @@ var validEmailDispatch = map[string]string{
 }
 
 var validStagingWorker = map[string]string{
-	"APP_ENV":      "staging",
-	"DATABASE_URL": "postgresql://gk_worker:" + canary + "@db.example.supabase.co:5432/postgres?sslmode=verify-full",
+	"APP_ENV":                   "staging",
+	"EMAIL_RECIPIENT_ALLOWLIST": "@gkcake.com",
+	"DATABASE_URL":              "postgresql://gk_worker:" + canary + "@db.example.supabase.co:5432/postgres?sslmode=verify-full",
 }
 
 func TestLoadWorkerEmailDispatch(t *testing.T) {
@@ -337,7 +343,8 @@ func TestLoadAPIAuth(t *testing.T) {
 	}))); err != nil || !l.Auth.Enabled() {
 		t.Fatalf("local provider over http: %+v, %v", l.Auth, err)
 	}
-	staging := merge(validProductionAPI, map[string]string{"APP_ENV": "staging", "UI_ORIGIN": "https://staging.gkcake.com"})
+	staging := merge(validProductionAPI, map[string]string{"APP_ENV": "staging", "UI_ORIGIN": "https://staging.gkcake.com",
+		"EMAIL_RECIPIENT_ALLOWLIST": "@gkcake.com"})
 	for name, c := range map[string]struct {
 		env     map[string]string
 		mention string
@@ -516,8 +523,21 @@ func TestEmailRecipientAllowlist(t *testing.T) {
 	if fmt.Sprint(cfg.EmailRecipientAllowlist) != "[@gkcake.com tester+1@example.org]" {
 		t.Fatalf("allowlist %v", cfg.EmailRecipientAllowlist)
 	}
-	if cfg, err := LoadWorker(env(staging)); err != nil || cfg.EmailRecipientAllowlist != nil {
-		t.Fatalf("unset allowlist: %v %v", cfg.EmailRecipientAllowlist, err)
+	local := map[string]string{"APP_ENV": "test", "DATABASE_URL": "postgres://gk_worker:" + canary + "@localhost/gk"}
+	if cfg, err := LoadWorker(env(local)); err != nil || cfg.EmailRecipientAllowlist != nil {
+		t.Fatalf("unset allowlist in test: %v %v", cfg.EmailRecipientAllowlist, err)
+	}
+	// Staging fails closed: the worker and the API refuse to start without it.
+	if _, err := LoadWorker(env(merge(staging, map[string]string{"EMAIL_RECIPIENT_ALLOWLIST": ""}))); err == nil ||
+		!strings.Contains(err.Error(), "EMAIL_RECIPIENT_ALLOWLIST is required in staging") {
+		t.Fatalf("staging worker without the allowlist: %v", err)
+	}
+	stagingAPI := merge(validProductionAPI, map[string]string{"APP_ENV": "staging", "UI_ORIGIN": "https://staging.gkcake.com"})
+	if _, err := LoadAPI(env(stagingAPI)); err == nil || !strings.Contains(err.Error(), "EMAIL_RECIPIENT_ALLOWLIST is required in staging") {
+		t.Fatalf("staging API without the allowlist: %v", err)
+	}
+	if _, err := LoadAPI(env(merge(stagingAPI, map[string]string{"EMAIL_RECIPIENT_ALLOWLIST": "@gkcake.com"}))); err != nil {
+		t.Fatalf("staging API with the allowlist: %v", err)
 	}
 	api, err := LoadAPI(env(merge(validLocalAPI, map[string]string{"EMAIL_RECIPIENT_ALLOWLIST": "@gkcake.com"})))
 	if err != nil || len(api.EmailRecipientAllowlist) != 1 {

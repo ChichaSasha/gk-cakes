@@ -13,9 +13,10 @@
 --        recovery state to secured (never before: the outcome envelope is
 --        acknowledged first, K11); one per order command;
 --      released: the hold review's release of an abandoned order (AFTER
---        UPDATE trigger), only when the customer reached payment (a payment
---        collection exists) or asked to confirm a free order; an abandoned
---        checkout that never got that far is not emailed;
+--        UPDATE trigger), only when a payment was actually dispatched to
+--        Stripe (a collection with dispatch_started_at; never-dispatched
+--        ones do not count) or the customer asked to confirm a free order;
+--        an abandoned checkout that never got that far is not emailed;
 --      refund_returned: when the order's refund block
 --        (business.order_refund_summary) is 'returned' with a positive
 --        target and the order is not cancellation_pending; one per
@@ -35,14 +36,23 @@
 --    in the payload's exact canonical JSON (notifications.ParseDispatch).
 --    No personal data goes into the audit trail or order_notice. A notice
 --    never rolls back its transition: a recipient the dispatcher would
---    refuse, or a rendering/enqueue error, is recorded as 'not_queued'
---    (detail 'recipient' or the SQLSTATE), and a database whose API has not
---    recorded the notice settings yet records 'not_configured'. Manual
---    payout instructions are not emailed.
--- 2. business.notice_settings: the environment and the UI origin of order
---    page links, recorded by the API (business.notice_settings_record,
---    gk_api) before it reports ready.
--- 3. Staging recipient allowlist (EMAIL_RECIPIENT_ALLOWLIST, worker).
+--    refuse is 'not_queued' (detail 'recipient'), one outside the recipient
+--    allowlist (outside production) 'not_queued' (detail 'allowlist'), a
+--    rendering/enqueue error 'not_queued' (the SQLSTATE), and a database
+--    whose API has not recorded the notice settings yet 'not_configured'.
+--    Each of these is audited ('order.notice_not_queued' on the order, in
+--    the staff audit summary) and, unless deliberate, flagged for staff
+--    (4). A cancellation notice says the refund was requested, or already
+--    returned when it succeeded before the cancellation was secured.
+--    Manual payout instructions are not emailed.
+-- 2. business.notice_settings: the environment, the UI origin of order
+--    page links and the recipient allowlist, recorded by the API
+--    (business.notice_settings_record, gk_api) at start and on every
+--    readiness probe (a write only when something changed).
+-- 3. Staging recipient allowlist (EMAIL_RECIPIENT_ALLOWLIST, API and
+--    worker; required in staging, refused in production). First layer:
+--    order_notice_enqueue never queues a notice to another recipient
+--    (above), so no worker build can send it. Second layer:
 --    business.notification_dispatch_suppress (worker, lease-fenced, freeze
 --    first): the dispatcher found the stored recipient outside this
 --    environment's allowlist, so the intent is suspended with a fixed reason
@@ -52,23 +62,36 @@
 --    may have been sent: manager attention), 'settled' (nothing to stop),
 --    'already' (suspended before) or 'frozen' (restore freeze: nothing
 --    changes). The provider is never called for a suppressed intent.
+-- 4. business.order_attention_flags gains 'notice_not_sent' (staff list
+--    and detail).
 --
 -- Expand-only (K09): new tables, functions and triggers;
--- order_command_secured is replaced with its signature and grants.
+-- order_command_secured and order_attention_flags are replaced with their
+-- signatures and grants.
 
 SET LOCAL ROLE gk_owner;
 
--- 2. Notice settings (one row).
+-- 2. Notice settings (one row): the environment, the UI origin of order
+-- page links and the staging recipient allowlist (lower-case exact
+-- addresses or "@domain" entries; required in staging, empty in
+-- production, optional elsewhere).
 CREATE TABLE business.notice_settings (
-  singleton   boolean PRIMARY KEY DEFAULT true CHECK (singleton),
-  environment text NOT NULL CHECK (environment ~ '^[a-z0-9][a-z0-9-]{0,31}$'),
-  ui_origin   text NOT NULL CHECK (ui_origin ~ '^https?://[a-z0-9.-]+(:[0-9]{1,5})?$' AND octet_length(ui_origin) <= 200),
-  recorded_at timestamptz NOT NULL DEFAULT now()
+  singleton           boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  environment         text NOT NULL CHECK (environment ~ '^[a-z0-9][a-z0-9-]{0,31}$'),
+  ui_origin           text NOT NULL CHECK (ui_origin ~ '^https?://[a-z0-9.-]+(:[0-9]{1,5})?$' AND octet_length(ui_origin) <= 200),
+  recipient_allowlist text[] NOT NULL DEFAULT '{}' CHECK (pg_catalog.cardinality(recipient_allowlist) <= 50),
+  recorded_at         timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT notice_settings_allowlist CHECK (
+    CASE environment WHEN 'production' THEN pg_catalog.cardinality(recipient_allowlist) = 0
+                     WHEN 'staging' THEN pg_catalog.cardinality(recipient_allowlist) > 0
+                     ELSE true END)
 );
 
--- API: record this environment and its UI origin (UI_ORIGIN, validated by
--- the API's configuration) for order page links.
-CREATE FUNCTION business.notice_settings_record(p_env text, p_ui_origin text)
+-- API: record this environment, its UI origin (UI_ORIGIN) and its
+-- EMAIL_RECIPIENT_ALLOWLIST, all validated by the API's configuration with
+-- the same rules. Writes only when something changed (readiness calls it on
+-- every probe).
+CREATE FUNCTION business.notice_settings_record(p_env text, p_ui_origin text, p_allowlist text[])
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -80,11 +103,38 @@ BEGIN
      OR (p_env IN ('staging', 'production') AND p_ui_origin !~ '^https://') THEN
     RAISE EXCEPTION 'notice settings need a lower-case environment and an exact origin' USING ERRCODE = 'invalid_parameter_value';
   END IF;
-  INSERT INTO business.notice_settings AS s (environment, ui_origin) VALUES (p_env, p_ui_origin)
+  IF p_allowlist IS NULL OR pg_catalog.cardinality(p_allowlist) > 50
+     OR EXISTS (SELECT 1 FROM pg_catalog.unnest(p_allowlist) e
+                WHERE e IS NULL OR e !~ '^([a-z0-9._%+-]+@|@)[a-z0-9-]+(\.[a-z0-9-]+)+$')
+     OR (p_env = 'production' AND pg_catalog.cardinality(p_allowlist) > 0)
+     OR (p_env = 'staging' AND pg_catalog.cardinality(p_allowlist) = 0) THEN
+    RAISE EXCEPTION 'the recipient allowlist is required in staging, refused in production and lists lower-case addresses or @domain entries'
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+  INSERT INTO business.notice_settings AS s (environment, ui_origin, recipient_allowlist) VALUES (p_env, p_ui_origin, p_allowlist)
   ON CONFLICT (singleton) DO UPDATE SET environment = EXCLUDED.environment, ui_origin = EXCLUDED.ui_origin,
-                                        recorded_at = pg_catalog.now()
-  WHERE (s.environment, s.ui_origin) IS DISTINCT FROM (EXCLUDED.environment, EXCLUDED.ui_origin);
+                                        recipient_allowlist = EXCLUDED.recipient_allowlist, recorded_at = pg_catalog.now()
+  WHERE (s.environment, s.ui_origin, s.recipient_allowlist)
+        IS DISTINCT FROM (EXCLUDED.environment, EXCLUDED.ui_origin, EXCLUDED.recipient_allowlist);
 END;
+$$;
+
+-- Owner-internal: whether the settings let a notice go to p_addr (a bare
+-- address): always in production; elsewhere when the allowlist is empty
+-- (local, test) or lists the address or its exact domain. Staging always
+-- has an allowlist (table check), so it fails closed.
+CREATE FUNCTION business.notice_recipient_allowed(p_s business.notice_settings, p_addr text)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT p_s.environment = 'production' OR pg_catalog.cardinality(p_s.recipient_allowlist) = 0
+         OR EXISTS (SELECT 1 FROM pg_catalog.unnest(p_s.recipient_allowlist) e
+                    WHERE e = pg_catalog.lower(p_addr)
+                       OR (pg_catalog.left(e, 1) = '@' AND pg_catalog.right(pg_catalog.lower(p_addr), pg_catalog.length(e)) = e
+                           AND pg_catalog.strpos(pg_catalog.lower(p_addr), '@') = pg_catalog.length(p_addr) - pg_catalog.length(e) + 1));
 $$;
 
 -- 1. One row per order notice (no personal data).
@@ -273,6 +323,7 @@ DECLARE
   v_totals text;
   v_rate integer;
   v_target bigint;
+  v_returned boolean;
   v_style constant text := 'margin:0 0 16px';
   v_link_style constant text := 'color:#5b1a2e';
 BEGIN
@@ -337,14 +388,17 @@ BEGIN
       WHEN 'chef_cancelled' THEN 'We are sorry: the chef has had to cancel your order.'
       WHEN 'late_payment_returned' THEN 'Your order has been cancelled because a handover could not be agreed after your payment arrived.'
       ELSE 'Your order has been cancelled as you asked.' END;
+    v_returned := coalesce((p_facts ->> 'refund_returned')::boolean, false);
     v_text := v_text || CASE
-      WHEN v_target = 0 THEN 'There was no payment for this order, so there is nothing to refund.'
-      WHEN v_rate = 100 THEN 'Refund requested: ' || business.notice_money(v_target) || ', the full amount you paid.'
-      ELSE 'Refund requested: ' || business.notice_money(v_target) || ', which is ' || v_rate::text || '% of the '
-           || business.notice_money((p_facts ->> 'paid_minor')::bigint)
-           || ' you paid, because the full-refund deadline had been reached.' END;
+      WHEN coalesce((p_facts ->> 'paid_minor')::bigint, 0) = 0 THEN 'There was no payment for this order, so there is nothing to refund.'
+      WHEN v_target = 0 THEN 'No refund is due for this order.'
+      ELSE CASE WHEN v_returned THEN 'Refund: ' ELSE 'Refund requested: ' END || business.notice_money(v_target)
+           || CASE WHEN v_rate = 100 THEN ', the full amount you paid.'
+                   ELSE ', which is ' || v_rate::text || '% of the ' || business.notice_money((p_facts ->> 'paid_minor')::bigint)
+                        || ' you paid, because the full-refund deadline had been reached.' END END;
     IF v_target > 0 THEN
-      v_text := v_text || 'We have asked for this refund; it has not been returned yet. We will email you again once it has.'::text;
+      v_text := v_text || CASE WHEN v_returned THEN 'It has already been returned to you.'
+                               ELSE 'We have asked for this refund and will email you once it has been returned.' END;
     END IF;
     v_text := v_text || ('Order reference: ' || p_o.id::text || E'\nIt was planned for: ' || v_when);
   ELSIF p_kind = 'refund_returned' THEN
@@ -362,12 +416,9 @@ BEGIN
   FOREACH v_p IN ARRAY v_text LOOP
     v_html := v_html || ('<p style="' || v_style || '">' || pg_catalog.replace(business.notice_html(v_p), E'\n', '<br>') || '</p>');
   END LOOP;
-  IF p_kind = 'released' THEN
-    v_text := v_text || ('If you would still like a cake, you can place a new order at ' || p_origin || '.');
-    v_html := v_html || ('<p style="' || v_style || '">If you would still like a cake, you can place a new order at <a href="'
-                         || business.notice_html(p_origin) || '" style="' || v_link_style || '">' || business.notice_html(p_origin)
-                         || '</a>.</p>');
-  ELSE
+  -- A released order has no order page paragraph (and no invitation to
+  -- order again: no marketing).
+  IF p_kind <> 'released' THEN
     v_text := v_text || ('Your order page: ' || v_link
                          || E'\nIf you ordered without signing in, open this link on the same device and browser you ordered with.');
     v_html := v_html || ('<p style="' || v_style || '">Your order page: <a href="' || business.notice_html(v_link)
@@ -423,6 +474,11 @@ BEGIN
   ELSIF NOT business.notice_address_ok(v_o.contact_email) THEN
     v_outcome := 'not_queued';
     v_detail := 'recipient';
+  ELSIF NOT business.notice_recipient_allowed(v_s, v_o.contact_email) THEN
+    -- Outside production, a recipient off the allowlist is never queued, so
+    -- no worker build (old, failed or rolled back) can send to it.
+    v_outcome := 'not_queued';
+    v_detail := 'allowlist';
   ELSE
     v_id := business.notice_uuid(v_s.environment || ':order_notice:intent:' || v_name);
     v_key := business.notice_uuid(v_s.environment || ':order_notice:key:' || v_name);
@@ -453,6 +509,12 @@ BEGIN
   -- A concurrent transaction that recorded it first (the advisory lock
   -- makes this unlikely) must not fail this transition at commit.
   ON CONFLICT ON CONSTRAINT order_notice_once DO NOTHING;
+  IF v_outcome <> 'queued' THEN
+    -- Visible to staff (the order's audit summary; attention flag
+    -- notice_not_sent), without personal data.
+    PERFORM business.audit_record('system', NULL, 'order.notice_not_queued', 'order', p_order, p_transition,
+                                  pg_catalog.json_build_object('kind', p_kind, 'outcome', v_outcome, 'detail', v_detail));
+  END IF;
   RETURN v_outcome;
 END;
 $$;
@@ -482,9 +544,13 @@ BEGIN
          OR (o.recovery_state = 'cancellation_pending' AND v.command IN ('cancel', 'late_payment')
              AND v_status = 'cancelled'));
   IF FOUND THEN
+    -- A cancellation's refund may already have succeeded before the order
+    -- was secured: the email then says so instead of "requested".
     PERFORM business.order_notice_enqueue(v.order_id, v_status, v.id::text, v.id,
-                                          CASE WHEN v_status = 'cancelled' THEN v_evidence
-                                               ELSE pg_catalog.json_build_object('received_at', v.received_at) END);
+      CASE WHEN v_status = 'cancelled'
+           THEN (v_evidence::jsonb || pg_catalog.jsonb_build_object('refund_returned',
+                   coalesce(business.order_refund_summary(v.order_id) ->> 'state' = 'returned', false)))::json
+           ELSE pg_catalog.json_build_object('received_at', v.received_at) END);
   END IF;
   RETURN v_state;
 END;
@@ -498,7 +564,7 @@ SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
 AS $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM business.payment_collection c WHERE c.order_id = NEW.id)
+  IF EXISTS (SELECT 1 FROM business.payment_collection c WHERE c.order_id = NEW.id AND c.dispatch_started_at IS NOT NULL)
      OR EXISTS (SELECT 1 FROM business.order_command c WHERE c.order_id = NEW.id AND c.command = 'free_confirm') THEN
     PERFORM business.order_notice_enqueue(NEW.id, 'released', 'released', business.notice_uuid('order_released:' || NEW.id::text), NULL);
   END IF;
@@ -609,9 +675,46 @@ BEGIN
 END;
 $$;
 
+-- 4. As in 0029, plus 'notice_not_sent': an order notice was not queued
+-- because the stored address cannot be sent to or rendering failed, or
+-- because the settings were missing at the time although they exist now (a
+-- deploy window). The staging allowlist and a database whose API never
+-- recorded settings (local tooling, tests) are deliberate, not flagged;
+-- every outcome other than queued is audited ('order.notice_not_queued').
+CREATE OR REPLACE FUNCTION business.order_attention_flags(p_order business.orders)
+RETURNS text[]
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT pg_catalog.array_remove(ARRAY[
+           CASE WHEN business.order_refund_summary(p_order.id) ->> 'state' = 'needs_attention'
+                THEN 'refund_needs_attention' END,
+           CASE WHEN EXISTS (SELECT 1 FROM business.payment_collection pc
+                             WHERE pc.order_id = p_order.id AND pc.state = 'unknown')
+                THEN 'payment_unknown' END,
+           CASE WHEN EXISTS (SELECT 1 FROM business.payment_collection pc
+                             WHERE pc.order_id = p_order.id AND pc.mismatch_reason IS NOT NULL)
+                THEN 'payment_mismatch' END,
+           CASE WHEN p_order.lifecycle = 'paid_awaiting_agreement' THEN 'paid_awaiting_agreement' END,
+           CASE WHEN EXISTS (SELECT 1 FROM business.refund_observation b
+                             JOIN business.payment_collection pc ON pc.id = b.collection_id
+                             WHERE pc.order_id = p_order.id AND b.quarantined AND b.resolved_at IS NULL)
+                THEN 'refund_quarantine' END,
+           CASE WHEN EXISTS (SELECT 1 FROM business.order_notice n
+                             WHERE n.order_id = p_order.id
+                               AND ((n.outcome = 'not_queued' AND n.detail <> 'allowlist')
+                                    OR (n.outcome = 'not_configured'
+                                        AND EXISTS (SELECT 1 FROM business.notice_settings s WHERE s.singleton))))
+                THEN 'notice_not_sent' END
+         ]::text[], NULL);
+$$;
+
 REVOKE ALL ON TABLE business.notice_settings FROM PUBLIC;
 REVOKE ALL ON TABLE business.order_notice FROM PUBLIC;
-REVOKE ALL ON FUNCTION business.notice_settings_record(text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.notice_settings_record(text, text, text[]) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.notice_recipient_allowed(business.notice_settings, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.notice_json(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.notice_html(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.notice_money(bigint) FROM PUBLIC;
@@ -627,5 +730,5 @@ REVOKE ALL ON FUNCTION business.order_notice_refund_check(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.order_notice_refund_trigger() FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.notification_dispatch_suppress(uuid, uuid, bigint) FROM PUBLIC;
 
-GRANT EXECUTE ON FUNCTION business.notice_settings_record(text, text) TO gk_api;
+GRANT EXECUTE ON FUNCTION business.notice_settings_record(text, text, text[]) TO gk_api;
 GRANT EXECUTE ON FUNCTION business.notification_dispatch_suppress(uuid, uuid, bigint) TO gk_worker;

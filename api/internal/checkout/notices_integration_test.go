@@ -59,7 +59,7 @@ func (f *fakeEmail) all() []sentNotice {
 // withRefunds first when needed).
 func (h *payHarness) withNotices(t *testing.T) *fakeEmail {
 	t.Helper()
-	if err := notifications.RecordSettings(h.ctx, h.api, "test", uiOrigin); err != nil {
+	if err := notifications.RecordSettings(h.ctx, h.api, "test", uiOrigin, nil); err != nil {
 		t.Fatal(err)
 	}
 	email := &fakeEmail{}
@@ -68,11 +68,11 @@ func (h *payHarness) withNotices(t *testing.T) *fakeEmail {
 }
 
 // dispatchTo chains an email dispatcher sending to email after the current
-// handlers.
-func (h *payHarness) dispatchTo(t *testing.T, email *fakeEmail) {
+// handlers, with the worker's EMAIL_RECIPIENT_ALLOWLIST allow.
+func (h *payHarness) dispatchTo(t *testing.T, email *fakeEmail, allow ...string) {
 	t.Helper()
 	d, err := notifications.NewDispatcher(notifications.DispatcherConfig{DB: h.worker, Coordinator: h.coord, Sender: email,
-		Environment: "test", Logger: slog.New(slog.NewJSONHandler(h.logs, nil))})
+		Environment: "test", Allowlist: allow, Logger: slog.New(slog.NewJSONHandler(h.logs, nil))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,9 +331,9 @@ func TestCancellationAndReturnNotices(t *testing.T) {
 	}
 	has(t, "text", req.Text, "Your order has been cancelled as you asked.",
 		"Refund requested: £47.51, which is 50% of the £95.01 you paid, because the full-refund deadline had been reached.",
-		"We have asked for this refund; it has not been returned yet. We will email you again once it has.",
+		"We have asked for this refund and will email you once it has been returned.",
 		"It was planned for: Saturday 14 November 2026, 12:30 to 13:30 (London time)")
-	hasNot(t, "text", req.Text, append(secrets(d, ""), "We have returned")...)
+	hasNot(t, "text", req.Text, append(secrets(d, ""), "We have returned", "already been returned", "not been returned")...)
 
 	// The refund succeeds; its events arrive twice.
 	h.stripe.setRefund("re_fake1", "succeeded", "")
@@ -396,9 +396,8 @@ func TestReleaseNotices(t *testing.T) {
 		}
 		has(t, "text", req.Text, "Your order has been released because its payment was not completed. The date and cakes are no longer held for you.",
 			"We have no record of a successful payment for this order. If a payment does arrive later, the full amount will be returned.",
-			"Requested collection: Saturday 14 November 2026, 12:30 to 13:30 (London time)",
-			"If you would still like a cake, you can place a new order at "+uiOrigin+".")
-		hasNot(t, "text", req.Text, append(secrets(d, session), "/orders/")...)
+			"Requested collection: Saturday 14 November 2026, 12:30 to 13:30 (London time)")
+		hasNot(t, "text", req.Text, append(secrets(d, session), "/orders/", "new order", "place")...)
 	})
 	t.Run("never paid", func(t *testing.T) {
 		h := newPayHarness(t)
@@ -419,6 +418,39 @@ func TestReleaseNotices(t *testing.T) {
 			if ns := h.notices(t, o); len(ns) != 0 {
 				t.Fatalf("abandoned checkout emailed: %s", kinds(ns))
 			}
+		}
+	})
+	t.Run("payment never dispatched to Stripe", func(t *testing.T) {
+		h := newPayHarness(t)
+		h.withNotices(t)
+		f := h.setup(t)
+		order, d := h.paidOrder(t, f, h.policy(t, "p1"))
+		res, err := h.start(order, d, "pay-1", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.journal.Fail = func(op, name string) error {
+			if op == "put" && strings.HasSuffix(name, ".prepared") {
+				return fmt.Errorf("b2 unavailable")
+			}
+			return nil
+		}
+		if errs := h.drain(t); len(errs) != 1 {
+			t.Fatalf("journal down: %s", reasons(errs))
+		}
+		h.age(t, res.ID)
+		h.endHold(t, order)
+		id, _ := h.reviewJob(t, order)
+		job := h.claimOnly(t, id)
+		if err := h.reviews.Handle(h.ctx, job); err != nil {
+			t.Fatal(err)
+		}
+		h.finish(t, job, nil)
+		if r := h.orderRow(t, order); r.Lifecycle != "cancelled" || h.collection(t, res.ID).State != "cancelled" {
+			t.Fatalf("order %+v", r)
+		}
+		if ns := h.notices(t, order); len(ns) != 0 {
+			t.Fatalf("never-dispatched payment emailed: %s", kinds(ns))
 		}
 	})
 	t.Run("refused free confirmation", func(t *testing.T) {
@@ -470,6 +502,234 @@ func TestNoticeWithoutSettings(t *testing.T) {
 	if n := h.count(t, "SELECT count(*) FROM business.notification_intent"); n != 0 {
 		t.Fatalf("%d intents", n)
 	}
+	// Audited on the order without personal data; flagged for staff only
+	// once settings exist (a deploy window), not while none were ever
+	// recorded (tooling and tests).
+	if got := h.audits(t, order, "order.notice_not_queued"); len(got) != 1 ||
+		got[0] != `{"kind" : "confirmed", "outcome" : "not_configured", "detail" : null}` {
+		t.Fatalf("audit %q", got)
+	}
+	if got := h.flags(t, order); got != "{}" {
+		t.Fatalf("flags before any settings %s", got)
+	}
+	if err := notifications.RecordSettings(h.ctx, h.api, "test", uiOrigin, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.flags(t, order); got != "{notice_not_sent}" {
+		t.Fatalf("flags with settings %s", got)
+	}
+}
+
+// audits is the order's audit details for action, oldest first.
+func (h *payHarness) audits(t *testing.T, order, action string) []string {
+	t.Helper()
+	rows, err := h.admin.Query(h.ctx, `SELECT detail::text FROM business.audit_event WHERE subject_kind = 'order'
+		AND subject_id = $1::uuid AND action = $2 ORDER BY occurred_at, id`, order, action)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// flags is the order's staff attention flags.
+func (h *payHarness) flags(t *testing.T, order string) string {
+	t.Helper()
+	var s string
+	if err := h.admin.QueryRow(h.ctx, "SELECT business.order_attention_flags(o)::text FROM business.orders o WHERE o.id = $1::uuid",
+		order).Scan(&s); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// Outside production the recorded allowlist keeps a notice to any other
+// recipient from being queued at all (whichever worker runs); an
+// allowlisted recipient is queued and sent. Audited, never flagged.
+func TestAllowlistKeepsOrderNoticesFromBeingQueued(t *testing.T) {
+	h := newPayHarness(t)
+	email := h.withNotices(t)
+	if err := notifications.RecordSettings(h.ctx, h.api, "test", uiOrigin, []string{"@gkcake.com"}); err != nil {
+		t.Fatal(err)
+	}
+	f := h.setup(t)
+	order, d := h.freeOrder(t, f, h.policy(t, "p1"))
+	if _, err := h.co.FreeConfirm(h.ctx, order, "", d, "fc1", checkout.FreeConfirmInput{ExpectedVersion: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatal(reasons(errs))
+	}
+	ns := h.notices(t, order)
+	if kinds(ns) != "confirmed:not_queued" || ns[0].Detail == nil || *ns[0].Detail != "allowlist" || ns[0].Intent != nil ||
+		len(email.all()) != 0 || h.count(t, "SELECT count(*) FROM business.notification_intent") != 0 {
+		t.Fatalf("notices %s, sent %d", kinds(ns), len(email.all()))
+	}
+	if got := h.audits(t, order, "order.notice_not_queued"); len(got) != 1 || strings.Contains(got[0], "example.com") ||
+		!strings.Contains(got[0], `"allowlist"`) {
+		t.Fatalf("audit %q", got)
+	}
+	if got := h.flags(t, order); got != "{}" {
+		t.Fatalf("flags %s", got)
+	}
+	if err := notifications.RecordSettings(h.ctx, h.api, "test", uiOrigin, []string{"@gkcake.com", "Test.Customer@example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	paid, pd := h.paidOrder(t, f, h.policy(t, "p2"))
+	h.payNow(t, paid, pd, "b1")
+	if ns := h.notices(t, paid); kinds(ns) != "confirmed:queued:accepted" || len(email.all()) != 1 {
+		t.Fatalf("allowlisted: %s", kinds(ns))
+	}
+	// The settings refuse what the configuration refuses.
+	for env, list := range map[string][]string{"production": {"@gkcake.com"}, "staging": nil, "test": {"*@gkcake.com"}} {
+		if err := notifications.RecordSettings(h.ctx, h.api, env, "https://shop.example", list); err == nil {
+			t.Errorf("%s with %v recorded", env, list)
+		}
+	}
+}
+
+// The worker's own allowlist is the second layer: a notice queued under
+// settings without an allowlist is suppressed by the dispatcher, never sent.
+func TestDispatcherAllowlistSuppressesAnOrderNotice(t *testing.T) {
+	h := newPayHarness(t)
+	if err := notifications.RecordSettings(h.ctx, h.api, "test", uiOrigin, nil); err != nil {
+		t.Fatal(err)
+	}
+	email := &fakeEmail{}
+	h.dispatchTo(t, email, "@gkcake.com")
+	f := h.setup(t)
+	order, d := h.freeOrder(t, f, h.policy(t, "p1"))
+	if _, err := h.co.FreeConfirm(h.ctx, order, "", d, "fc1", checkout.FreeConfirmInput{ExpectedVersion: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatal(reasons(errs))
+	}
+	ns := h.notices(t, order)
+	var reason *string
+	if err := h.admin.QueryRow(h.ctx, "SELECT suspended_reason FROM business.notification_intent WHERE id = $1::uuid", *ns[0].Intent).
+		Scan(&reason); err != nil {
+		t.Fatal(err)
+	}
+	if kinds(ns) != "confirmed:queued:queued" || reason == nil || !strings.Contains(*reason, "EMAIL_RECIPIENT_ALLOWLIST") || len(email.all()) != 0 {
+		t.Fatalf("notices %s, reason %v, sent %d", kinds(ns), reason, len(email.all()))
+	}
+}
+
+// A refund that succeeds before its cancellation is secured (the outcome
+// envelope failed once): the cancellation email says it was already
+// returned, never "requested", and the return is emailed once.
+func TestRefundReturnedBeforeTheCancellationIsSecured(t *testing.T) {
+	h := newPayHarness(t)
+	h.withRefunds()
+	email := h.withNotices(t)
+	f := h.setup(t)
+	order, d := h.paidOrder(t, f, h.policy(t, "p1"))
+	coll := h.payNow(t, order, d, "b1")
+	v, _ := h.cancelView(t, order, d)
+	res, err := h.cancel(order, d, "c-ok", v.Version, h.preview(t, order, d))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.journal.Fail = func(op, name string) error {
+		if op == "put" && strings.HasSuffix(name, ".outcome") && strings.Contains(name, res.ID) {
+			return fmt.Errorf("b2 unavailable")
+		}
+		return nil
+	}
+	h.drain(t)
+	if ops := h.operations(t, coll); len(ops) != 1 || ops[0].State != "succeeded" {
+		t.Fatalf("refund before the cancellation is secured: %+v", ops)
+	}
+	if v, raw := h.cancelView(t, order, d); v.Lifecycle != "cancellation_pending" {
+		t.Fatalf("order %s", raw)
+	}
+	if ns := h.notices(t, order); kinds(ns) != "confirmed:queued:accepted" {
+		t.Fatalf("notices before the cancellation is secured %s", kinds(ns))
+	}
+	h.journal.Fail = nil
+	h.due(t)
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatal(reasons(errs))
+	}
+	ns := h.notices(t, order)
+	if kinds(ns) != "confirmed:queued:accepted,cancelled:queued:accepted,refund_returned:queued:accepted" || len(email.all()) != 3 {
+		t.Fatalf("notices %s", kinds(ns))
+	}
+	req := h.request(t, ns[1])
+	has(t, "text", req.Text, "Refund: £95.01, the full amount you paid.", "It has already been returned to you.")
+	hasNot(t, "text", req.Text, "Refund requested", "will email you once", "refunded")
+}
+
+// A restore replay: the notice rows of a secured confirmation are lost and
+// the transition is applied again; the notice is rebuilt with the same
+// intent, key and byte-identical payload, and nothing is sent twice.
+func TestRestoreReplayRebuildsTheSameNotice(t *testing.T) {
+	h := newPayHarness(t)
+	email := h.withNotices(t)
+	f := h.setup(t)
+	order, d := h.freeOrder(t, f, h.policy(t, "p1"))
+	res, err := h.co.FreeConfirm(h.ctx, order, "", d, "fc1", checkout.FreeConfirmInput{ExpectedVersion: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatal(reasons(errs))
+	}
+	before := h.notices(t, order)
+	if len(before) != 1 || before[0].Dedupe != res.ID {
+		t.Fatalf("notices %+v", before)
+	}
+	tx, err := h.admin.Begin(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(h.ctx)
+	intent, key := *before[0].Intent, *before[0].Key
+	for _, st := range []struct {
+		sql string
+		arg []any
+	}{
+		{"SET LOCAL session_replication_role = replica", nil}, // past the immutability triggers
+		{"DELETE FROM business.order_notice WHERE order_id = $1::uuid", []any{order}},
+		{"DELETE FROM business.notification_attempt WHERE intent_id = $1::uuid", []any{intent}},
+		{"DELETE FROM business.audit_event WHERE subject_id = $1::uuid", []any{intent}},
+		{"DELETE FROM business.job WHERE id = (SELECT job_id FROM business.notification_intent WHERE id = $1::uuid)", []any{intent}},
+		{"DELETE FROM business.notification_intent WHERE id = $1::uuid", []any{intent}},
+		{"DELETE FROM business.recovery_operation WHERE id = $1::uuid", []any{key}},
+	} {
+		if _, err := tx.Exec(h.ctx, st.sql, st.arg...); err != nil {
+			t.Fatalf("%s: %v", st.sql, err)
+		}
+	}
+	if err := tx.Commit(h.ctx); err != nil {
+		t.Fatal(err)
+	}
+	// The secured transition is replayed (as order_command_secured enqueues).
+	h.owner(t, `SELECT business.order_notice_enqueue(c.order_id, 'confirmed', c.id::text, c.id,
+		json_build_object('received_at', c.received_at)) FROM business.order_command c WHERE c.id = $1::uuid`, res.ID)
+	after := h.notices(t, order)
+	if len(after) != 1 || *after[0].Intent != *before[0].Intent || *after[0].Key != *before[0].Key ||
+		*after[0].Payload != *before[0].Payload {
+		t.Fatalf("replayed notice differs:\nbefore %+v\nafter  %+v", before[0], after[0])
+	}
+	// Dispatching it again never sends a second email: the independent
+	// journal still holds the original dispatch (restore tooling replays
+	// it, GK-034/035), so the worker stops rather than send blindly, and any
+	// request would carry the original key the provider deduplicates.
+	h.due(t)
+	errs := h.drain(t)
+	if sent := email.all(); len(sent) != 1 || sent[0].key != key {
+		t.Fatalf("sent %d after the replay (%s)", len(sent), reasons(errs))
+	}
+	for _, err := range errs {
+		if !strings.Contains(err.Error(), "existing prepared envelope") {
+			t.Fatalf("unexpected dispatch error %v", err)
+		}
+	}
 }
 
 // The rendering of every notice for inputs the flows above do not reach:
@@ -519,6 +779,9 @@ func TestOrderNoticeRendering(t *testing.T) {
 	_, text, _ = render("cancelled", `{"payment_requirement": "none"}`, `{"reason": "customer_cancelled", "rate": 100, "paid_minor": 0, "refund_target_minor": 0}`)
 	has(t, "free cancellation", text, "There was no payment for this order, so there is nothing to refund.")
 	hasNot(t, "free cancellation", text, "We will email you again", "Refund requested")
+	_, text, _ = render("cancelled", `{}`, `{"reason": "customer_cancelled", "rate": 50, "paid_minor": 9501, "refund_target_minor": 4751, "refund_returned": true}`)
+	has(t, "returned before securing", text, "Refund: £47.51, which is 50% of the £95.01 you paid", "It has already been returned to you.")
+	hasNot(t, "returned before securing", text, "requested", "will email")
 	_, text, _ = render("refund_returned", `{}`, `{"target_minor": 7000, "goal_version": 2}`)
 	has(t, "second goal", text, "We have returned £70 in total to you for this order.")
 	for _, kind := range []string{"confirmed", "paid_awaiting_agreement", "released", "cancelled", "refund_returned"} {

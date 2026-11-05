@@ -85,9 +85,10 @@ type API struct {
 	// Stripe configures payment collection (STRIPE_ACCOUNT_ID) and the
 	// signed webhook (STRIPE_WEBHOOK_SECRET), both optional.
 	Stripe StripeAPI
-	// EmailRecipientAllowlist is EMAIL_RECIPIENT_ALLOWLIST. The API sends no
-	// email; it validates the variable (refused in production) so that a
-	// misconfigured service fails at start on either process.
+	// EmailRecipientAllowlist is EMAIL_RECIPIENT_ALLOWLIST (required in
+	// staging, refused in production). The API records it with the notice
+	// settings: outside production a notice to any other recipient is never
+	// queued (migration 0030), whichever worker build runs.
 	EmailRecipientAllowlist []string
 }
 
@@ -135,8 +136,9 @@ type Worker struct {
 	Stripe          StripeWorker
 	// EmailRecipientAllowlist is EMAIL_RECIPIENT_ALLOWLIST: lower-case
 	// exact addresses and "@domain" entries. Outside production, when set,
-	// a notice to any other recipient is suppressed by the dispatcher and
-	// never sent. Unset means no restriction; production refuses it.
+	// a notice to any other recipient is suppressed by the dispatcher (the
+	// second layer after the database) and never sent. Required in staging,
+	// refused in production, optional elsewhere.
 	EmailRecipientAllowlist []string
 }
 
@@ -217,11 +219,15 @@ var (
 )
 
 // recipientAllowlist reads EMAIL_RECIPIENT_ALLOWLIST: comma-separated exact
-// addresses or "@domain" entries (staging: "@gkcake.com"). Production must
-// leave it unset: real customers are never filtered there.
+// addresses or "@domain" entries. Staging requires it (fails closed:
+// "@gkcake.com"); production must leave it unset (real customers are never
+// filtered there); elsewhere it is optional.
 func (l *loader) recipientAllowlist(env Env) []string {
 	raw := l.get("EMAIL_RECIPIENT_ALLOWLIST")
 	if raw == "" {
+		if env == EnvStaging {
+			l.fail("EMAIL_RECIPIENT_ALLOWLIST is required in staging (for example @gkcake.com)")
+		}
 		return nil
 	}
 	if env == EnvProduction {
@@ -236,6 +242,10 @@ func (l *loader) recipientAllowlist(env Env) []string {
 			return nil
 		}
 		out = append(out, entry)
+	}
+	if len(out) > 50 {
+		l.fail("EMAIL_RECIPIENT_ALLOWLIST must have at most 50 entries")
+		return nil
 	}
 	return out
 }
@@ -507,8 +517,14 @@ func (l *loader) databaseURL(name string, env Env) Secret {
 	return Secret{value: raw}
 }
 
+// originPattern is the form order notices link to (business.notice_settings,
+// migration 0030), compared lower-case: a DNS name or IPv4 address, an
+// optional port, at most 200 bytes.
+var originPattern = regexp.MustCompile(`^https?://[a-z0-9.-]+(:[0-9]{1,5})?$`)
+
 // origin validates an exact browser origin: scheme://host[:port], no wildcard,
-// path, query or fragment. Deployed environments require public HTTPS origins.
+// path, query or fragment, in the form order notices accept. Deployed
+// environments require public HTTPS origins.
 func (l *loader) origin(name string, env Env) string {
 	raw := l.get(name)
 	if raw == "" {
@@ -519,6 +535,10 @@ func (l *loader) origin(name string, env Env) string {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
 		strings.Contains(u.Host, "*") || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
 		l.fail("%s must be an exact origin such as https://example.com", name)
+		return ""
+	}
+	if len(raw) > 200 || !originPattern.MatchString(strings.ToLower(raw)) {
+		l.fail("%s must be an origin with a plain host name and optional port, at most 200 characters", name)
 		return ""
 	}
 	if env.deployed() && (u.Scheme != "https" || isLoopback(u.Hostname())) {

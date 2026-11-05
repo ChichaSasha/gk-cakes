@@ -82,9 +82,6 @@ func main() {
 		emailHandler, coord = d.Handle, c
 		logger.Info("email dispatch enabled", "journal_root", journalRoot(cfg.Env),
 			"recipient_allowlist_entries", len(cfg.EmailRecipientAllowlist))
-		if cfg.Env == config.EnvStaging && len(cfg.EmailRecipientAllowlist) == 0 {
-			logger.Warn("EMAIL_RECIPIENT_ALLOWLIST is not set: staging emails go to every recipient (set it to @gkcake.com)")
-		}
 	} else {
 		logger.Warn("email dispatch not configured; notification jobs are retried, never sent; order commands wait for the recovery journal")
 	}

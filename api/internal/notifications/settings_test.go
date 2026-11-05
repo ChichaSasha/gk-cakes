@@ -3,6 +3,7 @@ package notifications
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -34,13 +35,15 @@ func (r settingsRow) Scan(dest ...any) error {
 	return nil
 }
 
-// Readiness records the notice settings once, and is not ready until it has.
+// Readiness records the notice settings on every probe after the database
+// answers (lower-case origin and allowlist, an empty list rather than
+// NULL), and is not ready while recording fails.
 func TestSettingsGate(t *testing.T) {
 	down := errors.New("database down")
 	pingErr := down
 	db := &settingsDB{fail: errors.New("no function")}
 	g := &SettingsGate{Pinger: pingFunc(func(context.Context) error { return pingErr }), DB: db,
-		Environment: "staging", UIOrigin: "https://Staging.GKcake.com"}
+		Environment: "staging", UIOrigin: "https://Staging.GKcake.com", Allowlist: []string{"@GKcake.com"}}
 	if err := g.Ping(context.Background()); !errors.Is(err, down) || db.calls != 0 {
 		t.Fatalf("database down: %v, %d calls", err, db.calls)
 	}
@@ -54,8 +57,13 @@ func TestSettingsGate(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if db.calls != 2 || db.args[0] != "staging" || db.args[1] != "https://staging.gkcake.com" {
-		t.Fatalf("%d calls with %v; want one successful record of the lower-case origin", db.calls, db.args)
+	if db.calls != 4 || db.args[0] != "staging" || db.args[1] != "https://staging.gkcake.com" ||
+		fmt.Sprint(db.args[2]) != "[@gkcake.com]" {
+		t.Fatalf("%d calls with %v; want one record per probe, lower-case", db.calls, db.args)
+	}
+	g.Allowlist = nil
+	if err := g.Ping(context.Background()); err != nil || db.args[2] == nil || len(db.args[2].([]string)) != 0 {
+		t.Fatalf("an unset allowlist must be recorded as empty, not NULL: %#v", db.args[2])
 	}
 }
 
