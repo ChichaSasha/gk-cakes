@@ -874,3 +874,4 @@ input[type=checkbox][aria-invalid=true]{outline:2px solid var(--error);outline-o
 .acc-page button.acc-wide{width:100%}
 .acc-page .acc-danger,.acc-page .acc-danger-link{min-height:54px;padding:0 26px;font-size:14px}
 .acc-page button.acc-danger:not(:disabled){background:#8f1d1d;border-color:#8f1d1d;color:#fff}
+.acc-chip.ok{color:#165a2e}.acc-chip.wait{color:#653d00}
