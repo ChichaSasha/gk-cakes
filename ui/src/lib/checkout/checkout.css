@@ -210,6 +210,17 @@ main.co-page {
 	margin: 8px 0 0;
 	min-height: 1.4em;
 }
+.date-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	margin: -12px 0 16px;
+}
+.date-row .co-status {
+	margin: 0;
+}
 
 /* Buttons */
 .co-page button {

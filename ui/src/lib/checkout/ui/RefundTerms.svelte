@@ -25,8 +25,9 @@
 		<p>Choose a time to see your exact cancellation deadline.</p>
 	{:else}
 		<p>
-			Cancel <strong>before {deadline}</strong> for a full refund{#if totalMinor !== null}
-				of <strong>{formatMoney(totalMinor, currency)}</strong>{/if}.
+			Cancel <strong>before {deadline}</strong> for a full refund{totalMinor !== null
+				? ' of '
+				: ''}{#if totalMinor !== null}<strong>{formatMoney(totalMinor, currency)}</strong>{/if}.
 		</p>
 		<p>
 			From then on, or {mode === 'customer_courier'

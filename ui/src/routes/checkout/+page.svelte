@@ -96,6 +96,11 @@
 	let codeChip = $state<HTMLElement | null>(null);
 
 	const slot = $derived(slots.find((s) => s.id === slotId) ?? null);
+	const codeDescription = $derived(
+		quote?.discount?.kind === 'percentage' && quote.discount.basis_points
+			? `${quote.discount.basis_points / 100}% off cakes`
+			: ''
+	);
 	const free = $derived(quote?.total_minor === 0);
 	const payLabel = $derived(
 		submitting
@@ -333,6 +338,9 @@
 
 	function clearError(f: Field) {
 		if (fieldErrors[f]) fieldErrors = { ...fieldErrors, [f]: undefined };
+		if (summaryErrors.some((e) => e.id === f || (f === 'date' && e.id === 'slot'))) {
+			summaryErrors = summaryErrors.filter((e) => e.id !== f);
+		}
 	}
 
 	function validate(): { id: Field; text: string }[] {
@@ -541,12 +549,12 @@
 						</select>
 					</label>
 					{#if fieldErrors.date}<p id="date-error" class="field-error">{fieldErrors.date}</p>{/if}
-					<p id="date-help" class="small co-status" role="status">
-						{#if datesLoading}Loading available dates…{:else if days.length === 0}No dates are
-							available online right now. Please contact us.{/if}
-					</p>
-					{#if nextWindow && windowsLoaded < MAX_WINDOWS}
-						<p>
+					<div class="date-row">
+						<p id="date-help" class="small co-status" role="status">
+							{#if datesLoading}Loading available dates…{:else if days.length === 0}No dates are
+								available online right now. Please contact us.{/if}
+						</p>
+						{#if nextWindow && windowsLoaded < MAX_WINDOWS}
 							<button
 								type="button"
 								class="text-link"
@@ -555,8 +563,8 @@
 							>
 								Show later dates
 							</button>
-						</p>
-					{/if}
+						{/if}
+					</div>
 
 					<fieldset class="co-modes">
 						<legend class="sr-only">How you will get your cake</legend>
@@ -712,9 +720,7 @@
 					{#if appliedCode}
 						<div class="code-chip">
 							<span tabindex="-1" bind:this={codeChip}>
-								<strong>{appliedCode}</strong
-								>{#if quote?.discount?.kind === 'percentage' && quote.discount.basis_points}
-									· {quote.discount.basis_points / 100}% off cakes{/if}
+								<strong>{appliedCode}</strong>{codeDescription ? ` · ${codeDescription}` : ''}
 							</span>
 							<button
 								type="button"
