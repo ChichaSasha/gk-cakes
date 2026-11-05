@@ -193,6 +193,9 @@ describe('keeping the customer’s time', () => {
 		expect(timesStatus('2026-11-13', { ...empty, dayStatus: 'full' }, { kept: false })).toBe(
 			'Fri 13 Nov is now full. Choose another date, or contact the chef.'
 		);
+		expect(timesStatus('2026-11-13', { ...empty, dayStatus: 'lead_time' }, { kept: false })).toBe(
+			'Fri 13 Nov is now less than 192 hours away. Choose another date, or contact the chef.'
+		);
 		expect(timesStatus('2026-11-13', { ...empty, hiddenLate: 2 }, { kept: false })).toBe(
 			'Fri 13 Nov is after your ready-made cake’s collect-by time. Choose another date, or contact the chef.'
 		);

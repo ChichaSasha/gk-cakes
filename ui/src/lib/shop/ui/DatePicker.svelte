@@ -74,6 +74,10 @@
 	let checkFailed = $state(false);
 	let monthRevision = 0;
 	let timesRevision = 0;
+	// Each opening of the dialog; closing it ends that opening. A time check
+	// that comes back after the customer closed the picker (a cancel) or
+	// reopened it saves nothing.
+	let opening = 0;
 
 	const grid = $derived(monthGrid(month));
 	const views = $derived<DayView[]>(
@@ -97,6 +101,8 @@
 
 	/** Opens the picker with the bag's current choice. */
 	export async function show(initial: { date?: string; mode: PickerMode; slot?: ChosenSlot }) {
+		opening++;
+		checking = false;
 		today = londonToday();
 		mode = initial.mode;
 		date = initial.date && initial.date >= today ? initial.date : undefined;
@@ -218,10 +224,12 @@
 		checking = true;
 		checkFailed = false;
 		const m = mode;
+		const at = opening;
 		try {
 			const res = await api.schedule(d, m, quantity);
-			// The customer moved on while we were checking: their new choice wins.
-			if (date !== d || mode !== m || chosen !== s.id) return;
+			// The customer closed the picker or moved on while we were
+			// checking: closing is a cancel, and their new choice wins.
+			if (at !== opening || date !== d || mode !== m || chosen !== s.id) return;
 			const tc = timeChoices(res.slots, collectBy);
 			if (tc.slots.some((x) => x.id === s.id)) {
 				dialog?.close();
@@ -254,9 +262,9 @@
 			await tick();
 			alertBox?.focus();
 		} catch {
-			checkFailed = true;
+			if (at === opening) checkFailed = true;
 		} finally {
-			checking = false;
+			if (at === opening) checking = false;
 		}
 	}
 
@@ -281,7 +289,15 @@
 	);
 </script>
 
-<dialog bind:this={dialog} class="picker-dialog" aria-labelledby="picker-title">
+<dialog
+	bind:this={dialog}
+	class="picker-dialog"
+	aria-labelledby="picker-title"
+	onclose={() => {
+		opening++;
+		checking = false;
+	}}
+>
 	<button
 		class="icon-button picker-close"
 		type="button"

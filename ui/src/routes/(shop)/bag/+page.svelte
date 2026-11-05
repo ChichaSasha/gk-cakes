@@ -56,6 +56,9 @@
 	const today = londonToday();
 	const bagDate = $derived(bag.state.date && bag.state.date >= today ? bag.state.date : undefined);
 	const collectBy = $derived(earliestCollectBy(bag.state.keys, ready));
+	const checkoutLink = $derived(
+		checkoutHref(bag.state, today, collectBy ? londonDate(collectBy) : undefined)
+	);
 	const tooLate = $derived(!!bagDate && !!collectBy && bagDate > londonDate(collectBy));
 
 	async function load() {
@@ -228,7 +231,7 @@
 					included. GK delivery is separately quoted and paid; it is not included in the cake total.
 				</p>
 				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- checkout URL with the bag's query -->
-				<a class="button primary" href={checkoutHref(bag.state, today)}
+				<a class="button primary" href={checkoutLink}
 					>Review checkout <span class="arrow" aria-hidden="true">→</span></a
 				>
 				<p class="small">Nothing is reserved until you pay.</p>

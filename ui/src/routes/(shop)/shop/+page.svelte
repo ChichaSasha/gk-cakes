@@ -6,6 +6,7 @@
 	import { resolve } from '$app/paths';
 	import { PUBLIC_API_URL } from '$app/env/public';
 	import { page } from '$app/state';
+	import { tick } from 'svelte';
 	import { dateLabel, londonToday, timeRange } from '../../../lib/checkout/format';
 	import {
 		currentDate,
@@ -74,11 +75,17 @@
 		bag.set(withWhen(bag.state, date, mode, slot));
 	}
 
-	function clear() {
+	let selectionControl = $state<HTMLSelectElement>();
+
+	// The Clear filters button goes away with the no-match message, so focus
+	// moves to the first filter.
+	async function clear() {
 		selection = 'all';
 		flavour = 'all';
 		sort = 'featured';
 		keepSelectionInUrl();
+		await tick();
+		selectionControl?.focus();
 	}
 </script>
 
@@ -109,7 +116,7 @@
 		<div class="shop-controls">
 			<label>
 				<span class="filter-label">Cake selection</span>
-				<select bind:value={selection} onchange={keepSelectionInUrl}>
+				<select bind:this={selectionControl} bind:value={selection} onchange={keepSelectionInUrl}>
 					<option value="all">All cakes</option>
 					<option value="orderable">Order online</option>
 					<option value="ready">Ready-made</option>

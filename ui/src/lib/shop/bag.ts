@@ -114,17 +114,19 @@ export function currentDate(bag: BagState, today: string): string | undefined {
 
 /**
  * The checkout link for the bag: `?v=<variantId>` and `?lot=<lotId>` once per
- * cake plus the chosen date if it has not passed (ui/README "Basket").
+ * cake plus the chosen date if it has not passed (ui/README "Basket") and is
+ * not after `lastDate`, the London collect-by date of the bag's ready-made
+ * cakes (a too-late date is left for checkout to ask again).
  * Checkout chooses the time itself and prices everything on the server.
  */
-export function checkoutHref(bag: BagState, today: string): string {
+export function checkoutHref(bag: BagState, today: string, lastDate?: string): string {
 	const q = new URLSearchParams();
 	for (const k of bag.keys) {
 		const [kind, id] = k.split(':');
 		q.append(kind === 'v' ? 'v' : 'lot', id);
 	}
 	const date = currentDate(bag, today);
-	if (date) q.set('date', date);
+	if (date && (!lastDate || date <= lastDate)) q.set('date', date);
 	return `/checkout?${q.toString()}`;
 }
 

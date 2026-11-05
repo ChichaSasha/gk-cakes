@@ -114,6 +114,17 @@ describe('checkoutHref', () => {
 		expect(currentDate(bag, today)).toBeUndefined();
 		expect(currentDate(bag, '2026-10-01')).toBe('2026-10-01');
 	});
+
+	it('never hands over a date after the ready-made cakes must be collected', () => {
+		const bag = withWhen(
+			{ ...emptyBag(), keys: [`lot:${ID.lot}`] },
+			'2026-11-27',
+			'collection',
+			slot
+		);
+		expect(checkoutHref(bag, today, '2026-11-15')).toBe(`/checkout?lot=${ID.lot}`);
+		expect(checkoutHref(bag, today, '2026-11-27')).toBe(`/checkout?lot=${ID.lot}&date=2026-11-27`);
+	});
 });
 
 describe('isRealDate', () => {

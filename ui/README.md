@@ -216,7 +216,8 @@ Creator-approved GK-016 r01c sketch (PR #21, `52fa680`) on the GK-015 r12
 visual foundation (styles in `src/lib/shop/shop.css`, scoped to `.shop`; the
 `(shop)` route group and the home page share `ShopShell`). They are public
 pages (cacheable, indexable; `/bag` has `noindex`) and read only the public
-catalogue (contracts K01): `GET /api/v1/cakes` (every page), `/cakes/{id}`,
+catalogue (contracts K01): `GET /api/v1/cakes` (every page for the shop, the
+first four for the home page), `/cakes/{id}`,
 `/ready-cakes`, `/availability` and `/schedule`, anonymously. The server
 renders the first view through a universal load (8 s timeout); a failed load
 shows "Try again", never a crash, and a cake that is not active is a 404 with
@@ -231,7 +232,7 @@ shows "Try again", never a crash, and a cake that is not active is a 404 with
   its stock left and the chef's collect-by time (the lot's expiry).
 - **Sizes and starting prices** is the owner's GK-002 base price list
   (docs/creator/GK-002), a public guide; it is not used for any total.
-- **Date and time picker** (shared dialog on the cake page and bag): Collect /
+- **Date and time picker** (shared dialog on the shop, cake page and bag): Collect /
   Own courier (GK delivery shown disabled, as in checkout), a Monday-first
   month labelled from `/availability` (places left for made-to-order cakes,
   Closed, Too soon, Not open, Full, Too late after a ready-made cake's
@@ -239,7 +240,8 @@ shows "Try again", never a crash, and a cake that is not active is a 404 with
   loading, no-times (next dates and "Contact the chef") and error ("Try
   again") states, obsolete answers ignored, keyboard arrows and Page Up/Down.
   "Use" checks the time again; a taken time is answered with fresh choices and
-  nothing is chosen for the customer.
+  nothing is chosen for the customer; closing the dialog during that check
+  is a cancel and saves nothing.
 - **Bag** (`src/lib/shop/bag.ts`): catalogue keys (`v:<variantId>`,
   `lot:<lotId>`, each once, at most 20), the date, handover choice and time,
   in this tab's `sessionStorage` (`gk-shop-bag`; no prices, names or personal
