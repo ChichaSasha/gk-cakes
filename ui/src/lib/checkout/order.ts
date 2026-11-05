@@ -4,13 +4,15 @@
 // proof that money failed, and a refund is "returned" only when the API
 // says so.
 import { formatMoney } from './format';
+import type { Next } from './messages';
 import type { Order } from './types';
 
 export type OrderAction =
 	| 'none'
 	| 'start_payment' // ask the API for a secure payment page
 	| 'open_payment' // go to the open payment page (checkoutUrl)
-	| 'confirm_free'; // confirm a £0 order
+	| 'confirm_free' // confirm a £0 order
+	| 'new_order'; // this order can no longer be paid or confirmed: start a new one
 
 export interface OrderView {
 	tone: 'info' | 'success' | 'warning' | 'error';
@@ -280,6 +282,49 @@ function awaitingPayment(order: Order, base: Base, returned: boolean): OrderView
 		poll: true,
 		doNotPayAgain: true
 	};
+}
+
+/**
+ * The view while a dead-end problem is shown (a missed lead time or an
+ * expired price handed over from checkout: next 'new_order'). Nothing that
+ * would ask the API about this order again (pay, open the payment page,
+ * confirm) is offered: "Start a new order" instead. A payment already under
+ * way keeps its own wording and action ("do not pay again"): money may be
+ * moving, so it is never replaced.
+ */
+export function withOrderProblem(view: OrderView, next: Next | undefined): OrderView {
+	if (next !== 'new_order' || view.doNotPayAgain) return view;
+	if (
+		view.action !== 'start_payment' &&
+		view.action !== 'open_payment' &&
+		view.action !== 'confirm_free'
+	) {
+		return view;
+	}
+	return {
+		...view,
+		action: 'new_order',
+		actionLabel: 'Start a new order',
+		checkoutUrl: undefined
+	};
+}
+
+/**
+ * The checkout query for a new order with the same cakes
+ * (v=<variant> / lot=<lot>, repeated once per cake; see basket.ts), without
+ * this order's date. Undefined when the order lists no usable cakes.
+ */
+export function newOrderQuery(order: Order): string | undefined {
+	const q = new URLSearchParams();
+	for (const item of order.items ?? []) {
+		const n = Number.isSafeInteger(item.quantity) ? Math.min(Math.max(item.quantity, 0), 20) : 0;
+		for (let i = 0; i < n; i++) {
+			if (item.lot_id) q.append('lot', item.lot_id);
+			else if (item.variant_id) q.append('v', item.variant_id);
+		}
+	}
+	const query = q.toString();
+	return query ? query : undefined;
 }
 
 /** The refund line, worded only as far as the API's refund block goes. */

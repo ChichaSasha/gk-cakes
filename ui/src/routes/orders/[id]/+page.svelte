@@ -20,12 +20,14 @@
 		sizeLabel,
 		timeRange
 	} from '../../../lib/checkout/format';
-	import { orderProblemFor } from '../../../lib/checkout/messages';
+	import { orderProblemFor, type Problem } from '../../../lib/checkout/messages';
 	import {
 		isPaymentPageUrl,
+		newOrderQuery,
 		nextPollDelay,
 		orderView,
-		POLL_LIMIT_MS
+		POLL_LIMIT_MS,
+		withOrderProblem
 	} from '../../../lib/checkout/order';
 	import type { Order } from '../../../lib/checkout/types';
 
@@ -38,7 +40,7 @@
 	let unavailable = $state('');
 	let actionProblem = $state('');
 	/** A problem from checkout after this order was created (shown until the next action). */
-	let handoff = $state('');
+	let handoff = $state<Problem | null>(null);
 	let busy = $state(false);
 	let busyText = $state('');
 	let pollStopped = $state(false);
@@ -48,7 +50,11 @@
 	let pollStarted = 0;
 	let active = true;
 
-	const view = $derived(order ? orderView(order, { returned }) : null);
+	// A dead-end handoff (lead time missed, price expired) offers a new order
+	// instead of paying or confirming this one.
+	const view = $derived(
+		order ? withOrderProblem(orderView(order, { returned }), handoff?.next) : null
+	);
 
 	onMount(() => {
 		void start();
@@ -77,7 +83,7 @@
 					retryable: handed.retryable,
 					request_id: handed.request_id
 				})
-			).message;
+			);
 		}
 		if (!checkoutConfigured || !UUID.test(orderId)) {
 			unavailable = 'We can’t find this order.';
@@ -145,8 +151,15 @@
 
 	async function act() {
 		if (!order || !view || !who || busy) return;
+		if (view.action === 'new_order') {
+			const query = newOrderQuery(order);
+			busy = true;
+			busyText = 'Starting a new order…';
+			window.location.assign(query ? `${resolve('/checkout')}?${query}` : resolve('/'));
+			return;
+		}
 		actionProblem = '';
-		handoff = '';
+		handoff = null;
 		if (view.action === 'open_payment' && isPaymentPageUrl(view.checkoutUrl)) {
 			busy = true;
 			busyText = 'Opening secure payment…';
@@ -206,7 +219,7 @@
 					</div>
 				</div>
 				{#if handoff}
-					<p class="co-errors" role="alert">{handoff}</p>
+					<p class="co-errors" role="alert">{handoff.message}</p>
 				{/if}
 				{#if actionProblem}
 					<p class="co-errors" role="alert">{actionProblem}</p>
