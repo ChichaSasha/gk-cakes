@@ -29,6 +29,8 @@ type Checkout interface {
 	PreviewCancellation(ctx context.Context, id, subject string, digest []byte) (checkout.CancellationPreview, error)
 	Cancel(ctx context.Context, id, subject string, digest []byte, key string, in checkout.CancelInput) (catalog.Result, error)
 	ChefCancel(ctx context.Context, subject, key, id string, in checkout.ChefCancelInput) (catalog.Result, error)
+	StartProduction(ctx context.Context, subject, key, id string, in checkout.ProductionInput) (catalog.Result, error)
+	LatePayment(ctx context.Context, subject, key, id string, in checkout.LatePaymentInput) (catalog.Result, error)
 	CurrentPolicy(ctx context.Context) (checkout.Policy, error)
 	RecordPolicy(ctx context.Context, subject, key string, in checkout.PolicyInput) (catalog.Result, error)
 }
@@ -300,6 +302,40 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 			res, err := co.ChefCancel(r.Context(), a.Subject, key, r.PathValue("id"), in)
 			respondCommand(w, r, logger, http.StatusAccepted, res, err, func() (any, error) {
 				return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: "cancellation_pending",
+					PollAfterSeconds: checkout.PollAfterSeconds}, nil
+			})
+		}))
+	}
+	if checkoutEnabled {
+		// K05 production start (chef or fulfillment, K00): one transition per
+		// order, shared with the +48 h timer.
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/start-production", staff(id, logger, []string{identity.Chef, identity.Fulfillment},
+			func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+				var in checkout.ProductionInput
+				key, ok := readCommand(w, r, &in)
+				if !ok {
+					return
+				}
+				res, err := co.StartProduction(r.Context(), a.Subject, key, r.PathValue("id"), in)
+				if errors.Is(err, checkout.ErrOrdersFrozen) {
+					writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Order changes are temporarily unavailable", true)
+					return
+				}
+				respondCommand(w, r, logger, http.StatusOK, res, err, func() (any, error) {
+					return map[string]string{"order_id": res.ID, "lifecycle": "in_production"}, nil
+				})
+			}))
+		// K04 Q2 late payment: honour (with the customer's agreement) or full
+		// return; 202 while its K11 protection runs.
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/late-payment", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+			var in checkout.LatePaymentInput
+			key, ok := readCommand(w, r, &in)
+			if !ok {
+				return
+			}
+			res, err := co.LatePayment(r.Context(), a.Subject, key, r.PathValue("id"), in)
+			respondCommand(w, r, logger, http.StatusAccepted, res, err, func() (any, error) {
+				return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: "decision_pending",
 					PollAfterSeconds: checkout.PollAfterSeconds}, nil
 			})
 		}))

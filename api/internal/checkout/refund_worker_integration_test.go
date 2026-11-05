@@ -218,7 +218,7 @@ func (f *fakeStripe) refundForm(key string) url.Values {
 // withRefunds chains the refund worker (after the late capture: its
 // dispatch job waits for its first retry, a minute out).
 func (h *payHarness) withRefunds() {
-	h.handler = jobs.Chain(h.cmds.Handle, h.pay.Handle, h.refunds.Handle, h.reviews.Handle)
+	h.handler = jobs.Chain(h.cmds.Handle, h.pay.Handle, h.refunds.Handle, h.reviews.Handle, h.productions.Handle)
 }
 
 // operations is the collection's refund operations, oldest first.

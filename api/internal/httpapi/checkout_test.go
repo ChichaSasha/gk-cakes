@@ -13,6 +13,7 @@ import (
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/catalog"
 	"github.com/ChichaSasha/gk-cakes/api/internal/checkout"
+	"github.com/ChichaSasha/gk-cakes/api/internal/identity"
 	"github.com/ChichaSasha/gk-cakes/api/internal/payments"
 )
 
@@ -90,6 +91,24 @@ func (f *fakeCheckout) ChefCancel(_ context.Context, subject, _, _ string, _ che
 		return catalog.Result{}, f.freeErr
 	}
 	return catalog.Result{ID: "chef-cancel", Replayed: f.replayed}, nil
+}
+
+func (f *fakeCheckout) StartProduction(_ context.Context, subject, _, id string, _ checkout.ProductionInput) (catalog.Result, error) {
+	f.calls++
+	f.subject = subject
+	if f.freeErr != nil {
+		return catalog.Result{}, f.freeErr
+	}
+	return catalog.Result{ID: id, Replayed: f.replayed}, nil
+}
+
+func (f *fakeCheckout) LatePayment(_ context.Context, subject, _, id string, _ checkout.LatePaymentInput) (catalog.Result, error) {
+	f.calls++
+	f.subject = subject
+	if f.freeErr != nil {
+		return catalog.Result{}, f.freeErr
+	}
+	return catalog.Result{ID: "late-" + id, Replayed: f.replayed}, nil
 }
 
 func (f *fakeCheckout) CurrentPolicy(context.Context) (checkout.Policy, error) {
@@ -528,6 +547,49 @@ func TestCancellationRoutes(t *testing.T) {
 		off.ServeHTTP(rec, req)
 		if rec.Code != 404 && rec.Code != 405 {
 			t.Errorf("%s while disabled: %d", p, rec.Code)
+		}
+	}
+}
+
+func TestProductionAndLatePaymentRoutes(t *testing.T) {
+	id := catalogIdentity()
+	id.actors["fulfil"] = identity.Actor{AccountID: "acc-ful", Subject: "sub-ful", Capabilities: []string{identity.Fulfillment}}
+	const start = "/api/v1/admin/orders/o1/start-production"
+	for name, c := range map[string]struct {
+		auth   string
+		status int
+	}{"support": {"support", 403}, "customer": {secretToken, 403}, "chef": {"chef", 200}, "fulfillment": {"fulfil", 200}} {
+		if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, start, c.auth, "k", `{"expected_version":3}`, nil); rec.Code != c.status {
+			t.Errorf("start production by %s: %d, want %d", name, rec.Code, c.status)
+		}
+	}
+	rec := serveCheckout(t, &fakeCheckout{replayed: true}, id, http.MethodPost, start, "chef", "k", `{"expected_version":3}`, nil)
+	if rec.Code != 200 || rec.Header().Get("Idempotent-Replayed") != "true" ||
+		rec.Body.String() != `{"lifecycle":"in_production","order_id":"o1"}`+"\n" {
+		t.Fatalf("replayed start: %d %q", rec.Code, rec.Body.String())
+	}
+	if rec := serveCheckout(t, &fakeCheckout{freeErr: checkout.ErrOrdersFrozen}, id, http.MethodPost, start, "chef", "k",
+		`{"expected_version":3}`, nil); rec.Code != 503 {
+		t.Fatalf("frozen start: %d", rec.Code)
+	}
+	const late = "/api/v1/admin/orders/o1/late-payment"
+	honour := `{"expected_version":3,"decision":"honour","customer_agreement":{"channel":"phone","agreed_at":"2026-11-05T09:00:00Z","evidence_ref":"Call note 12"}}`
+	for name, c := range map[string]struct {
+		auth, body string
+		status     int
+	}{
+		"fulfillment":         {"fulfil", honour, 403},
+		"chef honour":         {"chef", honour, 202},
+		"chef full return":    {"chef", `{"expected_version":3,"decision":"full_return"}`, 202},
+		"honour without":      {"chef", `{"expected_version":3,"decision":"honour"}`, 422},
+		"no channel":          {"chef", `{"expected_version":3,"decision":"honour","customer_agreement":{"agreed_at":"2026-11-05T09:00:00Z","evidence_ref":"x"}}`, 422},
+		"no evidence":         {"chef", `{"expected_version":3,"decision":"honour","customer_agreement":{"channel":"phone","agreed_at":"2026-11-05T09:00:00Z"}}`, 422},
+		"bad time":            {"chef", `{"expected_version":3,"decision":"honour","customer_agreement":{"channel":"phone","agreed_at":"yesterday","evidence_ref":"x"}}`, 422},
+		"return with consent": {"chef", `{"expected_version":3,"decision":"full_return","customer_agreement":{"channel":"phone","agreed_at":"2026-11-05T09:00:00Z","evidence_ref":"x"}}`, 422},
+		"half":                {"chef", `{"expected_version":3,"decision":"half_return"}`, 422},
+	} {
+		if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, late, c.auth, "k", c.body, nil); rec.Code != c.status {
+			t.Errorf("late payment %s: %d %s, want %d", name, rec.Code, rec.Body.String(), c.status)
 		}
 	}
 }

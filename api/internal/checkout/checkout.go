@@ -413,6 +413,7 @@ var invalidFields = map[string]string{
 	"effective_invalid": "effective_at", "policy_invalid": "policy",
 	"expected_version_required": "expected_version",
 	"preview_invalid":           "preview_id", "reason_invalid": "reason",
+	"decision_invalid": "decision", "agreement_invalid": "customer_agreement",
 }
 
 var invalidMessages = map[string]string{
@@ -424,6 +425,8 @@ var invalidMessages = map[string]string{
 	"proof_reused":          "must be fresh for each new quote",
 	"preview_invalid":       "must be a cancellation preview you requested for this order, with its preview_hash",
 	"reason_invalid":        "must be 1 to 500 characters on one line without surrounding spaces",
+	"decision_invalid":      "must be honour or full_return",
+	"agreement_invalid":     "must give channel, agreed_at (not in the future) and evidence_ref to honour, and nothing for full_return",
 }
 
 var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "state_conflict": true,

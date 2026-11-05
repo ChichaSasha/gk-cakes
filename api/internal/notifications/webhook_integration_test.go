@@ -467,6 +467,8 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.order_chef_cancel_request(uuid, uuid, text, text, integer, text, text, timestamp with time zone)",
 		"business.order_free_confirm_request(uuid, bytea, uuid, text, text, integer, text, timestamp with time zone)",
 		"business.order_get(uuid, uuid, bytea)",
+		"business.order_late_payment_request(uuid, uuid, text, text, integer, text, text, timestamp with time zone, text, text, timestamp with time zone)",
+		"business.order_production_start(uuid, uuid, text, text, integer, timestamp with time zone)",
 		// GK-025 A3b payments.
 		"business.payment_event_record(text, text, boolean, text, text, timestamp with time zone, text, text, uuid, text, text)",
 		"business.payment_initiate(uuid, bytea, uuid, text, text, integer, uuid, text, text, text, timestamp with time zone)",
@@ -474,6 +476,7 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.policy_record(uuid, text, text, text, text, text, timestamp with time zone, text)",
 		"business.quote_create(uuid, bytea, text, text, date, uuid, text, json, text, timestamp with time zone)",
 		"business.quote_get(uuid, uuid, bytea)",
+		"business.refund_delivery_failure_record(uuid, text, text, uuid, uuid)",
 		"business.schedule_public_days(date, date, timestamp with time zone, integer)",
 		"business.schedule_public_slots(date, text, timestamp with time zone, integer)",
 		"business.schedule_staff_days(uuid, date, date, timestamp with time zone)",
