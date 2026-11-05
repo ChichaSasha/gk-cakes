@@ -11,7 +11,7 @@
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { browser } from '$app/env';
 import { PUBLIC_API_URL, PUBLIC_AUTH_PUBLISHABLE_KEY, PUBLIC_AUTH_URL } from '$app/env/public';
-import { apiGet, safeReturnPath, type ReturnPath } from './api';
+import { apiGet, safeReturnPath, type ApiOptions, type ReturnPath } from './api';
 
 /** Whether sign-in is configured for this environment. */
 export const signInConfigured = Boolean(
@@ -48,6 +48,18 @@ export async function currentSession(): Promise<Session | null> {
 export async function authedGet<T>(path: string): Promise<T> {
 	const session = await currentSession();
 	return apiGet<T>(path, { baseUrl: PUBLIC_API_URL as string, token: session?.access_token });
+}
+
+/** Whether the storefront can reach the API (PUBLIC_API_URL is set). */
+export const shopConfigured = Boolean(PUBLIC_API_URL);
+
+/**
+ * API options for a storefront call: the signed-in customer's access token
+ * when there is a session, otherwise none (a guest, GK-030).
+ */
+export async function customerApi(): Promise<ApiOptions> {
+	const session = signInConfigured ? await currentSession() : null;
+	return { baseUrl: PUBLIC_API_URL as string, token: session?.access_token };
 }
 
 /**

@@ -17,6 +17,9 @@ import {
 	orderStatus,
 	parseBasket,
 	quoteUsable,
+	restartQuery,
+	setHandoff,
+	takeHandoff,
 	refundView,
 	safeCheckoutUrl,
 	saveOrderCapability,
@@ -158,6 +161,14 @@ describe('guest proof and capability', () => {
 		expect(proof).toMatch(/^[A-Za-z0-9_-]{43}$/);
 		expect(newGuestProof()).not.toBe(proof);
 		expect(newGuestProof((b) => b.fill(0xff))).toBe('_'.repeat(42) + '8');
+	});
+
+	it('hands off to the order page once', () => {
+		const store = memory();
+		setHandoff(store, ORDER, { autopay: true, message: 'm', pollAfter: 3 });
+		expect(takeHandoff(store, ORDER)).toEqual({ autopay: true, message: 'm', pollAfter: 3 });
+		expect(takeHandoff(store, ORDER)).toEqual({ autopay: false });
+		expect(takeHandoff(store, 'nope')).toEqual({});
 	});
 
 	function memory(): Storage {
@@ -500,6 +511,15 @@ describe('helpers', () => {
 	it('backs off polling from the API hint to 30 seconds', () => {
 		expect([0, 1, 2, 3, 4, 10].map((a) => nextPollSeconds(a, 3))).toEqual([3, 5, 7, 10, 15, 30]);
 		expect(nextPollSeconds(0, 0)).toBe(3);
+	});
+
+	it('links back to checkout with the same cakes', () => {
+		const item = (variant_id: string, lot_id: string | null, quantity: number) =>
+			({ variant_id, lot_id, quantity }) as NonNullable<Order['items']>[number];
+		expect(restartQuery([item(V1, null, 2), item(V2, LOT, 1)])).toBe(
+			`?item=${V1}&item=${V1}&lot=${LOT}`
+		);
+		expect(restartQuery(null)).toBe('');
 	});
 
 	it('uses a quote only with a minute to spare', () => {

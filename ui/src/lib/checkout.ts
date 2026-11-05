@@ -166,6 +166,8 @@ export interface Accepted {
 
 export interface OrderItem {
 	line_no: number;
+	variant_id: string;
+	lot_id: string | null;
 	cake_name: string;
 	flavour: string;
 	size_code: string;
@@ -923,4 +925,51 @@ export function nextPollSeconds(attempt: number, hint = 3): number {
 /** Whether a quote can still be used to check out (a minute of margin). */
 export function quoteUsable(quote: Quote, now: number = Date.now()): boolean {
 	return Date.parse(quote.expires_at) - now > 60_000;
+}
+
+// ---------------------------------------------------------------------------
+// Checkout → order page hand-off (this tab only, sessionStorage).
+
+export interface Handoff {
+	/** Open the Stripe page as soon as the order shows it (set by checkout only). */
+	autopay?: boolean;
+	/** A message to show once on the order page. */
+	message?: string;
+	/** The API's poll hint from the last 202. */
+	pollAfter?: number;
+}
+
+const HANDOFF_PREFIX = 'gk-order-handoff:';
+
+export function setHandoff(store: KeyValueStore, orderId: string, handoff: Handoff): void {
+	store.setItem(HANDOFF_PREFIX + checkId(orderId), JSON.stringify(handoff));
+}
+
+/** Reads and removes the hand-off for an order (shown once). */
+export function takeHandoff(store: KeyValueStore, orderId: string): Handoff {
+	if (!isId(orderId)) return {};
+	const raw = store.getItem(HANDOFF_PREFIX + orderId);
+	store.removeItem(HANDOFF_PREFIX + orderId);
+	try {
+		const h = JSON.parse(raw ?? '{}') as Record<string, unknown>;
+		return {
+			autopay: h.autopay === true,
+			message: typeof h.message === 'string' ? h.message : undefined,
+			pollAfter: typeof h.pollAfter === 'number' ? h.pollAfter : undefined
+		};
+	} catch {
+		return {};
+	}
+}
+
+/** The query of the temporary checkout link for the same cakes (to start again). */
+export function restartQuery(items: OrderItem[] | null): string {
+	const q = new URLSearchParams();
+	for (const i of items ?? []) {
+		for (let n = 0; n < i.quantity; n++) {
+			if (i.lot_id) q.append('lot', i.lot_id);
+			else q.append('item', i.variant_id);
+		}
+	}
+	return q.size > 0 ? `?${q}` : '';
 }
