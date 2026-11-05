@@ -114,7 +114,9 @@
 				</tbody>
 			</table>
 		{/if}
-		<p><a href={resolve('/admin/catalogue')}>Catalogue</a> (read only)</p>
+		{#if me.capabilities.includes('chef') || me.capabilities.includes('technical_support')}
+			<p><a href={resolve('/admin/catalogue')}>Catalogue</a> (read only)</p>
+		{/if}
 		<p class="small">Daily orders and the schedule will appear here.</p>
 		<p><button type="button" onclick={leave}>Sign out</button></p>
 	{:else}

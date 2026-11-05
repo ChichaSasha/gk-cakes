@@ -50,7 +50,9 @@
 				problem =
 					e instanceof ApiError && e.code === 'FORBIDDEN'
 						? 'This account cannot see the catalogue.'
-						: 'The catalogue could not be loaded right now. Please try again.';
+						: e instanceof ApiError && e.code === 'ACCOUNT_DISABLED'
+							? 'This account is disabled.'
+							: 'The catalogue could not be loaded right now. Please try again.';
 			}
 		})();
 		const unsubscribe = leaveOnSignOut(() => {

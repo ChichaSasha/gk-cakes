@@ -3,7 +3,13 @@ import { ApiError } from '../api';
 import {
 	archiveVariant,
 	byState,
+	catalogueReference,
 	colours,
+	createFlavour,
+	createNotice,
+	currentNotice,
+	flavours,
+	MAX_CAKE_PAGES,
 	createCake,
 	createColour,
 	createRecipeVersion,
@@ -161,9 +167,16 @@ describe('staff catalogue commands (strict JSON, K00)', () => {
 		await createRecipeVersion(api, 'r1', recipe);
 		expect(calls[0].url).toBe(`https://api.example.com/api/v1/admin/cakes/${CAKE}/variants`);
 		expect(calls[1].body).toEqual(recipe);
-		expect(() => createRecipeVersion(api, 'r2', { ...recipe, price_minor: 90.5 })).toThrow(
-			'whole pence'
-		);
+		for (const price_minor of [90.5, 0, -1, 10_000_001]) {
+			expect(() => createRecipeVersion(api, 'r2', { ...recipe, price_minor })).toThrow(
+				'whole pence'
+			);
+		}
+		expect(calls[0].body).toEqual({
+			flavour_id: FLAVOUR,
+			size_code: 's',
+			stock_mode: 'made_to_order'
+		});
 		expect(() => createRecipeVersion(api, 'r3', { ...recipe, allergen_notice_id: 'x' })).toThrow(
 			'not an ID'
 		);
@@ -179,6 +192,98 @@ describe('staff catalogue commands (strict JSON, K00)', () => {
 		await expect(
 			updateCake(api, 'k', CAKE, { expected_version: 1, name: 'New' })
 		).rejects.toMatchObject({ status: 409, code: 'STALE_VERSION' });
+	});
+});
+
+describe('exact bodies and remaining reads', () => {
+	it('never sends a field the API does not document, even from a wider object', async () => {
+		const { api, calls } = fakeApi(...Array.from({ length: 4 }, () => ({ body: {} })));
+		const form = { name: 'Pink piping', description: 'Soft', colour_id: COLOUR, draft: true };
+		await createCake(api, 'a', form);
+		const loaded = { ...cake(), expected_version: 1, name: 'New' };
+		await updateCake(api, 'b', CAKE, loaded);
+		await createColour(api, 'c', { code: 'red', label: 'Red', position: 30, id: 'x' } as never);
+		await createRecipeVersion(api, 'd', {
+			variant_id: VARIANT,
+			expected_version: 1,
+			price_minor: 1,
+			servings_min: 1,
+			servings_max: 2,
+			coating: 'c',
+			composition: [],
+			allergen_notice_id: NOTICE,
+			allergens: [{ code: 'eggs', label: 'EGGS', prominent: false, note: 'x' } as never],
+			lines: [{ component: 'Flour', quantity: '1', unit: 'g', cost: 2 } as never],
+			extra: 1
+		} as never);
+		expect(calls[0].body).toEqual({ name: 'Pink piping', description: 'Soft', colour_id: COLOUR });
+		expect(calls[1].body).toEqual({
+			expected_version: 1,
+			name: 'New',
+			description: ''
+		});
+		expect(calls[2].body).toEqual({ code: 'red', label: 'Red', position: 30 });
+		const recipe = calls[3].body as Record<string, unknown>;
+		expect(Object.keys(recipe).sort()).toEqual(
+			[
+				'allergen_notice_id',
+				'allergens',
+				'coating',
+				'composition',
+				'expected_version',
+				'lines',
+				'price_minor',
+				'servings_max',
+				'servings_min',
+				'variant_id'
+			].sort()
+		);
+		expect(recipe.allergens).toEqual([{ code: 'eggs', label: 'EGGS', prominent: false }]);
+		expect(recipe.lines).toEqual([{ component: 'Flour', quantity: '1', unit: 'g' }]);
+	});
+
+	it('refuses an empty colour ID instead of sending it', () => {
+		const { api } = fakeApi();
+		expect(() => createCake(api, 'k', { name: 'n', description: '', colour_id: '' })).toThrow(
+			'not an ID'
+		);
+		expect(() => updateCake(api, 'k', CAKE, { expected_version: 1, colour_id: '' })).toThrow(
+			'not an ID'
+		);
+		expect(() => staffCake(api, 'AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA')).toThrow('not an ID');
+	});
+
+	it('creates flavours and notice versions (request body, response text) and unwraps the lists', async () => {
+		const { api, calls } = fakeApi(
+			{ status: 201, body: { id: FLAVOUR, name: 'Vanilla' } },
+			{ status: 201, body: { id: NOTICE, text: 'Shared kitchen' } },
+			{ body: { flavours: [{ id: FLAVOUR, name: 'Vanilla' }] } },
+			{ body: { id: NOTICE, text: 'Shared kitchen' } },
+			{ body: { sizes: [], allergen_codes: ['eggs'], units: ['g'] } }
+		);
+		expect(await createFlavour(api, 'f', 'Vanilla')).toEqual({ id: FLAVOUR, name: 'Vanilla' });
+		expect((await createNotice(api, 'n', 'Shared kitchen')).text).toBe('Shared kitchen');
+		expect(await flavours(api)).toEqual([{ id: FLAVOUR, name: 'Vanilla' }]);
+		expect((await currentNotice(api)).id).toBe(NOTICE);
+		expect((await catalogueReference(api)).allergen_codes).toEqual(['eggs']);
+		expect(
+			calls.map((c) => [c.method, c.url.replace('https://api.example.com', ''), c.body])
+		).toEqual([
+			['POST', '/api/v1/admin/flavours', { name: 'Vanilla' }],
+			['POST', '/api/v1/admin/allergen-notices', { body: 'Shared kitchen' }],
+			['GET', '/api/v1/admin/flavours', undefined],
+			['GET', '/api/v1/admin/allergen-notices/current', undefined],
+			['GET', '/api/v1/admin/sizes', undefined]
+		]);
+	});
+
+	it('throws rather than return a shortened catalogue past the page limit', async () => {
+		const { api } = fakeApi(
+			...Array.from({ length: MAX_CAKE_PAGES }, (_, i) => ({
+				body: { cakes: [cake()], next_cursor: `c${i}` }
+			}))
+		);
+		await expect(staffCakes(api)).rejects.toThrow('more than');
 	});
 });
 

@@ -122,7 +122,9 @@ export interface StaffApi {
 /** Most cakes a full catalogue read follows (50 per page, 20 pages). */
 export const MAX_CAKE_PAGES = 20;
 const PAGE = 50;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** The API's price bounds in pence (api/internal/catalog MaxPriceMinor). */
+export const MAX_PRICE_MINOR = 10_000_000;
 
 function id(value: string): string {
 	if (!UUID.test(value)) throw new Error(`not an ID: ${value}`);
@@ -137,14 +139,23 @@ function cmd(api: StaffApi, key: string) {
 	return { ...opts(api), idempotencyKey: key };
 }
 
-/** Only the fields given (a PATCH changes what it names; absent keeps). */
-function present<T extends object>(o: T): Partial<T> {
-	return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;
+/**
+ * Exactly the named fields that are given (strict JSON: an extra key is a
+ * 400, so a caller's form object never leaks into a body; a PATCH changes
+ * only what it names, and absent keeps).
+ */
+function pick<T extends object, K extends keyof T>(o: T, keys: readonly K[]): Pick<T, K> {
+	const out = {} as Pick<T, K>;
+	for (const k of keys) if (o[k] !== undefined) out[k] = o[k];
+	return out;
 }
 
 // ------------------------------------------------------------------ reads
 
-/** Every cake in every state, newest first (follows next_cursor). */
+/**
+ * Every cake in every state, newest first (follows next_cursor). Throws
+ * rather than return a silently shortened list past MAX_CAKE_PAGES.
+ */
 export async function staffCakes(api: StaffApi): Promise<StaffCake[]> {
 	const all: StaffCake[] = [];
 	let cursor: string | undefined;
@@ -157,7 +168,7 @@ export async function staffCakes(api: StaffApi): Promise<StaffCake[]> {
 		if (!page.next_cursor) return all;
 		cursor = page.next_cursor;
 	}
-	return all;
+	throw new Error(`more than ${MAX_CAKE_PAGES * PAGE} cakes`);
 }
 
 export function staffCake(api: StaffApi, cakeId: string): Promise<StaffCake> {
@@ -202,7 +213,11 @@ export function createColour(
 	key: string,
 	input: { code: string; label: string; position: number }
 ): Promise<Colour> {
-	return apiPost<Colour>('/api/v1/admin/colours', input, cmd(api, key));
+	return apiPost<Colour>(
+		'/api/v1/admin/colours',
+		pick(input, ['code', 'label', 'position']),
+		cmd(api, key)
+	);
 }
 
 /** Changes a colour's label or position, or archives (true) / restores (false) it; the code never changes. */
@@ -212,7 +227,11 @@ export function updateColour(
 	colourId: string,
 	patch: { expected_version: number; label?: string; position?: number; archived?: boolean }
 ): Promise<Colour> {
-	return apiPatch<Colour>(`/api/v1/admin/colours/${id(colourId)}`, present(patch), cmd(api, key));
+	return apiPatch<Colour>(
+		`/api/v1/admin/colours/${id(colourId)}`,
+		pick(patch, ['expected_version', 'label', 'position', 'archived']),
+		cmd(api, key)
+	);
 }
 
 /** A new draft cake; colour_id null or absent means no colour. */
@@ -221,8 +240,12 @@ export function createCake(
 	key: string,
 	input: { name: string; description: string; colour_id?: string | null }
 ): Promise<StaffCake> {
-	if (input.colour_id) id(input.colour_id);
-	return apiPost<StaffCake>('/api/v1/admin/cakes', present(input), cmd(api, key));
+	if (input.colour_id != null) id(input.colour_id);
+	return apiPost<StaffCake>(
+		'/api/v1/admin/cakes',
+		pick(input, ['name', 'description', 'colour_id']),
+		cmd(api, key)
+	);
 }
 
 /** Changes what it names; colour_id null clears the colour, absent keeps it. */
@@ -237,8 +260,12 @@ export function updateCake(
 		colour_id?: string | null;
 	}
 ): Promise<StaffCake> {
-	if (patch.colour_id) id(patch.colour_id);
-	return apiPatch<StaffCake>(`/api/v1/admin/cakes/${id(cakeId)}`, present(patch), cmd(api, key));
+	if (patch.colour_id != null) id(patch.colour_id);
+	return apiPatch<StaffCake>(
+		`/api/v1/admin/cakes/${id(cakeId)}`,
+		pick(patch, ['expected_version', 'name', 'description', 'colour_id']),
+		cmd(api, key)
+	);
 }
 
 /** Publishes (active) or archives a cake. */
@@ -248,7 +275,11 @@ export function setCakeState(
 	cakeId: string,
 	input: { expected_version: number; state: 'active' | 'archived' }
 ): Promise<StaffCake> {
-	return apiPost<StaffCake>(`/api/v1/admin/cakes/${id(cakeId)}/state`, input, cmd(api, key));
+	return apiPost<StaffCake>(
+		`/api/v1/admin/cakes/${id(cakeId)}/state`,
+		pick(input, ['expected_version', 'state']),
+		cmd(api, key)
+	);
 }
 
 export function createVariant(
@@ -258,7 +289,11 @@ export function createVariant(
 	input: { flavour_id: string; size_code: string; stock_mode: StockMode }
 ): Promise<{ variant_id: string; cake: StaffCake }> {
 	id(input.flavour_id);
-	return apiPost(`/api/v1/admin/cakes/${id(cakeId)}/variants`, input, cmd(api, key));
+	return apiPost(
+		`/api/v1/admin/cakes/${id(cakeId)}/variants`,
+		pick(input, ['flavour_id', 'size_code', 'stock_mode']),
+		cmd(api, key)
+	);
 }
 
 export function archiveVariant(
@@ -267,7 +302,11 @@ export function archiveVariant(
 	variantId: string,
 	input: { expected_version: number }
 ): Promise<{ variant_id: string; archived: true }> {
-	return apiPost(`/api/v1/admin/variants/${id(variantId)}/archive`, input, cmd(api, key));
+	return apiPost(
+		`/api/v1/admin/variants/${id(variantId)}/archive`,
+		pick(input, ['expected_version']),
+		cmd(api, key)
+	);
 }
 
 export interface RecipeVersionInput {
@@ -294,10 +333,31 @@ export function createRecipeVersion(
 ): Promise<RecipeVersion> {
 	id(input.variant_id);
 	id(input.allergen_notice_id);
-	if (!Number.isSafeInteger(input.price_minor) || input.price_minor < 0) {
-		throw new Error('price_minor must be whole pence');
+	const p = input.price_minor;
+	if (!Number.isSafeInteger(p) || p < 1 || p > MAX_PRICE_MINOR) {
+		throw new Error(`price_minor must be whole pence from 1 to ${MAX_PRICE_MINOR}`);
 	}
-	return apiPost<RecipeVersion>('/api/v1/admin/recipes/versions', input, cmd(api, key));
+	const body = pick(input, [
+		'variant_id',
+		'expected_version',
+		'price_minor',
+		'servings_min',
+		'servings_max',
+		'coating',
+		'composition',
+		'allergen_notice_id',
+		'allergens',
+		'lines'
+	]);
+	return apiPost<RecipeVersion>(
+		'/api/v1/admin/recipes/versions',
+		{
+			...body,
+			allergens: input.allergens.map((a) => pick(a, ['code', 'label', 'prominent'])),
+			lines: input.lines.map((l) => pick(l, ['component', 'quantity', 'unit']))
+		},
+		cmd(api, key)
+	);
 }
 
 // ---------------------------------------------------------- view helpers
@@ -305,6 +365,7 @@ export function createRecipeVersion(
 /** Cakes by state for an overview: drafts, then live, then archived (each newest first). */
 export function byState(cakes: StaffCake[]): Record<CakeState, StaffCake[]> {
 	const out: Record<CakeState, StaffCake[]> = { draft: [], active: [], archived: [] };
+	// A state this build doesn't know (a newer API) is left out, never guessed (K09: fail safe on enums).
 	for (const c of cakes) out[c.state]?.push(c);
 	return out;
 }
