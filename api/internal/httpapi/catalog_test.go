@@ -222,11 +222,17 @@ func TestCatalogCommandInput(t *testing.T) {
 		"valid recipe":     {"/api/v1/admin/recipes/versions", "k", recipe, 201, ""},
 		"null description": {"/api/v1/admin/cakes", "k", `{"name":"A","description":null}`, 422, "INVALID_INPUT"},
 		"nested null":      {"/api/v1/admin/recipes/versions", "k", strings.Replace(recipe, `"prominent":false`, `"prominent":null`, 1), 422, "INVALID_INPUT"},
-		"null lines":       {"/api/v1/admin/recipes/versions", "k", strings.Replace(recipe, `"lines":[{"component":"Sponge","quantity":"300.00","unit":"g"}]`, `"lines":null`, 1), 422, "INVALID_INPUT"},
-		"upper-case key":   {"/api/v1/admin/cakes", "k", `{"NAME":"A","description":""}`, 400, "BAD_REQUEST"},
-		"case repeat":      {"/api/v1/admin/cakes", "k", `{"name":"a","Name":"b","description":""}`, 400, "BAD_REQUEST"},
-		"long-s key":       {"/api/v1/admin/cakes", "k", "{\"name\":\"a\",\"de\u017fcription\":\"b\"}", 400, "BAD_REQUEST"},
-		"huge version":     {"/api/v1/admin/cakes/c1/state", "k", `{"expected_version":3000000000,"state":"active"}`, 422, "INVALID_INPUT"},
+		// The unknown-field check wins over the null check (K00).
+		"unknown null":        {"/api/v1/admin/cakes", "k", `{"name":"A","price":null}`, 400, "BAD_REQUEST"},
+		"null then unknown":   {"/api/v1/admin/cakes", "k", `{"name":"A","description":null,"price":1}`, 400, "BAD_REQUEST"},
+		"nested unknown null": {"/api/v1/admin/recipes/versions", "k", strings.Replace(recipe, `"prominent":false`, `"prominent":false,"note":null`, 1), 400, "BAD_REQUEST"},
+		"null then repeat":    {"/api/v1/admin/cakes", "k", `{"description":null,"name":"A","name":"B"}`, 400, "BAD_REQUEST"},
+		"null then bad key":   {"/api/v1/admin/cakes", "k", `{"description":null,"Name":"A"}`, 400, "BAD_REQUEST"},
+		"null lines":          {"/api/v1/admin/recipes/versions", "k", strings.Replace(recipe, `"lines":[{"component":"Sponge","quantity":"300.00","unit":"g"}]`, `"lines":null`, 1), 422, "INVALID_INPUT"},
+		"upper-case key":      {"/api/v1/admin/cakes", "k", `{"NAME":"A","description":""}`, 400, "BAD_REQUEST"},
+		"case repeat":         {"/api/v1/admin/cakes", "k", `{"name":"a","Name":"b","description":""}`, 400, "BAD_REQUEST"},
+		"long-s key":          {"/api/v1/admin/cakes", "k", "{\"name\":\"a\",\"de\u017fcription\":\"b\"}", 400, "BAD_REQUEST"},
+		"huge version":        {"/api/v1/admin/cakes/c1/state", "k", `{"expected_version":3000000000,"state":"active"}`, 422, "INVALID_INPUT"},
 	} {
 		cat := &fakeCatalog{}
 		rec := serveCatalog(t, cat, id, http.MethodPost, c.path, "chef", c.key, c.body)

@@ -178,6 +178,8 @@ func TestQuoteRefusesClientPrices(t *testing.T) {
 		"unit price":   {head + `"lines":[{"variant_id":"bbbbbbbb-1111-4111-8111-11111111111b","quantity":1,"unit_price_minor":1}]}`, 400},
 		"total":        {head + `"lines":[` + line + `],"total_minor":1}`, 400},
 		"currency":     {head + `"lines":[` + line + `],"currency":"EUR"}`, 400},
+		"null total":   {head + `"lines":[` + line + `],"total_minor":null}`, 400},
+		"null price":   {head + `"lines":[{"variant_id":"bbbbbbbb-1111-4111-8111-11111111111b","quantity":1,"unit_price_minor":null}]}`, 400},
 		"overflow qty": {head + `"lines":[{"variant_id":"bbbbbbbb-1111-4111-8111-11111111111b","quantity":99999999999999999999}]}`, 400},
 		"21 cakes":     {head + `"lines":[{"variant_id":"bbbbbbbb-1111-4111-8111-11111111111b","quantity":21}]}`, 422},
 	} {
@@ -228,6 +230,10 @@ func TestCheckoutRoutes(t *testing.T) {
 		"version 2":       {strings.Replace(body, `"quote_version":1`, `"quote_version":2`, 1) + `,"guest_proof":"` + testProof + `"}`, 422},
 		"client total":    {body + `,"total_minor":1,"guest_proof":"` + testProof + `"}`, 400},
 		"unknown contact": {strings.Replace(body, `"email":"test@example.com"`, `"email":"test@example.com","phone":"1"`, 1) + `,"guest_proof":"` + testProof + `"}`, 400},
+		// A null on an unknown field is an unknown field (400), not a null (422).
+		"null total": {body + `,"total_minor":null,"guest_proof":"` + testProof + `"}`, 400},
+		"null phone": {strings.Replace(body, `"email":"test@example.com"`, `"email":"test@example.com","phone":null`, 1) + `,"guest_proof":"` + testProof + `"}`, 400},
+		"null proof": {body + `,"guest_proof":null}`, 422},
 	} {
 		co := &fakeCheckout{}
 		if rec := serveCheckout(t, co, id, http.MethodPost, "/api/v1/checkouts", "", "k", c.body, nil); rec.Code != c.status || co.calls != 0 {
@@ -266,6 +272,8 @@ func TestCheckoutRoutes(t *testing.T) {
 		"version 0":     {`{"expected_version":0}`, secretToken, nil, 422},
 		"client amount": {`{"expected_version":1,"total_minor":0}`, secretToken, nil, 400},
 		"null version":  {`{"expected_version":null}`, secretToken, nil, 422},
+		"unknown null":  {`{"expected_version":1,"total_minor":null}`, secretToken, nil, 400},
+		"null+unknown":  {`{"expected_version":null,"total_minor":0}`, secretToken, nil, 400},
 	} {
 		fc := &fakeCheckout{}
 		if rec := serveCheckout(t, fc, id, http.MethodPost, "/api/v1/orders/o1/free-confirmation", c.auth, "k", c.body, c.hdr); rec.Code != c.status || fc.calls != 0 {

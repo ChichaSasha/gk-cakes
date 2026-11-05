@@ -721,14 +721,22 @@ flag (Snickers: `PEANUTS`). The shared-kitchen notice is versioned separately
 and pinned by each recipe version. A variant without a current recipe version,
 which always declares at least one allergen and the notice, is not purchasable
 (missing disclosure disables buying, K01). Recipe quantities are exact
-decimals with at most two places; counts are whole. Inventory links and batch
+decimals with at most two places; counts are whole. Catalog text refuses
+control characters (C0 and C1) and U+2028/U+2029, in the API and in the
+database whatever its locale (`0018_small_fixes.sql`); the notice and a
+description may contain line feeds. The copied snapshot columns keep their
+source rules there too (trimmed flavour name of 1 to 80 characters, a GK-002
+size code, a stock mode, a one-dimensional composition without nulls), and a
+quote's and an order's copied slot window must end after it starts. Inventory links and batch
 use come with GK-032; real recipe data waits for GK-038's measurements.
 
 **Commands** need the chef capability and a current provider session, an
 `Idempotency-Key` header (1 to 128 visible ASCII characters) and, for an
 existing object, `expected_version`. Bodies are one UTF-8 JSON object with
 lower_snake_case keys, no unknown or repeated fields and no `null` (no catalog
-field is nullable; null is 422). A key is scoped to (account, command, path
+field is nullable; null is 422). The structural checks win: a `null` on an
+unknown field is 400 (unknown field), not 422; this holds for every command
+that reads its body this way (catalog, schedule and checkout). A key is scoped to (account, command, path
 resource); the same key and body return the original object, in its current
 state, with `Idempotent-Replayed: true`; another body is 409 `KEY_REUSED`. A
 refused command stores no key. The database checks the capability again under
@@ -938,7 +946,7 @@ proof) instead of returning one; the appointment is the quote's.
 | Route | Who | Notes |
 | --- | --- | --- |
 | `GET /api/v1/policies/current` | anyone | `{id, summary, effective_at, source_decision_id}`; 404 before the first |
-| `POST /api/v1/admin/policies` | chef | `{source_decision_id, source_revision_sha256, summary, effective_at, approver_evidence}` |
+| `POST /api/v1/admin/policies` | chef | `{source_decision_id, source_revision_sha256, summary, effective_at, approver_evidence}`; an `effective_at` more than 1 minute before the database's current time is refused (422 `INVALID_INPUT` "effective_at is not valid", `business.policy_record`): a policy cannot be back-dated; a future instant is accepted and becomes current then |
 | `POST /api/v1/checkouts` (only with `CHECKOUT_ENABLED=true`) | a guest (`guest_proof` of the quote) or the signed-in owner | `{quote_id, quote_version: 1, consented_policy_version, contact{full_name, email, payer_name?}}` with Idempotency-Key |
 | `POST /api/v1/orders/{id}/free-confirmation` (only with `CHECKOUT_ENABLED=true`) | the owner (bearer) or the guest (`X-Order-Capability` with `pay`) | `{expected_version}` with Idempotency-Key; 202 `confirmation_pending` |
 | `POST /api/v1/orders/{id}/payment` (only with `CHECKOUT_ENABLED=true`; 503 without `STRIPE_ACCOUNT_ID` or during a restore freeze) | the owner (bearer) or the guest (`X-Order-Capability` with `pay`) | `{expected_version}` with Idempotency-Key; 202 `payment_pending`, see [Payments](#payments-k04-gk-025-a3b) |

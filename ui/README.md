@@ -88,6 +88,11 @@ access token as `Authorization: Bearer` (never cookies or URLs).
 - The bundle secret check needs no new variables: the `PUBLIC_*` values are
   public and read at start.
 - Styling is functional only until the account designs (GK-016) are approved.
+- Site icon: `static/favicon.svg` (a cake in the GK-015 ink, white and accent;
+  no script or external reference) and the same shapes as a 32×32
+  `static/favicon.ico`, both linked from `src/app.html`, so `/favicon.ico` is
+  served (CSP `img-src 'self'`). It is a placeholder, not the canonical logo
+  (still open in GK-015).
 
 ## Checkout and orders (GK-025)
 
