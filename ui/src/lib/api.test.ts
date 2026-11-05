@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	ApiError,
 	apiGet,
+	apiPatch,
 	apiPost,
 	newIdempotencyKey,
 	safeReturnPath,
@@ -228,5 +229,38 @@ describe('tokenHashDecision', () => {
 			expect(tokenHashDecision(type, false)).toBe('refused');
 			expect(tokenHashDecision(type, true)).toBe('refused');
 		}
+	});
+});
+
+describe('apiPatch', () => {
+	it('sends a PATCH with the JSON body, its Idempotency-Key and the token, without cookies', async () => {
+		const seen: Request[] = [];
+		const got = await apiPatch(
+			'/api/v1/admin/cakes/c1',
+			{ expected_version: 2, colour_id: null },
+			{
+				baseUrl: base,
+				token: 't',
+				idempotencyKey: 'key-2',
+				fetch: fakeFetch(200, { id: 'c1' }, seen)
+			}
+		);
+		expect(got).toEqual({ id: 'c1' });
+		const r = seen[0];
+		expect(r.method).toBe('PATCH');
+		expect(r.headers.get('idempotency-key')).toBe('key-2');
+		expect(r.headers.get('authorization')).toBe('Bearer t');
+		expect(r.credentials).toBe('omit');
+		expect(await r.json()).toEqual({ expected_version: 2, colour_id: null });
+	});
+
+	it('refuses an invalid key', async () => {
+		await expect(
+			apiPatch(
+				'/api/v1/admin/cakes/c1',
+				{},
+				{ baseUrl: base, idempotencyKey: '', fetch: fakeFetch(200, {}) }
+			)
+		).rejects.toThrow('not an Idempotency-Key');
 	});
 });

@@ -114,6 +114,7 @@
 				</tbody>
 			</table>
 		{/if}
+		<p><a href={resolve('/admin/catalogue')}>Catalogue</a> (read only)</p>
 		<p class="small">Daily orders and the schedule will appear here.</p>
 		<p><button type="button" onclick={leave}>Sign out</button></p>
 	{:else}

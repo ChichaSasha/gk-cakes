@@ -289,11 +289,32 @@ shows "Try again", never a crash, and a cake that is not active is a 404 with
   shown now (shop and home cards, cake page, bag rows). The placeholder stays
   only for a cake without an approved photo. Also tracked in a TODO comment in
   that component and on the GK-028 Trello card.
-- **TODO — colour data.** The Colour filter is built but stays hidden until
-  the API sends the `colour` field above (proposed: a chef-managed colour list
-  and one optional colour per cake, set in the chef's catalogue screens) and
-  the chef assigns a colour to each cake. Nothing in the UI needs to change
-  then.
+- **TODO — colours in production.** The API sends each cake's `colour`
+  (`0028_catalog_colours.sql`, api/README "Catalog"), and the Colour filter
+  appears as soon as a cake has one (on staging: the confirmed list Pink,
+  Silver, Red, Chocolate, White, with Pink on the STAGING TEST cake). Still to
+  do: the chef creates that list in production and gives each cake a colour,
+  in the chef's catalogue screens (GK-018, not built yet). The shop needs no
+  change.
+
+## Staff catalogue (GK-018 groundwork)
+
+`src/lib/admin/catalogue.ts` is a typed client for the chef's catalogue in the
+staff API (api/README "Catalog"): reads (cakes in every state, all pages; one
+cake; a recipe version; flavours; the current allergen notice; colours;
+sizes, allergen codes and units) and commands (flavour, allergen notice,
+colour create/update, cake create/update/state, variant create/archive,
+recipe version create). Commands carry an Idempotency-Key and send exactly
+the fields given (a PATCH names only what changes; `colour_id: null` clears),
+path IDs must be UUIDs, and prices must be whole pence. `apiPatch` in
+`src/lib/api.ts` sends the PATCH commands. `src/lib/admin/session.ts` calls it
+with the signed-in staff member's token.
+
+`/admin/catalogue` (private, linked from `/admin`) is a plain read-only list
+of cakes by state (drafts, live, archived) with their colour and the sizes
+still offered, and the colour list. It is groundwork, not the chef's screens:
+those follow the GK-018 design once Sasha approves it (draft PR #15, r03b2 is
+not approved), and no catalogue change can be made from the UI yet.
 
 ## Dependency audit
 

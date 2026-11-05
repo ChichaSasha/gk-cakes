@@ -133,6 +133,25 @@ export async function apiPost<T>(path: string, body: object, opts: PostOptions):
 	return send<T>(url(path, opts), { method: 'POST', headers: h, body: JSON.stringify(body) }, opts);
 }
 
+/**
+ * PATCHes an /api/v1 path with a JSON command and its Idempotency-Key (the
+ * staff catalogue's partial updates; body sent exactly as given), or throws
+ * ApiError.
+ */
+export async function apiPatch<T>(path: string, body: object, opts: PostOptions): Promise<T> {
+	if (!/^[\x21-\x7e]{1,128}$/.test(opts.idempotencyKey)) {
+		throw new Error('not an Idempotency-Key');
+	}
+	const h = headers(opts);
+	h['Content-Type'] = 'application/json';
+	h['Idempotency-Key'] = opts.idempotencyKey;
+	return send<T>(
+		url(path, opts),
+		{ method: 'PATCH', headers: h, body: JSON.stringify(body) },
+		opts
+	);
+}
+
 /** A new Idempotency-Key for one user action. */
 export function newIdempotencyKey(): string {
 	return crypto.randomUUID();
