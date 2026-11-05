@@ -384,7 +384,7 @@ export interface Basket {
 	problem?: string;
 }
 
-export function parseBasket(params: URLSearchParams): Basket {
+export function parseBasket(params: Iterable<[string, string]>): Basket {
 	const counts = new Map<string, BasketLine>();
 	let bad = false;
 	for (const [name, raw] of params) {

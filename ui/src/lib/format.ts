@@ -59,7 +59,7 @@ export function londonParts(instant: string | number | Date): LondonParts {
 		year: p.year,
 		month: p.month,
 		monthName: monthFormat.format(d),
-		day: p.day,
+		day: String(Number(p.day)),
 		weekday: p.weekday,
 		hour: p.hour,
 		minute: p.minute
@@ -88,9 +88,19 @@ export function londonDayLabel(instant: string | number | Date): string {
  * London calendar day, so noon UTC keeps it on the same day in any season.
  */
 export function dateLabel(date: string): string {
-	if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`not a date: ${date}`);
-	const p = londonParts(`${date}T12:00:00Z`);
+	const p = londonParts(`${checkDate(date)}T12:00:00Z`);
 	return `${p.weekday} ${p.day} ${p.monthName} ${p.year}`;
+}
+
+/** "Thu 22 Oct" for a calendar date (YYYY-MM-DD), for the day picker. */
+export function shortDateLabel(date: string): string {
+	const p = londonParts(`${checkDate(date)}T12:00:00Z`);
+	return `${p.weekday} ${p.day} ${p.monthName.slice(0, 3)}`;
+}
+
+function checkDate(date: string): string {
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`not a date: ${date}`);
+	return date;
 }
 
 /** Today's calendar date in London (YYYY-MM-DD). */

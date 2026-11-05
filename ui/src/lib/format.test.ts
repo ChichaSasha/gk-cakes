@@ -8,6 +8,7 @@ import {
 	londonTime,
 	londonToday,
 	refundDeadline,
+	shortDateLabel,
 	slotLabel
 } from './format';
 
@@ -36,6 +37,8 @@ describe('London time', () => {
 		expect(slotLabel('2026-10-22T10:00:00Z', '2026-10-22T11:00:00Z')).toBe('11:00–12:00');
 		expect(londonDayLabel('2026-10-17T10:00:00Z')).toBe('Sat 17 October');
 		expect(dateLabel('2026-10-22')).toBe('Thu 22 October 2026');
+		expect(shortDateLabel('2026-09-03')).toBe('Thu 3 Sep');
+		expect(() => dateLabel('22/10/2026')).toThrow();
 	});
 
 	it('knows today in London, not in UTC', () => {

@@ -190,8 +190,8 @@
 	<main class="wrap" id="main">
 		<p class="sr-only" role="status" aria-live="polite">{announcement}</p>
 		{#if notFound}
-			<div class="page-title"><h1>Order not found</h1></div>
 			<div class="narrow">
+				<div class="page-title"><h1>Order not found</h1></div>
 				<div class="notice error">
 					<div>
 						<p>We couldn’t find this order from this browser.</p>
@@ -206,8 +206,8 @@
 				{/if}
 			</div>
 		{:else if !order}
-			<div class="page-title"><h1>Your order</h1></div>
 			<div class="narrow">
+				<div class="page-title"><h1>Your order</h1></div>
 				{#if loadProblem}
 					<div class="notice error" role="alert"><div><p>{loadProblem}</p></div></div>
 					{#if shopConfigured}
@@ -218,8 +218,8 @@
 				{/if}
 			</div>
 		{:else if status}
-			<div class="page-title"><h1>{status.title}</h1></div>
 			<div class="narrow">
+				<div class="page-title"><h1>{status.title}</h1></div>
 				{#if returned && !status.terminal}
 					<p class="small quiet">
 						You’re back from the secure payment page. This page shows what we know about your
