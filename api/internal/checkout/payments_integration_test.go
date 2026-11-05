@@ -341,7 +341,7 @@ func (h *payHarness) drain(t *testing.T) []error {
 			errs = append(errs, err)
 		}
 	}
-	t.Fatal("jobs never drained")
+	t.Fatalf("jobs never drained:\n%s", reasons(errs[max(0, len(errs)-6):]))
 	return nil
 }
 
@@ -949,6 +949,12 @@ func TestPaidSuccessAfterTheOrderChangedIsRefused(t *testing.T) {
 	// No second collection is possible for this order.
 	if _, err := h.start(order, d, "pay-2", 2); conflict(err) != "state_conflict" {
 		t.Fatalf("new collection after a success: %v", err)
+	}
+	// The order is not cancelled: no automatic full return (GK-025 A3c2).
+	if h.count(t, "SELECT count(*) FROM business.refund_goal WHERE order_id = $1::uuid", order) != 0 ||
+		h.count(t, "SELECT count(*) FROM business.refund_operation WHERE order_id = $1::uuid", order) != 0 ||
+		h.count(t, "SELECT count(*) FROM business.refund_late_capture($1::uuid) g WHERE g IS NOT NULL", order) != 0 {
+		t.Fatal("a full return was recorded for an order that is not cancelled")
 	}
 }
 

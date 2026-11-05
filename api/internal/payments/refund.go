@@ -319,7 +319,13 @@ type RefundEvidence struct {
 	ProviderCode    string `json:"provider_code,omitempty"`
 }
 
-// EvidenceOfRefund is r's evidence.
+// EvidenceOfRefund is r's evidence. Livemode is the caller's (the client
+// key's) mode, not Stripe's: a refund object carries no livemode field, so
+// the livemode comparisons of RefundEvidenceMismatch and
+// business.refund_recovery_committed are tautological for evidence built
+// here. They are kept as a guard for evidence from other sources; the real
+// mode protection is NewClient refusing live keys outside production and
+// the worker refusing operations of another mode (Refunds.Handle).
 func EvidenceOfRefund(r *Refund, livemode bool) RefundEvidence {
 	return RefundEvidence{RefundID: sanitize(refundIDPattern, r.ID), Status: sanitize(statusPattern, r.Status),
 		AmountMinor: r.Amount, Currency: sanitize(currencyPattern, r.Currency),

@@ -40,23 +40,28 @@
 -- Accounting (K05), per collection C (succeeded cake collections now):
 -- S = succeeded local operations + succeeded unmatched observations; R =
 -- unresolved local operations + pending/requires_action unmatched
--- observations; each provider refund counted once. room = max(0, C - S - R);
+-- observations; each provider refund counted once (an unresolved operation
+-- admitted and named by an unresolved quarantined observation that
+-- contradicts it, an amount, currency or payment intent mismatch, is
+-- counted through that observation only while it stands). room = max(0, C - S - R);
 -- exposure = S + R (the money that may have gone back). A new operation may
 -- take min(room, goal remaining) where goal remaining = max(0, target - the
 -- order's S + R), and only when the collection has no unresolved operation
 -- and no unresolved quarantined observation (business.refund_available).
 --
 -- Trigger: late capture on a terminal order. When a paid confirmation is
--- refused (the order changed or lost its holds before the success was
--- recorded: a released, cancelled order), business.order_command_apply
--- records, in the same transaction, the order's goal (target = all its
--- succeeded collections, reason late_capture_terminal, source system; once,
--- raised if another collection succeeds later) and reserves one operation
--- per succeeded collection for its available amount, with its dispatch job.
--- The order stays cancelled (never reopened), nothing is fulfilled and the
--- paid confirmation job still goes to attention (the manager sees it).
--- paid_awaiting_agreement creates no goal (honour or full return is a
--- chef/customer decision: GK-026).
+-- refused and the order is cancelled (released before the success was
+-- recorded), business.order_command_apply records, in the same
+-- transaction, the order's goal (target = all its succeeded collections,
+-- reason late_capture_terminal, source system; once, raised if another
+-- collection succeeds later) and reserves one operation per succeeded
+-- collection for its available amount, with its dispatch job. The order
+-- stays cancelled (never reopened), nothing is fulfilled and the paid
+-- confirmation job still goes to attention (the manager sees it). A refusal
+-- on an order that is not cancelled (confirmed by another collection,
+-- awaiting payment with released holds, paid_awaiting_agreement) records no
+-- goal: attention only (honour, partial or full return is a chef, customer
+-- or manager decision: GK-026).
 --
 -- order_get adds "refund" (the goal target, the succeeded total and a state:
 -- requested, pending, partly_returned, returned or needs_attention; never
@@ -200,6 +205,13 @@ CREATE TABLE business.refund_observation (
   -- metadata[refund_operation_id] as received (not trusted on its own).
   metadata_operation_id uuid NULL,
   matched_operation_id  uuid NULL REFERENCES business.refund_operation (id),
+  -- A quarantined refund that names a local operation of the collection but
+  -- contradicts it (amount, currency or payment intent): while it stands,
+  -- (and counted: succeeded, pending or requires_action) that operation's
+  -- unresolved amount, once admitted, is not counted again (K05: each
+  -- provider refund counted once; the operation's key can yield at most one
+  -- refund).
+  named_operation_id    uuid NULL REFERENCES business.refund_operation (id),
   quarantined           boolean NOT NULL,
   quarantine_reason     text NULL CHECK (quarantine_reason IN ('unmatched', 'amount_mismatch', 'currency_mismatch',
                                                                 'payment_intent_mismatch', 'operation_already_refunded')),
@@ -214,19 +226,26 @@ CREATE TABLE business.refund_observation (
   CONSTRAINT refund_observation_identity UNIQUE (provider_account_id, livemode, provider_refund_id),
   CONSTRAINT refund_observation_quarantine CHECK (quarantined = (matched_operation_id IS NULL)
                                                   AND quarantined = (quarantine_reason IS NOT NULL)),
+  CONSTRAINT refund_observation_named CHECK (named_operation_id IS NULL
+                                             OR quarantine_reason IN ('amount_mismatch', 'currency_mismatch',
+                                                                      'payment_intent_mismatch')),
   CONSTRAINT refund_observation_resolution CHECK ((resolved_at IS NULL) = (resolution_note IS NULL)
                                                   AND (resolved_at IS NULL OR quarantined)
                                                   AND (resolved_by IS NULL OR resolved_at IS NOT NULL))
 );
 
 CREATE INDEX refund_observation_collection_idx ON business.refund_observation (collection_id, observed_at);
+CREATE INDEX refund_observation_named_idx ON business.refund_observation (named_operation_id)
+  WHERE named_operation_id IS NOT NULL;
 CREATE UNIQUE INDEX refund_observation_matched_idx ON business.refund_observation (matched_operation_id)
   WHERE matched_operation_id IS NOT NULL;
 
 -- Owner-internal: the K05 balance of one collection (see the header).
 -- paid is the collection's amount once succeeded (0 otherwise); local and
 -- external split the exposure between local operations and unmatched
--- observations; unresolved: an unresolved local operation exists;
+-- observations (an admitted unresolved operation named by a standing
+-- contradicting observation counts through the observation only); unresolved: an
+-- unresolved local operation exists;
 -- quarantined: an unresolved quarantined observation exists.
 CREATE FUNCTION business.refund_balance(p_collection uuid)
 RETURNS TABLE (paid_minor bigint, succeeded_minor bigint, reserved_minor bigint, local_minor bigint,
@@ -242,7 +261,14 @@ AS $$
   ), l AS (
     SELECT coalesce(sum(o.amount_minor) FILTER (WHERE o.state = 'succeeded'), 0)::bigint AS s,
            coalesce(sum(o.amount_minor) FILTER (WHERE o.state IN ('reserved', 'submitting', 'pending', 'unknown',
-                                                                  'requires_action')), 0)::bigint AS r
+                                                                  'requires_action')
+                                                  AND NOT (o.dispatch_started_at IS NOT NULL
+                                                  AND EXISTS (SELECT 1 FROM business.refund_observation n
+                                                                  WHERE n.named_operation_id = o.id
+                                                                    AND n.resolved_at IS NULL
+                                                                    AND n.status IN ('succeeded', 'pending',
+                                                                                     'requires_action')))), 0)::bigint AS r,
+           coalesce(bool_or(o.state IN ('reserved', 'submitting', 'pending', 'unknown', 'requires_action')), false) AS u
     FROM business.refund_operation o WHERE o.collection_id = p_collection
   ), x AS (
     SELECT coalesce(sum(b.amount_minor) FILTER (WHERE b.status = 'succeeded'), 0)::bigint AS s,
@@ -252,7 +278,7 @@ AS $$
   )
   SELECT c.paid, l.s + x.s, l.r + x.r, l.s + l.r, x.s + x.r, l.s + l.r + x.s + x.r,
          GREATEST(0, c.paid - l.s - l.r - x.s - x.r),
-         l.r > 0, x.q
+         l.u, x.q
   FROM c, l, x;
 $$;
 
@@ -328,7 +354,7 @@ $$;
 -- Owner-internal: reserve, for every succeeded collection of the order (by
 -- ID), one operation for what is available now (business.refund_available,
 -- the goal remaining shrinking as it is allocated), each with its dispatch
--- job and an audit event. The caller holds the order lock. Returns how many
+-- job and an audit event (locks: see below). Returns how many
 -- were reserved (0 without a goal, while one is unresolved, under
 -- quarantine, or when nothing remains). Sends nothing.
 CREATE FUNCTION business.refund_reserve(p_order uuid)
@@ -345,12 +371,16 @@ DECLARE
   v_job uuid;
   v_count integer := 0;
 BEGIN
+  -- Lock order (K00): the order, its collections by ID, then the goal (each
+  -- a no-op when the caller already holds it).
+  PERFORM 1 FROM business.orders o WHERE o.id = p_order FOR UPDATE;
+  PERFORM 1 FROM business.payment_collection pc WHERE pc.order_id = p_order ORDER BY pc.id FOR UPDATE;
   SELECT * INTO v_g FROM business.refund_goal g WHERE g.order_id = p_order FOR UPDATE;
   IF NOT FOUND THEN
     RETURN 0;
   END IF;
   FOR c IN SELECT * FROM business.payment_collection pc
-           WHERE pc.order_id = p_order AND pc.state = 'succeeded' ORDER BY pc.id FOR UPDATE LOOP
+           WHERE pc.order_id = p_order AND pc.state = 'succeeded' ORDER BY pc.id LOOP
     v_amount := business.refund_available(c.id);
     CONTINUE WHEN v_amount <= 0;
     v_op := pg_catalog.gen_random_uuid();
@@ -371,11 +401,13 @@ END;
 $$;
 
 -- Owner-internal: the full return of a late capture on a terminal order
--- (see the header). The caller holds the order lock (and may hold its
--- collections'). Records the goal once (target = every succeeded
--- collection's amount), raises it when more was captured since, then
--- reserves what is available. Idempotent; returns the goal (NULL when
--- nothing was captured).
+-- (see the header). Locks the order, then its collections by ID (no-ops
+-- when the caller holds them, as order_command_apply does), then the goal.
+-- Only a cancelled order gets a goal (defence in depth: the caller checks
+-- too). Records the goal once (target = every succeeded collection's
+-- amount), raises it when more was captured since, then reserves what is
+-- available. Idempotent; returns the goal (NULL when the order is not
+-- cancelled or nothing was captured).
 CREATE FUNCTION business.refund_late_capture(p_order uuid)
 RETURNS uuid
 LANGUAGE plpgsql
@@ -384,8 +416,14 @@ SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   v_paid bigint;
+  v_lifecycle text;
   v_g business.refund_goal%ROWTYPE;
 BEGIN
+  SELECT o.lifecycle INTO v_lifecycle FROM business.orders o WHERE o.id = p_order FOR UPDATE;
+  IF v_lifecycle IS DISTINCT FROM 'cancelled' THEN
+    RETURN NULL;
+  END IF;
+  PERFORM 1 FROM business.payment_collection pc WHERE pc.order_id = p_order ORDER BY pc.id FOR UPDATE;
   SELECT coalesce(sum(pc.amount_minor), 0) INTO v_paid
   FROM business.payment_collection pc WHERE pc.order_id = p_order AND pc.state = 'succeeded';
   IF v_paid = 0 THEN
@@ -434,11 +472,14 @@ DECLARE
   v_state text;
   v_frozen boolean;
 BEGIN
-  -- Lock order (K00): the order, its collection, then its recovery
-  -- operation, then the day and lots inside the engines.
+  -- Lock order (K00): the order, its collections by ID (all of them: a
+  -- refused confirmation may record the full return across them), then its
+  -- recovery operation, then the goal and refund operations, then the day
+  -- and lots inside the engines.
   SELECT * INTO v_o FROM business.orders o WHERE o.id = v.order_id FOR UPDATE;
   IF v.command = 'paid_confirm' THEN
-    SELECT * INTO v_c FROM business.payment_collection c WHERE c.id = v.collection_id FOR UPDATE;
+    PERFORM 1 FROM business.payment_collection c WHERE c.order_id = v.order_id ORDER BY c.id FOR UPDATE;
+    SELECT * INTO v_c FROM business.payment_collection c WHERE c.id = v.collection_id;
   END IF;
   SELECT * INTO v_r FROM business.recovery_operation r WHERE r.id = v.id FOR UPDATE;
   IF v_r.state IN ('committed', 'secured') THEN
@@ -515,15 +556,20 @@ BEGIN
     -- Nothing changes but the version: later commands reserve the next one.
     UPDATE business.orders o SET version = o.version + 1, updated_at = pg_catalog.now() WHERE o.id = v.order_id;
     IF v.command = 'paid_confirm' THEN
-      -- The money is real and stays succeeded: the full return is
-      -- recorded now (goal + reserved operation); the order is never
-      -- reopened and the worker still moves the job to attention.
+      -- The money is real and stays succeeded; the order is never reopened
+      -- and the worker moves the job to attention. Only a terminal
+      -- (cancelled) order records the full return now (goal + reserved
+      -- operations); any other (confirmed by another collection, awaiting
+      -- payment with released holds, awaiting agreement) is a manager's or
+      -- chef's decision (GK-026): nothing is refunded automatically.
       v_outcome := pg_catalog.format('{"status":"refused","evidence":{"reason":"%s","collection_id":"%s"}}',
                                      v_reason, v.collection_id);
       PERFORM business.audit_record('system', NULL, 'order.paid_confirmation_refused', 'order', v.order_id, NULL,
                                     pg_catalog.json_build_object('operation_id', v.id, 'reason', v_reason,
                                                                  'collection_id', v.collection_id));
-      PERFORM business.refund_late_capture(v.order_id);
+      IF v_o.lifecycle = 'cancelled' THEN
+        PERFORM business.refund_late_capture(v.order_id);
+      END IF;
     ELSE
       v_outcome := pg_catalog.format('{"status":"refused","evidence":{"reason":"%s"}}', v_reason);
       PERFORM business.audit_record('system', NULL, 'order.free_confirmation_refused', 'order', v.order_id, NULL,
@@ -981,9 +1027,12 @@ $$;
 
 -- Owner-internal: record that refund operation p_op's evidence contradicts
 -- it (the caller holds the locks): an unresolved operation becomes unknown;
--- a decided one keeps its state; the observation is kept beside it and a
--- reconcile is scheduled for an unresolved one.
-CREATE FUNCTION business.refund_mismatch(p_op uuid, p_reason text, p_evidence json)
+-- a decided one keeps its state; the observation is kept beside it. With
+-- p_schedule (a dispatch outcome) a reconcile is scheduled for an unresolved
+-- one; a reconcile recording it schedules nothing (it is that reconcile:
+-- never a self-rescheduling loop). The same reason again changes nothing
+-- but the observation time (recorded and audited once).
+CREATE FUNCTION business.refund_mismatch(p_op uuid, p_reason text, p_evidence json, p_schedule boolean)
 RETURNS text
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -992,6 +1041,11 @@ AS $$
 DECLARE
   o business.refund_operation%ROWTYPE;
 BEGIN
+  SELECT * INTO o FROM business.refund_operation ro WHERE ro.id = p_op;
+  IF o.mismatch_reason IS NOT DISTINCT FROM p_reason THEN
+    UPDATE business.refund_operation ro SET last_observed_at = pg_catalog.now() WHERE ro.id = p_op;
+    RETURN o.state;
+  END IF;
   UPDATE business.refund_operation ro
   SET state = CASE WHEN ro.state IN ('submitting', 'pending', 'requires_action') THEN 'unknown' ELSE ro.state END,
       mismatch_reason = p_reason, mismatch_evidence = p_evidence, last_observed_at = pg_catalog.now(),
@@ -1000,7 +1054,7 @@ BEGIN
   RETURNING * INTO o;
   PERFORM business.audit_record('system', NULL, 'refund.mismatch', 'order', o.order_id, NULL,
                                 pg_catalog.json_build_object('refund_operation_id', o.id, 'reason', p_reason));
-  IF o.state = 'unknown' THEN
+  IF p_schedule AND o.state = 'unknown' THEN
     PERFORM business.refund_schedule_reconcile(o.collection_id, pg_catalog.now());
   END IF;
   RETURN o.state;
@@ -1071,7 +1125,7 @@ BEGIN
         THEN 'refund already recorded for another operation'
     END;
     IF v_reason IS NOT NULL THEN
-      PERFORM business.refund_mismatch(o.id, v_reason, v_ev);
+      PERFORM business.refund_mismatch(o.id, v_reason, v_ev, true);
     ELSE
       PERFORM business.refund_settle(o.id, v_ev ->> 'status', v_ev ->> 'status', v_ev ->> 'refund_id', v_ev,
                                      CASE WHEN (v_ev ->> 'failure_reason') ~ '^[a-z][a-z0-9_]{0,63}$'
@@ -1149,8 +1203,10 @@ BEGIN
 END;
 $$;
 
--- Worker: the admitted, unresolved refund operations of the leased
--- reconcile's collection (what the reconcile must decide).
+-- Worker: the admitted refund operations of the leased reconcile's
+-- collection: the unresolved ones (what the reconcile must decide) and the
+-- succeeded or failed ones (checked against what Stripe now reports: a
+-- contradiction is recorded beside them, never a payout or reopening).
 CREATE FUNCTION business.refund_reconcile_operations(p_job_id uuid, p_worker uuid, p_generation bigint, p_collection uuid)
 RETURNS TABLE (operation_id uuid, operation_state text, amount_minor bigint, payment_intent_id text,
                provider_refund_id text, dispatch_started_at timestamptz, replay_until timestamptz, mismatch_reason text)
@@ -1166,8 +1222,47 @@ BEGIN
          ro.replay_until, ro.mismatch_reason
   FROM business.refund_operation ro
   WHERE ro.collection_id = v.collection_id AND ro.dispatch_started_at IS NOT NULL
-    AND ro.state IN ('submitting', 'pending', 'unknown', 'requires_action')
+    AND ro.state IN ('submitting', 'pending', 'unknown', 'requires_action', 'succeeded', 'failed')
   ORDER BY ro.created_at, ro.id;
+END;
+$$;
+
+-- Owner-internal: whether a matched refund's status contradicts its
+-- operation's decided state (see refund_observation_record; the caller
+-- holds the order and collection locks). A contradiction is recorded on
+-- the operation (business.refund_mismatch) unless the same one already is;
+-- a later sighting still answers true (the worker keeps asking a manager).
+CREATE FUNCTION business.refund_observation_contradicts(p_op uuid, p_refund_id text, p_status text, p_amount_minor bigint,
+                                                        p_currency text)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  o business.refund_operation%ROWTYPE;
+  v_verdict text := CASE p_status WHEN 'canceled' THEN 'failed' ELSE p_status END;
+  v_reason text;
+BEGIN
+  IF p_op IS NULL THEN
+    RETURN false;
+  END IF;
+  SELECT * INTO o FROM business.refund_operation ro WHERE ro.id = p_op FOR UPDATE;
+  IF NOT ((o.state = 'succeeded' AND p_status <> 'succeeded')
+          OR (o.state = 'failed' AND p_status NOT IN ('failed', 'canceled'))
+          OR o.state = 'cancelled') THEN
+    RETURN false;
+  END IF;
+  -- The reconcile's wording (refund_reconcile_record), so one contradiction
+  -- is recorded once whichever path sees it first.
+  v_reason := 'Stripe now reports ' || v_verdict || ' for a ' || o.state || ' refund';
+  IF o.mismatch_reason IS DISTINCT FROM v_reason THEN
+    PERFORM business.refund_mismatch(o.id, v_reason,
+                                     pg_catalog.json_build_object('refund_id', p_refund_id, 'status', p_status,
+                                                                  'amount_minor', p_amount_minor, 'currency', p_currency,
+                                                                  'source', 'observation'), false);
+  END IF;
+  RETURN true;
 END;
 $$;
 
@@ -1178,10 +1273,19 @@ $$;
 -- intent). Matching: the operation named by p_metadata_operation_id (of
 -- this collection) or the operation already holding this refund ID, with
 -- the same amount, currency gbp and payment intent, and no other refund
--- recorded for it; anything else is quarantined with the reason. Returns
--- the observation, its match, whether it is quarantined (and why), result
--- 'recorded' (new), 'updated' (status changed) or 'unchanged', and whether a
--- manager has resolved its quarantine.
+-- recorded for it; anything else is quarantined with the reason (one that
+-- names an operation but contradicts its amount, currency or payment intent
+-- is linked to it: named_operation_id). A matched refund whose status
+-- contradicts its operation's decided state (a succeeded operation whose
+-- refund Stripe now reports failed, canceled or anything but succeeded; a
+-- failed operation whose refund is not failed or canceled; a withdrawn
+-- operation with any refund) records the contradiction on the operation
+-- (business.refund_mismatch: no automatic payout or reopening, the order
+-- view needs attention) and returns result 'contradiction'. Otherwise
+-- result is 'recorded' (new), 'updated' (status changed) or 'unchanged'.
+-- Also returns the observation, its match, whether it is quarantined (and
+-- why) and whether a manager has resolved its quarantine. Lock order: the
+-- order, the collection, the observation, the operation.
 CREATE FUNCTION business.refund_observation_record(
   p_job_id uuid, p_worker uuid, p_generation bigint, p_collection uuid, p_refund_id text, p_amount_minor bigint,
   p_currency text, p_status text, p_payment_intent_id text, p_metadata_operation_id uuid,
@@ -1204,6 +1308,9 @@ BEGIN
      OR p_currency IS NULL OR p_currency !~ '^[a-z]{3}$' OR p_status IS NULL OR p_status !~ '^[a-z_]{1,40}$' THEN
     RAISE EXCEPTION 'invalid refund observation' USING ERRCODE = 'invalid_parameter_value';
   END IF;
+  PERFORM 1 FROM business.orders ord
+  WHERE ord.id = (SELECT pc.order_id FROM business.payment_collection pc WHERE pc.id = v.collection_id)
+  FOR UPDATE;
   SELECT * INTO c FROM business.payment_collection pc WHERE pc.id = v.collection_id FOR UPDATE;
   IF p_payment_intent_id IS DISTINCT FROM c.payment_intent_id THEN
     RAISE EXCEPTION 'refund % is not of the payment intent of collection %', p_refund_id, c.id
@@ -1222,6 +1329,9 @@ BEGIN
     END IF;
     UPDATE business.refund_observation ob SET status = p_status, last_observed_at = pg_catalog.now()
     WHERE ob.id = b.id;
+    IF business.refund_observation_contradicts(b.matched_operation_id, p_refund_id, p_status, p_amount_minor, p_currency) THEN
+      v_result := 'contradiction';
+    END IF;
     RETURN QUERY SELECT b.id, b.matched_operation_id, b.quarantined, b.quarantine_reason, v_result, b.resolved_at IS NOT NULL;
     RETURN;
   END IF;
@@ -1247,18 +1357,23 @@ BEGIN
     v_reason := 'payment_intent_mismatch';
   END IF;
   INSERT INTO business.refund_observation (id, collection_id, provider_account_id, livemode, provider_refund_id, amount_minor,
-                                           currency, status, metadata_operation_id, matched_operation_id, quarantined,
-                                           quarantine_reason, source, provider_created_at)
+                                           currency, status, metadata_operation_id, matched_operation_id,
+                                           named_operation_id, quarantined, quarantine_reason, source, provider_created_at)
   VALUES (pg_catalog.gen_random_uuid(), c.id, c.provider_account_id, c.livemode, p_refund_id, p_amount_minor, p_currency,
-          p_status, p_metadata_operation_id, CASE WHEN v_reason IS NULL THEN o.id END, v_reason IS NOT NULL, v_reason,
-          'reconcile', p_provider_created_at)
+          p_status, p_metadata_operation_id, CASE WHEN v_reason IS NULL THEN o.id END,
+          CASE WHEN v_reason IN ('amount_mismatch', 'currency_mismatch', 'payment_intent_mismatch') THEN o.id END,
+          v_reason IS NOT NULL, v_reason, 'reconcile', p_provider_created_at)
   RETURNING * INTO b;
   IF v_reason IS NOT NULL THEN
     PERFORM business.audit_record('system', NULL, 'refund.observation_quarantined', 'order', c.order_id, NULL,
                                   pg_catalog.json_build_object('observation_id', b.id, 'collection_id', c.id,
                                                                'amount_minor', p_amount_minor, 'reason', v_reason));
   END IF;
-  RETURN QUERY SELECT b.id, b.matched_operation_id, b.quarantined, b.quarantine_reason, 'recorded'::text, false;
+  v_result := 'recorded';
+  IF business.refund_observation_contradicts(b.matched_operation_id, p_refund_id, p_status, p_amount_minor, p_currency) THEN
+    v_result := 'contradiction';
+  END IF;
+  RETURN QUERY SELECT b.id, b.matched_operation_id, b.quarantined, b.quarantine_reason, v_result, false;
 END;
 $$;
 
@@ -1308,7 +1423,7 @@ BEGIN
   END IF;
 
   IF p_verdict = 'mismatch' THEN
-    v_state := business.refund_mismatch(o.id, p_reason, p_evidence);
+    v_state := business.refund_mismatch(o.id, p_reason, p_evidence, false);
   ELSIF p_verdict = 'not_found' THEN
     UPDATE business.refund_operation ro
     SET state = CASE WHEN ro.state = 'submitting' THEN 'unknown' ELSE ro.state END,
@@ -1316,15 +1431,22 @@ BEGIN
     WHERE ro.id = o.id
     RETURNING ro.state INTO v_state;
   ELSIF o.state IN ('succeeded', 'failed', 'cancelled') THEN
-    IF o.state <> p_verdict THEN
+    IF o.state <> p_verdict
+       AND o.mismatch_reason IS DISTINCT FROM 'Stripe now reports ' || p_verdict || ' for a ' || o.state || ' refund' THEN
       -- Never an automatic payout or reopening after a contradiction.
-      v_state := business.refund_mismatch(o.id, 'Stripe now reports ' || p_verdict || ' for a ' || o.state || ' refund', p_evidence);
+      v_state := business.refund_mismatch(o.id, 'Stripe now reports ' || p_verdict || ' for a ' || o.state || ' refund',
+                                          p_evidence, false);
+    ELSIF o.state <> p_verdict THEN
+      -- The same contradiction is already recorded (by the observation or
+      -- an earlier reconcile).
+      UPDATE business.refund_operation ro SET last_observed_at = pg_catalog.now() WHERE ro.id = o.id;
+      v_state := o.state;
     ELSE
       UPDATE business.refund_operation ro SET last_observed_at = pg_catalog.now() WHERE ro.id = o.id;
       v_state := o.state;
     END IF;
   ELSIF o.provider_refund_id IS NOT NULL AND o.provider_refund_id <> p_refund_id THEN
-    v_state := business.refund_mismatch(o.id, 'another refund than the one recorded for this operation', p_evidence);
+    v_state := business.refund_mismatch(o.id, 'another refund than the one recorded for this operation', p_evidence, false);
   ELSE
     v_state := business.refund_settle(o.id, p_verdict, coalesce(p_provider_status, p_verdict), p_refund_id, p_evidence,
                                       p_reason);
@@ -1515,7 +1637,8 @@ REVOKE ALL ON FUNCTION business.refund_leased_dispatch(uuid, uuid, bigint, uuid)
 REVOKE ALL ON FUNCTION business.refund_leased_reconcile(uuid, uuid, bigint, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.refund_quarantined(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.refund_settle(uuid, text, text, text, json, text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION business.refund_mismatch(uuid, text, json) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.refund_mismatch(uuid, text, json, boolean) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.refund_observation_contradicts(uuid, text, text, bigint, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.refund_job_begin(uuid, uuid, bigint) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.refund_dispatch_fix(uuid, uuid, bigint, uuid, text, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.refund_recovery_reserve(uuid, uuid, bigint, uuid, text, uuid, integer, text, text, timestamptz) FROM PUBLIC;

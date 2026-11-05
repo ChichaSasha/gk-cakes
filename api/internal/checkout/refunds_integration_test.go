@@ -323,3 +323,61 @@ func TestPaidAwaitingAgreementCreatesNoRefundGoal(t *testing.T) {
 		t.Fatal("a refund was recorded for an order awaiting agreement")
 	}
 }
+
+// A refused paid confirmation on an order that is not cancelled records no
+// full return: a late success of an earlier (expired) collection on an
+// order confirmed by a later one goes to a manager only; the confirmed
+// collection is never refunded automatically. refund_late_capture itself
+// refuses an order that is not cancelled (defence in depth).
+func TestRefusalOnAConfirmedOrderRecordsNoFullReturn(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d := h.tenThousandOrder(t, f, pol, "conf")
+	first, session1 := h.started(t, order, d)
+	h.stripe.session(session1).status = "expired"
+	h.deliver(t, "evt_expired_conf", "checkout.session.expired", "checkout.session", session1, first, order)
+	if errs := h.drain(t); len(errs) != 0 || h.collection(t, first).State != "cancelled" {
+		t.Fatalf("expired: %v %+v", errs, h.collection(t, first))
+	}
+	res, err := h.start(order, d, "pay-2", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("second dispatch: %v", errs)
+	}
+	second := res.ID
+	session2 := h.collection(t, second).SessionID
+	h.stripe.pay(session2, time.Date(2026, 11, 5, 10, 9, 0, 0, time.UTC))
+	h.deliver(t, "evt_paid_conf", "checkout.session.completed", "checkout.session", session2, second, order)
+	if errs := h.drain(t); len(errs) != 0 || h.orderRow(t, order).Lifecycle != "confirmed" {
+		t.Fatalf("confirmed: %v %+v", errs, h.orderRow(t, order))
+	}
+	// The expired session's payment succeeds after all (recorded late).
+	at := time.Date(2026, 11, 5, 10, 20, 0, 0, time.UTC)
+	ev := `{"session_id":"` + session1 + `","payment_status":"paid","charge_status":"succeeded"}`
+	if got := h.recordDirect(t, first, session1, "paid", ev, &at, nil); got != "succeeded" {
+		t.Fatalf("late success recorded as %s", got)
+	}
+	h.withRefunds()
+	errs := h.drain(t)
+	if got := attention(errs); len(got) != 1 || len(errs) != 1 || !strings.Contains(got[0], "manager or chef decides") {
+		t.Fatalf("refused confirmation: %v", errs)
+	}
+	if o := h.orderRow(t, order); o.Lifecycle != "confirmed" {
+		t.Fatalf("order %+v", o)
+	}
+	if h.count(t, "SELECT count(*) FROM business.refund_goal WHERE order_id = $1::uuid", order) != 0 ||
+		h.count(t, "SELECT count(*) FROM business.refund_operation WHERE order_id = $1::uuid", order) != 0 ||
+		len(h.stripe.refundCreates()) != 0 {
+		t.Fatal("a full return was recorded for a confirmed order")
+	}
+	h.owner(t, "SELECT business.refund_late_capture($1::uuid)", order)
+	if h.count(t, "SELECT count(*) FROM business.refund_goal WHERE order_id = $1::uuid", order) != 0 {
+		t.Fatal("refund_late_capture recorded a goal for a confirmed order")
+	}
+	if v, raw := h.view(t, order, d); v.Refund != nil {
+		t.Fatalf("view %s", raw)
+	}
+}

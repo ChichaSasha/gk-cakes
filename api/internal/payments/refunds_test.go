@@ -156,3 +156,15 @@ func TestRefundVerdictAndMatching(t *testing.T) {
 		t.Fatalf("unrelated operation matched %+v", r)
 	}
 }
+
+// Every refund attention reason fits business.job_attention (1-200 chars).
+func TestRefundAttentionReasonsFitTheJobRecord(t *testing.T) {
+	for _, r := range []string{reasonRefundPayload, reasonRefundAccount, reasonRefundNoIntent, reasonRefundBlocked,
+		reasonRefundReconcile, reasonRefundRecovery, reasonRefundRefused, reasonRefundRejected, reasonRefundFailed,
+		reasonRefundAction, reasonRefundMismatch, reasonRefundContradiction, reasonRefundQuarantine, reasonRefundUnknown,
+		reasonRefundList} {
+		if n := len(r); n < 1 || n > 200 {
+			t.Errorf("%d characters: %s", n, r)
+		}
+	}
+}

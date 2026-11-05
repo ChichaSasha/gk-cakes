@@ -798,11 +798,20 @@ func TestUnknownAndSucceededCollectionsAreNeverReleased(t *testing.T) {
 		}
 		h.endHold(t, order)
 		h.due(t)
-		if errs := withoutRefundDispatch(h.drain(t)); len(errs) != 0 {
+		if errs := h.drain(t); len(errs) != 0 {
 			t.Fatal(errs)
 		}
 		if o := h.orderRow(t, order); o.Lifecycle != "awaiting_payment" || o.CancelReason != "" {
 			t.Fatalf("order %+v", o)
+		}
+		// Not terminal: the refusal goes to a manager; nothing is refunded
+		// automatically (no goal, no operation).
+		if h.count(t, "SELECT count(*) FROM business.refund_goal WHERE order_id = $1::uuid", order) != 0 ||
+			h.count(t, "SELECT count(*) FROM business.refund_operation WHERE order_id = $1::uuid", order) != 0 {
+			t.Fatal("a full return was recorded for an order that is not cancelled")
+		}
+		if v, raw := h.view(t, order, d); v.Refund != nil {
+			t.Fatalf("view %s", raw)
 		}
 		if got := h.count(t, "SELECT count(*) FROM business.order_hold_review WHERE order_id = $1::uuid AND outcome = 'paid'", order); got != 1 {
 			t.Fatal("the review did not end as paid")

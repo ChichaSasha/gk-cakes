@@ -14,20 +14,23 @@ import (
 
 // Attention reasons of refund jobs (no personal data).
 const (
-	reasonRefundPayload    = "stored refund payload refused by this build: not dispatched (see its attempts for any earlier ones)"
-	reasonRefundAccount    = "refund belongs to another Stripe account or environment than this worker's: not dispatched or recorded"
-	reasonRefundNoIntent   = "refund cannot be sent: the collection has no recorded payment intent; manager reconciliation"
-	reasonRefundBlocked    = "refund blocked: a refund seen at Stripe is quarantined or this refund carries contradicting evidence; manager resolution before anything is sent"
-	reasonRefundReconcile  = "refund outcome unknown (idempotency conflict or window ended): manager reconciliation, never a blind new refund"
-	reasonRefundRecovery   = "recovery operation conflict for this refund"
-	reasonRefundRefused    = "Stripe refused the refund request (credentials or permissions): fix the key, then requeue"
-	reasonRefundRejected   = "Stripe rejected the refund request: the refund failed; the full return is still owed (manager)"
-	reasonRefundFailed     = "Stripe reports the refund failed: the full return is still owed and is never re-sent automatically (manager)"
-	reasonRefundAction     = "Stripe reports the refund requires action: manager follow-up"
-	reasonRefundMismatch   = "Stripe refund evidence does not match the refund operation: never trusted; manager reconciliation"
-	reasonRefundQuarantine = "a refund seen at Stripe does not match any refund operation: quarantined, blocks new refunds for the collection; manager resolution"
-	reasonRefundUnknown    = "refund outcome unknown past its idempotency window and absent from Stripe's complete refund list: manager reconciliation, never a blind new refund"
-	reasonRefundList       = "Stripe refused listing or reading the collection's refunds: check the key, then requeue"
+	reasonRefundPayload   = "stored refund payload refused by this build: not dispatched (see its attempts for any earlier ones)"
+	reasonRefundAccount   = "refund belongs to another Stripe account or environment than this worker's: not dispatched or recorded"
+	reasonRefundNoIntent  = "refund cannot be sent: the collection has no recorded payment intent; manager reconciliation"
+	reasonRefundBlocked   = "refund blocked: a refund seen at Stripe is quarantined or this refund carries contradicting evidence; manager resolution before anything is sent"
+	reasonRefundReconcile = "refund outcome unknown (idempotency conflict or window ended): manager reconciliation, never a blind new refund"
+	reasonRefundRecovery  = "recovery operation conflict for this refund"
+	reasonRefundRefused   = "Stripe refused the refund request (credentials or permissions): fix the key, then requeue"
+	reasonRefundRejected  = "Stripe rejected the refund request: the refund failed; the full return is still owed (manager)"
+	reasonRefundFailed    = "Stripe reports the refund failed: the full return is still owed and is never re-sent automatically (manager)"
+	reasonRefundAction    = "Stripe reports the refund requires action: manager follow-up"
+	reasonRefundMismatch  = "Stripe refund evidence does not match the refund operation: never trusted; manager reconciliation"
+	// A decided refund Stripe now reports otherwise (for example succeeded,
+	// then failed): the return may not have happened.
+	reasonRefundContradiction = "Stripe now reports a decided refund otherwise (for example succeeded, then failed): the full return may be owed again; nothing is paid out automatically (manager)"
+	reasonRefundQuarantine    = "a refund seen at Stripe does not match any refund operation: quarantined, blocks new refunds for the collection; manager resolution"
+	reasonRefundUnknown       = "refund outcome unknown past its idempotency window and absent from Stripe's complete refund list: manager reconciliation, never a blind new refund"
+	reasonRefundList          = "Stripe refused listing or reading the collection's refunds: check the key, then requeue"
 )
 
 // Refunds is the job handler for refund operations (migration 0016): the
@@ -354,6 +357,12 @@ func (w *Refunds) reconcile(ctx context.Context, log *slog.Logger, store refundS
 			log.Warn("refund observation quarantined", "refund_id", r.ID, "reason", obs.Reason, "result", obs.Result)
 			attention = append(attention, reasonRefundQuarantine)
 		}
+		if obs.Result == "contradiction" {
+			// Stripe now reports a status that contradicts the decided
+			// operation (for example a succeeded refund that failed later).
+			log.Warn("refund contradicts its decided operation", "refund_id", r.ID, "status", r.Status)
+			attention = append(attention, reasonRefundContradiction)
+		}
 	}
 	ops, err := store.operations(ctx, b.CollectionID)
 	if err != nil {
@@ -396,6 +405,14 @@ func (w *Refunds) reconcile(ctx context.Context, log *slog.Logger, store refundS
 		}
 		log.Info("refund reconciled", "operation", op.ID, "verdict", verdict, "reason", reason, "state", state,
 			"window_ended", ended)
+		if op.State == "succeeded" || op.State == "failed" {
+			// Decided before: only a contradiction is news (it is recorded
+			// beside the operation; nothing is paid out or reopened).
+			if verdict == "mismatch" || (verdict != "not_found" && verdict != op.State) {
+				attention = append(attention, reasonRefundContradiction)
+			}
+			continue
+		}
 		switch {
 		case verdict == "mismatch":
 			attention = append(attention, reasonRefundMismatch)
@@ -632,8 +649,9 @@ func (s refundStore) observe(ctx context.Context, collection string, r *Refund) 
 	return o, gatewayErr(err)
 }
 
-// operations are the admitted, unresolved refund operations of the leased
-// reconcile's collection (one row: the gateway's rows as JSON).
+// operations are the admitted refund operations of the leased reconcile's
+// collection: unresolved, succeeded or failed (one row: the gateway's rows
+// as JSON).
 func (s refundStore) operations(ctx context.Context, collection string) ([]reconcileOp, error) {
 	var raw []byte
 	err := s.db.QueryRow(ctx, `SELECT coalesce(json_agg(json_build_object('id', o.operation_id, 'state', o.operation_state,

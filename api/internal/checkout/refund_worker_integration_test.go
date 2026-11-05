@@ -596,3 +596,98 @@ func TestRestoreFreezeDefersRefunds(t *testing.T) {
 		t.Fatalf("after the freeze:\n%s", reasons(errs))
 	}
 }
+
+// A refund Stripe reports succeeded and later failed is never silently
+// kept as returned: the contradiction is recorded on the operation, the
+// worker asks a manager, nothing becomes available (no automatic payout)
+// and the order view needs attention.
+func TestSucceededRefundThatFailsLaterNeedsAManager(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d, coll := h.lateCapture(t, f, pol, "contra")
+	r := h.reservedRefund(t, coll)
+	h.withRefunds()
+	h.due(t)
+	if errs := h.drain(t); len(errs) != 0 || h.refundRow(t, r.ID).State != "succeeded" {
+		t.Fatalf("dispatch:\n%s", reasons(errs))
+	}
+	h.refundEvent(t, "evt_re_created", "refund.created", "re_fake1")
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("first sighting:\n%s", reasons(errs))
+	}
+	h.stripe.setRefund("re_fake1", "failed", "expired_or_canceled_card")
+	h.refundEvent(t, "evt_re_updated", "refund.updated", "re_fake1")
+	errs := h.drain(t)
+	if got := attention(errs); len(got) != 1 || len(errs) != 1 || !strings.Contains(got[0], "decided refund otherwise") {
+		t.Fatalf("contradiction:\n%s", reasons(errs))
+	}
+	if row := h.refundRow(t, r.ID); row.State != "succeeded" || row.Mismatch == "" {
+		t.Fatalf("operation %+v", row)
+	}
+	if b := h.balance(t, coll); b.Available != 0 {
+		t.Fatalf("balance %+v", b)
+	}
+	if v, raw := h.view(t, order, d); v.Refund == nil || v.Refund.State != "needs_attention" {
+		t.Fatalf("view %s", raw)
+	}
+	if h.count(t, "SELECT business.refund_reserve($1::uuid)", order) != 0 || len(h.stripe.refundCreates()) != 1 {
+		t.Fatal("paid out automatically after the contradiction")
+	}
+	// Seen again: still a manager's, recorded once.
+	h.deliver(t, "evt_ch_refund_updated", "charge.refund.updated", "charge", "ch_fake_x", coll, order)
+	errs = h.drain(t)
+	if got := attention(errs); len(got) != 1 || len(errs) != 1 {
+		t.Fatalf("seen again:\n%s", reasons(errs))
+	}
+	if n := h.count(t, "SELECT count(*) FROM business.audit_event WHERE subject_id = $1::uuid AND action = 'refund.mismatch'", order); n != 1 {
+		t.Fatalf("%d mismatch records", n)
+	}
+	h.noPersonalDataInLogs(t)
+}
+
+// A refund naming a local operation but with another amount is quarantined
+// and linked to that operation: the possible exposure counts it once (the
+// operation's key can yield at most one refund), never the operation's
+// allocation on top, while the observation stands; nothing is sent.
+func TestRefundNamingAnOperationWithAnotherAmountIsCountedOnce(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, _, coll := h.lateCapture(t, f, pol, "named")
+	r := h.reservedRefund(t, coll)
+	h.withRefunds()
+	h.stripe.mu.Lock()
+	h.stripe.refunds.status = 503
+	h.stripe.mu.Unlock()
+	h.due(t)
+	if errs := h.drain(t); len(errs) != 1 || h.refundRow(t, r.ID).State != "unknown" {
+		t.Fatalf("503:\n%s", reasons(errs))
+	}
+	h.stripe.mu.Lock()
+	id := h.stripe.addRefund(r.PI, 5000, "succeeded", map[string]string{"order_id": order, "collection_id": coll,
+		"refund_operation_id": r.ID, "environment": "test"})
+	h.stripe.mu.Unlock()
+	h.refundEvent(t, "evt_named", "refund.created", id)
+	errs := h.drain(t)
+	if got := attention(errs); len(got) != 1 || len(errs) != 1 || !strings.Contains(got[0], "quarantined") {
+		t.Fatalf("reconcile:\n%s", reasons(errs))
+	}
+	if n := h.count(t, `SELECT count(*) FROM business.refund_observation WHERE collection_id = $1::uuid AND quarantined
+		AND quarantine_reason = 'amount_mismatch' AND named_operation_id = $2::uuid`, coll, r.ID); n != 1 {
+		t.Fatalf("%d linked observations", n)
+	}
+	if b := h.balance(t, coll); b.Succeeded != 5000 || b.Reserved != 0 || b.Exposure != 5000 || b.Room != 5000 ||
+		b.Available != 0 || !b.Unresolved || !b.Quarantined {
+		t.Fatalf("balance %+v", b)
+	}
+	if h.count(t, "SELECT business.refund_reserve($1::uuid)", order) != 0 || len(h.stripe.refundCreates()) != 1 {
+		t.Fatal("dispatched or reserved under quarantine")
+	}
+	// Once a manager resolves the observation, the operation counts again.
+	h.owner(t, `UPDATE business.refund_observation SET resolved_at = now(), resolution_note = 'reviewed'
+		WHERE collection_id = $1::uuid`, coll)
+	if b := h.balance(t, coll); b.Reserved != 10000 || b.Exposure != 15000 || b.Available != 0 {
+		t.Fatalf("after the resolution %+v", b)
+	}
+}
