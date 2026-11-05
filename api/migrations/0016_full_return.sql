@@ -910,12 +910,14 @@ BEGIN
   FROM business.job j
   JOIN business.refund_job rj ON rj.job_id = j.id AND rj.purpose = 'dispatch' AND rj.refund_operation_id = j.operation_id
   JOIN business.refund_operation ro ON ro.id = rj.refund_operation_id
-  WHERE j.id = p_job_id AND ro.id = p_operation_id AND p_worker IS NOT NULL AND p_generation BETWEEN 1 AND j.generation
-  FOR UPDATE OF ro;
+  WHERE j.id = p_job_id AND ro.id = p_operation_id AND p_worker IS NOT NULL AND p_generation BETWEEN 1 AND j.generation;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'attempt does not belong to job % generation %', p_job_id, p_generation
       USING ERRCODE = 'invalid_parameter_value';
   END IF;
+  -- Lock order (K00): the collection, then the operation.
+  PERFORM 1 FROM business.payment_collection pc WHERE pc.id = o.collection_id FOR UPDATE;
+  SELECT * INTO o FROM business.refund_operation ro WHERE ro.id = o.id FOR UPDATE;
   IF o.dispatch_started_at IS NULL THEN
     RAISE EXCEPTION 'refund operation % was never admitted for dispatch', o.id USING ERRCODE = 'invalid_parameter_value';
   END IF;
@@ -927,6 +929,9 @@ BEGIN
     UPDATE business.refund_operation ro
     SET state = 'unknown', version = ro.version + 1, updated_at = pg_catalog.now()
     WHERE ro.id = o.id AND ro.state = 'submitting';
+    -- The collection's refunds are looked at as well (a lost answer is
+    -- matched by its metadata even if the dispatch never hears back).
+    PERFORM business.refund_schedule_reconcile(o.collection_id, pg_catalog.now() + interval '5 minutes');
   END IF;
   RETURN v_no;
 END;
@@ -1174,13 +1179,15 @@ $$;
 -- this collection) or the operation already holding this refund ID, with
 -- the same amount, currency gbp and payment intent, and no other refund
 -- recorded for it; anything else is quarantined with the reason. Returns
--- the observation, its match, whether it is quarantined (and why) and
--- result 'recorded' (new), 'updated' (status changed) or 'unchanged'.
+-- the observation, its match, whether it is quarantined (and why), result
+-- 'recorded' (new), 'updated' (status changed) or 'unchanged', and whether a
+-- manager has resolved its quarantine.
 CREATE FUNCTION business.refund_observation_record(
   p_job_id uuid, p_worker uuid, p_generation bigint, p_collection uuid, p_refund_id text, p_amount_minor bigint,
   p_currency text, p_status text, p_payment_intent_id text, p_metadata_operation_id uuid,
   p_provider_created_at timestamptz)
-RETURNS TABLE (observation_id uuid, matched_operation_id uuid, quarantined boolean, quarantine_reason text, result text)
+RETURNS TABLE (observation_id uuid, matched_operation_id uuid, quarantined boolean, quarantine_reason text, result text,
+               resolved boolean)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
@@ -1215,7 +1222,7 @@ BEGIN
     END IF;
     UPDATE business.refund_observation ob SET status = p_status, last_observed_at = pg_catalog.now()
     WHERE ob.id = b.id;
-    RETURN QUERY SELECT b.id, b.matched_operation_id, b.quarantined, b.quarantine_reason, v_result;
+    RETURN QUERY SELECT b.id, b.matched_operation_id, b.quarantined, b.quarantine_reason, v_result, b.resolved_at IS NOT NULL;
     RETURN;
   END IF;
 
@@ -1251,7 +1258,7 @@ BEGIN
                                   pg_catalog.json_build_object('observation_id', b.id, 'collection_id', c.id,
                                                                'amount_minor', p_amount_minor, 'reason', v_reason));
   END IF;
-  RETURN QUERY SELECT b.id, b.matched_operation_id, b.quarantined, b.quarantine_reason, 'recorded'::text;
+  RETURN QUERY SELECT b.id, b.matched_operation_id, b.quarantined, b.quarantine_reason, 'recorded'::text, false;
 END;
 $$;
 

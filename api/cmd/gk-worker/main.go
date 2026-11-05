@@ -89,6 +89,8 @@ func main() {
 	// Payment collections need Stripe (and the journal to dispatch);
 	// without them their jobs wait.
 	pay := &payments.Worker{DB: pool, Coordinator: coord, Environment: string(cfg.Env), Account: cfg.Stripe.AccountID, Logger: logger}
+	// Refunds (the full-return core) share Stripe and the journal.
+	refunds := &payments.Refunds{DB: pool, Coordinator: coord, Environment: string(cfg.Env), Account: cfg.Stripe.AccountID, Logger: logger}
 	if cfg.Stripe.Enabled() {
 		client, code, err := stripeClient(ctx, cfg, logger)
 		if err != nil {
@@ -96,14 +98,15 @@ func main() {
 			os.Exit(code)
 		}
 		pay.Provider = client
+		refunds.Provider = client
 		logger.Info("stripe payments enabled", "account", cfg.Stripe.AccountID, "api_version", payments.APIVersion)
 	} else {
-		logger.Warn("stripe not configured; payment jobs wait")
+		logger.Warn("stripe not configured; payment and refund jobs wait")
 	}
 	// Order hold reviews (expiry cleanup and release of unpaid holds) need
 	// neither Stripe nor the journal.
 	reviews := &checkout.HoldReviews{DB: pool, Logger: logger}
-	handler := jobs.Chain(commands.Handle, pay.Handle, reviews.Handle, emailHandler)
+	handler := jobs.Chain(commands.Handle, pay.Handle, refunds.Handle, reviews.Handle, emailHandler)
 
 	w := jobs.New(pool, jobs.Options{
 		Handler:         handler,
