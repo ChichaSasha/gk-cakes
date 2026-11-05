@@ -432,6 +432,15 @@ var conflictMessages = map[string]string{
 	"preview_stale":             "The refund amount changed since you reviewed it. Please review the new amount and confirm again.",
 	"cancellation_not_eligible": "This order can't be cancelled in its current state.",
 	"honour_too_late":           "The original handover time has passed; the late payment can only be fully returned.",
+	// Chef refunds.
+	"refund_limit":               "This refund is more than the money still held for this order or one of its payments.",
+	"reconciliation_required":    "A refund or payment on this order needs reconciliation before more money is returned.",
+	"refund_in_progress":         "A refund for this order is still in progress. Wait for its outcome and try again.",
+	"no_refund_pending":          "No refund is waiting for this order.",
+	"identity_unproven":          "The provider refund and the refund operation are not proven to be the same.",
+	"window_open":                "The refund's provider retry window has not ended yet.",
+	"evidence_required":          "This decision needs complete provider evidence that is not recorded yet.",
+	"manual_payout_not_eligible": "A manual payout needs a definitive provider refund failure on this payment first.",
 }
 
 // catalogError maps catalog errors to K00 responses without SQL detail.
@@ -482,6 +491,22 @@ func catalogError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, e
 			code = "CANCELLATION_NOT_ELIGIBLE"
 		case "honour_too_late":
 			code = "HONOUR_TOO_LATE"
+		case "refund_limit":
+			code = "REFUND_LIMIT"
+		case "reconciliation_required":
+			code = "RECONCILIATION_REQUIRED"
+		case "refund_in_progress":
+			code = "REFUND_IN_PROGRESS"
+		case "no_refund_pending":
+			code = "NO_REFUND_PENDING"
+		case "identity_unproven":
+			code = "IDENTITY_UNPROVEN"
+		case "window_open":
+			code = "WINDOW_OPEN"
+		case "evidence_required":
+			code = "EVIDENCE_REQUIRED"
+		case "manual_payout_not_eligible":
+			code = "MANUAL_PAYOUT_NOT_ELIGIBLE"
 		}
 		writeError(w, r, http.StatusConflict, code, msg, false)
 	case errors.As(err, &inv):
