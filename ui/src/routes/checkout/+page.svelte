@@ -399,7 +399,12 @@
 			await goto(resolve('/orders/[id]', { id: result.orderId }));
 		} catch (e) {
 			submitting = false;
-			await handle(problemFor(e));
+			// Ordering switched off on the API (CHECKOUT_ENABLED) answers 404.
+			await handle(
+				e instanceof ApiError && e.status === 404
+					? { message: 'Online ordering isn’t open yet. Please contact us to order.', next: 'none' }
+					: problemFor(e)
+			);
 		}
 	}
 
