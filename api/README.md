@@ -2143,19 +2143,19 @@ transitions are part 2 (below).
   receipt instant the current start must be at least 6 hours away, equality
   allowed (409 `MOVE_TOO_LATE` otherwise); the target must be a published
   start of the current schedule on the same London day that is not a closed
-  date, within the order's ready cakes' shelf life (409 `SLOT_UNAVAILABLE`).
-  No lead time, day capacity, booking horizon, new stock or per-slot count:
-  the order's own day place and ready cakes are reused. Stale version 409
-  `STALE_VERSION` (also for a second move at the same version while one is
-  pending: its operation holds that version); same key replays, another body
+  date, starting after the receipt instant, within the order's ready cakes'
+  shelf life (409 `SLOT_UNAVAILABLE`). No lead time, day capacity, booking
+  horizon, new stock or per-slot count: the order's own day place and ready
+  cakes are reused. Stale version 409 `STALE_VERSION`; while any order
+  command is unresolved a new move (or chef amendment) is 409 `CONFLICT`
+  (K11: wait for it; the same-slot no-op is never judged against an
+  appointment the customer cannot see yet); same key replays, another body
   `KEY_REUSED`. A restore freeze refuses new requests (503, retryable); the
   same key still replays.
-- **Deviation for Creator confirmation:** the target itself must also start
-  at least 6 hours after the receipt (equality allowed). BO-GK-001.move_time
-  states the cutoff against the current slot only; the agent added the same
-  margin for the target so a move cannot create a handover the kitchen has
-  less than six hours to prepare for. The projection marks such starts
-  `move_cutoff`.
+- **Open question for the Creator (not implemented):** a minimum
+  preparation gap before the new slot. BO-GK-001.move_time sets the six-hour
+  cutoff against the current slot only, so today any later published start
+  of the day (after the receipt) is a valid target.
 - **Chef amendment.** Any fulfilment mode, the same lifecycles. Requires the
   customer's agreement (channel email | phone | instagram | whatsapp |
   in_person | other, `agreed_at` after placement and not after the receipt,
@@ -2167,7 +2167,12 @@ transitions are part 2 (below).
   allocation is released and the new day's committed (`standard` when the
   committed standard cakes plus the order's fit the day's limit, otherwise
   `chef_extra` with the feasibility note as `chef_evidence`, 0010's
-  classification). Returning to a day reuses its released row.
+  classification). Returning to a day reuses its released row. The
+  allocation moves in the same commit as the appointment (the domain commit;
+  securing only acknowledges it), so staff day counts can show the new day
+  for the short time before the outcome is secured while the order still
+  shows its old day; accepted rather than splitting one change over two
+  transactions.
 - **Commit** (worker, `order_command_apply` → `order_appointment_commit`):
   locks the order, the recovery operation, then the handover day(s) in date
   order (slots are derived and have no rows: no per-slot cap, no slot table),
@@ -2188,8 +2193,10 @@ transitions are part 2 (below).
   `pickup_move_until` is the current start − 6 h (collection and courier).
   Staff detail adds `appointment_history` (every view; agreement and
   feasibility note for the chef only) and, for technical support and
-  fulfilment, `appointment_change`. Staff list rows show the visible
-  appointment.
+  fulfilment, `appointment_change`. The staff list filters on the visible
+  London day (a committed but unsecured date change keeps the order on its
+  old day) and sorts and pages by the visible start (the cursor carries it),
+  so a secured move re-sorts the order.
 - **Notices** (0030 machinery, in the transaction that secures the move,
   once per command): `pickup_moved` (`pickup-moved.v1`) and
   `appointment_changed` (`appointment-changed.v1`) with the new and previous
@@ -2201,7 +2208,7 @@ transitions are part 2 (below).
 - **Tests:** `internal/checkout/appointments_integration_test.go` (AC1 two
   orders to one start, stale / other-day / unknown targets keep the
   original, K11 journal-down and outcome-down crash points, competing
-  versions, notices; AC2 exactly-six-hours, `MOVE_TOO_LATE`, target cutoff,
+  versions, notices; AC2 exactly-six-hours, `MOVE_TOO_LATE`, target in the past, staff list on the visible day and start,
   timer and manual start with one transition, 100/50 entitlement against the
   original deadline; access and eligibility; projection with a full day and
   sold-out lot; chef amendment with agreement, `chef_extra`, staff history
@@ -2225,7 +2232,7 @@ BO-GK-001.ready_cancellation `93a75483…`.
 | `dispatch` (GK delivery; optional `reason` = courier reference) | `ready`, `awaiting_handover` or `exception` | `out_for_delivery` | plain |
 | `delivery_exception` (`reason` required) | `ready`, `awaiting_handover`, `out_for_delivery` or `exception` | `exception` (still `ready`; not completed, no refund) | plain |
 | `handover` | `ready`, `awaiting_handover` or `exception` (collection, courier) / `out_for_delivery` (GK delivery) | `completed`, fulfilment `completed` | K11 |
-| `no_show` (chef) | `ready`, not completed, at or after the current appointment start | `completed`, fulfilment `no_show`, 50% goal | K11 |
+| `no_show` (chef) | `ready` and `awaiting_handover` or `exception` (collection, courier) / `out_for_delivery` or `exception` after a dispatch (GK delivery), at or after the current appointment start | `completed`, fulfilment `no_show`, 50% goal | K11 |
 
 - **Fulfilment state** (K05 "Fulfillment separate awaiting_handover/
   out_for_delivery/completed/exception"): new nullable
@@ -2271,8 +2278,14 @@ BO-GK-001.ready_cancellation `93a75483…`.
   block. Staff detail: `fulfillment` (every view) and `fulfillment_history`
   (reasons for chef and fulfilment, not technical support); list rows gain
   `fulfillment_state`.
-- **Notices.** `no_show` (`order-no-show.v1`) when a no-show is secured,
-  with the 50% amount and "requested" or "already returned"; no
+- **Notices.** `no_show` (`order-no-show.v1`) when a no-show is secured. It
+  states the 50% of what was paid and then only what this no-show newly
+  reserved ("Refund requested: £30 (the £20 already refunded counts towards
+  it)", "requested" or "already returned"), or "nothing more is due" when
+  earlier refunds already cover the 50%, or that the chef will contact the
+  customer about a remainder not reserved automatically (a delivery share);
+  the outcome evidence records `returned_before_minor` and
+  `new_refund_minor`; no
   `refund_returned` email while the no-show is unsecured (it follows once
   secured). Decision: no email for `ready` or `handover` (no noise; the chef
   sends collection details separately, K06).
@@ -2282,8 +2295,10 @@ BO-GK-001.ready_cancellation `93a75483…`.
   stale version; handover K11 outcome-envelope crash point and envelopes once;
   no rewind; history redaction. No-show: not before the appointment, chef
   only, freeze, replay, unsecured state hidden even after the refund
-  succeeded, 50% goal, notices. GK delivery: `DELIVERY_NOT_PAID`, dispatch,
-  exception, re-dispatch, handover), `internal/httpapi` `TestTransitionRoutes`.
+  succeeded, 50% goal, notices; after an earlier chef refund of at least 50%
+  nothing new is reserved, below it only the remainder. GK delivery: no
+  no-show before a dispatch, `DELIVERY_NOT_PAID`, dispatch, exception,
+  re-dispatch, handover), `internal/httpapi` `TestTransitionRoutes`.
 
 Not yet: delivery checkout and waivers (dispatch is refused until they
 exist); courier status mapping (only a free-text reference); a GK-caused

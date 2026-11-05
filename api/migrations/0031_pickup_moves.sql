@@ -31,13 +31,17 @@
 -- command; at it the current appointment start must be at least 6 hours
 -- away (equality allowed, else 409 move_too_late), and the target must be a
 -- published start of the current schedule on the same London day that is
--- not a closed date, at least 6 hours after the receipt as well (a slot that
--- would itself be past the cutoff is not offered; deviation recorded in the
--- README for Creator confirmation), whose 60 minutes end before any ready
--- cake of the order expires (else 409 slot_unavailable). The day place and
+-- not a closed date, starting after the receipt instant, whose 60 minutes
+-- end before any ready cake of the order expires (else 409
+-- slot_unavailable). A minimum preparation gap before the new slot is an
+-- open question for the Creator (BO-GK-001.move_time sets the cutoff
+-- against the current slot only) and is not applied. The day place and
 -- ready cakes the order holds are reused: no lead time, day capacity, booking
--- horizon or new stock check, and no per-slot count. Moving to the slot the
--- order already has is a no-op (no command; 200 unchanged). A restore freeze
+-- horizon or new stock check, and no per-slot count. While any order command
+-- is unresolved a new move is refused (409 state_conflict), so the no-op
+-- check never compares against an appointment the customer cannot see yet;
+-- otherwise moving to the slot the order already has is a no-op (no
+-- command; 200 unchanged). A restore freeze
 -- refuses new requests (GK503); the same key replays.
 --
 -- Chef amendment (business.order_appointment_change_request, chef): another
@@ -53,7 +57,13 @@
 -- the old day is released and committed on the new one, as standard when the
 -- new day's committed standard cakes plus the order's fit its limit,
 -- otherwise as a recorded chef_extra allocation whose evidence is the
--- feasibility note (0010's classification; soft limit, K04).
+-- feasibility note (0010's classification; soft limit, K04). The allocation
+-- moves in the same commit as the appointment (the domain commit of the K11
+-- command; securing only acknowledges it and never rolls it back), so the
+-- staff day counts can show the new day for the short time before the
+-- outcome is secured, while the order itself still shows its old day.
+-- Accepted: deferring the allocation to the securing step would split one
+-- domain change over two transactions.
 --
 -- Both are K11 order commands ('pickup_move', 'appointment_change') through
 -- the A3a machinery: the request records the command, its exact payload
@@ -143,6 +153,19 @@ CREATE TRIGGER pickup_change_no_truncate BEFORE TRUNCATE ON business.pickup_chan
   FOR EACH STATEMENT EXECUTE FUNCTION business.catalog_immutable();
 
 -- ------------------------------------------------------------ helpers
+
+-- Owner-internal: whether a protected (K11) command of the order is not
+-- secured yet.
+CREATE FUNCTION business.order_command_unresolved(p_order uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT EXISTS (SELECT 1 FROM business.recovery_operation r
+                 WHERE r.aggregate_id = p_order AND r.kind = 'command' AND r.state <> 'secured');
+$$;
 
 -- The customer's same-day move cutoff before the current appointment start
 -- (BO-GK-001.move_time: 6 hours, equality allowed).
@@ -384,6 +407,10 @@ BEGIN
   IF NOT business.appointment_change_eligible(v_o) OR v_o.fulfillment_mode NOT IN ('collection', 'customer_courier') THEN
     RAISE EXCEPTION 'move_not_eligible' USING ERRCODE = 'GK409';
   END IF;
+  IF business.order_command_unresolved(p_order) THEN
+    -- Another protected change is in progress (K11): wait for it.
+    RAISE EXCEPTION 'state_conflict' USING ERRCODE = 'GK409';
+  END IF;
   SELECT * INTO v_t FROM business.schedule_slots_on(v_o.handover_day) s WHERE s.slot_id = p_target_slot;
   IF v_o.slot_id = p_target_slot OR v_t.starts_at = business.order_handover_at(v_o) THEN
     -- Already this appointment: nothing to move.
@@ -401,8 +428,7 @@ BEGIN
   IF p_now > business.order_handover_at(v_o) - business.pickup_move_cutoff() THEN
     RAISE EXCEPTION 'move_too_late' USING ERRCODE = 'GK409';
   END IF;
-  IF v_t.slot_id IS NULL OR v_t.starts_at < p_now + business.pickup_move_cutoff()
-     OR NOT business.order_lots_last_until(p_order, v_t.ends_at) THEN
+  IF v_t.slot_id IS NULL OR v_t.starts_at <= p_now OR NOT business.order_lots_last_until(p_order, v_t.ends_at) THEN
     RAISE EXCEPTION 'slot_unavailable' USING ERRCODE = 'GK409';
   END IF;
   RETURN QUERY SELECT business.order_appointment_record(v_o, 'pickup_move',
@@ -466,6 +492,9 @@ BEGIN
   IF NOT business.appointment_change_eligible(v_o) THEN
     RAISE EXCEPTION 'move_not_eligible' USING ERRCODE = 'GK409';
   END IF;
+  IF business.order_command_unresolved(p_order) THEN
+    RAISE EXCEPTION 'state_conflict' USING ERRCODE = 'GK409';
+  END IF;
   IF p_agreed_at < v_o.placed_at THEN
     RAISE EXCEPTION 'appointment_agreement_invalid' USING ERRCODE = 'GK422';
   END IF;
@@ -497,7 +526,8 @@ $$;
 -- not_eligible (lifecycle, GK delivery, not secured) | pending (an order
 -- command is unresolved) | too_late (the six-hour cutoff passed) | closed
 -- (no published start on the day). availability available, or unavailable
--- with reason_code current_slot | move_cutoff | shelf_life | the day status.
+-- with reason_code current_slot | past (starts at or before now) | shelf_life
+-- | the day status.
 -- No lead time, day capacity, horizon or new stock (K06): the order's own
 -- allocation is reused, so a full day never hides a valid move.
 CREATE FUNCTION business.schedule_move_slots(p_owner uuid, p_guest_digest bytea, p_order uuid, p_now timestamptz)
@@ -534,8 +564,7 @@ BEGIN
   v_status := CASE
     WHEN NOT business.appointment_change_eligible(v_o) OR v_o.fulfillment_mode NOT IN ('collection', 'customer_courier')
          OR v_o.recovery_state <> 'secured' THEN 'not_eligible'
-    WHEN EXISTS (SELECT 1 FROM business.recovery_operation r
-                 WHERE r.aggregate_id = v_o.id AND r.kind = 'command' AND r.state <> 'secured') THEN 'pending'
+    WHEN business.order_command_unresolved(v_o.id) THEN 'pending'
     WHEN p_now > v_current - business.pickup_move_cutoff() THEN 'too_late'
     WHEN NOT EXISTS (SELECT 1 FROM business.schedule_slots_on(v_o.handover_day)) THEN 'closed'
     ELSE 'open' END;
@@ -545,13 +574,13 @@ BEGIN
          v_status, coalesce(s.schedule_revision, (SELECT c.version_revision FROM business.schedule_current() c)),
          s.slot_id, s.starts_at, s.ends_at,
          CASE WHEN s.slot_id IS NULL THEN NULL
-              WHEN v_status = 'open' AND s.starts_at <> v_current AND s.starts_at >= p_now + business.pickup_move_cutoff()
+              WHEN v_status = 'open' AND s.starts_at <> v_current AND s.starts_at > p_now
                    AND business.order_lots_last_until(v_o.id, s.ends_at) THEN 'available'
               ELSE 'unavailable' END,
          CASE WHEN s.slot_id IS NULL THEN NULL
               WHEN s.starts_at = v_current THEN 'current_slot'
               WHEN v_status <> 'open' THEN v_status
-              WHEN s.starts_at < p_now + business.pickup_move_cutoff() THEN 'move_cutoff'
+              WHEN s.starts_at <= p_now THEN 'past'
               WHEN NOT business.order_lots_last_until(v_o.id, s.ends_at) THEN 'shelf_life' END
   FROM (SELECT 1) one
   LEFT JOIN business.schedule_slots_on(v_o.handover_day) s ON true
@@ -778,6 +807,84 @@ AS $$
   FROM business.orders o
   CROSS JOIN LATERAL (SELECT business.order_visible_appointment(o) AS a) va
   WHERE o.id = p_order;
+$$;
+
+-- As in 0029, but on the visible appointment (K11): the list filters on
+-- the London day the order shows (a committed but unsecured date change
+-- keeps it on its old day) and orders and pages by the visible start (the
+-- cursor's handover_at is that start), so a secured move re-sorts the order.
+CREATE OR REPLACE FUNCTION business.order_staff_list(p_actor uuid, p_from date, p_to date, p_lifecycles text[],
+                                          p_needs_attention boolean, p_after_handover timestamptz,
+                                          p_after_placed timestamptz, p_after_id uuid, p_limit integer)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_account uuid := business.catalog_staff_account(p_actor, ARRAY['chef', 'technical_support', 'fulfillment']);
+  v_view text := business.order_staff_view_of(v_account);
+  v_items jsonb;
+  v_next jsonb;
+  v_count integer;
+BEGIN
+  IF p_from IS NULL OR p_to IS NULL OR p_to < p_from OR p_to - p_from > 92 THEN
+    RAISE EXCEPTION 'range_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  IF p_limit IS NULL OR p_limit < 1 OR p_limit > 100 THEN
+    RAISE EXCEPTION 'page_limit_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  IF p_lifecycles IS NOT NULL
+     AND (pg_catalog.cardinality(p_lifecycles) NOT BETWEEN 1 AND 9
+          OR NOT p_lifecycles <@ ARRAY['awaiting_payment', 'confirmation_pending', 'paid_awaiting_agreement', 'confirmed',
+                                       'in_production', 'ready', 'completed', 'cancellation_pending', 'cancelled']) THEN
+    RAISE EXCEPTION 'lifecycle_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  IF NOT ((p_after_handover IS NULL AND p_after_placed IS NULL AND p_after_id IS NULL)
+          OR (p_after_handover IS NOT NULL AND p_after_placed IS NOT NULL AND p_after_id IS NOT NULL)) THEN
+    RAISE EXCEPTION 'cursor_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  IF v_view = 'fulfillment' AND p_needs_attention IS NOT NULL THEN
+    RAISE EXCEPTION 'the needs_attention filter requires the chef or technical_support capability' USING ERRCODE = 'GK403';
+  END IF;
+  WITH cand AS (
+    -- The stored day, or the day still shown while a date change is
+    -- committed but not secured (the prefilter keeps the day index useful).
+    SELECT o, (business.order_visible_appointment(o) ->> 'date')::date AS shown_day,
+           (business.order_visible_appointment(o) ->> 'starts_at')::timestamptz AS shown_at
+    FROM business.orders o
+    WHERE (o.handover_day BETWEEN p_from AND p_to
+           OR EXISTS (SELECT 1 FROM business.pickup_change c JOIN business.recovery_operation r ON r.id = c.command_id
+                      WHERE c.order_id = o.id AND r.state = 'committed' AND c.from_day BETWEEN p_from AND p_to))
+      AND (v_view <> 'fulfillment' OR business.order_fulfillment_scope(o.id))
+  ), base AS (
+    SELECT c.o, c.shown_at, business.order_visible_lifecycle(c.o) AS shown,
+           pg_catalog.cardinality(business.order_attention_flags(c.o)) > 0 AS attention
+    FROM cand c
+    WHERE c.shown_day BETWEEN p_from AND p_to
+  ), page AS (
+    SELECT b.o, b.shown_at, pg_catalog.row_number() OVER (ORDER BY b.shown_at, (b.o).placed_at, (b.o).id) AS n
+    FROM base b
+    WHERE (p_lifecycles IS NULL OR b.shown = ANY (p_lifecycles))
+      AND (p_needs_attention IS NULL OR b.attention = p_needs_attention)
+      AND (p_after_id IS NULL
+           OR (b.shown_at, (b.o).placed_at, (b.o).id) > (p_after_handover, p_after_placed, p_after_id))
+    ORDER BY b.shown_at, (b.o).placed_at, (b.o).id
+    LIMIT p_limit + 1
+  )
+  SELECT coalesce(pg_catalog.jsonb_agg(business.order_staff_row(p.o, v_view) ORDER BY p.n)
+                    FILTER (WHERE p.n <= p_limit), '[]'::jsonb),
+         CASE WHEN pg_catalog.max(p.n) > p_limit THEN
+           (SELECT pg_catalog.jsonb_build_object('handover_at', l.shown_at, 'placed_at', (l.o).placed_at,
+                                                 'id', (l.o).id)
+            FROM page l WHERE l.n = p_limit) END
+  INTO v_items, v_next
+  FROM page p;
+  v_count := pg_catalog.jsonb_array_length(v_items);
+  PERFORM business.audit_record('staff', v_account, 'order.staff_listed', 'account', v_account, NULL,
+                                pg_catalog.json_build_object('view', v_view, 'from', p_from, 'to', p_to, 'items', v_count));
+  RETURN pg_catalog.json_build_object('items', v_items, 'next', v_next);
+END;
 $$;
 
 -- As in 0029, with the visible appointment.
@@ -1404,6 +1511,7 @@ $$;
 
 REVOKE ALL ON TABLE business.pickup_change FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.pickup_move_cutoff() FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.order_command_unresolved(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.schedule_slots_on(date) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.order_lots_last_until(uuid, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.order_handover_at(business.orders) FROM PUBLIC;

@@ -171,9 +171,8 @@ func TestPickupMovesAreProtectedAndUncapped(t *testing.T) {
 	if _, err := h.move(orderA, dA, "m1", vA.Version, slots[3]); conflict(err) != "key_reused" {
 		t.Fatalf("same key, other body: %v", err)
 	}
-	// Another move at the same version while this one is pending: its
-	// operation already holds that version (K11), a stale conflict.
-	if _, err := h.move(orderA, dA, "m2", vA.Version, slots[3]); conflict(err) != "stale_version" {
+	// Another move while this one is pending waits for it (K11).
+	if _, err := h.move(orderA, dA, "m2", vA.Version, slots[3]); conflict(err) != "state_conflict" {
 		t.Fatalf("another move while one is pending: %v", err)
 	}
 	v, raw := h.moveView(t, orderA, dA)
@@ -266,7 +265,7 @@ func TestPickupMovesAreProtectedAndUncapped(t *testing.T) {
 		switch {
 		case err == nil && winner < 0:
 			winner = i
-		case conflict(err) == "stale_version":
+		case conflict(err) == "state_conflict" || conflict(err) == "stale_version":
 		default:
 			t.Fatalf("race results %v", errs)
 		}
@@ -282,6 +281,21 @@ func TestPickupMovesAreProtectedAndUncapped(t *testing.T) {
 	}
 	if v, raw := h.moveView(t, orderA, dA); v.Slot.ID != targets[winner] || v.Version != vA.Version+1 {
 		t.Fatalf("after the race %s", raw)
+	}
+
+	// The staff list sorts and pages by the visible start: after the secured
+	// moves the earlier appointment comes first, page by page.
+	want := []string{orderA, orderB}
+	if targets[winner] == slots[3] { // A at 14:00, B at 13:30
+		want = []string{orderB, orderA}
+	}
+	page1, cursor := h.staffList(t, chef, checkout.StaffOrderFilter{From: day("2026-11-14"), To: day("2026-11-14"), Limit: 1})
+	if len(page1) != 1 || page1[0]["id"] != want[0] || cursor == "" {
+		t.Fatalf("first page %v %q, want %s", page1, cursor, want[0])
+	}
+	page2, _ := h.staffList(t, chef, checkout.StaffOrderFilter{From: day("2026-11-14"), To: day("2026-11-14"), Limit: 1, Cursor: cursor})
+	if len(page2) != 1 || page2[0]["id"] != want[1] {
+		t.Fatalf("second page %v, want %s", page2, want[1])
 	}
 
 	// One notice per secured move, with the new and previous times and the
@@ -390,7 +404,7 @@ func TestFailedMoveCommitKeepsTheOriginal(t *testing.T) {
 }
 
 // AC2: exactly six hours before the current start is allowed, a second
-// later is MOVE_TOO_LATE; a target inside six hours is not offered; moves
+// later is MOVE_TOO_LATE; a target only has to start after the receipt; moves
 // and production starts keep the original refund deadline (100% before it,
 // 50% at it); the customer cannot change the date or a GK delivery.
 func TestMoveCutoffAndUnchangedEntitlement(t *testing.T) {
@@ -417,8 +431,7 @@ func TestMoveCutoffAndUnchangedEntitlement(t *testing.T) {
 		t.Fatalf("one second after the cutoff: %v", err)
 	}
 	h.now = moveCutoff
-	// 12:30 + 6 h equality allowed; the 13:30 target is at least six hours
-	// after the receipt.
+	// 12:30 - 6 h: equality allowed.
 	m, err := h.move(order, d, "eq", v.Version, slots[2])
 	if err != nil {
 		t.Fatalf("at exactly six hours: %v", err)
@@ -434,12 +447,6 @@ func TestMoveCutoffAndUnchangedEntitlement(t *testing.T) {
 	if tr := h.transition(t, order); tr.Count != 1 || tr.Audits != 1 || tr.Source != "timer" ||
 		!tr.Effective.Equal(time.Date(2026, 11, 7, 10, 9, 0, 0, time.UTC)) {
 		t.Fatalf("production transition %+v", tr)
-	}
-	// Now at 13:30 (cutoff 07:30). At 06:31 the 12:30 start is less than
-	// six hours away, so it is not a valid target.
-	h.now = moveCutoff.Add(time.Minute)
-	if _, err := h.move(order, d, "inside", v.Version, slots[0]); conflict(err) != "slot_unavailable" {
-		t.Fatalf("target inside six hours: %v", err)
 	}
 	// The entitlement still follows the original deadline (BO-GK-001
 	// refund_follows_move): 50% now (after 2026-11-09 12:30Z).
@@ -476,6 +483,43 @@ func TestMoveCutoffAndUnchangedEntitlement(t *testing.T) {
 	}
 	if tr := h.transition(t, order2); tr.Count != 1 || tr.Source != "manual" {
 		t.Fatalf("transition %+v", tr)
+	}
+
+	// A target only has to start after the receipt (no preparation gap
+	// before the new slot: an open question for the Creator). The chef
+	// publishes wider Saturday hours; the order (now 13:30, cutoff 07:30)
+	// moves to 16:00 at 06:31, then at 09:00 (cutoff 10:00) the 08:00 start
+	// is in the past and 12:30, three and a half hours away, is valid.
+	must[catalog.Result](t)(h.sch.PublishVersion(h.ctx, chef, "wide", schedule.VersionInput{ExpectedRevision: ptr(1),
+		StandardLimit: ptr(7), BookableUntil: "2027-01-31", Weekdays: []schedule.WeekdayInput{
+			{Weekday: "saturday", Opens: "08:00", Closes: "17:00", Starts: []string{"08:00", "12:30", "16:00"}}}}))
+	wide, err := h.sch.Choices(h.ctx, day("2026-11-14"), schedule.Collection, 1)
+	if err != nil || len(wide.Slots) != 3 {
+		t.Fatalf("wide slots %+v %v", wide, err)
+	}
+	h.now = moveCutoff.Add(time.Minute)
+	v, _ = h.moveView(t, order, d)
+	if _, err := h.move(order, d, "to16", v.Version, wide.Slots[2].ID); err != nil {
+		t.Fatalf("move to 16:00: %v", err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("drain:\n%s", reasons(errs))
+	}
+	v, _ = h.moveView(t, order, d)
+	h.now = at("09:00")
+	if _, err := h.move(order, d, "past", v.Version, wide.Slots[0].ID); conflict(err) != "slot_unavailable" {
+		t.Fatalf("target in the past: %v", err)
+	}
+	c, err := h.sch.MoveChoices(h.ctx, "", d, order)
+	if err != nil || c.DayStatus != "open" || c.Slots[0].Availability != "unavailable" || *c.Slots[0].ReasonCode != "past" ||
+		c.Slots[1].Availability != "available" || *c.Slots[2].ReasonCode != "current_slot" {
+		t.Fatalf("choices at 09:00 %+v %v", c, err)
+	}
+	if _, err := h.move(order, d, "soon", v.Version, wide.Slots[1].ID); err != nil {
+		t.Fatalf("a target three and a half hours away: %v", err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("drain:\n%s", reasons(errs))
 	}
 }
 
@@ -609,8 +653,37 @@ func TestChefAppointmentChange(t *testing.T) {
 		v.AppointmentChange.RequestedBy != "chef" || v.AppointmentChange.Kind != "appointment_change" {
 		t.Fatalf("pending change %s", raw)
 	}
+	// Committed but not secured: the staff list keeps the order on the day
+	// it shows (the 14th), never on the new day yet.
+	h.journal.Fail = func(op, name string) error {
+		if op == "put" && strings.HasSuffix(name, ".outcome") {
+			return errors.New("b2 unavailable")
+		}
+		return nil
+	}
+	if err := h.moveJob(t, res.ID); err == nil {
+		t.Fatal("secured without the outcome envelope")
+	}
+	h.journal.Fail = nil
+	onDay := func(date string) []string {
+		t.Helper()
+		rows, _ := h.staffList(t, chef, checkout.StaffOrderFilter{From: day(date), To: day(date)})
+		var ids []string
+		for _, r := range rows {
+			ids = append(ids, r["id"].(string)+"@"+r["date"].(string))
+		}
+		return ids
+	}
+	if got14, got21 := onDay("2026-11-14"), onDay("2026-11-21"); h.recoveryState(t, res.ID) != "committed" ||
+		len(got14) != 1 || got14[0] != order+"@2026-11-14" || len(got21) != 0 {
+		t.Fatalf("committed date change listed on the 14th %v, the 21st %v", got14, got21)
+	}
+	h.due(t)
 	if errs := h.drain(t); len(errs) != 0 {
 		t.Fatalf("drain:\n%s", reasons(errs))
+	}
+	if got14, got21 := onDay("2026-11-14"), onDay("2026-11-21"); len(got14) != 0 || len(got21) != 1 || got21[0] != order+"@2026-11-21" {
+		t.Fatalf("secured date change listed on the 14th %v, the 21st %v", got14, got21)
 	}
 	v, raw := h.moveView(t, order, d)
 	if v.Date != "2026-11-21" || v.Slot.ID != next[1] || !v.Slot.StartsAt.Equal(time.Date(2026, 11, 21, 13, 0, 0, 0, time.UTC)) ||

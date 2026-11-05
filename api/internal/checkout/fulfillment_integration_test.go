@@ -5,6 +5,7 @@ package checkout_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -328,7 +329,8 @@ func TestNoShowIsTheChefsAndReturnsHalf(t *testing.T) {
 		if req.Subject != "Your GK Cakes order was not collected" {
 			t.Fatalf("subject %q", req.Subject)
 		}
-		has(t, "no-show notice", req.Text, "Refund: £50, which is 50% of the £100 you paid", "It has already been returned to you.",
+		has(t, "no-show notice", req.Text, "Our terms return 50% of what you paid when an order is not collected: £50 of the £100 you paid.",
+			"Refund: £50.", "It has already been returned to you.",
 			"Saturday 14 November 2026, 12:30 to 13:30 (London time)", "Order reference: "+order)
 		hasNot(t, "no-show notice", req.Text+req.HTML, secrets(d, "")...)
 	}
@@ -353,6 +355,18 @@ func TestDeliveryDispatchNeedsPayment(t *testing.T) {
 	if _, err := h.fulfil(fulfilment, "h0", order, checkout.ActionHandover, v.Version); conflict(err) != "transition_not_allowed" {
 		t.Fatalf("handover before dispatch: %v", err)
 	}
+	// Not sent out yet: a missed delivery is not the customer's no-show.
+	h.now = at("12:30")
+	if _, err := h.fulfil(chef, "n0", order, checkout.ActionNoShow, v.Version); conflict(err) != "transition_not_allowed" {
+		t.Fatalf("GK delivery no-show before dispatch: %v", err)
+	}
+	if _, err := h.fulfil(fulfilment, "e0", order, checkout.ActionDeliveryException, v.Version, "Van broke down"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.fulfil(chef, "n1", order, checkout.ActionNoShow, v.Version+1); conflict(err) != "transition_not_allowed" {
+		t.Fatalf("GK delivery no-show after an exception without a dispatch: %v", err)
+	}
+	v, _ = h.fulfilView(t, order, d)
 	if _, err := h.fulfil(fulfilment, "d0", order, checkout.ActionDispatch, v.Version); conflict(err) != "delivery_not_paid" {
 		t.Fatalf("unpaid delivery: %v", err)
 	}
@@ -382,7 +396,81 @@ func TestDeliveryDispatchNeedsPayment(t *testing.T) {
 	if v, raw := h.fulfilView(t, order, d); v.Lifecycle != "completed" || state(v) != "completed" {
 		t.Fatalf("delivered %s", raw)
 	}
-	if n := h.count(t, "SELECT count(*) FROM business.fulfillment_event WHERE order_id = $1::uuid", order); n != 5 {
-		t.Fatalf("%d fulfilment events, want ready, dispatch, exception, dispatch, handover", n)
+	if n := h.count(t, "SELECT count(*) FROM business.fulfillment_event WHERE order_id = $1::uuid", order); n != 6 {
+		t.Fatalf("%d fulfilment events, want ready, exception, dispatch, exception, dispatch, handover", n)
+	}
+}
+
+// K05 cumulative goal: a no-show after an earlier chef refund reserves only
+// what the 50% still needs, never a second 50% (no over-return), and the
+// email states that new amount (or that nothing more is due).
+func TestNoShowAfterEarlierRefunds(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	h.staffGrants(t)
+	h.withRefunds()
+	h.withNotices(t)
+	type run struct {
+		key            string
+		earlier, fresh int64
+		says           string
+	}
+	for _, c := range []run{
+		{"big", 6000, 0, "The £60 already refunded covers this, so nothing more is due."},
+		{"small", 2000, 3000, "Refund requested: £30 (the £20 already refunded counts towards it)."},
+	} {
+		h.now = time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)
+		order, d, coll := h.readyOrder(t, f, pol, c.key)
+		v, _ := h.fulfilView(t, order, d)
+		if _, err := h.co.RecordRefund(h.ctx, chef, "rf-"+c.key, order, checkout.RefundInput{ExpectedVersion: v.Version,
+			AmountMinor: c.earlier, Currency: "GBP", Allocations: []checkout.RefundAllocation{{CollectionID: coll, AmountMinor: c.earlier}},
+			Reason: "Agreed adjustment"}); err != nil {
+			t.Fatalf("%s: earlier refund: %v", c.key, err)
+		}
+		if errs := h.drain(t); len(errs) != 0 {
+			t.Fatalf("%s: earlier refund:\n%s", c.key, reasons(errs))
+		}
+		v, _ = h.fulfilView(t, order, d)
+		h.now = at("12:30")
+		res, err := h.fulfil(chef, "ns-"+c.key, order, checkout.ActionNoShow, v.Version)
+		if err != nil {
+			t.Fatalf("%s: no-show: %v", c.key, err)
+		}
+		if errs := h.drain(t); len(errs) != 0 {
+			t.Fatalf("%s: no-show:\n%s", c.key, reasons(errs))
+		}
+		ops := h.operations(t, coll)
+		var total int64
+		for _, op := range ops {
+			if op.State != "succeeded" {
+				t.Fatalf("%s: operations %+v", c.key, ops)
+			}
+		}
+		if err := h.admin.QueryRow(h.ctx, `SELECT coalesce(sum(amount_minor), 0) FROM business.refund_operation
+			WHERE collection_id = $1::uuid AND state = 'succeeded'`, coll).Scan(&total); err != nil {
+			t.Fatal(err)
+		}
+		wantOps := 1
+		if c.fresh > 0 {
+			wantOps = 2
+		}
+		if len(ops) != wantOps || total != c.earlier+c.fresh {
+			t.Fatalf("%s: %d operations, %dp returned; want %d and %dp", c.key, len(ops), total, wantOps, c.earlier+c.fresh)
+		}
+		var evidence string
+		if err := h.admin.QueryRow(h.ctx, "SELECT outcome -> 'evidence' ->> 'new_refund_minor' FROM business.recovery_operation WHERE id = $1::uuid",
+			res.ID).Scan(&evidence); err != nil || evidence != fmt.Sprint(c.fresh) {
+			t.Fatalf("%s: new_refund_minor %s %v", c.key, evidence, err)
+		}
+		for _, n := range h.notices(t, order) {
+			if n.Kind == "no_show" {
+				req := h.request(t, n)
+				has(t, c.key+" no-show notice", req.Text, "£50 of the £100 you paid.", c.says)
+				if c.fresh == 0 {
+					hasNot(t, c.key+" no-show notice", req.Text, "Refund requested")
+				}
+			}
+		}
 	}
 }

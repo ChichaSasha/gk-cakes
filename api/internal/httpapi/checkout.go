@@ -667,8 +667,6 @@ func staffOrderFilter(w http.ResponseWriter, r *http.Request) (checkout.StaffOrd
 	return f, true
 }
 
-// emptyBody accepts a request without a body or with an empty JSON object
-// (a read-like POST with no input); anything else is a 400.
 // respondMove answers an appointment change: 503 during a restore freeze,
 // 200 unchanged, or 202 with the command while it is protected.
 func respondMove(w http.ResponseWriter, r *http.Request, logger *slog.Logger, res checkout.Moved, err error, pending string) {
@@ -688,6 +686,8 @@ func respondMove(w http.ResponseWriter, r *http.Request, logger *slog.Logger, re
 	})
 }
 
+// emptyBody accepts a request without a body or with an empty JSON object
+// (a read-like POST with no input); anything else is a 400.
 func emptyBody(w http.ResponseWriter, r *http.Request) bool {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1024))
 	if err == nil && len(bytes.TrimSpace(body)) == 0 {

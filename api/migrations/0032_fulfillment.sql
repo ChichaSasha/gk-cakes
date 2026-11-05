@@ -51,7 +51,9 @@
 --                       case), so it changes the customer's commitment.
 --   no_show             chef only (K00: the money part of a no-show is a
 --                       refund decision; fulfilment records the observation
---                       as delivery_exception): ready, not completed, at or
+--                       as delivery_exception): ready, awaiting_handover or
+--                       exception (collection, courier) / out_for_delivery or
+--                       exception after a dispatch (GK delivery), at or
 --                       after the current appointment start (409
 --                       handover_not_due) -> lifecycle completed, fulfilment
 --                       no_show, the K05 50% policy goal of the actual paid
@@ -230,7 +232,16 @@ AS $$
                     AND business.order_fulfillment_state(p_o) IN ('awaiting_handover', 'exception')) THEN NULL
            ELSE 'transition_not_allowed' END
     WHEN p_action = 'no_show' THEN
-      CASE WHEN business.order_fulfillment_state(p_o) NOT IN ('awaiting_handover', 'out_for_delivery', 'exception')
+      -- GK delivery: only once it was sent out (out for delivery, or an
+      -- exception after a dispatch); before that a failed handover is not
+      -- the customer's absence.
+      CASE WHEN (p_o.fulfillment_mode <> 'gk_delivery'
+                 AND business.order_fulfillment_state(p_o) NOT IN ('awaiting_handover', 'exception'))
+                OR (p_o.fulfillment_mode = 'gk_delivery'
+                    AND NOT (business.order_fulfillment_state(p_o) = 'out_for_delivery'
+                             OR (business.order_fulfillment_state(p_o) = 'exception'
+                                 AND EXISTS (SELECT 1 FROM business.fulfillment_event e
+                                             WHERE e.order_id = p_o.id AND e.action = 'dispatch'))))
              THEN 'transition_not_allowed'
            WHEN p_at < business.order_handover_at(p_o) THEN 'handover_not_due' END
     ELSE 'transition_not_allowed' END
@@ -464,6 +475,8 @@ DECLARE
   v_to text := business.fulfillment_target(v.command);
   v_paid bigint;
   v_target bigint;
+  v_before bigint;
+  v_after bigint;
 BEGIN
   SELECT * INTO v_o FROM business.orders o WHERE o.id = v.order_id;
   IF v_o.version <> v.prior_version OR v_o.recovery_state <> 'secured' THEN
@@ -490,18 +503,27 @@ BEGIN
   END IF;
   -- No-show (K05): 50% of the actual paid aggregate, a policy goal (the
   -- cumulative order obligation; earlier returns count) and its refunds.
+  -- What the customer was already returned or has on its way (S + R over
+  -- every collection) before and after: the email states only what this
+  -- no-show newly reserved.
   v_paid := business.order_paid_minor(v.order_id);
   v_target := business.cancellation_amount(v_paid, 50::smallint);
+  SELECT coalesce(sum(b.succeeded_minor + b.reserved_minor), 0) INTO v_before
+  FROM business.payment_collection pc CROSS JOIN LATERAL business.refund_balance(pc.id) b WHERE pc.order_id = v.order_id;
   IF v_target > 0 THEN
     PERFORM business.refund_goal_apply(v.order_id, 'no_show', 'chef', 50::smallint, v_paid, v_target, 'staff',
                                        v.actor_account_id);
     PERFORM business.refund_reserve(v.order_id);
   END IF;
+  SELECT coalesce(sum(b.succeeded_minor + b.reserved_minor), 0) INTO v_after
+  FROM business.payment_collection pc CROSS JOIN LATERAL business.refund_balance(pc.id) b WHERE pc.order_id = v.order_id;
   PERFORM business.audit_record('staff', v.actor_account_id, 'order.no_show', 'order', v.order_id, NULL,
-                                pg_catalog.json_build_object('operation_id', v.id, 'rate', 50, 'refund_target_minor', v_target));
+                                pg_catalog.json_build_object('operation_id', v.id, 'rate', 50, 'refund_target_minor', v_target,
+                                                             'new_refund_minor', v_after - v_before));
   RETURN pg_catalog.format(
-    '{"status":"no_show","evidence":{"order_version":%s,"rate":50,"paid_minor":%s,"refund_target_minor":%s}}',
-    v_o.version + 1, v_paid, v_target);
+    '{"status":"no_show","evidence":{"order_version":%s,"rate":50,"paid_minor":%s,"refund_target_minor":%s,'
+    '"returned_before_minor":%s,"new_refund_minor":%s}}',
+    v_o.version + 1, v_paid, v_target, v_before, v_after - v_before);
 END;
 $$;
 
@@ -802,6 +824,8 @@ DECLARE
   v_returned boolean;
   v_from text;
   v_to text;
+  v_before bigint;
+  v_new bigint;
   v_style constant text := 'margin:0 0 16px';
   v_link_style constant text := 'color:#5b1a2e';
 BEGIN
@@ -891,16 +915,26 @@ BEGIN
     v_text := v_text || ('Your order was not ' || CASE WHEN p_o.fulfillment_mode = 'gk_delivery' THEN 'handed over'
                                                        ELSE 'collected' END
                          || ' at the agreed time (' || v_when || '), so it has been closed as not collected.');
+    -- The amount this no-show newly reserved (earlier refunds count against
+    -- the 50%, K05 cumulative goal), never the nominal 50% on its own.
     v_target := coalesce((p_facts ->> 'refund_target_minor')::bigint, 0);
+    v_before := coalesce((p_facts ->> 'returned_before_minor')::bigint, 0);
+    v_new := coalesce((p_facts ->> 'new_refund_minor')::bigint, 0);
     v_returned := coalesce((p_facts ->> 'refund_returned')::boolean, false);
     v_text := v_text || CASE
       WHEN coalesce((p_facts ->> 'paid_minor')::bigint, 0) = 0 THEN 'There was no payment for this order, so there is nothing to refund.'
-      ELSE CASE WHEN v_returned THEN 'Refund: ' ELSE 'Refund requested: ' END || business.notice_money(v_target)
-           || ', which is 50% of the ' || business.notice_money((p_facts ->> 'paid_minor')::bigint)
-           || ' you paid, as our terms set out for an order that is not collected.' END;
-    IF v_target > 0 THEN
+      ELSE 'Our terms return 50% of what you paid when an order is not collected: ' || business.notice_money(v_target)
+           || ' of the ' || business.notice_money((p_facts ->> 'paid_minor')::bigint) || ' you paid.' END;
+    IF v_new > 0 THEN
+      v_text := v_text || (CASE WHEN v_returned THEN 'Refund: ' ELSE 'Refund requested: ' END || business.notice_money(v_new)
+                           || CASE WHEN v_before > 0 THEN ' (the ' || business.notice_money(v_before)
+                                                          || ' already refunded counts towards it).' ELSE '.' END);
       v_text := v_text || CASE WHEN v_returned THEN 'It has already been returned to you.'
                                ELSE 'We have asked for this refund and will email you once it has been returned.' END;
+    ELSIF v_target > 0 AND v_before >= v_target THEN
+      v_text := v_text || ('The ' || business.notice_money(v_before) || ' already refunded covers this, so nothing more is due.');
+    ELSIF v_target > v_before THEN
+      v_text := v_text || ('The chef will contact you about the remaining ' || business.notice_money(v_target - v_before) || '.');
     END IF;
     v_text := v_text || ('If you think this is a mistake, please reply to this email.' || E'\nOrder reference: ' || p_o.id::text);
   ELSIF p_kind IN ('pickup_moved', 'appointment_changed') THEN
