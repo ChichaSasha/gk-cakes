@@ -91,7 +91,9 @@ func main() {
 	}
 	opts.Catalog = &catalog.Store{DB: pool}
 	opts.Schedule = &schedule.Store{DB: pool}
-	opts.Checkout = &checkout.Store{DB: pool, Env: string(cfg.Env), StripeAccount: cfg.Stripe.AccountID, UIOrigin: cfg.UIOrigin}
+	store := &checkout.Store{DB: pool, Env: string(cfg.Env), StripeAccount: cfg.Stripe.AccountID, UIOrigin: cfg.UIOrigin}
+	opts.Checkout = store
+	opts.Accounts = store // customer accounts (GK-016 r02b); served with identity only
 	opts.CheckoutEnabled = cfg.CheckoutEnabled
 	handler := httpapi.NewHandler(opts)
 	if err := httpapi.Serve(ctx, ln, handler, cfg.ShutdownTimeout); err != nil {

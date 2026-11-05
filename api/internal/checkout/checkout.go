@@ -421,6 +421,11 @@ var invalidFields = map[string]string{
 	"slot_invalid": "target_slot_id", "date_invalid": "target_date", "feasibility_invalid": "feasibility_note",
 	"appointment_agreement_invalid": "customer_agreement",
 	"action_invalid":                "action",
+	// Customer accounts (0033).
+	"profile_invalid": "profile", "claim_channel_invalid": "channel", "claim_reference_invalid": "reference",
+	"claim_note_invalid": "note", "claim_invalid": "claim", "claim_decision_invalid": "decision",
+	"claim_order_invalid": "order_id", "decision_note_invalid": "note", "evidence_invalid": "evidence",
+	"account_unknown": "account_id", "deletion_preview_invalid": "preview_id", "claim_state_invalid": "state",
 }
 
 var invalidMessages = map[string]string{
@@ -449,6 +454,17 @@ var invalidMessages = map[string]string{
 	"date_invalid":                  "must be a date (YYYY-MM-DD)",
 	"feasibility_invalid":           "must be 1 to 500 characters on one line without surrounding spaces",
 	"appointment_agreement_invalid": "must give channel, agreed_at (after the order was placed, not in the future) and evidence_ref",
+	// Customer accounts (0033).
+	"profile_invalid":          "is not valid",
+	"claim_channel_invalid":    "must be instagram, offline or website_email_link (website_email_link alone when you add an order from its link)",
+	"claim_reference_invalid":  "is required: the order reference from the chef",
+	"claim_note_invalid":       "must be 1 to 500 characters without surrounding spaces",
+	"claim_order_invalid":      "must be an existing order (for a claim from an order's link, that order)",
+	"decision_note_invalid":    "must be 1 to 500 characters on one line without surrounding spaces",
+	"evidence_invalid":         "must be 1 to 500 characters on one line without surrounding spaces",
+	"account_unknown":          "must name one active account (account_id or account_subject)",
+	"deletion_preview_invalid": "must be a deletion preview you requested, with its preview_hash",
+	"claim_state_invalid":      "must be pending, approved, declined or withdrawn",
 }
 
 var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "state_conflict": true,
@@ -458,7 +474,10 @@ var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "
 	"refund_limit": true, "reconciliation_required": true, "refund_in_progress": true, "no_refund_pending": true,
 	"identity_unproven": true, "window_open": true, "evidence_required": true, "manual_payout_not_eligible": true,
 	"move_too_late": true, "move_not_eligible": true, "delivery_not_paid": true, "handover_not_due": true,
-	"transition_not_allowed": true}
+	"transition_not_allowed": true,
+	// Customer accounts (0033).
+	"account_deletion_blocked": true, "claim_limit": true, "claim_pending": true, "already_yours": true,
+	"order_owned": true, "account_unavailable": true}
 
 // conflictAliases name engine refusals in the customer's terms.
 var conflictAliases = map[string]string{"day_full": "slot_unavailable", "stock_unavailable": "item_unavailable"}

@@ -65,6 +65,10 @@ type Options struct {
 	// CheckoutEnabled also serves POST /api/v1/checkouts (config
 	// CHECKOUT_ENABLED; off until payments exist).
 	CheckoutEnabled bool
+	// Accounts serves the customer account routes (/api/v1/me/orders,
+	// profile, order claims, deletion) and the chef's claim routes when
+	// Identity is set too (GK-016 r02b).
+	Accounts Accounts
 }
 
 // NewHandler returns the API handler with its middleware chain.
@@ -100,6 +104,9 @@ func NewHandler(opts Options) http.Handler {
 	}
 	if opts.Checkout != nil {
 		checkoutRoutes(mux, opts.Checkout, opts.Identity, opts.CheckoutEnabled, opts.Logger)
+	}
+	if opts.Accounts != nil && opts.Identity != nil {
+		accountRoutes(mux, opts.Accounts, opts.Identity, opts.Logger)
 	}
 	if opts.Schedule != nil {
 		schedulePublicRoutes(mux, opts.Schedule, opts.Identity, opts.Logger)

@@ -90,6 +90,11 @@ const (
 // ErrDisabled: the account exists but is disabled; it may do nothing.
 var ErrDisabled = errors.New("identity: account disabled")
 
+// ErrDeleted: the customer deleted the account (GK-016 r02b, K09); it may
+// do nothing except replay its deletion. Resolve returns the actor together
+// with this error so that the deletion route can answer a replay.
+var ErrDeleted = errors.New("identity: account deleted")
+
 // Actor is a verified subject resolved to its local account.
 type Actor struct {
 	AccountID    string
@@ -97,6 +102,8 @@ type Actor struct {
 	SessionID    string
 	ExpiresAt    time.Time
 	Capabilities []string // active staff capabilities, in name order
+	// AuthenticatedAt is the token's sign-in instant (Claims.AuthenticatedAt).
+	AuthenticatedAt time.Time
 }
 
 // Has reports whether the actor holds an active capability.
@@ -115,19 +122,35 @@ type Querier interface {
 type Directory struct{ DB Querier }
 
 // Resolve returns the account of a verified subject, creating it on first
-// use; a disabled account is ErrDisabled.
+// use (migration 0033 identity_resolve_account, which also records sign-in
+// activity for the K09 inactivity rule). A disabled account is ErrDisabled;
+// a deleted one is ErrDeleted, returned with the actor (no capabilities).
 func (d *Directory) Resolve(ctx context.Context, c Claims) (Actor, error) {
-	a := Actor{Subject: c.Subject, SessionID: c.SessionID, ExpiresAt: c.ExpiresAt}
-	var disabled bool
-	err := d.DB.QueryRow(ctx, `SELECT account_id::text, account_disabled, account_capabilities
-		FROM business.identity_resolve($1::uuid)`, c.Subject).Scan(&a.AccountID, &disabled, &a.Capabilities)
+	a := Actor{Subject: c.Subject, SessionID: c.SessionID, ExpiresAt: c.ExpiresAt, AuthenticatedAt: c.AuthenticatedAt}
+	var state string
+	err := d.DB.QueryRow(ctx, `SELECT account_id::text, account_state, account_capabilities
+		FROM business.identity_resolve_account($1::uuid)`, c.Subject).Scan(&a.AccountID, &state, &a.Capabilities)
 	switch {
 	case err != nil:
 		return Actor{}, fmt.Errorf("identity: resolve account: %w", err)
-	case disabled:
+	case state == "deleted":
+		a.Capabilities = nil
+		return a, ErrDeleted
+	case state != "active":
 		return Actor{}, ErrDisabled
 	}
 	return a, nil
+}
+
+// FreshSignIn is how recently a customer must have signed in for account
+// deletion (GK-016 r02b answer 3; 10 minutes is the sketch's example).
+const FreshSignIn = 10 * time.Minute
+
+// SignedInSince reports whether the actor's session was authenticated at
+// or after now minus max (and not in the future beyond a minute's skew).
+func (a Actor) SignedInSince(now time.Time, max time.Duration) bool {
+	return !a.AuthenticatedAt.IsZero() && !a.AuthenticatedAt.After(now.Add(time.Minute)) &&
+		now.Sub(a.AuthenticatedAt) <= max
 }
 
 // StaffMember is one active capability grant.
