@@ -80,7 +80,8 @@ func main() {
 			os.Exit(code)
 		}
 		emailHandler, coord = d.Handle, c
-		logger.Info("email dispatch enabled", "journal_root", journalRoot(cfg.Env))
+		logger.Info("email dispatch enabled", "journal_root", journalRoot(cfg.Env),
+			"recipient_allowlist_entries", len(cfg.EmailRecipientAllowlist))
 	} else {
 		logger.Warn("email dispatch not configured; notification jobs are retried, never sent; order commands wait for the recovery journal")
 	}
@@ -180,7 +181,8 @@ func emailDispatcher(ctx context.Context, cfg config.Worker, pool *pgxpool.Pool,
 		return nil, nil, 2, err
 	}
 	d, err := notifications.NewDispatcher(notifications.DispatcherConfig{
-		DB: pool, Coordinator: coord, Sender: client, Environment: string(cfg.Env), Logger: logger,
+		DB: pool, Coordinator: coord, Sender: client, Environment: string(cfg.Env),
+		Allowlist: cfg.EmailRecipientAllowlist, Logger: logger,
 	})
 	if err != nil {
 		return nil, nil, 2, err

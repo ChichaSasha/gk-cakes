@@ -48,7 +48,7 @@ and staging/production reject local hosts and Unix sockets.
 | `APP_ENV`                | all        | `local`, `test`, `staging` or `production`                                                  |
 | `DATABASE_URL`           | api, worker | required secret; each process has its own login; add `sslrootcert=<path>` when the provider's CA is not in the system trust store |
 | `MIGRATION_DATABASE_URL` | gk-migrate | required secret, migration credential; never falls back to `DATABASE_URL`                   |
-| `UI_ORIGIN`              | api        | required exact origin for CORS; staging/production need public `https`                     |
+| `UI_ORIGIN`              | api        | required exact origin for CORS and order email links: `http(s)://host[:port]` with a plain DNS name or IPv4 host (no IPv6 literal, no underscore), at most 200 characters; staging/production need public `https` |
 | `PORT`                   | api        | default `8080`                                                                              |
 | `SHUTDOWN_TIMEOUT`       | api, worker | drain budget, default `20s`                                                                |
 | `PAYMENT_SECRET`         | api        | legacy placeholder, still validated (live keys only in production, test keys only elsewhere) but unused: the worker's `STRIPE_SECRET_KEY` is the payment key |
@@ -60,6 +60,7 @@ and staging/production reject local hosts and Unix sockets.
 | `AUTH_ISSUER`, `AUTH_PUBLISHABLE_KEY` | api | public identity-provider settings: the exact token issuer `https://<project>.supabase.co/auth/v1` and the publishable key `sb_publishable_...` (a secret key is refused); required in staging/production, otherwise both or neither; without them the authenticated `/api/v1` routes are not served, see [Identity](#identity-k00-gk-021) |
 | `CHECKOUT_ENABLED`       | api        | `true` serves `POST /api/v1/checkouts`, the free confirmation and the payment request; default off (`false`); turn it on only once a worker of the same release (with the hold review, GK-025 A3c1) runs |
 | `EMAIL_API_KEY`          | worker     | Resend sending key (`re_...`), redacted; see email dispatch below                          |
+| `EMAIL_RECIPIENT_ALLOWLIST` | api, worker | comma-separated exact addresses or `@domain` entries (that domain exactly; at most 50), compared lower-case. **Required in staging** (fails closed; staging uses `@gkcake.com`, plus the email-proof recipients if that workflow is run), **refused in production**, optional elsewhere (unset: no restriction). The API records it with the notice settings, so outside production an order notice to any other recipient is never queued, whichever worker build runs; the worker also suppresses any other recipient before calling the provider. See [Order notices](#order-notices-k08-k11-migration-0030) |
 | `RECOVERY_B2_KEY_ID`, `RECOVERY_B2_KEY` | worker | B2 application key for the recovery journal (key secret redacted); scope enforced at start, see [Recovery journal](#recovery-journal-k11-gk-024) |
 | `RECOVERY_ENCRYPTION_KEYS` | worker   | journal encryption keys `kid:base64(32 bytes)[,...]`, redacted                              |
 | `BACKUP_DATABASE_URL`    | gk-backup dump | the `gk_backup` login (read only), same rules as `DATABASE_URL` |
@@ -120,8 +121,8 @@ are provisioned per environment outside Git and granted exactly one group:
 | Group       | Purpose                       | Privileges                                                  |
 | ----------- | ----------------------------- | ----------------------------------------------------------- |
 | `gk_owner`  | owns business objects         | never granted to runtime; migration credential may `SET ROLE` |
-| `gk_api`    | API runtime                   | schema `USAGE`; `EXECUTE` on `email_event_record` (webhook evidence), `identity_resolve` and `identity_staff_list` (identity), the catalog, schedule, checkout and order gateway functions, and `payment_initiate` and `payment_event_record` (payments); the exact list is tested |
-| `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions (`job_claim`, `job_heartbeat`, `job_complete`, `job_release`, `job_fail`, `job_attention`), the lease-fenced notification gateway (`notification_dispatch_begin`, `notification_attempt_record`, `notification_recovery_*`) and the lease-fenced order-command gateway (`order_command_begin`, `order_command_reserve`, `order_command_prepared`, `order_command_apply`, `order_command_secured`, `order_command_frozen`) and the lease-fenced payment gateway (`payment_job_begin`, `payment_dispatch_admit`, `payment_attempt_record`, `payment_reconcile_record`, `payment_recovery_*`, `payment_expire_admit`, `payment_expire_record`, `payment_under_reconciliation`) and the order hold review (`order_hold_review_run`); the exact list is tested |
+| `gk_api`    | API runtime                   | schema `USAGE`; `EXECUTE` on `email_event_record` (webhook evidence), `identity_resolve` and `identity_staff_list` (identity), the catalog, schedule, checkout and order gateway functions, `payment_initiate` and `payment_event_record` (payments), and `notice_settings_record` (order notices); the exact list is tested |
+| `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions (`job_claim`, `job_heartbeat`, `job_complete`, `job_release`, `job_fail`, `job_attention`), the lease-fenced notification gateway (`notification_dispatch_begin`, `notification_attempt_record`, `notification_recovery_*`, `notification_dispatch_suppress`) and the lease-fenced order-command gateway (`order_command_begin`, `order_command_reserve`, `order_command_prepared`, `order_command_apply`, `order_command_secured`, `order_command_frozen`) and the lease-fenced payment gateway (`payment_job_begin`, `payment_dispatch_admit`, `payment_attempt_record`, `payment_reconcile_record`, `payment_recovery_*`, `payment_expire_admit`, `payment_expire_record`, `payment_under_reconciliation`) and the order hold review (`order_hold_review_run`); the exact list is tested |
 | `gk_backup` | backup reader                 | `SELECT` on business tables and future sequences, and on `gk_meta.schema_migration` (migration 0008) |
 
 The migration credential needs `CREATEROLE` and `CREATE` on the database.
@@ -587,6 +588,79 @@ managers about adverse evidence beyond the audit trail (GK-024 Milestone B,
 after GK-021 and GK-023/025); after a restore, re-correlating `unmatched`
 events and applying `matched` events that arrived while their intent was
 still `queued` (GK-034 Milestone B).
+
+### Order notices (K08, K11, migration 0030)
+
+Customers get short transactional emails about their order (British English,
+plain text plus simple HTML in the GK Cakes colours, London time, whole pounds
+without decimals). Each is rendered in the database and enqueued through
+`business.notification_enqueue` (intent, job and audit) **inside the
+transaction of its transition**, so a notice exists exactly when its transition
+does:
+
+| Notice (template revision)            | Transition                                                                 |
+| ------------------------------------- | -------------------------------------------------------------------------- |
+| confirmed (`order-confirmed.v1`)      | `order_command_secured` secures a paid or free confirmation, or an honoured late payment (K11: never before the outcome envelope is acknowledged) |
+| payment received (`order-paid-late.v1`) | `order_command_secured` secures a `paid_awaiting_agreement` payment: no promise, the chef will contact, full return if no handover is agreed |
+| released (`order-released.v1`)        | the hold review releases an abandoned order, **only if a payment was actually dispatched to Stripe** (a collection with `dispatch_started_at`; never-dispatched ones do not count) or the customer asked to confirm a free order; an abandoned checkout that never got there is not emailed. No order link and no invitation to order again |
+| cancelled (`order-cancelled.v1`)      | `order_command_secured` secures a cancellation (customer, chef or late-payment return): reason, rate and the refund amount **requested** ("we will email you once it has been returned"), or "already returned" when the refund succeeded before the cancellation was secured; "no payment" when nothing was paid |
+| refund returned (`refund-returned.v1`) | the order's refund block (`order_refund_summary`) is `returned` with a positive target and the order is not `cancellation_pending`; one per refund-goal version, checked at commit by deferred constraint triggers on refund operations and observations, the goal, a secured cancellation and secured order commands (a published manual payout). Partial returns are not emailed |
+
+Manual payout instructions are never emailed. `business.order_notice` records
+each (order, kind, dedupe key: the command, the goal version, or `released`)
+once, so retries, K11 resumes, replays and duplicate provider events give one
+notice each. Its intent ID and idempotency key derive from the environment,
+order, kind and key, and every rendered input is persisted (the confirmation's
+refund sentence compares the deadline with the command's receipt, not the
+clock), so a transition replayed after a restore produces the same request
+under the same key and the provider deduplicates it. The recipient is the
+order's contact address (frozen in the payload); `recipient_id` is the order.
+Neither the audit trail nor `order_notice` holds personal data, and the
+greeting does not use the customer's name. A notice never rolls back its
+transition: an address the dispatcher would refuse (anything outside a
+conservative ASCII form), a recipient off the recorded allowlist, or a
+rendering/enqueue error is recorded as `not_queued` (detail `recipient`,
+`allowlist` or the SQLSTATE). Every outcome other than `queued` is audited on
+the order (`order.notice_not_queued`: kind, outcome, detail; in the staff
+audit summary) and, unless deliberate, raises the staff attention flag
+`notice_not_sent` (`order_attention_flags`, staff list and detail): a refused
+address, a rendering error, or `not_configured` once settings exist (a deploy
+window). The allowlist and a database whose API never recorded settings are
+not flagged.
+
+The order page link is `<UI_ORIGIN>/orders/<id>`, without any capability: guests
+are told to open it on the device and browser they ordered with (gap below).
+The API records `APP_ENV`, `UI_ORIGIN` and `EMAIL_RECIPIENT_ALLOWLIST` with
+`business.notice_settings_record` at start and on every readiness probe (one
+statement that writes only when something changed), and `/readyz` stays 503
+while that fails; a database without them records its notices as
+`not_configured` (no intent). The settings refuse what the configuration
+refuses (no allowlist in production, one required in staging, the origin form
+above). The deploy compatibility matrix expects the candidate API to write
+that row while becoming ready (`.github/scripts/compat-matrix.sh`, step 3).
+
+**Staging allowlist.** Two layers. First, in the database: outside
+production, `order_notice_enqueue` never queues a notice to a recipient off
+the recorded allowlist (`not_queued`, detail `allowlist`), so an old,
+failed or rolled-back worker build cannot send it either. Staging fails
+closed: the API and the worker refuse to start without
+`EMAIL_RECIPIENT_ALLOWLIST`, and staging settings without one are refused.
+Second, in the worker: the dispatcher checks the stored recipient of every
+notice (including ones not rendered by 0030, such as the email proof) before
+any provider call; another recipient is suppressed through
+`business.notification_dispatch_suppress` (lease-fenced, freeze first): the
+intent keeps its state with `suspended_reason` set, a
+`notification.suppressed` audit event (no personal data) is recorded and the
+job completes. If an earlier attempt was already made under another
+configuration, the job goes to attention instead. Production refuses the
+variable (API, worker, dispatcher and settings).
+
+The copy is the agent's draft for Creator review; changing it needs a new
+template revision (a new migration replacing `order_notice_render`). Gaps:
+guests have no emailed access to their order page until account claims exist;
+GK delivery wording is a placeholder until GK delivery agreements exist; date
+moves (K06) are not reflected (the original handover is shown); the chef's
+address email (about two days before collection) is not automated here.
 
 ## Database backups (K11, GK-034)
 
