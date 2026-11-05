@@ -24,7 +24,7 @@ export const MAX_CAKES = 20;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-export function parseBasket(params: URLSearchParams): Basket {
+export function parseBasket(params: Pick<URLSearchParams, 'get' | 'getAll'>): Basket {
 	const lines: BasketLine[] = [];
 	const add = (key: 'variantId' | 'lotId', id: string) => {
 		const line = lines.find((l) => l[key] === id);

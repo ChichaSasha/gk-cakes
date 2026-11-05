@@ -74,8 +74,8 @@ export function orderView(order: Order, opts: { returned?: boolean } = {}): Orde
 						? ['Thank you for ordering with GK Cakes.']
 						: [
 								order.payment_requirement === 'none'
-									? 'Your free order is confirmed. We’ll email you.'
-									: 'We’ve received your payment. We’ll email you.',
+									? 'Your free order is confirmed.'
+									: 'We’ve received your payment and your order is confirmed.',
 								deadline
 							],
 				confirmed: true
