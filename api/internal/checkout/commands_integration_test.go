@@ -33,6 +33,10 @@ type commandHarness struct {
 	cmds    *checkout.Commands
 	logs    *bytes.Buffer
 	workers int
+	// production lets claims take scheduled production timer jobs; without
+	// it they stay out of the way (their due time derives from the fixed
+	// test clock, so real time would otherwise make them due mid-test).
+	production bool
 }
 
 func newCommandHarness(t *testing.T) *commandHarness {
@@ -58,6 +62,7 @@ func newCommandHarness(t *testing.T) *commandHarness {
 // claim leases the next due job to a new worker identity.
 func (h *commandHarness) claim(t *testing.T) jobs.Job {
 	t.Helper()
+	h.holdProduction(t)
 	h.workers++
 	job := jobs.Job{Worker: fmt.Sprintf("00000000-0000-4000-8000-%012d", h.workers)}
 	if err := h.worker.QueryRow(h.ctx, `SELECT job_id::text, job_operation_id::text, job_generation
@@ -65,6 +70,16 @@ func (h *commandHarness) claim(t *testing.T) jobs.Job {
 		t.Fatalf("claim: %v", err)
 	}
 	return job
+}
+
+// holdProduction keeps production timer jobs from being claimed unless the
+// test runs them (h.production).
+func (h *commandHarness) holdProduction(t *testing.T) {
+	t.Helper()
+	if !h.production {
+		h.owner(t, `UPDATE business.job SET next_attempt_at = GREATEST(next_attempt_at, now() + interval '30 days')
+			WHERE state IN ('queued', 'retry') AND id IN (SELECT job_id FROM business.production_timer_job)`)
+	}
 }
 
 // expire ends a job's lease (the worker died) so it can be claimed again.

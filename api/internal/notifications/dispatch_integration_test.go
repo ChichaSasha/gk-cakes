@@ -879,7 +879,9 @@ func TestRuntimeRolesUseOnlyTheNotificationGateway(t *testing.T) {
 		"business.refund_recovery_prepared(uuid, uuid, bigint, uuid)",
 		"business.refund_recovery_reconcile(uuid, uuid, bigint, uuid, text)",
 		"business.refund_recovery_reserve(uuid, uuid, bigint, uuid, text, uuid, integer, text, text, timestamp with time zone)",
-		"business.refund_recovery_secured(uuid, uuid, bigint, uuid)"}, worker...)
+		"business.refund_recovery_secured(uuid, uuid, bigint, uuid)",
+		// GK-026 B1 scheduled production start.
+		"business.production_timer_run(uuid, uuid, bigint)"}, worker...)
 	slices.Sort(want)
 	if !slices.Equal(got, want) {
 		t.Errorf("gk_worker can execute %v, want exactly %v", got, want)

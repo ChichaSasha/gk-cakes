@@ -34,7 +34,7 @@ type Named struct {
 }
 
 // Kinds are the job kinds in the order the worker offers each job.
-var Kinds = []string{"order_command", "payment", "refund", "hold_review", "notification"}
+var Kinds = []string{"order_command", "payment", "refund", "hold_review", "production", "notification"}
 
 // New returns the worker's handlers in order (Kinds).
 func New(cfg Config) []Named {
@@ -53,6 +53,8 @@ func New(cfg Config) []Named {
 			Environment: cfg.Environment, Account: cfg.Account, Logger: cfg.Logger}).Handle},
 		// Order hold reviews need neither Stripe nor the journal.
 		{"hold_review", (&checkout.HoldReviews{DB: cfg.DB, Logger: cfg.Logger}).Handle},
+		// Scheduled production starts need neither Stripe nor the journal.
+		{"production", (&checkout.Productions{DB: cfg.DB, Logger: cfg.Logger}).Handle},
 		{"notification", email},
 	}
 }
