@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/catalog"
 	"github.com/ChichaSasha/gk-cakes/api/internal/checkout"
@@ -24,6 +25,8 @@ type fakeCheckout struct {
 	calls    int
 	freeErr  error
 	replayed bool
+	filter   checkout.StaffOrderFilter
+	orderID  string
 }
 
 func (f *fakeCheckout) CreateQuote(_ context.Context, subject string, digest []byte, _ string, _ checkout.QuoteInput) (catalog.Result, error) {
@@ -157,6 +160,24 @@ func (f *fakeCheckout) ReserveRemainder(_ context.Context, subject, _, _, _ stri
 func (f *fakeCheckout) AttentionList(_ context.Context, subject string) (checkout.Attention, error) {
 	f.subject = subject
 	return checkout.Attention(`[{"kind":"delivery_pending"}]`), nil
+}
+
+func (f *fakeCheckout) StaffOrders(_ context.Context, subject string, filter checkout.StaffOrderFilter) (checkout.StaffOrderPage, error) {
+	f.calls++
+	f.subject, f.filter = subject, filter
+	if f.freeErr != nil {
+		return checkout.StaffOrderPage{}, f.freeErr
+	}
+	return checkout.StaffOrderPage{Items: json.RawMessage(`[{"id":"o1"}]`), NextCursor: "next"}, nil
+}
+
+func (f *fakeCheckout) StaffOrder(_ context.Context, subject, id string) (json.RawMessage, error) {
+	f.calls++
+	f.subject, f.orderID = subject, id
+	if f.freeErr != nil {
+		return nil, f.freeErr
+	}
+	return json.RawMessage(`{"id":"` + id + `"}`), nil
 }
 
 func (f *fakeCheckout) PreviewManualPayout(_ context.Context, subject, _ string, _ checkout.ManualPayoutPreviewInput) (json.RawMessage, error) {
@@ -852,5 +873,97 @@ func TestManualPayoutRoutes(t *testing.T) {
 		if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodGet, base, c.auth, "", "", nil); rec.Code != c.status {
 			t.Errorf("list by %s: %d", name, rec.Code)
 		}
+	}
+}
+
+// Staff order reads: chef, technical support and fulfillment (each view is
+// redacted by the database); customers and anonymous callers are refused.
+// The list query is parsed strictly; reads need no Idempotency-Key and are
+// served even when new checkouts are disabled.
+func TestStaffOrderRoutes(t *testing.T) {
+	id := catalogIdentity()
+	id.actors["fulfil"] = identity.Actor{AccountID: "acc-ful", Subject: "sub-ful", Capabilities: []string{identity.Fulfillment}}
+	const list = "/api/v1/admin/orders?from=2026-11-01&to=2026-11-30"
+	for name, c := range map[string]struct {
+		auth   string
+		status int
+	}{"chef": {"chef", 200}, "support": {"support", 200}, "fulfillment": {"fulfil", 200}, "customer": {secretToken, 403},
+		"anonymous": {"", 401}} {
+		co := &fakeCheckout{}
+		rec := serveCheckout(t, co, id, http.MethodGet, list, c.auth, "", "", nil)
+		if rec.Code != c.status {
+			t.Errorf("list by %s: %d %s", name, rec.Code, rec.Body.String())
+		}
+		if c.status == 200 && (rec.Body.String() != `{"items":[{"id":"o1"}],"next_cursor":"next"}`+"\n" || co.subject != id.actors[c.auth].Subject ||
+			rec.Header().Get("Cache-Control") != "no-store") {
+			t.Errorf("list by %s: %q %q %s", name, rec.Body.String(), co.subject, rec.Header().Get("Cache-Control"))
+		}
+		rec = serveCheckout(t, co, id, http.MethodGet, "/api/v1/admin/orders/o9", c.auth, "", "", nil)
+		if rec.Code != c.status || (c.status == 200 && (rec.Body.String() != `{"id":"o9"}`+"\n" || co.orderID != "o9")) {
+			t.Errorf("detail by %s: %d %s", name, rec.Code, rec.Body.String())
+		}
+	}
+	co := &fakeCheckout{}
+	rec := serveCheckout(t, co, id, http.MethodGet,
+		list+"&lifecycle=confirmed,cancellation_pending&lifecycle=ready&needs_attention=false&limit=100&cursor=abc", "chef", "", "", nil)
+	f := co.filter
+	if rec.Code != 200 || f.From.Format(time.DateOnly) != "2026-11-01" || f.To.Format(time.DateOnly) != "2026-11-30" ||
+		strings.Join(f.Lifecycles, " ") != "confirmed cancellation_pending ready" || f.NeedsAttention == nil || *f.NeedsAttention ||
+		f.Limit != 100 || f.Cursor != "abc" {
+		t.Fatalf("filter %d %+v", rec.Code, f)
+	}
+	serveCheckout(t, co, id, http.MethodGet, list+"&needs_attention=true", "chef", "", "", nil)
+	if co.filter.NeedsAttention == nil || !*co.filter.NeedsAttention || co.filter.Limit != 0 || co.filter.Lifecycles != nil {
+		t.Fatalf("needs attention %+v", co.filter)
+	}
+	for name, query := range map[string]string{
+		"no from":         "?to=2026-11-30",
+		"no to":           "?from=2026-11-01",
+		"bad date":        "?from=2026-11-01&to=2026-11-31",
+		"reversed":        "?from=2026-11-30&to=2026-11-01",
+		"94 days":         "?from=2026-11-01&to=2027-02-02",
+		"lifecycle":       "&lifecycle=paid",
+		"empty lifecycle": "&lifecycle=",
+		"repeated":        "&lifecycle=ready,ready",
+		"attention":       "&needs_attention=yes",
+		"limit 0":         "&limit=0",
+		"limit 101":       "&limit=101",
+		"limit empty":     "&limit=",
+		"limit sign":      "&limit=+5",
+	} {
+		path := "/api/v1/admin/orders" + query
+		if strings.HasPrefix(query, "&") {
+			path = list + query
+		}
+		co := &fakeCheckout{}
+		if rec := serveCheckout(t, co, id, http.MethodGet, path, "chef", "", "", nil); rec.Code != 422 || co.calls != 0 {
+			t.Errorf("%s: %d %s (calls %d)", name, rec.Code, rec.Body.String(), co.calls)
+		}
+	}
+	if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodGet, "/api/v1/admin/orders?from=2026-11-01&to=2027-02-01", "chef", "", "", nil); rec.Code != 200 {
+		t.Fatalf("93 days: %d %s", rec.Code, rec.Body.String())
+	}
+	for name, c := range map[string]struct {
+		err    error
+		status int
+	}{"bad cursor": {catalog.ErrBadCursor, 400}, "not found": {catalog.ErrNotFound, 404}, "forbidden": {catalog.ErrForbidden, 403},
+		"invalid": {&catalog.InvalidError{Field: "to", Message: "x"}, 422}} {
+		if rec := serveCheckout(t, &fakeCheckout{freeErr: c.err}, id, http.MethodGet, list, "chef", "", "", nil); rec.Code != c.status {
+			t.Errorf("list %s: %d", name, rec.Code)
+		}
+		if rec := serveCheckout(t, &fakeCheckout{freeErr: c.err}, id, http.MethodGet, "/api/v1/admin/orders/o1", "chef", "", "", nil); rec.Code != c.status {
+			t.Errorf("detail %s: %d", name, rec.Code)
+		}
+	}
+	// Served without CHECKOUT_ENABLED.
+	var logs bytes.Buffer
+	h := NewHandler(Options{UIOrigin: "https://gkcake.com", DB: fakePinger{}, Identity: id, Checkout: &fakeCheckout{},
+		Logger: slog.New(slog.NewJSONHandler(&logs, nil))})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/orders/o1", nil)
+	req.Header.Set("Authorization", "Bearer fulfil")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("checkout disabled: %d", rec.Code)
 	}
 }

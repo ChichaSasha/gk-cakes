@@ -481,6 +481,8 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.order_get(uuid, uuid, bytea)",
 		"business.order_late_payment_request(uuid, uuid, text, text, integer, text, text, timestamp with time zone, text, text, timestamp with time zone)",
 		"business.order_production_start(uuid, uuid, text, text, integer, timestamp with time zone)",
+		"business.order_staff_get(uuid, uuid)",
+		"business.order_staff_list(uuid, date, date, text[], boolean, timestamp with time zone, timestamp with time zone, uuid, integer)",
 		"business.payment_event_record(text, text, boolean, text, text, timestamp with time zone, text, text, uuid, text, text)",
 		"business.payment_initiate(uuid, bytea, uuid, text, text, integer, uuid, text, text, text, timestamp with time zone)",
 		"business.payment_mismatch_clear(uuid, text, text, uuid, integer, uuid, text)",

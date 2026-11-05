@@ -417,6 +417,7 @@ var invalidFields = map[string]string{
 	"amount_invalid": "amount_minor", "currency_invalid": "currency", "allocations_invalid": "allocations",
 	"note_invalid": "note", "resolution_invalid": "resolution",
 	"evidence_ref_invalid": "evidence_ref", "outcome_invalid": "outcome", "payout_preview_invalid": "preview_id",
+	"range_invalid": "to", "page_limit_invalid": "limit", "lifecycle_invalid": "lifecycle", "cursor_invalid": "cursor",
 }
 
 var invalidMessages = map[string]string{
@@ -437,6 +438,9 @@ var invalidMessages = map[string]string{
 	"agreement_invalid":      "must give channel, agreed_at (after the payment, not in the future) and evidence_ref to honour, and nothing for full_return",
 	"amount_invalid":         "must be 1 to 100000000 pence",
 	"currency_invalid":       "must be GBP",
+	"range_invalid":          "must not be before from, and the range must be at most 93 days",
+	"page_limit_invalid":     "must be 1 to 100",
+	"lifecycle_invalid":      "must be distinct visible lifecycles",
 	"allocations_invalid":    "must name each succeeded payment collection of the order once, each at least 1 penny, adding up to amount_minor",
 }
 

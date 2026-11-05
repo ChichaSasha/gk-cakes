@@ -1953,10 +1953,89 @@ foreign-currency manual payouts (liability stays open);
 re-reserving a remainder by policy shares across collections (the
 remainder returns to the failed operation's collection); payment
 reconciliation of an `unknown` payment collection; chef-confirmed revised
-allocations after skewed prior actuals; staff order reads (the chef needs
-the order's `expected_version`); a raised goal settling a manual payout
+allocations after skewed prior actuals; a raised goal settling a manual payout
 reserves the remainder through the provider (it fails again if the
 provider is still unavailable, then needs another decision).
+
+## Staff order reads (K00, K09, migration 0029)
+
+| Route (served with or without `CHECKOUT_ENABLED`) | Who | Input / answer |
+| --- | --- | --- |
+| `GET /api/v1/admin/orders?from&to[&lifecycle][&needs_attention][&cursor][&limit]` | chef, technical support, fulfillment | `from`/`to`: London handover days, inclusive, required, at most 93 days (422); `lifecycle`: visible lifecycles, comma-separated and/or repeated (`awaiting_payment`, `confirmation_pending`, `paid_awaiting_agreement`, `confirmed`, `in_production`, `ready`, `completed`, `cancellation_pending`, `cancelled`); `needs_attention`: `true`/`false` (403 for fulfillment); `limit` 1–100 (default 50); 200 `{items, next_cursor?}` |
+| `GET /api/v1/admin/orders/{id}` | chef, technical support, fulfillment | 200 the order for the caller's view; 404 unknown (or outside fulfillment's scope) |
+
+- **Order.** By slot start, then placement, then ID; the opaque cursor is
+  that keyset, so pages stay stable when orders are added before the cursor
+  or change state between pages. No text search (no personal-data search).
+- **Lifecycle.** `lifecycle` is what the customer sees (K11:
+  `confirmation_pending` until a paid/free confirmation is secured,
+  `cancellation_pending` until a cancellation is; the cancel reason and the
+  refund block stay hidden meanwhile, as in `GET /orders/{id}`);
+  `raw_lifecycle` is the stored one. The filter uses the visible lifecycle.
+- **Attention flags** (`attention`, `needs_attention`): `refund_needs_attention`
+  (the refund block's `needs_attention`), `payment_unknown` (a collection
+  whose dispatch outcome is unknown), `payment_mismatch` (a collection with
+  contradicting evidence), `paid_awaiting_agreement` (K04 Q2),
+  `refund_quarantine` (an unresolved quarantined refund observation).
+- **Row:** `id`, `version`, `lifecycle`, `raw_lifecycle`, `date`, `slot
+  {id, starts_at, ends_at}`, `fulfillment_mode`, `placed_at`, `items [{line_no,
+  variant_id, lot_id, recipe_version_id, cake_name, flavour, size_code,
+  quantity}]`, `customer_full_name`, `cancel_reason`, `production {state:
+  not_scheduled|scheduled|started, scheduled_at, started_at, observed_at,
+  source}`; chef and support add the attention flags; the chef adds
+  `contact_email`, `payment_requirement`, `total_minor`, `currency`,
+  `payment_state` (latest collection, as the customer sees it), `paid_at`,
+  `free_confirmed_at` and `refund` (the customer's refund block: state,
+  target, succeeded, in progress, `delivery_pending_minor`).
+- **Detail (chef):** everything `GET /orders/{id}` returns with the same
+  values except the customer's payment link (`payment.checkout_url`), plus
+  `raw_lifecycle`, `recovery_state`, attention flags, `production`,
+  `collections [{id, kind, state, version, initiated_at, expires_at,
+  succeeded_at, mismatch_reason, cancel_reason, amount_minor, currency,
+  refunded_minor, refund_reserved_minor, provider_session_id,
+  payment_intent_id}]`, `refund_goal {id, version, reason, source, created_at,
+  updated_at, target_minor, policy_rate, paid_basis_minor, policy_target_minor,
+  remaining_minor, delivery_pending_minor, currency}`, `refund_operations [{id,
+  collection_id, channel, state, version, goal_version, failure_reason,
+  mismatch_reason, provider_status, record_state (the K11 dispatch record),
+  window_ended, created_at, settled_at, amount_minor, currency,
+  provider_refund_id}]`, `refund_observations [{id, collection_id, status,
+  source, quarantined, quarantine_reason, matched_operation_id,
+  named_operation_id, observed_at, resolved_at, amount_minor, currency,
+  provider_refund_id, resolution_note}]`, `commands [{id, kind, requested_by,
+  received_at, state, outcome_status, decision}]` (never notes, evidence or
+  payloads) and `audit [{action, occurred_at, actor_kind}]` (the latest 200,
+  never details or actors, without staff read events). `version` is the
+  `expected_version` of chef commands.
+- **Technical support** (K00 bounded access, no money authority; K09
+  "Sasha necessary support only"): the same states, reasons, times, IDs and
+  the customer's name, without amounts, currency or refund rates, contact
+  email, different payer name, provider references (Stripe session, payment
+  intent, refund IDs) or resolution notes; in the list also without the
+  payment state and refund block.
+- **Fulfillment** (K00 prepare/ready/dispatch/handover only): only orders
+  that were ever visibly confirmed (production scheduled or started; others
+  are absent from the list and 404); name, handover, items without prices,
+  lifecycle, cancel reason, production and `version` (for
+  `start-production`); no money, contact, attention, collections, refunds,
+  commands or audit.
+- **Redaction is in the database** (`business.order_staff_list`,
+  `business.order_staff_get`, the only two new `gk_api` functions): the view
+  is the caller's most privileged active capability (chef, then technical
+  support, then fulfillment); hidden keys are absent, not null.
+  `order_get` now renders through the same owner-internal `order_view`
+  (unchanged output).
+- **Audited reads.** Every staff read, chef included, appends an audit
+  event without personal data: `order.staff_listed` on the reader's account
+  (`{view, from, to, items}`) and `order.staff_viewed` on the order
+  (`{view}`). Nothing personal is logged.
+- **Tests:** `internal/checkout/staff_orders_integration_test.go`
+  (redaction per role, filters, pages, lifecycle mapping, each flag, refund
+  detail, 404s, range limits), `staff_orders_test.go`; `internal/httpapi`
+  `TestStaffOrderRoutes`.
+
+Not yet: text search; staff screens (UI); per-order scopes for fulfillment
+beyond "ever confirmed"; delivery addresses (no delivery checkout yet).
 
 ## Not yet verified
 
