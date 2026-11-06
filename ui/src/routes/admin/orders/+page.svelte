@@ -1,8 +1,8 @@
 <script lang="ts">
 	// Orders (approved GK-018 r03b2 sketch, orders.html): every order by
 	// handover date for chef, technical support and fulfilment, each seeing
-	// what the API gives their role. Read only for now: no order page or
-	// action yet. Search filters the loaded orders in the browser (the API has
+	// what the API gives their role. Each order ID opens its page
+	// (/admin/orders/[id]), where the day-to-day steps are. Search filters the loaded orders in the browser (the API has
 	// no text search, K09); nothing personal goes into the URL. Released
 	// unpaid orders are hidden unless asked for (Sasha's answer to r03 Q5).
 	import { resolve } from '$app/paths';
@@ -298,7 +298,12 @@
 								{@const status = statusOf(o, v)}
 								<tr>
 									<td data-label="Order"
-										><span class="order-id strong" title={o.id}>{shortId(o.id)}</span></td
+										><a
+											class="order-id strong"
+											href={resolve('/admin/orders/[id]', { id: o.id })}
+											title={o.id}
+											aria-label="Order {shortId(o.id)}, {o.customer_full_name}">{shortId(o.id)}</a
+										></td
 									>
 									<td data-label="Customer">{o.customer_full_name}</td>
 									<td data-label="Cake"

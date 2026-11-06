@@ -1,0 +1,343 @@
+/* The chef's order page (GK-018 r03b2 admin.css: banners, detail grid,
+   facts, progress, confirm rows, ledger), scoped to .chef like chef.css. */
+.chef .back {
+	display: inline-flex;
+	gap: 6px;
+	align-items: center;
+	margin-bottom: 14px;
+	color: var(--muted);
+	font-weight: 500;
+	text-decoration: none;
+}
+.chef .banner-icon {
+	flex: none;
+	width: 22px;
+	height: 22px;
+	margin-top: 1px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.8;
+}
+.chef .banner-info {
+	background: var(--info-bg);
+	color: #22355e;
+}
+.chef .banner-warn {
+	background: var(--warn-bg);
+	color: #5a3700;
+}
+.chef .banner:focus {
+	outline: 3px solid var(--focus);
+	outline-offset: 2px;
+}
+.chef .banner > div {
+	min-width: 0;
+}
+.chef .page-head .sub {
+	margin: 6px 0 0;
+}
+.chef .card-h {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	margin: 0 0 12px;
+	font-size: 16px;
+	font-weight: 600;
+}
+.chef .card-row {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 4px 12px;
+}
+.chef .card p {
+	margin: 0 0 8px;
+}
+.chef .card p:last-child {
+	margin-bottom: 0;
+}
+.chef .card-alert {
+	border-color: #efd3a6;
+	background: #fffaf1;
+}
+.chef .empty-card h1 {
+	margin-bottom: 8px;
+}
+.chef .detail-grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+	gap: 18px;
+	align-items: start;
+}
+.chef .detail-grid > * {
+	min-width: 0;
+}
+.chef .items {
+	display: grid;
+	gap: 10px;
+	margin: 0 0 10px;
+	padding: 0;
+	list-style: none;
+}
+.chef .items p {
+	margin: 0;
+}
+.chef .facts {
+	display: grid;
+	gap: 8px;
+	margin: 0 0 8px;
+}
+.chef .facts div {
+	display: flex;
+	justify-content: space-between;
+	gap: 16px;
+	padding-bottom: 8px;
+	border-bottom: 1px dashed var(--line);
+}
+.chef .facts div:last-child {
+	border-bottom: 0;
+}
+.chef .facts dt {
+	flex: none;
+	color: var(--muted);
+}
+.chef .facts dd {
+	min-width: 0;
+	margin: 0;
+	font-weight: 500;
+	text-align: right;
+}
+.chef .mono {
+	font: 13px var(--mono);
+}
+.chef .wrap {
+	overflow-wrap: anywhere;
+}
+.chef .ok-text {
+	color: var(--ok);
+}
+.chef .warn-text {
+	color: var(--warn);
+}
+.chef .info-text {
+	color: var(--info);
+}
+.chef .record {
+	display: grid;
+	gap: 6px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.chef .record li {
+	display: grid;
+	grid-template-columns: 130px minmax(0, 1fr);
+	gap: 10px;
+}
+.chef .progress {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.chef .progress li {
+	position: relative;
+	display: grid;
+	grid-template-columns: 18px minmax(0, 1fr);
+	gap: 10px;
+	padding-bottom: 14px;
+}
+.chef .progress li:not(:last-child)::before {
+	content: '';
+	position: absolute;
+	top: 18px;
+	bottom: 0;
+	left: 8px;
+	width: 2px;
+	background: var(--line);
+}
+.chef .progress li.done:not(:last-child)::before {
+	background: var(--accent);
+}
+.chef .progress p {
+	margin: 0;
+}
+.chef .p-dot {
+	width: 18px;
+	height: 18px;
+	margin-top: 2px;
+	border: 2px solid #c9cdd3;
+	border-radius: 50%;
+	background: #fff;
+}
+.chef .progress li.done .p-dot {
+	border-color: var(--accent);
+	background: var(--accent);
+}
+.chef .actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 14px;
+}
+.chef .actions.stack {
+	flex-direction: column;
+}
+.chef .actions.stack > .btn {
+	width: 100%;
+}
+.chef .btn-small {
+	min-height: 34px;
+	padding: 5px 13px;
+	font-size: 13px;
+}
+.chef .btn-danger {
+	border-color: var(--bad);
+	background: var(--bad);
+	color: #fff;
+}
+.chef .btn-quiet {
+	border-color: transparent;
+	background: transparent;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+.chef .confirm-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	padding: 12px;
+	border: 1px solid var(--line);
+	border-radius: 14px;
+	background: #fff;
+}
+.chef .confirm-row > p,
+.chef .confirm-row > .field,
+.chef .confirm-row > .text-input {
+	flex-basis: 100%;
+	margin: 0;
+}
+.chef .confirm-row .btn {
+	white-space: normal;
+}
+.chef .text-input {
+	width: 100%;
+	min-width: 0;
+	min-height: 40px;
+	padding: 8px 10px;
+	border: 1px solid #8a9099;
+	border-radius: 12px;
+	background: #fff;
+	color: var(--ink);
+	font: 14px var(--sans);
+}
+.chef .text-input[aria-invalid='true'] {
+	border-color: var(--bad);
+}
+.chef .role-note {
+	margin: 10px 0 0;
+	padding: 8px 12px;
+	border-radius: 12px;
+	background: var(--info-bg);
+	color: var(--info);
+	font-size: 13px;
+}
+.chef .step-status {
+	margin: 10px 0 0;
+	outline: none;
+}
+.chef .step-status:empty {
+	margin: 0;
+}
+.chef .step-status:focus-visible,
+.chef .step-error:focus-visible {
+	outline: 3px solid var(--focus);
+	outline-offset: 2px;
+}
+.chef .step-error {
+	margin: 10px 0 0;
+	padding: 8px 12px;
+	border-radius: 12px;
+	background: var(--bad-bg);
+}
+.chef .chip-s {
+	display: inline-block;
+	padding: 1px 9px;
+	border-radius: 999px;
+	font-size: 12px;
+	font-weight: 600;
+}
+.chef .chip-ok {
+	background: var(--ok-bg);
+	color: var(--ok);
+}
+.chef .chip-warn {
+	background: var(--warn-bg);
+	color: var(--warn);
+}
+.chef .chip-bad {
+	background: var(--bad-bg);
+	color: var(--bad);
+}
+.chef .chip-info {
+	background: var(--info-bg);
+	color: var(--info);
+}
+.chef .ledger {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 8px;
+	margin: 10px 0;
+}
+.chef .ledger div {
+	padding: 10px 12px;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	background: #fff;
+}
+.chef .ledger dt {
+	color: var(--muted);
+	font-size: 12.5px;
+}
+.chef .ledger dd {
+	margin: 2px 0 0;
+	font-size: 20px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+}
+.chef .pill-out {
+	background: var(--info-bg);
+	color: var(--info);
+}
+.chef .pill-problem,
+.chef .pill-noshow {
+	background: var(--warn-bg);
+	color: var(--warn);
+}
+@media (max-width: 1080px) {
+	.chef .detail-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+@media (max-width: 520px) {
+	.chef .facts div {
+		flex-direction: column;
+		gap: 2px;
+	}
+	.chef .facts dd {
+		text-align: left;
+	}
+	.chef .record li {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0;
+	}
+	.chef .ledger {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+@media (forced-colors: active) {
+	.chef .progress li.done .p-dot {
+		background: CanvasText;
+	}
+}
