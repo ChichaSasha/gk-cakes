@@ -20,8 +20,11 @@
 		answer: AnswerView;
 		/** The answer was accepted (202): the page reads the order until its outcome. */
 		onsent: (baseline: ChangeBaseline, answer: 'accept' | 'decline') => void;
-		/** A refusal (nothing changed); refresh: read the order again. */
-		onproblem: (message: string, refresh: boolean) => void;
+		/**
+		 * A refusal (nothing changed); refresh: read the order again; outcome:
+		 * the order shows it itself (a lapsed offer), so it isn't an error.
+		 */
+		onproblem: (message: string, refresh: boolean, outcome: boolean) => void;
 	}
 
 	let { order, who, api, keys, answer, onsent, onproblem }: Props = $props();
@@ -37,7 +40,7 @@
 			onsent(baseline, kind);
 		} catch (e) {
 			const p = recoveryProblemFor(e, 'answer');
-			onproblem(p.message, p.next === 'refresh');
+			onproblem(p.message, p.next === 'refresh', p.outcome === true);
 		}
 		busy = '';
 	}

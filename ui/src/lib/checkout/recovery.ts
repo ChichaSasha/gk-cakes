@@ -158,11 +158,8 @@ function latePaymentView(order: Order, view: OrderView): OrderView {
 		lines: [
 			'Your payment arrived after the time we need to prepare your cake for this date, so the chef needs to check it first.',
 			`${shortDate(order.date)} is your requested date. It isn’t confirmed yet, and we won’t change it without your agreement.`,
-			...(lapsed
-				? [
-						'The time the chef offered is no longer available, so that offer has lapsed. Nothing has changed: the chef will offer again.'
-					]
-				: []),
+			// One wording for a lapse: this line (the page adds no second message).
+			...(lapsed ? [LAPSED] : []),
 			`If you and the chef can’t agree a date, you get everything you paid back${back ? `: ${back}` : ''}.`,
 			'Please don’t pay again.'
 		],
@@ -332,7 +329,8 @@ function deliveryChoiceView(order: Order, view: OrderView): OrderView | undefine
 						: 'The delivery quote wasn’t paid in time, so we can’t deliver your cake.',
 					`Your cake is ${cakePaidWord(order)} and still booked for ${shortDate(order.date)}. Please choose below. There’s no deadline: the chef keeps your order open until you decide.`
 				],
-				action: 'none'
+				action: 'none',
+				refundTerms: 'none'
 			};
 		}
 		return {
@@ -346,12 +344,15 @@ function deliveryChoiceView(order: Order, view: OrderView): OrderView | undefine
 					: []),
 				'Please choose what you’d like below. There’s no deadline: the chef keeps your order open until you decide, and nothing changes until you confirm.'
 			],
-			action: 'none'
+			action: 'none',
+			refundTerms: 'none'
 		};
 	}
 	if (chosen?.state === 'chosen' && chosen.to) {
-		const courier = chosen.choice === 'customer_courier';
-		const when = `${dayAndTime(chosen.to.date, chosen.to.starts_at, chosen.to.ends_at)} (London time)`;
+		// The order's current appointment, not chosen.to: a later same-day
+		// move or a chef's change moves it, and chosen.to never changes.
+		const courier = order.fulfillment_mode === 'customer_courier';
+		const when = `${dayAndTime(order.date, order.slot.starts_at, order.slot.ends_at)} (London time)`;
 		const refund = money(
 			positive(chosen.delivery_refund_minor) ? chosen.delivery_refund_minor : undefined,
 			order.currency
@@ -431,13 +432,14 @@ function failureView(order: Order, view: OrderView, now: Date): OrderView | unde
 				positive(chosen.delivery_refund_minor) ? chosen.delivery_refund_minor : undefined,
 				order.currency
 			);
-			const sameDay = isToday(chosen.to.date, now);
+			// The order's current appointment (a later move changes it, not chosen.to).
+			const sameDay = isToday(order.date, now);
 			return {
 				...view,
 				tone: 'success',
 				title: sameDay ? 'You’ll collect your cake today' : 'You’ll collect your cake',
 				lines: [
-					`Thank you. Please collect your cake from St Katharine Docks ${sameDay ? 'today, ' : 'on '}${dayAndTime(chosen.to.date, chosen.to.starts_at, chosen.to.ends_at)} (London time).`,
+					`Thank you. Please collect your cake from St Katharine Docks ${sameDay ? 'today, ' : 'on '}${slot} (London time).`,
 					...(refund
 						? [
 								`Your delivery payment of ${refund} comes back in full, because we didn’t deliver. Delivery refund of ${refund} requested.`
@@ -471,11 +473,16 @@ function failureView(order: Order, view: OrderView, now: Date): OrderView | unde
 	return undefined;
 }
 
+const keptLine = (kept: string) =>
+	`The delivery payment of ${kept} isn’t refunded, because the delivery was attempted.`;
+
 /** Nobody available at the address (Q18): like a no-show, once secured. */
 function nobodyAvailableView(order: Order, view: OrderView): OrderView | undefined {
 	const f = order.delivery_failure;
 	if (f?.cause !== 'nobody_available' || f.state !== 'no_show') return undefined;
-	const cake = money(f.cake_refund_minor, order.currency);
+	const cake = positive(f.cake_refund_minor)
+		? money(f.cake_refund_minor, order.currency)
+		: undefined;
 	const kept = positive(f.delivery_kept_minor)
 		? money(f.delivery_kept_minor, order.currency)
 		: undefined;
@@ -487,9 +494,14 @@ function nobodyAvailableView(order: Order, view: OrderView): OrderView | undefin
 			`The chef arrived on ${dayAndTime(order.date, order.slot.starts_at, order.slot.ends_at)}, but nobody was available to take the cake.`,
 			...(cake
 				? [
-						`As with a cake that isn’t collected, you get 50% of the cake price back: ${cake}, requested automatically.${kept ? ` The delivery payment of ${kept} isn’t refunded, because the delivery was attempted.` : ''}`
+						`As with a cake that isn’t collected, you get 50% of the cake price back: ${cake}, requested automatically.${kept ? ` ${keptLine(kept)}` : ''}`
 					]
-				: [])
+				: [
+						...(f.cake_refund_minor === 0
+							? ['Your cakes cost nothing, so there’s no cake refund.']
+							: []),
+						...(kept ? [keptLine(kept)] : [])
+					])
 		],
 		contactChef: true,
 		refundTracker: Boolean(order.refund)
@@ -649,11 +661,15 @@ export function deliveryRows(order: Order): DetailRow[] {
 	const d = order.delivery;
 	const rows: DetailRow[] = [];
 	const paid = paidDelivery(order);
+	const q5 = order.fulfillment_mode === 'gk_delivery' ? order.delivery_choice : undefined;
 	if (paid !== undefined) {
 		rows.push({
 			label: 'GK delivery · paid separately',
 			amount: money(paid, order.currency) as string
 		});
+	} else if (q5?.open && q5.reason === 'not_possible' && !d?.waived) {
+		// The chef can't deliver: any quote is closed (def('delivery-impossible')).
+		rows.push({ label: 'GK delivery', amount: 'Not paid' });
 	} else if (
 		order.fulfillment_mode === 'gk_delivery' &&
 		d?.quote &&
@@ -681,6 +697,15 @@ export function deliveryRows(order: Order): DetailRow[] {
 		});
 	}
 	return rows;
+}
+
+/** The note under the order details while the Q5 choice is open (the sketch's summary notes). */
+export function deliveryNote(order: Order): string | undefined {
+	const q5 = order.fulfillment_mode === 'gk_delivery' ? order.delivery_choice : undefined;
+	if (!q5?.open) return undefined;
+	return q5.reason === 'pay_by_passed'
+		? 'The delivery quote can no longer be paid.'
+		: 'Delivery was a request until the chef confirmed it.';
 }
 
 // ---------------------------------------------------------------- this page's own commands
@@ -741,7 +766,12 @@ export type RecoveryCommand = 'answer' | 'choice' | 'delivery_payment';
 export function recoveryProblemFor(
 	err: unknown,
 	command: RecoveryCommand
-): { message: string; next: RecoveryNext } {
+): {
+	message: string;
+	next: RecoveryNext;
+	/** The order read again shows this outcome itself (a lapsed offer): not an error. */
+	outcome?: boolean;
+} {
 	if (err instanceof ApiError) {
 		switch (err.code) {
 			case 'OFFER_NOT_CURRENT':
@@ -757,8 +787,9 @@ export function recoveryProblemFor(
 					next: 'refresh'
 				};
 			case 'SLOT_UNAVAILABLE':
+				// A lapsed offer is an outcome the order shows (waiting again), not an error.
 				return command === 'answer'
-					? { message: LAPSED, next: 'refresh' }
+					? { message: LAPSED, next: 'refresh', outcome: true }
 					: {
 							message:
 								'That time is no longer available. Nothing has changed: please choose another time.',
@@ -792,6 +823,12 @@ export function recoveryProblemFor(
 				return {
 					message:
 						'Your order changed while this was open. Nothing has changed: please check it and try again.',
+					next: 'refresh'
+				};
+			case 'KEY_REUSED':
+				return {
+					message:
+						'Your order changed since this was first sent. Nothing has changed: we’ve refreshed it, so please check it and try again.',
 					next: 'refresh'
 				};
 			case 'NOT_FOUND':
@@ -836,7 +873,9 @@ export function sendAnswer(
 	return api.latePaymentAnswer(
 		order.id,
 		{ expected_version: order.version, offer_id: offerId, answer },
-		keys.for(`late:${order.id}:${offerId}:${answer}`).key,
+		// Per version: after a refusal the version (and the body's
+		// expected_version) moves on, so the same key would be KEY_REUSED.
+		keys.for(`late:${order.id}:${order.version}:${offerId}:${answer}`).key,
 		who
 	);
 }
@@ -888,13 +927,25 @@ export async function startDeliveryPayment(
 	const started = await api.deliveryPayment(
 		order.id,
 		{ expected_version: order.version, quote_id: quote.id },
-		keys.for(`delivery-pay:${order.id}:${quote.id}:${order.delivery?.payment?.id ?? ''}`).key,
+		// Per version as well: a chef's change bumps the version, not the quote.
+		keys.for(
+			`delivery-pay:${order.id}:${order.version}:${quote.id}:${order.delivery?.payment?.id ?? ''}`
+		).key,
 		who
 	);
 	const until = now() + (deps.waitMs ?? 45_000);
 	await sleep(Math.max(1, started.poll_after_seconds) * 1000);
 	for (let attempt = 0; ; attempt++) {
-		const o = await api.order(order.id, who);
+		let o: Order;
+		try {
+			o = await api.order(order.id, who);
+		} catch {
+			// The payment was asked for: a failed read is not a refusal. Keep
+			// reading until the wait ends; the page then keeps checking.
+			if (now() >= until) return undefined;
+			await sleep(Math.min(nextPollDelay(attempt, 1), 5000));
+			continue;
+		}
 		const p = o.delivery?.payment;
 		if (isPaymentPageUrl(p?.checkout_url)) return p?.checkout_url ?? undefined;
 		if (p?.state !== 'created' && p?.state !== 'pending') return undefined;

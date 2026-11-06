@@ -4,9 +4,11 @@ import type { OrderRecoveryApi } from './client';
 import { ActionKeys, type Who } from './flow';
 import { orderView } from './order';
 import {
+	LAPSED,
 	choiceBaseline,
 	choiceCard,
 	choiceOutcomeSince,
+	deliveryNote,
 	deliveryRows,
 	lateBaseline,
 	lateOutcomeSince,
@@ -213,8 +215,10 @@ describe('paid after the preparation time (state 10)', () => {
 		);
 		expect(v.title).toBe('Payment received');
 		expect(v.lines).toContain(
-			'The time the chef offered is no longer available, so that offer has lapsed. Nothing has changed: the chef will offer again.'
+			'The time the chef offered is no longer available, so the offer has lapsed. Nothing has changed: the chef will offer again.'
 		);
+		// The same wording as the refusal: the page shows it once, from the order.
+		expect(v.lines.filter((l) => l === LAPSED)).toHaveLength(1);
 	});
 
 	it('you agreed / you accepted another date (agreed block on the confirmed order)', () => {
@@ -425,9 +429,13 @@ describe('we can’t deliver (state 14) and pay-by passed (state 15)', () => {
 			delivery: delivery({ state: 'quoted', payable: false }),
 			delivery_choice: q5()
 		});
-		expect(view(o).lines).toHaveLength(2);
-		// The quote is still listed as quoted, not paid.
-		expect(deliveryRows(o)[0].label).toBe('GK delivery · quoted, not paid');
+		const v = view(o);
+		expect(v.lines).toHaveLength(2);
+		// The API keeps the quote as quoted; the chef's decision closed it (the sketch).
+		expect(deliveryRows(o)).toEqual([{ label: 'GK delivery', amount: 'Not paid' }]);
+		expect(deliveryNote(o)).toBe('Delivery was a request until the chef confirmed it.');
+		// No standard terms while the choice decides (as the failure view).
+		expect(v.refundTerms).toBe('none');
 		const noQuote = gk({
 			delivery: delivery({ state: 'awaiting_quote', quote: null }),
 			delivery_choice: q5()
@@ -449,7 +457,12 @@ describe('we can’t deliver (state 14) and pay-by passed (state 15)', () => {
 			'The delivery quote wasn’t paid by 11:00 (London time) on Tue 20 October, 48 hours before your delivery, so we can’t deliver your cake.'
 		);
 		expect(v.action).toBe('none');
+		expect(v.refundTerms).toBe('none');
 		expect(choiceCard(o, guest, NOW)?.lead).toBe('Nothing changes until you confirm.');
+		// def('delivery-unpaid') passed: the quote stays listed, and can no longer be paid.
+		expect(deliveryRows(o)).toEqual([{ label: 'GK delivery · quoted, not paid', amount: '£120' }]);
+		expect(deliveryNote(o)).toBe('The delivery quote can no longer be paid.');
+		expect(deliveryNote(gk())).toBeUndefined();
 	});
 
 	it('only the API’s listed choices; none without a capability or once closed', () => {
@@ -495,6 +508,7 @@ describe('we can’t deliver (state 14) and pay-by passed (state 15)', () => {
 		});
 		const o = order({
 			fulfillment_mode: 'collection',
+			slot: { id: 't12', starts_at: times[0].starts_at, ends_at: times[0].ends_at },
 			delivery: delivery({ state: 'cancelled_by_choice', paid_minor: 12000, payable: false }),
 			delivery_choice: q5({
 				open: false,
@@ -536,6 +550,54 @@ describe('we can’t deliver (state 14) and pay-by passed (state 15)', () => {
 		expect(c.title).toBe('Your courier will collect your cake');
 		expect(c.lines[0]).toBe(
 			'Thank you. Your courier collects from St Katharine Docks on Thu 22 October, 12:00–13:00 (London time). You book and pay the courier; responsibility passes to them at handover.'
+		);
+	});
+
+	it('a result after a later move shows the order’s current time, not the chosen one', () => {
+		// Chosen 12:00, then moved to 16:00 the same day (chosen.to never changes).
+		const o = order({
+			version: 9,
+			slot: { id: 's16', starts_at: '2026-10-22T15:00:00Z', ends_at: '2026-10-22T16:00:00Z' },
+			delivery: delivery({ state: 'cancelled_by_choice', paid_minor: 12000, payable: false }),
+			delivery_choice: q5({
+				open: false,
+				choices: [],
+				times: [],
+				chosen: {
+					choice: 'collection',
+					state: 'chosen',
+					refusal_reason: null,
+					requested_at: 'r1',
+					to: { fulfillment_mode: 'collection', date: '2026-10-22', ...times[0] },
+					delivery_refund_minor: 12000
+				}
+			})
+		});
+		const line = view(o).lines[0];
+		expect(line).toContain('Thu 22 October, 16:00–17:00 (London time)');
+		expect(line).not.toContain('12:00–13:00');
+		// The failed delivery's collection result as well.
+		const f = failed(
+			{
+				open: false,
+				choices: [],
+				times: [],
+				chosen: {
+					choice: 'collection',
+					state: 'chosen',
+					refusal_reason: null,
+					requested_at: 'r1',
+					to: { fulfillment_mode: 'collection', date: '2026-10-22', ...times[1] },
+					delivery_refund_minor: 12000
+				}
+			},
+			{
+				fulfillment_mode: 'collection',
+				slot: { id: 's16', starts_at: '2026-10-22T15:00:00Z', ends_at: '2026-10-22T16:00:00Z' }
+			}
+		);
+		expect(view(f).lines[0]).toBe(
+			'Thank you. Please collect your cake from St Katharine Docks today, Thu 22 October, 16:00–17:00 (London time).'
 		);
 	});
 
@@ -677,6 +739,7 @@ describe('failed delivery (state 19)', () => {
 			},
 			{
 				fulfillment_mode: 'collection',
+				slot: { id: 't13', starts_at: times[1].starts_at, ends_at: times[1].ends_at },
 				delivery: delivery({ state: 'cancelled_by_choice', paid_minor: 12000 })
 			}
 		);
@@ -761,6 +824,35 @@ describe('failed delivery (state 19)', () => {
 		expect(v.contactChef).toBe(true);
 	});
 
+	it('nobody available on a free-confirmed cake: no “£0” refund, the kept delivery said', () => {
+		const o = gk({
+			lifecycle: 'completed',
+			payment_requirement: 'none',
+			total_minor: 0,
+			paid_at: null,
+			delivery: delivery({ state: 'paid', paid_minor: 12000, payable: false }),
+			fulfillment: { state: 'no_show', at: '2026-10-22T10:25:00Z', pending: null },
+			delivery_failure: failure({
+				cause: 'nobody_available',
+				state: 'no_show',
+				open: false,
+				choices: [],
+				times: [],
+				cake_refund_minor: 0,
+				delivery_kept_minor: 12000
+			}),
+			refund: null
+		});
+		const v = view(o);
+		expect(v.lines).toEqual([
+			'The chef arrived on Thu 22 October, 11:00–12:00, but nobody was available to take the cake.',
+			'Your cakes cost nothing, so there’s no cake refund.',
+			'The delivery payment of £120 isn’t refunded, because the delivery was attempted.'
+		]);
+		expect(v.lines.join(' ')).not.toContain('£0');
+		expect(v.refundTracker).toBe(false);
+	});
+
 	it('own failure choice outcome', () => {
 		const o = failed();
 		const b = choiceBaseline(o, 'failure');
@@ -801,7 +893,7 @@ describe('commands', () => {
 		return { api, calls };
 	}
 
-	it('answer: expected_version, offer_id and answer; one key per offer and answer', async () => {
+	it('answer: a network retry at the same version reuses the key', async () => {
 		const { api, calls } = fakeApi([]);
 		const keys = new ActionKeys();
 		const o = late({ state: 'offered', offer: offer() });
@@ -809,8 +901,34 @@ describe('commands', () => {
 		await sendAnswer(api, keys, o, 'f1', 'accept', guest);
 		await sendAnswer(api, keys, o, 'f1', 'decline', guest);
 		expect(calls[0].body).toEqual({ expected_version: 4, offer_id: 'f1', answer: 'accept' });
+		expect(calls[1].body).toEqual(calls[0].body);
 		expect(calls[0].key).toBe(calls[1].key);
 		expect(calls[2].key).not.toBe(calls[0].key);
+	});
+
+	it('answer: after a refusal (the version moved on) answering again uses a new key', async () => {
+		const { api, calls } = fakeApi([]);
+		const keys = new ActionKeys();
+		await sendAnswer(api, keys, late({ state: 'offered', offer: offer() }), 'f1', 'accept', guest);
+		// Refused (order_changed): the same offer is open again at version 6.
+		const again = {
+			...late({
+				state: 'offered',
+				offer: offer(),
+				answer: {
+					offer_id: 'f1',
+					answer: 'accept',
+					received_at: 'r1',
+					state: 'refused',
+					reason: 'order_changed'
+				}
+			}),
+			version: 6
+		};
+		await sendAnswer(api, keys, again, 'f1', 'accept', guest);
+		expect(calls[1].body).toEqual({ expected_version: 6, offer_id: 'f1', answer: 'accept' });
+		// A new body never goes with an old key (the API would answer KEY_REUSED).
+		expect(calls[1].key).not.toBe(calls[0].key);
 	});
 
 	it('choices: target_slot_id only for a time choice', async () => {
@@ -868,12 +986,65 @@ describe('commands', () => {
 		).toBeUndefined();
 	});
 
+	it('delivery payment: a failed read after the 202 keeps checking, never a refusal', async () => {
+		let reads = 0;
+		const { api } = fakeApi([]);
+		api.order = async () => {
+			reads++;
+			if (reads < 3) throw new ApiError(0, {});
+			return gk({
+				delivery: delivery({
+					state: 'payment_checking',
+					payment: {
+						id: 'p1',
+						state: 'pending',
+						amount_minor: 12000,
+						currency: 'GBP',
+						requested_at: 'x',
+						checkout_url: 'https://checkout.stripe.com/c/pay/cs_2',
+						expires_at: null
+					}
+				})
+			});
+		};
+		const deps = { sleep: async () => undefined, now: () => 0 };
+		expect(await startDeliveryPayment(api, new ActionKeys(), gk(), guest, deps)).toBe(
+			'https://checkout.stripe.com/c/pay/cs_2'
+		);
+		// Reads keep failing until the wait ends: undefined (the page keeps checking).
+		let t = 0;
+		api.order = async () => {
+			throw new ApiError(0, {});
+		};
+		const late2 = { sleep: async () => void (t += 10_000), now: () => t };
+		await expect(startDeliveryPayment(api, new ActionKeys(), gk(), guest, late2)).resolves.toBe(
+			undefined
+		);
+	});
+
+	it('delivery payment: one key per version (a chef’s change keeps the quote)', async () => {
+		const { api, calls } = fakeApi([gk(), gk()]);
+		const keys = new ActionKeys();
+		const deps = { sleep: async () => undefined, now: () => 0 };
+		await startDeliveryPayment(api, keys, gk(), guest, deps);
+		await startDeliveryPayment(api, keys, gk({ version: 5 }), guest, deps);
+		expect(calls[1].body).toEqual({ expected_version: 5, quote_id: 'q1' });
+		expect(calls[1].key).not.toBe(calls[0].key);
+	});
+
 	it('refusals in the customer’s words (nothing changed)', () => {
 		const e = (status: number, code: string) =>
 			new ApiError(status, { code, message: 'x', request_id: 'r', retryable: false });
-		expect(recoveryProblemFor(e(409, 'SLOT_UNAVAILABLE'), 'answer').message).toContain(
-			'offer has lapsed'
-		);
+		expect(recoveryProblemFor(e(409, 'SLOT_UNAVAILABLE'), 'answer')).toEqual({
+			message: LAPSED,
+			next: 'refresh',
+			outcome: true
+		});
+		expect(recoveryProblemFor(e(409, 'KEY_REUSED'), 'answer')).toEqual({
+			message:
+				'Your order changed since this was first sent. Nothing has changed: we’ve refreshed it, so please check it and try again.',
+			next: 'refresh'
+		});
 		expect(recoveryProblemFor(e(409, 'SLOT_UNAVAILABLE'), 'choice')).toEqual({
 			message: 'That time is no longer available. Nothing has changed: please choose another time.',
 			next: 'refresh'

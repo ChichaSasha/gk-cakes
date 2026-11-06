@@ -96,7 +96,9 @@ describe('DeliveryChoice', () => {
 		});
 		expect(body.match(/type="radio"/g)).toHaveLength(2);
 		expect(body).toContain('<fieldset class="oc-choices"');
-		expect(body).toContain('<legend class="sr-only">Choose one</legend>');
+		// Named by the visible heading, not a hidden "Choose one" legend.
+		expect(body).toMatch(/<fieldset class="oc-choices"[^>]*aria-labelledby="choice-h"/);
+		expect(body).not.toContain('Choose one</legend>');
 		const t = text(body);
 		expect(t.indexOf('Your last choice')).toBeLessThan(t.indexOf('Deliver it again'));
 		expect(t).toContain('Confirm my choice');

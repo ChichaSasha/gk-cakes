@@ -41,9 +41,9 @@
 	import {
 		choiceCard,
 		choiceOutcomeSince,
+		deliveryNote,
 		deliveryRows,
 		lateOutcomeSince,
-		LAPSED,
 		recoveryProblemFor,
 		startDeliveryPayment,
 		withRecovery,
@@ -79,6 +79,13 @@
 	let unavailable = $state('');
 	/** A refusal of this page's own action (kept until the next action). */
 	let actionProblem = $state('');
+	/**
+	 * An outcome of this page's own action that the order doesn't show by
+	 * itself (not an error): kept until the next action or a successful read.
+	 */
+	let actionNote = $state('');
+	/** This page asked for a delivery payment and is still checking its result. */
+	let checkingPayment = $state(false);
 	/** A failed read of the order (cleared by the next successful read). */
 	let loadProblem = $state('');
 	/**
@@ -160,7 +167,7 @@
 				: choiceOutcomeSince(order, kind, baseline);
 		if (!outcome) return;
 		sent = null;
-		if (outcome === 'lapsed') actionProblem = LAPSED;
+		// A lapse is said once, by the order's own line (state 10, waiting).
 		void focusAfter(outcome === 'refused' && kind !== 'late' ? 'choice-refused' : 'status-h');
 	});
 
@@ -224,6 +231,9 @@
 			if (!active) return;
 			order = o;
 			loadProblem = '';
+			// The order now says where the delivery payment is (the checking
+			// view polls by itself).
+			checkingPayment = false;
 		} catch (e) {
 			if (!active) return;
 			if (e instanceof ApiError && (e.status === 404 || e.status === 401)) {
@@ -242,7 +252,14 @@
 		clearTimeout(timer);
 		if (!active || !order) return;
 		const v = fullView(order);
-		if (!v.poll && !changePoll(order) && !cancelSent && !awaitingMove && !sent) {
+		if (
+			!v.poll &&
+			!changePoll(order) &&
+			!cancelSent &&
+			!awaitingMove &&
+			!sent &&
+			!checkingPayment
+		) {
 			attempt = 0;
 			pollStarted = 0;
 			return;
@@ -307,9 +324,16 @@
 		await focusAfter('status-h');
 	}
 
-	async function commandRefused(message: string, reload: boolean) {
-		actionProblem = message;
+	/**
+	 * A refused answer (nothing changed). outcome: the order itself says what
+	 * happened (an offer that lapsed): no error, and a status note only when
+	 * the order read again doesn't say it.
+	 */
+	async function commandRefused(message: string, reload: boolean, outcome = false) {
+		actionNote = '';
+		actionProblem = outcome ? '' : message;
 		if (reload) await refresh();
+		if (outcome && !view?.lines.includes(message)) actionNote = message;
 		await focusAfter('status-h');
 	}
 
@@ -323,6 +347,7 @@
 			return;
 		}
 		actionProblem = '';
+		actionNote = '';
 		handoff = null;
 		if (view.action === 'open_payment' && isPaymentPageUrl(view.checkoutUrl)) {
 			busy = true;
@@ -331,6 +356,7 @@
 			return;
 		}
 		busy = true;
+		const action = view.action;
 		try {
 			if (view.action === 'start_payment') {
 				busyText = 'Opening secure payment…';
@@ -346,6 +372,9 @@
 					window.location.assign(url);
 					return;
 				}
+				// Asked for, but no payment page yet (or the order couldn't be
+				// read): keep checking; never "nothing has changed".
+				checkingPayment = true;
 			} else if (view.action === 'confirm_free') {
 				busyText = 'Confirming your order…';
 				await api.confirmFree(
@@ -367,7 +396,12 @@
 		}
 		busy = false;
 		busyText = '';
-		void refresh();
+		await refresh();
+		// A refused or unfinished delivery payment: the order read again (for
+		// example a new quote) is shown with the reason; the heading takes focus.
+		if (action === 'pay_delivery' && (actionProblem || checkingPayment)) {
+			await focusAfter('status-h');
+		}
 	}
 </script>
 
@@ -413,7 +447,7 @@
 							if (a === 'decline') cancelledMinor = view?.answer?.declineMinor;
 							void commandSent('late', b);
 						}}
-						onproblem={(m, r) => void commandRefused(m, r)}
+						onproblem={(m, r, o) => void commandRefused(m, r, o)}
 					/>
 				{/if}
 				{#if handoff}
@@ -424,6 +458,15 @@
 				{/if}
 				{#if loadProblem}
 					<p class="co-errors" role="alert">{loadProblem}</p>
+				{/if}
+				{#if actionNote}
+					<p class="notice" role="status">{actionNote}</p>
+				{/if}
+				{#if checkingPayment && loadProblem}
+					<p class="notice" role="status">
+						We’re checking your delivery payment. Please don’t pay again: this page updates by
+						itself.
+					</p>
 				{/if}
 				{#if view.action !== 'none' || pollStopped}
 					<div class="order-actions">
@@ -490,7 +533,7 @@
 					onclose={(p) => void closeCancel(p)}
 					oncancelled={(amount) => void cancelled(amount)}
 				/>
-			{:else if who && card?.kind !== 'delivery' && (change !== 'none' || canCancel || cancelContact)}
+			{:else if who && !card && (change !== 'none' || canCancel || cancelContact)}
 				<section class="co-card" aria-labelledby="change-h">
 					{#if change === 'move' || change === 'moving'}
 						<h2 class="co-h" id="change-h">Change your time</h2>
@@ -611,6 +654,7 @@
 						<span>{row.label}</span><span>{row.amount}</span>
 					</div>
 				{/each}
+				{#if deliveryNote(order)}<p class="small">{deliveryNote(order)}</p>{/if}
 				{#if refundSummary}
 					<div class="totals">
 						<span>Refund due</span><span>{refundSummary.due}</span>

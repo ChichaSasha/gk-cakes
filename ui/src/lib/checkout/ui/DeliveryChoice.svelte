@@ -102,9 +102,9 @@
 		class="oc-choices"
 		id="choice-options"
 		tabindex="-1"
+		aria-labelledby="choice-h"
 		aria-describedby={error?.field === 'choice' ? 'choice-error' : undefined}
 	>
-		<legend class="sr-only">Choose one</legend>
 		{#each card.options as o (o.value)}
 			<label class="mode-card">
 				<input type="radio" name="delivery-choice" value={o.value} bind:group={choice} />
