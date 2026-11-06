@@ -366,8 +366,41 @@ navigation (`src/lib/account/ui/AccountShell.svelte`, styles in
   verified email address"; **Emails we send** has the r02b wording (no
   marketing). The name hint about Google and the checkout prefill waits for
   those features.
-- **Not built yet:** changing the sign-in email (needs GK-021 rules),
-  privacy and deleting the account (next slices); the email-link claim
+- **Privacy & your data** (`/account/privacy`, states 48 and 57–59): the
+  r02b retention table (caption, row headers, stacked on narrow screens;
+  K09 and the owner's GK-005 rules, payment records "being confirmed") and
+  "No analytics run on account pages". **Sign out everywhere** asks first,
+  then calls the provider's global sign-out from the page (this device is
+  always signed out; other devices "usually within an hour", never
+  instantly) and shows the built partial wording when the provider can't be
+  reached. **Clear this device** removes the favourites (localStorage), the
+  bag (this tab) and the deletion marker (`src/lib/account/privacy.ts`
+  `clearDevice`); never the session or a guest order's access.
+- **Delete your account** (`/account/delete`, states 50–56): the API's
+  preview (`POST /me/deletion-preview`) decides the step
+  (`deletionStep`): a staff account can't be deleted here; unsettled money
+  blocks (each order with the sketch's reason, Delete disabled); confirmed
+  upcoming orders warn with an extra tick; otherwise the review (what is
+  deleted and kept, "can't be undone" tick; `aria-invalid`, focus on the
+  first missing tick). Then a fresh sign-in by email link
+  (`signInWithOtp` to the signed-in address, `shouldCreateUser: false`,
+  return path `/account`) and a marker in localStorage holding only its
+  expiry and a SHA-256 of the account's subject (30 minutes, as long as the
+  link; the link usually opens in a new tab). It counts only for that
+  account, and the account pages' Sign out, Sign out everywhere and an ended
+  session remove it, so someone
+  else signing in on this browser never skips the review. Back on `/account` with the marker and a session signed in by email
+  link or Google within 10 minutes (the token's `amr`, as the API reads it),
+  a notice leads on to the final step, which asks for a new preview,
+  requires the upcoming-order tick again if there is one, and deletes with
+  that preview's ID and hash and one Idempotency-Key per deletion (kept on
+  a lost answer). Refusals: fresh sign-in needed → the sign-in step again;
+  blocked or stale → checked again and shown; staff → its message.
+  Deleted: signed out here, the r02b wording, Clear this device, Back to
+  the shop. "Keep my account" forgets the marker.
+- **Not built yet:** changing the sign-in email (needs GK-021 rules);
+  Google for the fresh sign-in (Google sign-in isn't live) and the
+  inactivity emails (state 49, GK-031); the email-link claim
   ("Add this order to my account") belongs on the order page and waits for
   the emailed order link; the chef's claim queue (admin); the sign-in page
   changes of the sketch (account on first use, Google) belong to GK-021;

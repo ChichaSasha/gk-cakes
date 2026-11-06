@@ -9,13 +9,13 @@
 	import { goto } from '$app/navigation';
 	import { onMount, tick } from 'svelte';
 	import { ApiError } from '../../../lib/api';
-	import { signOut } from '../../../lib/auth';
 	import { claimOlderOrder, type AccountApi } from '../../../lib/account/client';
 	import {
 		accountProblem,
 		accountUnusable,
 		endedSession,
 		leaveWhenSignedOut,
+		signOutHere,
 		toSignIn
 	} from '../../../lib/account/guard';
 	import {
@@ -26,7 +26,6 @@
 		invalidField,
 		maybeArrived,
 		MONTHS,
-		NOTE_MAX,
 		REFERENCE_MAX,
 		refusal,
 		SEND_PROBLEM,
@@ -139,6 +138,8 @@
 		if (accountUnusable(e)) {
 			keys.forget();
 			blocked = accountProblem(e, 'your account');
+			// The form (and its focused button) is gone: focus the message.
+			await focus('old-blocked');
 			return;
 		}
 		const field = e.code === 'INVALID_INPUT' ? invalidField(e.message) : undefined;
@@ -178,7 +179,7 @@
 	}
 
 	async function leave() {
-		const reached = await signOut();
+		const reached = await signOutHere();
 		clear();
 		if (!reached) {
 			signOutProblem =
@@ -203,7 +204,9 @@
 	{#if signOutProblem}
 		<div class="notice error" role="alert"><div><p>{signOutProblem}</p></div></div>
 	{:else if blocked}
-		<div class="notice error" role="alert"><div><p>{blocked}</p></div></div>
+		<div class="notice error" role="alert" id="old-blocked" tabindex="-1">
+			<div><p>{blocked}</p></div>
+		</div>
 		<div class="acc-actions">
 			<a class="button" href="mailto:gk.cake.london@gmail.com">Contact us</a>
 			<button class="btn" type="button" onclick={leave}>Sign out</button>
@@ -258,7 +261,7 @@
 						{errors.reference ?? ''}
 					</p>
 
-					<fieldset class="field" aria-describedby={describedBy('channel')}>
+					<fieldset class="field" aria-describedby={describedBy('channel')} disabled={sending}>
 						<legend>How did you order?</legend>
 						<div class="acc-radios">
 							{#each CHANNELS as c (c.value)}
@@ -280,7 +283,7 @@
 						{errors.channel ?? ''}
 					</p>
 
-					<fieldset class="field">
+					<fieldset class="field" disabled={sending}>
 						<legend
 							>When was the cake for? <span class="quiet">(optional, roughly is fine)</span></legend
 						>
@@ -336,7 +339,6 @@
 							id="old-note"
 							name="note"
 							rows="4"
-							maxlength={NOTE_MAX}
 							readonly={sending}
 							aria-invalid={errors.note ? 'true' : undefined}
 							aria-describedby={describedBy('note')}

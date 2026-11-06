@@ -7,7 +7,7 @@ vi.mock('$app/navigation', () => ({ goto }));
 vi.mock('$app/paths', () => ({ resolve: (p: string) => p }));
 
 const { ApiError } = await import('../api');
-const { accountProblem, accountUnusable, endedSession } = await import('./guard');
+const { accountProblem, accountUnusable, endedSession, signOutHere } = await import('./guard');
 
 describe('account guard', () => {
 	beforeEach(() => {
@@ -43,5 +43,23 @@ describe('account guard', () => {
 		);
 		expect(accountUnusable(new ApiError(403, { code: 'ACCOUNT_DISABLED' }))).toBe(true);
 		expect(accountUnusable(new ApiError(503, {}))).toBe(false);
+	});
+});
+
+describe('account sign-out', () => {
+	it('forgets a started deletion, then signs out here', async () => {
+		const store = new Map<string, string>([['gk-account-deletion', `1:${'a'.repeat(64)}`]]);
+		vi.stubGlobal('window', {
+			localStorage: {
+				getItem: (k: string) => store.get(k) ?? null,
+				setItem: (k: string, v: string) => void store.set(k, v),
+				removeItem: (k: string) => void store.delete(k)
+			}
+		});
+		signOut.mockClear();
+		expect(await signOutHere()).toBe(true);
+		expect(store.has('gk-account-deletion')).toBe(false);
+		expect(signOut).toHaveBeenCalledTimes(1);
+		vi.unstubAllGlobals();
 	});
 });

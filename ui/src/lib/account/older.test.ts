@@ -127,7 +127,7 @@ describe('older order refusals', () => {
 	it('recognises request IDs', () => {
 		expect(isClaimId('c0ffee12-2222-4222-8222-222222222222')).toBe(true);
 		expect(isClaimId('not-an-id')).toBe(false);
-		expect(isClaimId('C0FFEE12-2222-4222-8222-222222222222')).toBe(false);
+		expect(isClaimId('C0FFEE12-2222-4222-8222-222222222222')).toBe(true); // capitals are accepted (the page lowercases)
 	});
 });
 
@@ -141,5 +141,17 @@ describe('one key per request', () => {
 		expect(keys.for(claimBody(form({ note: 'Another note' })))).toBe('k2');
 		keys.forget();
 		expect(keys.for({ claim: 'c', expected_version: 1 })).toBe('k3');
+	});
+});
+
+describe('slice 3 review follow-ups', () => {
+	it('an unrecognised 422 is not "try again", and request IDs in capitals still work', async () => {
+		const { ApiError } = await import('../api');
+		const { refusal, isClaimId } = await import('./older');
+		expect(refusal(new ApiError(422, { code: 'INVALID_INPUT', message: 'claim invalid' }))).toMatch(
+			/check the details/
+		);
+		expect(isClaimId('C0FFEE12-2222-4222-8222-222222222222')).toBe(true);
+		expect(isClaimId('not-an-id')).toBe(false);
 	});
 });

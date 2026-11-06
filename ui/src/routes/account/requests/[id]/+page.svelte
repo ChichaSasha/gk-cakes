@@ -10,7 +10,6 @@
 	import { goto } from '$app/navigation';
 	import { onMount, tick } from 'svelte';
 	import { ApiError } from '../../../../lib/api';
-	import { signOut } from '../../../../lib/auth';
 	import {
 		myClaim,
 		withdrawClaim,
@@ -23,6 +22,7 @@
 		accountUnusable,
 		endedSession,
 		leaveWhenSignedOut,
+		signOutHere,
 		toSignIn
 	} from '../../../../lib/account/guard';
 	import {
@@ -36,7 +36,8 @@
 	import { accountApi, signedInEmail } from '../../../../lib/account/session';
 	import AccountShell from '../../../../lib/account/ui/AccountShell.svelte';
 
-	const claimId = page.params.id ?? '';
+	// The API's IDs are lowercase; a link typed in capitals still works.
+	const claimId = (page.params.id ?? '').toLowerCase();
 	let api: AccountApi | null = null;
 	const keys = new SaveKey();
 	let email = $state<string>();
@@ -136,6 +137,8 @@
 				keys.forget();
 				claim = null;
 				blocked = accountProblem(e, 'your request');
+				// The Withdraw button (focused) is gone: focus the message.
+				await focus('rq-blocked');
 				return;
 			}
 			if (e instanceof ApiError && (e.code === 'STALE_VERSION' || e.code === 'CONFLICT')) {
@@ -162,7 +165,7 @@
 	}
 
 	async function leave() {
-		const reached = await signOut();
+		const reached = await signOutHere();
 		clear();
 		if (!reached) {
 			signOutProblem =
@@ -219,7 +222,9 @@
 	{#if signOutProblem}
 		<div class="notice error" role="alert"><div><p>{signOutProblem}</p></div></div>
 	{:else if blocked}
-		<div class="notice error" role="alert"><div><p>{blocked}</p></div></div>
+		<div class="notice error" role="alert" id="rq-blocked" tabindex="-1">
+			<div><p>{blocked}</p></div>
+		</div>
 		<div class="acc-actions">
 			<a class="button" href="mailto:gk.cake.london@gmail.com">Contact us</a>
 			<button class="btn" type="button" onclick={leave}>Sign out</button>

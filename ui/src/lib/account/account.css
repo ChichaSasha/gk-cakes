@@ -252,11 +252,13 @@
 }
 /* Focus targets stay clear of the sticky shop header. */
 .shop .acc-main [tabindex='-1'],
+.shop .acc-page .narrow [tabindex='-1'],
 .shop .field > input {
 	scroll-margin-top: 104px;
 }
 /* The root layout's functional [role='alert'] colour stays off these notices. */
-.shop .acc-main .notice:not(.error) {
+.shop .acc-main .notice:not(.error),
+.shop .acc-page .narrow .notice:not(.error) {
 	color: var(--ink);
 }
 .shop .field .small.quiet {
@@ -458,6 +460,110 @@
 .shop .acc-dl .acc-note {
 	white-space: pre-line;
 }
+/* Privacy & your data (sketch: .acc-table, .acc-dots, .acc-lists, .acc-check,
+   .acc-danger, .acc-danger-link; the plain page's .narrow). */
+.shop .acc-table {
+	width: 100%;
+	margin: 8px 0 14px;
+	border-collapse: collapse;
+	font-size: 14px;
+	line-height: 1.5;
+}
+.shop .acc-table th,
+.shop .acc-table td {
+	padding: 11px 10px 11px 0;
+	border-top: 1px solid #14141617;
+	text-align: left;
+	vertical-align: top;
+}
+.shop .acc-table thead th {
+	border-top: 0;
+	font: 500 11px/1 var(--mono);
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+.shop .acc-table tbody th {
+	width: 38%;
+	font-weight: 600;
+}
+.shop .acc-dots {
+	margin: 0 0 12px;
+	padding: 0;
+	list-style: none;
+	font-size: 14.5px;
+	line-height: 1.55;
+}
+.shop .acc-dots li {
+	position: relative;
+	padding: 0 0 8px 26px;
+}
+.shop .acc-dots li::before {
+	content: '';
+	position: absolute;
+	left: 8px;
+	top: 0.6em;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: currentColor;
+}
+.shop .notice .acc-dots {
+	margin: 8px 0;
+	font-size: inherit;
+}
+.shop .acc-lists {
+	gap: 28px;
+	margin: 6px 0 4px;
+}
+.shop .acc-lists .acc-h3 {
+	margin-top: 4px;
+}
+.shop .acc-check {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	margin: 16px 0 4px;
+	font: 500 14.5px/1.5 var(--sans);
+	cursor: pointer;
+}
+.shop .acc-check input {
+	flex: none;
+	width: 20px;
+	height: 20px;
+	margin: 2px 0 0;
+	accent-color: var(--ink);
+	scroll-margin-top: 104px;
+}
+.shop .acc-check + .field-error {
+	margin: 4px 0 8px 32px;
+}
+.shop button.btn.acc-danger:not(:disabled) {
+	color: #fff;
+	background: #8f1d1d;
+	box-shadow:
+		inset 0 0 0 1px #8f1d1d,
+		0 18px 34px -16px #8f1d1d85;
+}
+.shop button.btn.acc-danger:hover:not(:disabled) {
+	background: #6e1414;
+}
+.shop .button.acc-danger-link {
+	color: #8f1d1d;
+	box-shadow:
+		inset 0 0 0 1px #8f1d1d,
+		inset 0 1px 0 #fff,
+		0 8px 20px -12px #14141640;
+}
+.shop .acc-page .narrow .acc-actions {
+	margin-top: 22px;
+}
+.shop .acc-inline {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 12px;
+}
 @media (max-width: 1050px) {
 	.shop .acc-layout {
 		grid-template-columns: 1fr;
@@ -523,6 +629,26 @@
 		grid-template-columns: 1fr;
 		gap: 2px;
 	}
+	/* The retention table stacks: each row header above its text. */
+	.shop .acc-table,
+	.shop .acc-table tbody,
+	.shop .acc-table tr,
+	.shop .acc-table th,
+	.shop .acc-table td {
+		display: block;
+	}
+	.shop .acc-table thead {
+		display: none;
+	}
+	.shop .acc-table tbody th {
+		width: auto;
+		padding-bottom: 0;
+		border-top: 1px solid #14141617;
+	}
+	.shop .acc-table td {
+		padding-top: 4px;
+		border-top: 0;
+	}
 }
 @media (max-width: 380px) {
 	.shop .acc-order-side {
@@ -538,6 +664,10 @@
 	.shop .field > :is(input, textarea, select),
 	.shop .acc-changed {
 		border: 1px solid CanvasText;
+	}
+	.shop button.btn.acc-danger:not(:disabled),
+	.shop .button.acc-danger-link {
+		border: 2px solid CanvasText;
 	}
 	.shop .field > :is(input, textarea, select)[aria-invalid='true'] {
 		border: 3px solid Highlight;
