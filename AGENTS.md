@@ -69,6 +69,14 @@ permission from a planning request or from auto-merge configuration.
   Do not register services, publish tickets or change GitHub settings just because
   a skill describes those future steps.
 
+## Implementation loop
+
+For implementation slices follow [the implementation loop](docs/planning/DEV-LOOP.md):
+`scripts/dev/` runs the local checks, browser QA against staging, review worktrees,
+the merge steps and Trello comments; fresh reviewers use
+[gk-code-review](skills/gk-code-review/SKILL.md). It does not change the delivery
+contract or grant release, settings or production access.
+
 ## Owner evidence consumption
 
 Before designing or implementing behavior affected by BO-GK-001/003/005, load

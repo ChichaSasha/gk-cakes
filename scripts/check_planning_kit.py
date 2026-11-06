@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 
-SKILLS = ("gk-plan", "gk-feature", "gk-plan-review")
+SKILLS = ("gk-plan", "gk-feature", "gk-plan-review", "gk-code-review")
 
 
 def check_document(path):

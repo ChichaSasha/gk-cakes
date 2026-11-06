@@ -56,6 +56,9 @@ not grant release creation or arbitrary production access.
 5. Run CI again on the resulting main commit. A red main commit blocks release,
    even if its PR was green. Auto-merge does not equal release acceptance.
 
+The working routine for these steps, with the scripts that run them, is the
+[implementation loop](DEV-LOOP.md).
+
 GitHub's [native auto-merge](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/automatically-merging-a-pull-request)
 waits on the repository's required checks/reviews. If a merge queue is chosen,
 the required workflows must also support its `merge_group` event.
