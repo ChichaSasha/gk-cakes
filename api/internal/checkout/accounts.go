@@ -155,7 +155,7 @@ func (s *Store) MyOrders(ctx context.Context, subject, cursor string, limit int)
 		return MyOrderPage{}, err
 	}
 	var raw []byte
-	if err := s.DB.QueryRow(ctx, `SELECT business.account_order_page($1::uuid, $2, $3::uuid, $4)::text`,
+	if err := s.DB.QueryRow(ctx, `SELECT business.account_order_summaries($1::uuid, $2, $3::uuid, $4)::text`,
 		subject, at, id, n).Scan(&raw); err != nil {
 		return MyOrderPage{}, accountError("my orders", err)
 	}
@@ -163,7 +163,22 @@ func (s *Store) MyOrders(ctx context.Context, subject, cursor string, limit int)
 	if err != nil {
 		return MyOrderPage{}, err
 	}
-	return MyOrderPage{Orders: items, NextCursor: next}, nil
+	// Each row's internal order_blocks become delivery_state, needs_answer
+	// and attention at the store's clock (never sent).
+	var rows []json.RawMessage
+	if err := json.Unmarshal(items, &rows); err != nil {
+		return MyOrderPage{}, err
+	}
+	for i, row := range rows {
+		if rows[i], err = s.withSummaryAttention(row); err != nil {
+			return MyOrderPage{}, err
+		}
+	}
+	out, err := json.Marshal(rows)
+	if err != nil {
+		return MyOrderPage{}, err
+	}
+	return MyOrderPage{Orders: out, NextCursor: next}, nil
 }
 
 // ------------------------------------------------------------------ profile
