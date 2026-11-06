@@ -577,12 +577,54 @@ words (`refusalOf`). Focus moves to the step's status line (a live region) or
 error after each step; Escape (from any control in it) closes a confirm step
 or the problem form and returns focus to its button.
 
-Not on this page yet (next slices): cancelling and refunds, late-payment
-offers and decisions, delivery quotes and waivers, "can't deliver" and failed
-deliveries, time/date changes, recovery tools, batches with Start making.
+Not on this page yet (next slices): cancelling and refunds, recovery tools,
+batches with Start making (slice 2 below builds the date and delivery
+decisions).
 The API gives no allergens, cake image, emails sent, payment-link deadlines,
 staff names or delivery address yet, so those parts of the sketch are left
 out.
+
+### Order page decisions (GK-031 slice 2)
+
+The chef's date and delivery decisions, in the r03b2 visual language
+(`src/lib/admin/order-decisions.ts`, panels in `src/lib/admin/ui/`, styles
+`order-decisions.css`); the customer side of each is GK-017 r02b (states 10,
+14, 15, 19). Chef only (fulfilment and technical support read the state, with
+the API's redaction); every control is shown only when the README allows it
+at the page's clock, and the API still decides:
+
+- **Paid late** (0034, 0022): "Offer their requested time" (before the
+  original handover) or "Offer another date…" (a date and one of its
+  published times; the customer accepts or declines on the order page), the
+  open offer, the customer's answer or lapse, and every offer in the Record.
+  "Decide without an offer…" keeps r03b2's paid-late form on the chef's
+  `/late-payment` route: make it (a feasibility tick, how/when/evidence of
+  the customer's agreement, "exactly" tick; "Still needed: …" until complete)
+  or return everything (202, polled).
+- **GK delivery** (0035–0037): send or replace a quote (pounds typed, parsed
+  to whole pence as text, from £100; optional staff note; pay-by shown);
+  waive it for a free-delivery code (measured distance in miles or km, sent
+  as whole metres, and how it was measured; the page can't see the code, the
+  API refuses otherwise); "We can't deliver this…" (confirm with the
+  consequences, optional reason); "Delivery failed…" while it's on its way
+  (our side, or nobody available from the delivery time's start: the no-show,
+  202, polled); the Q5 and failure choices and the quote history. Banners for
+  an unmatched or stuck delivery payment and a needed redelivery time.
+- **Move time / Change date…** (0031): a date and published time, the chef's
+  feasibility note and the customer's recorded agreement (the "exactly" tick
+  clears when the time changes); 202, polled until moved or refused; 200
+  "unchanged" said plainly. After a secured redelivery choice it is "Set the
+  new delivery time…".
+
+Times come from the public `GET /api/v1/schedule?purpose=new_purchase` for
+the order's mode and cake count (there is no staff schedule-choices read):
+starts still ahead, never a closed date or the order's own time; online
+fullness is a hint. Keys are `chef-<decision>-<order>-v<version>-<nonce>`,
+renewed when anything sent changes; refusals are plain words
+(`decisionRefusal`); 409 `STALE_VERSION` reloads with the banner and keeps
+the form. Status and errors are live regions in the card the decision
+belongs to, and focus moves to them; Escape closes a form and returns focus to
+its button.
 
 ## Chef workspace: Account requests (GK-018 r04d-claims)
 

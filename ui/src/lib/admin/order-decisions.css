@@ -121,3 +121,20 @@
 		outline: 2px solid Highlight;
 	}
 }
+/* The root layout styles every `form input` as a full-width block (and
+   `form label` with a bottom margin); radios here sit beside their words. */
+.chef .order-page .slot-opt input,
+.chef .order-page .choice input {
+	display: inline-block;
+	width: auto;
+	padding: 0;
+	flex: none;
+}
+.chef .order-page .choice label,
+.chef .order-page .slot-opt,
+.chef .order-page .check {
+	margin-bottom: 0;
+}
+.chef .order-page .actions + p {
+	margin-top: 8px;
+}

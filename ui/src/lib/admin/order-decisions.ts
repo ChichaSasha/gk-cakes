@@ -476,7 +476,7 @@ export function latePaymentStatus(o: DecisionOrder, view: StaffView, now: Date):
 	} else {
 		out.push(
 			view === 'chef'
-				? 'No offer is open. The customer’s order page says the chef’s answer appears there; silence never counts as agreement.'
+				? 'No offer is open. The customer’s order page says your answer appears there.'
 				: 'No offer is open yet.'
 		);
 	}
@@ -607,11 +607,9 @@ export function deliveryStatus(o: DecisionOrder, view: StaffView): string[] {
 				`Quote ${amount}· delivery payment being checked. The customer sees “Still checking delivery payment; do not pay again”.`
 			];
 		case 'paid':
-			return [
-				`Delivery ${chef && d.paid_minor != null ? `${money(o, d.paid_minor)} ` : ''}paid separately.`
-			];
 		case 'waived':
-			return [`Free (free-delivery code) · waived${d.waived ? ` ${when(d.waived.at)}` : ''}.`];
+			// The Delivery fact above already says it.
+			return [];
 		case 'pay_by_passed':
 			return [
 				`Quote ${amount}wasn’t paid by ${q?.pay_by ? when(q.pay_by) : 'its pay-by time'}. GK won’t deliver unpaid: the customer can choose collection, their own courier or a full refund on their order page (no deadline).`

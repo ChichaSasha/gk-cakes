@@ -137,7 +137,16 @@
 	);
 	const status = $derived(order && view ? detailStatus(order, view) : null);
 	const notices = $derived(order && view ? banners(order, view, now) : []);
-	const late = $derived(order && view ? latePaymentCard(order, view) : null);
+	// After the chef's paid-late decision the order leaves paid late; the card
+	// stays (without its explanation) while it shows that decision's outcome.
+	const late = $derived(
+		order && view
+			? (latePaymentCard(order, view) ??
+					(area === 'late' && (decisionStatus || decisionError || decisionPending)
+						? { title: 'Paid late · decided', text: [] }
+						: null))
+			: null
+	);
 	const progress = $derived(order && view ? progressSteps(order, view, now) : []);
 	const history = $derived(
 		order

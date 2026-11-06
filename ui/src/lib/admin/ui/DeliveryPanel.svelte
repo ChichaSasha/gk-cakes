@@ -232,6 +232,7 @@
 						autocomplete="off"
 						placeholder="e.g. 120 or 120.50"
 						bind:value={price}
+						oninput={() => (priceError = '')}
 						aria-invalid={priceError ? 'true' : undefined}
 						aria-describedby="quote-help{priceError ? ' quote-price-error' : ''}"
 					/>
@@ -243,6 +244,7 @@
 						autocomplete="off"
 						maxlength="500"
 						bind:value={note}
+						oninput={() => (noteError = '')}
 						aria-invalid={noteError ? 'true' : undefined}
 						aria-describedby={noteError ? 'quote-note-error' : undefined}
 					/>
@@ -297,6 +299,7 @@
 							autocomplete="off"
 							placeholder="e.g. 5.1"
 							bind:value={distance}
+							oninput={() => (waiverError = '')}
 							aria-invalid={waiverError && metres === null ? 'true' : undefined}
 							aria-describedby="waiver-metres"
 						/>
@@ -317,6 +320,7 @@
 						maxlength="200"
 						placeholder="e.g. Google Maps driving route"
 						bind:value={source}
+						oninput={() => (waiverError = '')}
 					/>
 				</label>
 			</div>
@@ -366,8 +370,13 @@
 				<fieldset class="choice">
 					<legend id="fail-legend" tabindex="-1">What happened?</legend>
 					<label
-						><input type="radio" name="cause" value="our_side" bind:group={cause} /> It failed on our
-						side (for example a breakdown, or we couldn’t reach the address)</label
+						><input
+							type="radio"
+							name="cause"
+							value="our_side"
+							bind:group={cause}
+							onchange={() => (failError = '')}
+						/> It failed on our side (for example a breakdown, or we couldn’t reach the address)</label
 					>
 					<label class:is-off={!failure.nobody}
 						><input
@@ -375,6 +384,7 @@
 							name="cause"
 							value="nobody_available"
 							bind:group={cause}
+							onchange={() => (failError = '')}
 							disabled={!failure.nobody}
 						/>
 						Nobody was available to take it{failure.nobodyFrom
@@ -391,6 +401,7 @@
 						autocomplete="off"
 						maxlength="500"
 						bind:value={failReason}
+						oninput={() => (failError = '')}
 						aria-invalid={failError && cause ? 'true' : undefined}
 					/>
 				</label>
@@ -450,6 +461,7 @@
 						autocomplete="off"
 						maxlength="500"
 						bind:value={npReason}
+						oninput={() => (npError = '')}
 						aria-invalid={npError ? 'true' : undefined}
 					/>
 				</label>
