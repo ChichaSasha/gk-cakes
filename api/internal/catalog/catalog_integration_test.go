@@ -21,8 +21,6 @@ import (
 	"github.com/ChichaSasha/gk-cakes/api/internal/dbtest"
 	"github.com/ChichaSasha/gk-cakes/api/internal/httpapi"
 	"github.com/ChichaSasha/gk-cakes/api/internal/identity"
-	"github.com/ChichaSasha/gk-cakes/api/internal/migrate"
-	"github.com/ChichaSasha/gk-cakes/api/migrations"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -62,10 +60,7 @@ type harness struct {
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	ctx := context.Background()
-	db := dbtest.New(t)
-	if _, err := migrate.Run(ctx, db.MigratorConn(t), migrations.FS); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.NewMigrated(t, "")
 	pool, err := pgxpool.New(ctx, db.LoginURL(t, "gk_api"))
 	if err != nil {
 		t.Fatal(err)

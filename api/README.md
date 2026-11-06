@@ -35,6 +35,25 @@ export GK_TEST_DATABASE_URL='postgres://postgres:gk_disposable@127.0.0.1:55432/p
 
 `-p 1` keeps packages from creating cluster-wide roles concurrently.
 
+**Speed.** `dbtest.NewMigrated(t, target)` gives a test a database with the
+migrations applied up to `target` (all when `""`). Each test binary migrates a
+template database once per target and copies it for every test (`CREATE DATABASE
+... TEMPLATE`), instead of migrating each time. Use `dbtest.New` and the `migrate`
+package only for tests about migrating itself: ordering, backfills, upgrades.
+A binary keeps its templates (`gk_tpl_<unix time>_<target>_<random>`, not
+connectable) until a later run drops those older than two hours. To clear them
+by hand, only while no integration run uses this cluster (a running binary
+copies from its templates):
+
+```sh
+docker exec gk-pg psql -U postgres -qAt -c "SELECT format('ALTER DATABASE %I IS_TEMPLATE false; DROP DATABASE %I;', datname, datname) FROM pg_database WHERE datname LIKE 'gk\_tpl\_%'" | docker exec -i gk-pg psql -U postgres -q
+```
+
+In CI the `api-postgres` check gates parallel shards, each with its own
+PostgreSQL: every package except `internal/checkout`, and three shards of the
+checkout tests. Run one shard locally the same way:
+`../.github/scripts/integration-shard.sh rest` or `../.github/scripts/integration-shard.sh checkout 1 3`.
+
 ## Configuration
 
 Every process validates its environment at start and exits with status 2 on any
@@ -121,8 +140,8 @@ are provisioned per environment outside Git and granted exactly one group:
 | Group       | Purpose                       | Privileges                                                  |
 | ----------- | ----------------------------- | ----------------------------------------------------------- |
 | `gk_owner`  | owns business objects         | never granted to runtime; migration credential may `SET ROLE` |
-| `gk_api`    | API runtime                   | schema `USAGE`; `EXECUTE` on `email_event_record` (webhook evidence), `identity_resolve` and `identity_staff_list` (identity), the catalog, schedule, checkout and order gateway functions, `payment_initiate` and `payment_event_record` (payments), and `notice_settings_record` (order notices); the exact list is tested |
-| `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions (`job_claim`, `job_heartbeat`, `job_complete`, `job_release`, `job_fail`, `job_attention`), the lease-fenced notification gateway (`notification_dispatch_begin`, `notification_attempt_record`, `notification_recovery_*`, `notification_dispatch_suppress`) and the lease-fenced order-command gateway (`order_command_begin`, `order_command_reserve`, `order_command_prepared`, `order_command_apply`, `order_command_secured`, `order_command_frozen`) and the lease-fenced payment gateway (`payment_job_begin`, `payment_dispatch_admit`, `payment_attempt_record`, `payment_reconcile_record`, `payment_recovery_*`, `payment_expire_admit`, `payment_expire_record`, `payment_under_reconciliation`) and the order hold review (`order_hold_review_run`); the exact list is tested |
+| `gk_api`    | API runtime                   | schema `USAGE`; `EXECUTE` on `email_event_record` (webhook evidence), `identity_resolve`, `identity_resolve_account` and `identity_staff_list` (identity), the customer account functions (migration 0033), the catalog, schedule, checkout and order gateway functions, `payment_initiate` and `payment_event_record` (payments), `notice_settings_record` (order notices), the late-payment agreement (`order_late_payment_offer`, `order_late_payment_answer`, migration 0034) and GK delivery (`order_delivery_quote`, `order_delivery_waiver`, `delivery_payment_initiate`, migration 0035); the exact list is tested |
+| `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions (`job_claim`, `job_heartbeat`, `job_complete`, `job_release`, `job_fail`, `job_attention`), the lease-fenced notification gateway (`notification_dispatch_begin`, `notification_attempt_record`, `notification_recovery_*`, `notification_dispatch_suppress`) and the lease-fenced order-command gateway (`order_command_begin`, `order_command_reserve`, `order_command_prepared`, `order_command_apply`, `order_command_secured`, `order_command_frozen`) and the lease-fenced payment gateway (`payment_job_begin`, `payment_dispatch_admit`, `payment_dispatch_kind` (migration 0035), `payment_attempt_record`, `payment_reconcile_record`, `payment_recovery_*`, `payment_expire_admit`, `payment_expire_record`, `payment_under_reconciliation`) and the order hold review (`order_hold_review_run`), and the inactivity retention steps (`account_retention_due`, `account_retention_notice_record`, migration 0033); the exact list is tested |
 | `gk_backup` | backup reader                 | `SELECT` on business tables and future sequences, and on `gk_meta.schema_migration` (migration 0008) |
 
 The migration credential needs `CREATEROLE` and `CREATE` on the database.
@@ -658,9 +677,14 @@ variable (API, worker, dispatcher and settings).
 The copy is the agent's draft for Creator review; changing it needs a new
 template revision (a new migration replacing `order_notice_render`). Gaps:
 guests have no emailed access to their order page until account claims exist;
-GK delivery wording is a placeholder until GK delivery agreements exist; date
-moves (K06) are not reflected (the original handover is shown); the chef's
-address email (about two days before collection) is not automated here.
+GK delivery wording is a placeholder until GK delivery agreements exist; since
+0031 every notice renders the order's current appointment
+(`order_handover_at`), so a secured move, chef amendment or accepted
+late-payment date is what later emails show (moves get their own
+`pickup_moved` / `appointment_changed` notice); the chef's
+address email (about two days before collection) is not automated here; nor
+is a "the chef offered a date" email for a late payment (GK-017 r02b Q6, see
+"Late-payment agreement on the order page").
 
 ## Database backups (K11, GK-034)
 
@@ -874,7 +898,8 @@ authorization.
 
 **Accounts and capabilities** (migration `0007_identity.sql`): the first
 authenticated request of a subject creates its local account
-(`identity_resolve`, audited `account.created`). Staff capabilities are granted
+(`identity_resolve`; since migration 0033 the API calls
+`identity_resolve_account`, see Customer accounts; audited `account.created`). Staff capabilities are granted
 locally: `chef` (manages the business, lists staff), `fulfillment` (prepare,
 ready, dispatch, handover) and `technical_support` (bounded audited access);
 future roles grant nothing. A disabled account can do nothing (403
@@ -1056,6 +1081,7 @@ is seeded: until the chef publishes a schedule version, every date is
 | --- | --- | --- |
 | `GET /api/v1/availability?from&to&quantity` | anyone | at most 31 dates; `{timezone, as_of, schedule_version, days[{date, status, remaining_places}]}`; status `open`, `full`, `lead_time`, `closed`, `outside_horizon` or `no_times` |
 | `GET /api/v1/schedule?date&fulfillment_mode&purpose=new_purchase&quantity` | anyone | `slots[{id, starts_at, ends_at, availability, reason_code}]`: `available`, `requestable` (GK delivery: subject to chef confirmation) or `unavailable` (`lead_time`, `full`, `closed`, `outside_horizon`); stable slot IDs per version; no per-slot cap; no hold |
+| `GET /api/v1/schedule?purpose=pickup_move&order_id` | the order's owner (bearer) or guest (`X-Order-Capability` with `move_pickup`) | the order's same-day move choices; see "Fulfillment and moves" |
 | `GET /api/v1/ready-cakes` | anyone | `{cakes: [...]}`: offered lots with stock left |
 | `GET /api/v1/admin/schedule` | chef, fulfilment, technical support | the current version; 404 before the first one |
 | `GET /api/v1/admin/days?from&to` | chef, fulfilment, technical support | `{timezone, days[...]}`: limit, override, version, committed, tentative, chef extras, workload, remaining, `online_closed` |
@@ -1225,7 +1251,8 @@ and the API answers 202
 **2. The Checkout Session request** is built once, at the first dispatch, and
 never rebuilt (stored in the payload, form-encoded, keys sorted): `mode=payment`,
 one line item (`price_data[currency]=gbp`, `price_data[unit_amount]` = the
-order total, `price_data[product_data][name]=GK Cakes order`, `quantity=1`),
+order total, `price_data[product_data][name]=GK Cakes order` (`GK Cakes
+delivery` for a delivery collection, migration 0035), `quantity=1`),
 `client_reference_id` = the order, `metadata[order_id|collection_id|environment]`
 and the same three under `payment_intent_data[metadata]`, `success_url` and
 `cancel_url` = `<UI_ORIGIN>/orders/<id>?payment=returned` (the return never
@@ -1672,8 +1699,8 @@ Not yet:
   is GK-026 B1 part 2); confirmation emails;
 - payment-method configuration snapshot and drift detection, Q4 method
   qualification, Adaptive Pricing and presentment-currency evidence (any
-  non-GBP session, intent or charge is a mismatch for now), delivery
-  collections from checkout (the kind exists since 0022);
+  non-GBP session, intent or charge is a mismatch for now) (delivery
+  collections: done in 0035, "GK delivery quote, payment and waiver");
 - manager reconciliation tooling for `unknown` collections and dispatches in
   `reconcile`;
 - journal readiness reaching the API: initiation is refused during a restore
@@ -1767,7 +1794,8 @@ Migration `0022_production_late_payment.sql`.
   silence never counts; `agreed_at` not before the payment, else 422) and
   is refused 409 `HONOUR_TOO_LATE` once the original handover is not after
   the receipt instant. It commits `confirmed` when the order still has its
-  original slot and committed holds (otherwise refused `holds_changed`); the
+  original slot and committed holds: its own day's place committed and any
+  row of another day released (since 0034; otherwise refused `holds_changed`); the
   production timer then follows from `paid_at` + 48 h. `full_return` cancels
   with `cancel_reason` `late_payment_returned` and a goal of 100% of the
   actual paid aggregate, never 50%, and reads like a cancellation (the
@@ -1821,6 +1849,143 @@ unchanged goal); an HTTP route for the delivery failure and delivery
 collections from checkout; returning a sold ready cake to stock on
 cancellation; staff order reads; cancellation, production and refund emails;
 the UI (B2/B3).
+
+### Late-payment agreement on the order page (GK-017 r02b Q6)
+
+Migration `0034_late_payment_agreement.sql` (expand only), store
+`internal/checkout/late_payment.go`. Creator decision Q6 (2026-11-05, design
+`docs/design/sessions/checkout-recovery/gk-017-r02/session.md` state 10):
+"Paid late: the customer agrees or declines on the order page; the buttons
+record explicit agreement as evidence. The chef may propose a different date,
+only as an offer the customer must accept." Contracts K04 Q2 (a requested
+date, not a promise; silence is never agreement), K05 (anchors), K08, K09,
+K11.
+
+| Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
+| --- | --- | --- |
+| `POST /api/v1/admin/orders/{id}/late-payment/offer` | chef | `{expected_version, kind: "requested"}` or `{expected_version, kind: "other", target_date, target_slot_id}` (the chef appointment change's slot input) with Idempotency-Key; 200 `{order_id, offer_id}` (`Idempotent-Replayed: true` for the same key, also during a restore freeze) |
+| `POST /api/v1/orders/{id}/late-payment/answer` | the owner (bearer) or the guest (`X-Order-Capability` with `cancel`, the cancellation's access) | `{expected_version, offer_id, answer: "accept" \| "decline"}` with Idempotency-Key; 202 `{order_id, operation_id, state: "answer_pending", poll_after_seconds}` |
+
+- **Offer** (`business.order_late_payment_offer`). Only on a secured
+  `paid_awaiting_agreement` order with no unresolved K11 command (a pending
+  decision, answer or cancellation is 409 `CONFLICT`; any other lifecycle
+  too). `requested` offers the original appointment and is 409
+  `HONOUR_TOO_LATE` once the original handover is not after the receipt (the
+  honour rule). `other` offers a published start of the current schedule on
+  a non-closed day, after the receipt, within the ready cakes' shelf life (the
+  appointment change's validation), that can take the order: on another day
+  the other orders' committed standard cakes plus the order's must fit the
+  day's limit (an acceptance never creates a `chef_extra` place); otherwise
+  409 `SLOT_UNAVAILABLE`. The requested time itself as `other` is 422
+  (`target_slot_id`). The chef records feasibility, so the 192-hour lead time
+  does not apply. An offer holds no capacity and changes no commitment or
+  money: not a K11 command, but versioned (order version + 1), idempotent
+  (K00 command receipt), audited (`order.late_payment_offered`,
+  `order.late_payment_offer_withdrawn`: offer IDs and kind only) and 503
+  during a restore freeze. A newer offer withdraws the open one; offers
+  (`business.late_payment_offer`) and answers are immutable rows.
+- **Answer** (`business.order_late_payment_answer`). Only the current open
+  offer, else 409 `OFFER_NOT_CURRENT` (also while waiting: there is nothing
+  to answer, and a withdrawn, lapsed or answered offer cannot be taken up),
+  then 409 `STALE_VERSION`. The answer is the existing K11 order command
+  `late_payment` (prepared envelope before the commit, outcome envelope before
+  it is visible, one outcome, the same actor and key replay, another body is
+  `KEY_REUSED`, another answer while it is pending `CONFLICT`), with its
+  `late_payment_decision` row: `accept` = `honour` with agreement evidence
+  `{channel: "order_page", agreed_at: the receipt instant, evidence_ref: the
+  answer ID}`; `decline` = `full_return` (cancel_reason
+  `late_payment_returned`, goal 100% of the actual paid aggregate, source
+  `customer`; it reads like the chef's full return, `cancellation.requested_by`
+  `customer`). `order_page` is accepted only here; the chef's `/late-payment`
+  route keeps its channel list. The decision row's `recorded_by` (NOT NULL,
+  and a guest has no account) is the chef who made the offer, i.e. the
+  feasibility recorder; the real actor of an order-page answer, including a
+  decline, is the `order_command` (actor kind, account or guest capability)
+  and `late_payment_answer` (also a column comment in 0034). The chef route's
+  idempotent replay matches only staff `late_payment` commands, so a staff
+  member who owns the order never replays their own customer answer there. `business.late_payment_answer` keeps the
+  offer, answer, receipt instant and the access used (account ID or guest
+  capability ID; never tokens or personal data). Accepting a `requested` offer
+  after the original handover is 409 `HONOUR_TOO_LATE` and records nothing
+  (declining stays possible). A restore freeze refuses new answers (503; the
+  same key replays) and defers the commit, as for the pickup move.
+- **Another date.** Accepting an `other` offer re-checks the slot and place at
+  the receipt; if the slot can no longer take the order the offer lapses
+  (an answer row without a command, order version + 1, audit
+  `order.late_payment_offer_lapsed`) and the answer is 409 `SLOT_UNAVAILABLE`
+  (the replay too); nothing else changes and the chef must offer again. The
+  commit re-checks under the day locks (days by date, after the order) and
+  either moves the appointment and day place (the old day's allocation
+  released, the new day's committed `standard`, reusing a released row of
+  that day; on the same day the place is not touched) together with the honour
+  (`confirmed`), or refuses `slot_unavailable` (the offer lapses) /
+  `holds_changed` / `order_changed` with only the version changed. Until the
+  outcome is secured the order reads `confirmation_pending` on its requested
+  date (`order_visible_appointment`). The original `full_refund_deadline_at`
+  and the production anchor (`paid_at` + 48 h) never move.
+- **Read models.** `GET /orders/{id}` (and the chef's staff detail) adds
+  `late_payment` on a `paid_awaiting_agreement` order: `{state: "waiting" |
+  "offered" | "processing", offer: {id, kind, date, slot_id, start, end,
+  offered_at, accept_until, acceptable} | null, answer: {offer_id, answer,
+  received_at, state: "processing" | "lapsed" | "refused", reason} | null,
+  paid_minor, currency}`. `processing` means a protected command of the order
+  is unresolved: the customer's own answer (its offer is shown, not
+  acceptable) or the chef's `/late-payment` decision or another change (no
+  offer: nothing can be answered then, both buttons would be 409 `CONFLICT`).
+  `accept_until` is when accepting stops being possible (the original handover
+  for `requested`, the offered start for `other`); `acceptable` is computed by
+  the API at its clock (`offered` and now before `accept_until`); declining
+  has no such limit. `paid_minor` is the actual paid aggregate a decline
+  returns in full (server-computed, for "No, refund everything · £90").
+  `answer` is the latest offer's answer while it has not resolved the order;
+  and `agreed:
+  {at, kind, date, start, end, offer_id}` once an acceptance is secured
+  (null otherwise). Staff detail: `late_payment_offers` (every offer with its
+  state `open` | `withdrawn` | `processing` | `accepted` | `declined` |
+  `lapsed` | `refused` | `closed` and its answer, access `account` |
+  `guest_link`) for the chef and technical support; technical support also
+  gets `late_payment` and `agreed` (no money in either); fulfilment none.
+- **Notices.** No new template (wording needs Creator review): the confirmed
+  and cancelled notices fire once through `order_command_secured` as for the
+  chef's decision (the confirmation renders the agreed appointment).
+- **Tests:** `internal/checkout/late_payment_integration_test.go` (waiting,
+  chef only, versions, replays, withdrawal, superseded offer, access by
+  read-only capability and another customer, accept with evidence and
+  production anchor, agreed block, staff redaction, audit without personal
+  data; another date with the K11 journal-down and outcome-down crash points,
+  moved place, one notice; lapse at the answer and at the commit (schedule
+  change, full day); decline 100%; `HONOUR_TOO_LATE`; freeze; owner),
+  `internal/httpapi` `TestLatePaymentAgreementRoutes`, and the exact `gk_api`
+  allowlist in `internal/notifications`.
+
+Creator decisions to review (built as described, not confirmed):
+
+- **New schedule versions lapse open offers.** Slot IDs derive from the
+  schedule version (as for 0031 moves), so publishing a new schedule version
+  makes an open `other` offer unpublished: accepting it then lapses (409
+  `SLOT_UNAVAILABLE`) and the chef offers again.
+- **No feasibility note and no chef_extra on offers.** An `other` offer carries
+  no feasibility note (unlike the chef's appointment change) and must fit the
+  day's standard limit; it can never use a `chef_extra` place. Offering a full
+  day needs the chef to raise the day limit first (or use the appointment
+  change after confirmation).
+
+Follow-ups (not implemented):
+
+- **`GET /me/orders` summaries** do not carry `late_payment.state` yet (only the
+  order page does); a "the chef answered" badge in the account list needs it.
+
+- **"The chef offered a date" email** (and a reminder while an offer is open):
+  needs Creator-approved wording and a new template revision; today the
+  customer learns of an offer only on the order page (and the chef's own
+  contact).
+- **Open question 22** (session.md): an accepted other date keeps the original
+  full-refund deadline (K05 "moves never change it"), as built; if the Creator
+  wants the deadline to follow the new date that is a K05 change.
+- The UI (state 10 variants), and a staff screen for offers.
+- A lapsed offer is visible on the order page (`answer.state` `lapsed`) but
+  the chef is not alerted beyond the audit trail and the order staying in the
+  `paid_awaiting_agreement` attention flag.
 
 ## Chef refunds and recovery (K05, GK-026 B2)
 
@@ -2110,6 +2275,717 @@ provider is still unavailable, then needs another decision).
 
 Not yet: text search; staff screens (UI); per-order scopes for fulfillment
 beyond "ever confirmed"; delivery addresses (no delivery checkout yet).
+
+## Fulfillment and moves (K06, GK-031 B1)
+
+Migration `0031_pickup_moves.sql`. Part 1: the customer's same-day pickup
+move and the chef's agreed date/time amendment, both K11 order commands
+through the A3a machinery (prepared envelope before the commit, outcome
+envelope before the change is visible). Owner inputs (recorded hashes):
+BO-GK-001.move_time `7f8b0043…`, BO-GK-001.move_date `b0fe9fea…`,
+BO-GK-001.refund_follows_move `31d16f84…` (`docs/creator/GK-001/decisions.json`
+sha256 `6d3112d8…`), owner data contract "move"
+(`docs/design/owner-data-contract.md` sha256 `e7179297…`). Fulfilment
+transitions are part 2 (below).
+
+| Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
+| --- | --- | --- |
+| `POST /api/v1/orders/{id}/pickup` | the owner (bearer) or the guest (`X-Order-Capability` with `move_pickup`) | `{target_slot_id, expected_version}` with Idempotency-Key; 202 `move_pending`; 200 `{order_id, state: "unchanged"}` (with `Idempotent-Replayed`) when the order already has that time |
+| `POST /api/v1/admin/orders/{id}/appointment` | chef | `{expected_version, target_date, target_slot_id, customer_agreement {channel, agreed_at, evidence_ref}, feasibility_note}` with Idempotency-Key; 202 `appointment_change_pending` |
+| `GET /api/v1/schedule?purpose=pickup_move&order_id=…` | as the move | `{schedule_version, as_of, timezone, date, fulfillment_mode, day_status, purpose, order_id, current_slot, move_until, slots[{id, starts_at, ends_at, availability, reason_code}]}`; `date` / `fulfillment_mode` are optional and must be the order's (422 otherwise); nothing else applies |
+
+- **The appointment.** `original_handover_at` stays the immutable placement
+  anchor of `full_refund_deadline_at` (K05); the order's current appointment
+  is `handover_day`, `slot_id`, the new nullable `handover_starts_at` (NULL =
+  still the original start) and `handover_ends_at`. The production anchor
+  (payment or free confirmation + 48 h) never reads the appointment, so no
+  move resets it (K06 "Preserve original refund deadline and preparation
+  anchor").
+- **Customer move.** Collection and customer-courier orders only (no GK
+  delivery self-service, K06), lifecycle `confirmed`, `in_production` or
+  `ready` and secured; otherwise 409 `MOVE_NOT_ELIGIBLE`. At the persisted
+  receipt instant the current start must be at least 6 hours away, equality
+  allowed (409 `MOVE_TOO_LATE` otherwise); the target must be a published
+  start of the current schedule on the same London day that is not a closed
+  date, starting after the receipt instant, within the order's ready cakes'
+  shelf life (409 `SLOT_UNAVAILABLE`). No lead time, day capacity, booking
+  horizon, new stock or per-slot count: the order's own day place and ready
+  cakes are reused. Stale version 409 `STALE_VERSION`; while any order
+  command is unresolved a new move (or chef amendment) is 409 `CONFLICT`
+  (K11: wait for it; the same-slot no-op is never judged against an
+  appointment the customer cannot see yet); same key replays, another body
+  `KEY_REUSED`. A restore freeze refuses new requests (503, retryable); the
+  same key still replays.
+- **Open question for the Creator (not implemented):** a minimum
+  preparation gap before the new slot. BO-GK-001.move_time sets the six-hour
+  cutoff against the current slot only, so today any later published start
+  of the day (after the receipt) is a valid target.
+- **Chef amendment.** Any fulfilment mode, the same lifecycles. Requires the
+  customer's agreement (channel email | phone | instagram | whatsapp |
+  in_person | other, `agreed_at` after placement and not after the receipt,
+  evidence reference 1–200 characters; silence never counts) and a
+  feasibility note (1–500 characters, one line). The target is a published
+  start of the current schedule on a non-closed day, in the future, within
+  shelf life; no six-hour rule and no automatic next-day skip (BO-GK-001
+  move_date). A new day is admitted as the chef's decision: the old day's
+  allocation is released and the new day's committed (`standard` when the
+  committed standard cakes plus the order's fit the day's limit, otherwise
+  `chef_extra` with the feasibility note as `chef_evidence`, 0010's
+  classification). Returning to a day reuses its released row. The
+  allocation moves in the same commit as the appointment (the domain commit;
+  securing only acknowledges it), so staff day counts can show the new day
+  for the short time before the outcome is secured while the order still
+  shows its old day; accepted rather than splitting one change over two
+  transactions.
+- **Commit** (worker, `order_command_apply` → `order_appointment_commit`):
+  locks the order, the recovery operation, then the handover day(s) in date
+  order (slots are derived and have no rows: no per-slot cap, no slot table),
+  re-checks version, appointment, state, the receipt-time cutoff and that the
+  target is still published, then moves the appointment (and allocation),
+  version + 1, audit `order.pickup_moved` / `order.appointment_changed`; or
+  records a refusal (`order_changed`, `not_eligible`, `too_late`,
+  `slot_unavailable`; version + 1 only) and the original appointment stays.
+- **History.** `business.pickup_change` (owner data contract "move"): one
+  immutable row per accepted request with from/to day, slot, start and end,
+  schedule revision, actor kind and account, receipt, and for the chef the
+  agreement and feasibility note; the outcome is the command's recovery
+  operation.
+- **Read models.** Until the outcome is secured, `date` and `slot` show the
+  appointment being replaced and `appointment_change` reports `{kind
+  pickup_move | appointment_change, state processing | moved | refused,
+  reason, requested_by customer | chef, requested_at, to}`;
+  `pickup_move_until` is the current start − 6 h (collection and courier).
+  Staff detail adds `appointment_history` (every view; agreement and
+  feasibility note for the chef only) and, for technical support and
+  fulfilment, `appointment_change`. The staff list filters on the visible
+  London day (a committed but unsecured date change keeps the order on its
+  old day) and sorts and pages by the visible start (the cursor carries it),
+  so a secured move re-sorts the order.
+- **Notices** (0030 machinery, in the transaction that secures the move,
+  once per command): `pickup_moved` (`pickup-moved.v1`) and
+  `appointment_changed` (`appointment-changed.v1`) with the new and previous
+  times in London time and the unchanged cancellation terms. Existing notices
+  now render the current appointment (a cancellation after a move says when
+  it was planned for); their template revisions are unchanged.
+- **Production** (manual and timer) waits while a move is unresolved, as for
+  a cancellation, so a move commits against the version it was accepted at.
+- **Tests:** `internal/checkout/appointments_integration_test.go` (AC1 two
+  orders to one start, stale / other-day / unknown targets keep the
+  original, K11 journal-down and outcome-down crash points, competing
+  versions, notices; AC2 exactly-six-hours, `MOVE_TOO_LATE`, target in the past, staff list on the visible day and start,
+  timer and manual start with one transition, 100/50 entitlement against the
+  original deadline; access and eligibility; projection with a full day and
+  sold-out lot; chef amendment with agreement, `chef_extra`, staff history
+  redaction, notice; freeze at the commit and a schedule change before the
+  commit), `internal/httpapi` `TestAppointmentRoutes`,
+  `TestPickupMoveChoicesQuery`.
+
+### Fulfilment transitions (K05, K06, K00, GK-031 B1 part 2)
+
+Migration `0032_fulfillment.sql`. Owner input BO-GK-003.no_show
+`ca5fb5c0…` (`docs/creator/GK-003/decisions.json` sha256 `41d7792b…`),
+BO-GK-001.ready_cancellation `93a75483…`.
+
+| Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
+| --- | --- | --- |
+| `POST /api/v1/admin/orders/{id}/transitions` | chef or fulfilment (no_show: chef only, 403 otherwise) | `{action, expected_version, reason?}` with Idempotency-Key. `ready`, `dispatch`, `delivery_exception`: 200 `{order_id, lifecycle, fulfillment_state}`. `handover`, `no_show`: 202 `handover_pending` / `no_show_pending` |
+
+| Action | From | To | Kind |
+| --- | --- | --- | --- |
+| `ready` | `in_production` | `ready`, fulfilment `awaiting_handover` | plain |
+| `dispatch` (GK delivery; optional `reason` = courier reference) | `ready`, `awaiting_handover` or `exception` | `out_for_delivery` | plain |
+| `delivery_exception` (`reason` required) | `ready`, `awaiting_handover`, `out_for_delivery` or `exception` | `exception` (still `ready`; not completed, no refund) | plain |
+| `handover` | `ready`, `awaiting_handover` or `exception` (collection, courier) / `out_for_delivery` (GK delivery) | `completed`, fulfilment `completed` | K11 |
+| `no_show` (chef) | `ready` and `awaiting_handover` or `exception` (collection, courier) / `out_for_delivery` or `exception` after a dispatch (GK delivery), at or after the current appointment start | `completed`, fulfilment `no_show`, 50% goal | K11 |
+
+- **Fulfilment state** (K05 "Fulfillment separate awaiting_handover/
+  out_for_delivery/completed/exception"): new nullable
+  `orders.fulfillment_state` (`no_show` added for the K05 no-show history).
+  NULL reads as `awaiting_handover` while confirmed, in production or ready.
+  Every step appends an immutable `business.fulfillment_event` (action,
+  from/to, actor, receipt instant, reason, the K11 command) and moves the
+  order's version.
+- **Which steps are K11.** Anything that changes money or the customer's
+  commitment is: `handover` ends the customer's cancellation entitlement
+  (completed is not cancellable; later money is the chef's financial case,
+  K05 "post-handover personal chef refund request creates financial case")
+  and `no_show` creates the refund goal. `ready`, `dispatch` and
+  `delivery_exception` are operational status only (as the production start,
+  0022): plain audited transactions, freeze first (503), refused
+  (`CONFLICT`) while any K11 command on the order is unresolved, the same key
+  replays, and `ready`/`dispatch` already made by another request collapse
+  to 200 with `Idempotent-Replayed`.
+- **No-show is the chef's** (K00 "fulfillment can prepare/ready/dispatch/
+  handover only", "chef manages ... cancellations/refunds"; K05 "no-show/
+  post-handover 50%"). Fulfilment records what it saw as a
+  `delivery_exception` ("customer did not arrive"); the chef's `no_show`
+  command (receipt at or after the appointment start, else 409
+  `HANDOVER_NOT_DUE`) records the goal 50% of the actual paid aggregate,
+  nearest penny half up (`refund_goal_apply`, reason `no_show`; earlier
+  returns count against it, K05 cumulative goal) and reserves the refunds
+  (`refund_reserve`; a delivery share stays a chef-pending obligation). The
+  day place stays committed (the cake was made).
+- **Delivery payment.** `dispatch` needs the order's current delivery quote
+  paid (a succeeded delivery collection whose outcome is `paid`) or waived,
+  else 409 `DELIVERY_NOT_PAID` (K06 "paid/waived separate collection
+  required before dispatch"; since migration 0035, see "GK delivery quote,
+  payment and waiver" below).
+- **Never rewound.** `completed` is terminal (orders_guard); a completed or
+  no-show order accepts no further step, cancellation or appointment change
+  (409 `TRANSITION_NOT_ALLOWED` / `CANCELLATION_NOT_ELIGIBLE` /
+  `MOVE_NOT_ELIGIBLE`). Appointment changes also stop once an order is out
+  for delivery.
+- **Read models.** `order_get` gains `fulfillment {state, at, pending}`;
+  until a handover or no-show is secured the order reads `ready` with the
+  previous fulfilment state, `pending` handover | no_show and no `refund`
+  block. Staff detail: `fulfillment` (every view) and `fulfillment_history`
+  (reasons for chef and fulfilment, not technical support); list rows gain
+  `fulfillment_state`.
+- **Notices.** `no_show` (`order-no-show.v1`) when a no-show is secured. It
+  states the 50% of what was paid and then only what this no-show newly
+  reserved ("Refund requested: £30 (the £20 already refunded counts towards
+  it)", "requested" or "already returned"), or "nothing more is due" when
+  earlier refunds already cover the 50%, or that the chef will contact the
+  customer about a remainder not reserved automatically (a delivery share);
+  the outcome evidence records `returned_before_minor` and
+  `new_refund_minor`; no
+  `refund_returned` email while the no-show is unsecured (it follows once
+  secured). Decision: no email for `ready` or `handover` (no noise; the chef
+  sends collection details separately, K06).
+- **Tests:** `internal/checkout/fulfillment_integration_test.go` (AC3:
+  fulfilment ready / exception / handover, no refund, no no-show, no chef
+  cancel, no capability grant through the API role; idempotency, collapse,
+  stale version; handover K11 outcome-envelope crash point and envelopes once;
+  no rewind; history redaction. No-show: not before the appointment, chef
+  only, freeze, replay, unsecured state hidden even after the refund
+  succeeded, 50% goal, notices; after an earlier chef refund of at least 50%
+  nothing new is reserved, below it only the remainder. GK delivery: no
+  no-show before a dispatch, `DELIVERY_NOT_PAID`, dispatch, exception,
+  re-dispatch, handover), `internal/httpapi` `TestTransitionRoutes`.
+
+Not yet: courier status mapping (only a free-text reference); a GK-caused
+delivery failure route (`refund_delivery_failure_record` stays interim);
+chef screens (UI).
+
+## GK delivery quote, payment and waiver (K03/K06)
+
+Migration `0035_delivery_payment.sql` (expand only), store
+`internal/checkout/delivery.go`, routes in `internal/httpapi/checkout.go`.
+Inputs: contracts K03 ("GK Delivery individually quoted by chef from £100
+... separate collection attached to the same order ... free-delivery code
+waives the whole eligible GK fee within per-code maximum driving distance;
+chef records measured distance/source and approves eligibility ... Changed
+amount requires agreement; no double use ... A payable separate delivery
+remains awaiting separate payment and cannot be dispatched unpaid; its
+payment never restarts cake preparation/deadline"), K04 (payment authority,
+clocks), K05 (delivery refunds chef-only), K06 ("chef quote and paid/waived
+separate collection required before dispatch"), K08, K09, K11; design
+GK-017 r02b state 15 and Creator decision Q9 ("Unpaid delivery quote:
+deadline 48 h before handover, then the same choice").
+
+| Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
+| --- | --- | --- |
+| `POST /api/v1/admin/orders/{id}/delivery-quote` | chef | `{expected_version, amount_minor, note?}` with Idempotency-Key; 200 `{order_id, quote_id}` (`Idempotent-Replayed: true` for the same key, also during a restore freeze) |
+| `POST /api/v1/admin/orders/{id}/delivery-waiver` | chef | `{expected_version, distance_m, distance_source}` with Idempotency-Key; 200 `{order_id, waiver_id}` |
+| `POST /api/v1/orders/{id}/delivery-payment` | the owner (bearer) or the guest (`X-Order-Capability` with `pay`, the cake payment's access) | `{expected_version, quote_id}` with Idempotency-Key; 202 `{order_id, operation_id (the collection), state: "delivery_payment_pending", poll_after_seconds}`; 503 without `STRIPE_ACCOUNT_ID` or during a restore freeze |
+
+- **Quote** (`business.order_delivery_quote`). Only on a `gk_delivery`
+  order whose cake is visibly confirmed (paid or free-confirmed; lifecycle
+  `confirmed`, `in_production` or `ready`, secured), never dispatched, with
+  no unresolved K11 command (409 `CONFLICT` otherwise, also for any other
+  mode or lifecycle), no delivery collection in flight (409
+  `PAYMENT_IN_PROGRESS`) and the current quote not paid (409 `CONFLICT`).
+  `amount_minor` whole pence from 10000 (K03 "from £100") to 99999999
+  (Stripe's GBP maximum for one charge: a quote is paid as one Checkout
+  Session), else 422; `note` 1–500 characters on one line,
+  staff only (never audited, never in the customer's view). Pay-by =
+  original handover − 48 h (Q9; the original handover is the immutable
+  anchor, so a chef appointment change does not move it); quoting at or
+  after it is 409 `DELIVERY_PAY_BY_PASSED`. A new quote replaces the current
+  unpaid one (also a waived one, which then needs a new distance review);
+  quotes are immutable rows (`business.delivery_quote`), the latest is
+  current. The customer's payment of the current quote is the agreement to
+  its amount (K03 "changed amount requires agreement"). Versioned (order
+  version + 1; 409 `STALE_VERSION`), idempotent (K00 command receipt; the
+  same key and body replays, another body is `KEY_REUSED`), 503 during a
+  restore freeze (freeze checked before any outcome), audited
+  `delivery.quoted` `{quote_id, amount_minor, replaced_quote_id}`.
+- **Waiver** (`business.order_delivery_waiver`). Only when the order's one
+  code application is a consumed `free_delivery` code (else 409
+  `WAIVER_NOT_ELIGIBLE`; there is no other waiver kind) and a current quote
+  exists that is not paid or waived (409 `CONFLICT`) and has no payment in
+  flight (409 `PAYMENT_IN_PROGRESS`); the same order conditions as the quote.
+  `distance_m` the measured driving distance in whole metres (1–1000000),
+  `distance_source` 1–200 characters on one line. Records the distance, its
+  source, the chef's eligibility approval, the code application and the
+  receipt instant immutably (`business.delivery_waiver`, one per quote); the
+  current quote is then waived: nothing to pay. It never consumes a second
+  code use (the order-level `code_application` is only referenced).
+  Versioned, idempotent, 503 when frozen, audited `delivery.waived`
+  `{quote_id, waiver_id, code_application_id}` (no distance or source). The
+  per-code maximum driving distance is not modelled: the chef's approval is
+  the eligibility decision (no invented radius). A waiver is allowed after
+  pay-by (nothing is paid).
+- **Payment** (`business.delivery_payment_initiate`). A `payment_collection`
+  of kind `delivery` (new nullable `delivery_quote_id`) for exactly the
+  current quote's amount, with its dispatch job and audit
+  `payment.collection_requested {collection_id, amount_minor, kind, quote_id}`
+  in one transaction. From there it is the cake payment's machinery
+  unchanged: the worker fixes the Checkout Session request at the first
+  dispatch (same lifetime, `expires_at`, K11 dispatch, lease fencing,
+  freeze-first, no personal data, GBP; the line item reads "GK Cakes
+  delivery" and the return URL is the order page), the webhook and reconcile settle it
+  by its own collection ID, the 15-minute expire request and "never turns an
+  in-flight payment into a failure" apply. Refused: 409 `PAYMENT_IN_PROGRESS`
+  while a delivery collection may still succeed or is under reconciliation
+  ("do not pay again"), `STALE_VERSION`, `CONFLICT` (not GK delivery, order
+  not open as above, quote waived or paid), `QUOTE_NOT_CURRENT` (any other
+  quote ID), `DELIVERY_PAY_BY_PASSED` at or after pay-by; the same actor and
+  key replays (another body or a cake payment's key is `KEY_REUSED`); 503
+  while frozen (a replay still answers). A failed or expired collection
+  makes the quote payable again.
+- **Line item.** The worker asks `payment_dispatch_kind` (new, lease-fenced,
+  `gk_worker`) for the collection's kind when it fixes the request at the
+  first dispatch and names a delivery's line item "GK Cakes delivery" (cake:
+  "GK Cakes order", unchanged). `CheckPayload` also accepts a delivery
+  request fixed by an older build with the cake's name (compatibility with
+  persisted requests); a cake collection never accepts the delivery name.
+  Rollback: an older worker refuses a delivery request fixed by this build
+  (payload check, job attention, no Stripe call); the collection then
+  becomes stuck (below) and the next delivery command closes it, so the
+  customer can pay again.
+- **Never dispatched.** A delivery collection still `created` whose Stripe
+  call was never admitted (`dispatch_started_at` null: no key, journal
+  down, a dispatch in attention) 15 minutes after the later of its request
+  instant and insertion is *stuck*: no Checkout Session can exist for it
+  (admission records `dispatch_started_at` under the collection lock before
+  any call), so it is not in flight (the delivery reads `quoted` /
+  `pay_by_passed` again, it does not block account deletion) and staff see
+  the attention flag `delivery_payment_stuck`. The next quote, waiver or
+  delivery payment closes it under the order and collection locks as the
+  cake's never-dispatched cleanup does (`cancelled`, `cancel_reason`
+  `never_dispatched`, audit `payment.cancelled`); `payment_dispatch_fix` and
+  `payment_dispatch_admit` then answer `closed`, so it is never sent.
+- **Settlement.** A paid verdict on a delivery collection records it
+  `succeeded` (audit `payment.succeeded`) and, instead of the cake's
+  `paid_confirm` command, its outcome in `business.delivery_payment_outcome`
+  (immutable, once per collection, under the order lock): `paid` when its
+  quote is still the current one, not waived, not already paid by another
+  collection, and the order is `confirmed`, `in_production` or `ready`;
+  otherwise `unmatched` with reason `quote_replaced`, `quote_waived`,
+  `already_paid`, `order_not_open` or `no_quote` (audits `delivery.paid` /
+  `delivery.payment_unmatched`). It never touches the order: no lifecycle
+  change, no version bump, no `paid_at`, production anchor or refund
+  deadline change (K03).
+- **Dispatch** (`fulfillment_refusal`): the current quote waived, or paid by
+  a `paid` collection that is succeeded without a recorded mismatch; else
+  409 `DELIVERY_NOT_PAID`.
+- **Order view.** `GET /orders/{id}` adds `delivery` (null unless
+  `gk_delivery`): `{state, quote: {id, amount_minor, currency, quoted_at,
+  pay_by} | null, payable, paid_minor (when paid), waived: {at} (when
+  waived), unmatched_minor (while a stray delivery payment, below, is held
+  and not returned: "a payment was received; the chef will return it"; do
+  not pay that quote again), payment: {id, state, amount_minor, currency,
+  requested_at, checkout_url, expires_at} | null}`. `state`: `awaiting_quote` (no quote),
+  `quoted`, `payment_checking` (a delivery collection created, pending or
+  unknown, or with a recorded mismatch: "Still checking delivery payment; do
+  not pay again"), `paid`, `waived`, `pay_by_passed` (unpaid at or after
+  pay-by: "Your delivery wasn't paid in time"). `payment` is the current
+  quote's latest delivery collection; its `checkout_url` only while the
+  session is open, unexpired, not asked to expire and the order still takes
+  payments. `payable` (the "Pay for delivery" button) and the
+  `quoted`/`pay_by_passed` split are computed by the API at its own clock
+  (as `late_payment.offer.acceptable`); the database uses its clock where no
+  API applies one (the fulfilment view). The cake's `payment` block now
+  reads cake collections only (also the chef's list `payment_state`). The
+  address is not in the order view and stays out of the block.
+- **Staff views** (gk_delivery orders only; other orders keep their keys):
+  the chef gets the customer's block without the payment link and
+  `delivery_history` (every quote oldest first: `id, order_version,
+  quoted_at, pay_by, current, amount_minor, currency, note, waiver {id, at,
+  distance_m, distance_source, eligibility_approved, code_application_id},
+  payments [{collection_id, state, outcome, reason}]`); technical support
+  both without amounts (also `unmatched_minor`), currency, payment link,
+  note or distance source (K00 no money; K09 necessary support only);
+  fulfilment `delivery: {state}` only. New attention flags
+  `delivery_payment_unmatched` (an unmatched delivery payment not yet fully
+  returned; it also blocks account deletion as `payment_recorded`: money
+  unsettled) and `delivery_payment_stuck` (above).
+- **Stray delivery money and the policy basis (K05).** An unmatched delivery
+  payment is not part of what the order cost: `order_paid_minor`, the basis
+  of every percentage (customer cancellation 100% / 50%, no-show 50%, the
+  cancellation preview's `paid_minor` and `amount_minor`, notices), leaves it
+  out, and it is an implicit floor of its full amount (as a chef-recorded
+  K05 floor, net its own returns) in `refund_shares` and
+  `refund_goal_compute`. So the goal is the policy target over the cake
+  (and any matched delivery) plus the stray in full, capped by everything
+  succeeded, and the stray's return never counts against the cake's share.
+  Cake 10000p, stray 12000p: returned by the chef first, then a cancellation
+  after the deadline: preview paid 10000p, amount 5000p, allocation cake
+  5000p; goal 17000p (12000p + 5000p), all returned. Not returned first:
+  the same preview amount, allocations cake 5000p and stray 12000p, both
+  reserved automatically (the floor makes the stray returnable without the
+  chef, as a recorded floor does), goal 17000p. Before the deadline: 100%
+  of the cake + the stray (22000p). No-show after the chef returned the
+  stray, with the 14000p current quote paid: 50% of 24000p = cake 5000p
+  (sent) + delivery 7000p (pending the chef, K05) + the stray already
+  returned: goal 24000p. Nothing is returned twice: the per-collection room
+  bounds the chef's exception and the automatic plan alike. The chef's
+  exception limit and the goal cap count every succeeded collection.
+- **A stray after a goal (K05 cumulative goal).** When an unmatched payment
+  is recorded on an order that already has a refund goal (for example the
+  order was cancelled while the delivery payment was in flight, or the chef
+  recorded an exception), the reconcile raises that goal under the order
+  lock by the stray's implicit floor (`refund_goal_apply`) and reserves the
+  new allocation at once (`refund_reserve`), as a recorded floor does: the
+  stray goes back in full on top of what the goal already owed, never in
+  place of the cake's share. A refund still unresolved elsewhere keeps its
+  own course; if it later fails under the raised goal its remainder is
+  reserved once (`refund_operation_settled`). Probe
+  (`TestStrayAfterAGoalIsAddedOnTop`): late cancellation, goal 5000p, the
+  cake refund pending; the stray 12000p arrives (goal 17000p, stray sent);
+  the cake refund fails; the cake's 5000p is reserved again and returned:
+  17000p in all.
+- **What the customer is told.** `amount_minor` (preview and the order's
+  `cancellation` block) and the cancelled notice's policy amount keep their
+  meaning; beside them a cancellation that returns a stray states it: the
+  preview's `unmatched_minor` (always present, 0 when none or when nothing
+  is owed; outside the preview hash, like `delivery_pending_minor`), the
+  outcome evidence and `cancellation.unmatched_minor` (only when the
+  outcome states one), and one more sentence in the cancelled notice: "We
+  are also returning in full a delivery payment of £120 that could not be
+  used for your order, so £170 is being returned to you in total" (wording
+  for Creator review; notices without a stray render exactly as before).
+  Technical support's `cancellation` drops it with the other amounts.
+- **Refunds** are unchanged: a delivery collection is the chef-only share of
+  `refund_plan` (K05). A cancellation of an order whose delivery was paid
+  returns the cake automatically and leaves the delivery share as
+  `delivery_pending_minor` until the chef's
+  `POST /admin/orders/{id}/delivery-refund`.
+
+Decisions taken (small and reversible, for Creator review):
+
+- **Late delivery money.** A delivery payment started before pay-by that
+  succeeds after it pays the quote (K04: a valid payment underway is not
+  failed by a local timer; delayed observation is not lateness). A success
+  for a replaced quote, a waived quote, a quote another collection already
+  paid, or an order no longer confirmed/in production/ready (for example
+  cancelled while the payment was in flight) is real money: kept as
+  `succeeded`, never marks the delivery paid and raises
+  `delivery_payment_unmatched` for the chef, who returns it with the agreed
+  exception refund on that collection (`POST /admin/orders/{id}/refunds`),
+  and the customer's `unmatched_minor`. On an order without a refund goal
+  it is not refunded at settlement (K04 "retain actual funds ... give chef
+  an actionable resolution"); a later cancellation or no-show that records a
+  goal returns it in full with the policy refund (its implicit floor,
+  above) unless the chef returned it already. One that records no goal (a
+  policy amount of 0: a free-confirmed cake whose only delivery money is the
+  stray) leaves it flagged for the chef to return. On an order that already
+  has a goal it is added to that goal and returned at once (above).
+- **Replacement while paying is refused** (`PAYMENT_IN_PROGRESS`), and so is
+  a waiver, so an in-flight payment always pays the quote it was started
+  for; a paid quote is never replaced (the agreement stands).
+- **Pay-by uses the original handover** (the immutable placement anchor,
+  like the refund deadline); a chef-agreed later appointment does not move
+  it. Quoting and paying at exactly pay-by are refused (equality has
+  passed, as the K04 quote window).
+- **No order version bump on payment** (as for cake collections); quotes
+  and waivers bump it.
+
+Tests: `internal/checkout/delivery_integration_test.go` (quote rules: mode,
+lifecycle, minimum and bound, pay-by, replacement, freeze, idempotency,
+stale version, chef only, note kept out of audit and customer view, staff
+redaction; payment: access, current quote, pay-by, in flight, webhook
+success to paid with unchanged lifecycle, version, `paid_at`, refund
+deadline and production anchor, no order command, Stripe request without
+personal data, dispatch; failure and expiry back to quoted; success after
+replacement is unmatched with attention and refused dispatch; success after
+pay-by honoured; a second success for one quote is `already_paid`; a later
+mismatch returns to checking; success after a cancellation is
+`order_not_open`; waiver: needs the free-delivery code and a quote, not
+while paying, records distance and source, one code use, dispatch; refunds:
+the delivery share stays chef-only; a stray delivery payment stays out of
+the policy basis: returned then a late cancellation, not returned then a
+late cancellation, before the deadline, returned then a no-show, never
+returned twice, customer and staff `unmatched_minor`, the preview's and
+the cancellation's `unmatched_minor` and the notice sentence; a stray after
+a goal is added on top (the probe above; a stray after the chef's 100%
+cancellation is returned at once); a stuck collection:
+young is in flight, after 15 minutes flagged, payable and not blocking
+deletion, closed as never dispatched by the next quote and never sent; the
+99999999p quote; the delivery line item), `delivery_test.go` (the API clock and
+input checks), `internal/payments` `TestDeliveryLineItem` (both names and
+the older-build request), `fulfillment_integration_test.go`
+`TestDeliveryDispatchNeedsPayment` (now through quote and payment),
+`internal/httpapi` `TestDeliveryRoutes`, and the exact `gk_api` and
+`gk_worker` allowlists in `internal/notifications`.
+
+Follow-ups (not implemented):
+
+- **The Q5 choice** after `pay_by_passed` (collection / own courier / full
+  refund, no deadline: Q8/Q9) and its API states.
+- **Emails:** "delivery quote" (with the pay-by time) and "delivery paid"
+  need Creator-reviewed wording and new template revisions; today the
+  customer learns of a quote on the order page.
+- **Per-code maximum driving distance** on free-delivery codes (K03), so the
+  waiver can check the recorded distance against it.
+- A stuck delivery collection is closed by the next delivery command, not
+  by a timer: until someone acts it stays `created` (not in flight, flagged
+  `delivery_payment_stuck`).
+- A free-confirmed cake cancelled (or not collected) while its only
+  delivery money is a stray records no refund goal, so the stray stays
+  flagged for the chef rather than being returned automatically.
+- The no-show notice's "Refund requested" amount includes a stray reserved
+  with the no-show, but it has no separate stray sentence yet.
+- `GET /me/orders` summaries and the staff list do not carry the delivery
+  state yet; the UI (state 15) and a chef screen for quotes and waivers.
+
+## Customer accounts (GK-016 r02b)
+
+Backend for the Creator-approved account sketch GK-016 r02b (Trello GK-016,
+2026-11-05 "approve as suggested"; sketch on
+`sasha-chycha/gk-016-r02-design`, `docs/design/sessions/discovery-account/gk-016-r02/`).
+Migration `0033_customer_accounts.sql` (expand only), store
+`internal/checkout/accounts.go`, routes `internal/httpapi/account.go`. Served
+whenever identity is configured (not behind `CHECKOUT_ENABLED`). No analytics
+run on these routes (K10); every answer is private `no-store`.
+
+Owner input (recorded hashes): the inactivity rule (24 months without a
+sign-in or new order, then a warning and deletion 30 days later) implements
+`BO-GK-005.retention_orders_accounts`, decision revision
+`fd2391c57cbab22f7ec7038d7c0b48404f311fbbe92e72320f1d937ad91f944a`
+(`docs/creator/GK-005/decisions.json` sha256
+`d6593cfc91948c3294e22fcf112226b4df2838d241abb016a5597c4c88ff6542`), source
+comment `chat:GK-005:2026-10-05:order-account-access` original UTF-8 sha256
+`bde812be81d82a8ad58b50dfb249a025b423f40bbe8702475d1f5c0998c259bf`
+(`source-comments.json` sha256
+`a27945eb42272189c1b9c8c6083c2a92620fa18ebcb8cce2713b329edd543be7`), owner
+data contract `docs/design/owner-data-contract.md` sha256
+`e71792978a198263aeae6e28ae1520acc4598e1f699235e14aa049664f593a21`. Its
+order-details retention (2 years after fulfilment or cancellation) and the
+GK-037 open points (financial rules, legal holds, provider deletion, backup
+expiry) are not implemented here.
+
+| Route | Who | Input / answer |
+| --- | --- | --- |
+| `GET /api/v1/me/orders[?cursor&limit]` | signed-in customer | 200 `{orders, next_cursor?}`; newest placed first, `limit` 1–50 (default 20) |
+| `GET /api/v1/me/profile` | signed-in customer | 200 `{full_name, phone, instagram, version, updated_at}` (all optional, null when unset) |
+| `PATCH /api/v1/me/profile` | signed-in customer, current session | `{expected_version, full_name?, phone?, instagram?}`; omitted keeps, null clears; 200 the profile |
+| `POST /api/v1/me/order-claims` | signed-in customer, current session | path c `{channel: instagram\|offline\|website_email_link, reference, approximate_date?, note}`; path a with `X-Order-Capability` `{channel: website_email_link, note?}`; 201 the claim (pending) |
+| `GET /api/v1/me/order-claims`, `GET /api/v1/me/order-claims/{id}` | signed-in customer | 200 `{claims}` (newest first, 50) / the claim; another account's claim is 404 |
+| `POST /api/v1/me/order-claims/{id}/withdraw` | signed-in customer, current session | `{expected_version}`; 200 the claim (withdrawn) |
+| `GET /api/v1/admin/order-claims[?state&cursor&limit]` | chef | `state` pending (default), approved, declined, withdrawn; oldest first; 200 `{claims, next_cursor?}` |
+| `POST /api/v1/admin/order-claims/{id}/decision` | chef | `{expected_version, decision: approve\|decline, order_id (approve only), note?}`; 200 `{claim_id, state, order_id?}` |
+| `POST /api/v1/admin/orders/{id}/owner` | chef | `{expected_version (the order's), account_id \| account_subject, evidence}`; 200 `{order_id, linked}` |
+| `POST /api/v1/me/deletion-preview` | signed-in customer, current session | no body; 200 `{preview_id, preview_hash, expires_at, can_delete, blocked[{order_id, reason}], upcoming[{order_id, date, lifecycle}], linked_orders, pending_claims, staff_capabilities}` |
+| `POST /api/v1/me/deletion` | signed-in customer, current session, signed in within 10 minutes | `{preview_id, preview_hash}`; 200 `{account_id, deleted, deleted_at, orders_unlinked, provider_deletion: "pending"}` |
+
+Every command takes an `Idempotency-Key` (K00 command receipts: the same key
+and body replays with `Idempotent-Replayed: true`, another body is 409
+`KEY_REUSED`) and strict JSON. "Current session" means the provider confirms
+the session (fails closed, 503); reads rely on the token. Disabled accounts
+get 403 `ACCOUNT_DISABLED`, deleted ones 403 `ACCOUNT_DELETED`.
+
+- **Identity.** The API now resolves accounts through
+  `identity_resolve_account` (the previous `identity_resolve` stays for the
+  deployed revision): state `active`/`disabled`/`deleted`, and it records
+  sign-in activity (`account.last_active_at`) at most once an hour for the
+  inactivity rule. Any authenticated request counts as activity, a
+  conservative reading of K09 "since login": an account in use is never
+  warned. The migration sets `last_active_at` to its own instant for every
+  existing account (the real last sign-in is unknown, so the 24 months start
+  then, never earlier); an account created by the previous API revision
+  during the deploy reads `created_at` until its first request. The token's sign-in instant is read from Supabase's `amr` claim:
+  the latest `timestamp` of an `otp`, `magiclink` or `oauth` entry (email
+  link or Google, answer 3), which survives refreshes. `password` (staff
+  only), `recovery`, `invite`, `email_change` and `token_refresh` never
+  count, and `iat` is renewed by every refresh, so it is never used. Without
+  such an entry deletion asks for a fresh sign-in. SETUP.md records the
+  Creator's provider settings this relies on (Secure password change on,
+  Secure email change on, manual identity linking off): otherwise a stolen
+  session could change the email, receive a magic link and get a fresh
+  `amr` instant to delete the account.
+- **My orders (K02).** Rows are built from `order_view`, the renderer of
+  `GET /orders/{id}`, so the list and the order page agree: `id`, `version`,
+  visible `lifecycle`, `cancel_reason`, `cancelled_at`,
+  `payment_requirement`, `placed_at`, `date`, `fulfillment_mode`, `slot`,
+  `fulfillment_state`, `total_minor`, `currency`, `payment {state,
+  amount_minor, expires_at, payment_page_open}`, `free_confirmation`,
+  `cancellation {state, reason, amount_minor}`, `appointment_change {kind,
+  state}`, `refund {state, target_minor, succeeded_minor, in_progress_minor,
+  currency}`, `items [{cake_name, flavour, size_code, quantity}]`, and
+  `added_by` `checkout`|`claim`|`chef` with `added_at`. No contact details,
+  payment link or policy detail (those are on the order page). The keyset
+  is `(placed_at, id)`.
+- **Profile (answer 10).** Name 1–120 characters; phone `+`, digits,
+  spaces, hyphens and brackets with 7–15 digits ("07700 900123", "+44 7700
+  900123"); Instagram name 1–30 letters, numbers, full stops and underscores
+  without `@` (K02: private plain text, not identity proof, never used to
+  sign in or to match orders automatically). The profile has its own
+  `version`. Audit `account.profile_updated` names the changed fields only.
+- **Claims (K00, answers 1 and 6).** Nothing is ever linked automatically
+  (not by email, payer, address or Instagram). Path c: reference (1–64),
+  channel, optional `approximate_date` (YYYY-MM or YYYY-MM-DD), note (1–500,
+  line breaks allowed). Path a: the order's guest capability held in this
+  browser (`X-Order-Capability`, the same secret as the order page); a
+  missing, malformed, revoked or foreign capability is a plain 404; an order
+  already in this account is 409 `ALREADY_IN_ACCOUNT`; one pending link
+  claim per account and order (409 `CLAIM_PENDING`; another account may ask
+  for the same order and the chef decides); at most 5 pending claims per
+  account (409 `CLAIM_LIMIT`). The customer sees what they sent and the state;
+  `order_id` only once approved; never the chef's note; a decline reveals
+  nothing ("contact us" is the UI's). The guest link keeps working while a
+  claim waits and after a decline.
+- **Chef decisions.** Approve needs `order_id` (for a path a claim, that
+  order: 422 otherwise); an order in another account is 409 `ORDER_OWNED`;
+  an order already in the claimant's account is approved without a new
+  link. Approving links the order (`owner_account_id`, order `version` + 1),
+  revokes every outstanding guest capability of the order and appends an
+  immutable `order_owner_event` (`linked`, source `claim`, the claim, the
+  chef); audit `order.owner_linked {source, claim_id, association_id,
+  guest_capabilities_revoked}`. The chef's direct add does the same with
+  source `chef` and an evidence note (1–500, one line; the only field ever
+  changed, erased when the account is deleted); 409 `DUPLICATE` for the same
+  account, `ORDER_OWNED` for another, 422 for an unknown, disabled or deleted
+  account. Chef only (fulfilment and technical support 403). Claim approval,
+  chef add and deletion take the restore freeze first (503).
+- **Deletion (K09, answers 2, 3, 11).** Blocked (409
+  `ACCOUNT_DELETION_BLOCKED`) while an owned order has unsettled money:
+  `order_change_in_progress` (a confirmation or cancellation not secured),
+  `payment_being_checked` (a collection created, pending, unknown or
+  mismatched), `paid_awaiting_agreement`, `refund_in_progress` (refund not
+  fully returned, or a delivery share still pending; this includes the
+  staff flag `refund_needs_attention`), `refund_being_checked` (an
+  unresolved quarantined provider refund), `payment_recorded` (cancelled
+  with a payment and no refund goal). Of the staff attention flags only the
+  money ones block (`payment_unknown` and `payment_mismatch` are
+  `payment_being_checked`); `notice_not_sent` (an order email was not
+  queued) is staff work, not money, and blocks neither deletion nor the
+  inactivity deletion (Creator answer 2: blocked only while money is
+  unsettled). A confirmed, in-production or ready order is listed in
+  `upcoming` (the warning and extra tick are the UI's) and does not block.
+  An account with an active staff capability is refused (409
+  `STAFF_ACCOUNT`, `can_delete` false): the operator revokes the grants with
+  gk-identity-admin first, then the person may delete it as a customer.
+  The preview stores the facts (order IDs and reasons only) and their hash
+  for 15 minutes; deletion recomputes them after locking the account, its
+  claims and its orders: changed is 409 `DELETION_PREVIEW_STALE` (not the
+  cancellation's refund-amount `PREVIEW_STALE`), expired too, another hash or
+  another account's preview 422. The fresh sign-in (answer 3) is the
+  token's `amr` instant within 10 minutes before the receipt (and not in the
+  future beyond a minute); otherwise 401 `REAUTHENTICATION_REQUIRED` with
+  `WWW-Authenticate: Bearer error="insufficient_user_authentication",
+  max_age="600"` (RFC 9470). Effects in one transaction: every order is
+  unlinked (order details keep their own retention: 2 years after handover
+  or cancellation, K09) with an `unlinked` association event; the orders'
+  guest capabilities are revoked; pending claims
+  are closed and every claim's reference, note, date and chef note erased;
+  the chef's evidence notes about the account erased; the profile cleared;
+  the account disabled and marked deleted (`account_deleted_*` checks);
+  `account_tombstone` (account, instant, reason, orders unlinked: no
+  personal data) and `account_provider_deletion` (pending) recorded; audit
+  `account.deleted` with counts only. The same key and body read the result
+  back before any other check (no fresh sign-in needed, also during a
+  restore freeze and although the account is deleted: the deletion route
+  accepts a deleted account for that); a new key is 403 `ACCOUNT_DELETED`.
+  Previews expired more than a day ago are removed (100 at a time) whenever
+  a new preview is made (by any account). Staff accounts are refused, never
+  changed: deletion does not revoke staff grants.
+- **What survives a deletion (K00).** The pseudonymous link between the
+  account ID and its orders stays: the immutable `order_owner_event` history
+  (`linked` and `unlinked` events, with the chef's evidence erased),
+  `order_claim` rows (the account and the order IDs, with every free-text
+  field erased), and the audit (account and order IDs, counts and claim
+  IDs, no personal data). The account row keeps no profile data (its ID,
+  provider subject, state and timestamps).
+- **Concurrency.** The account's own commands and its deletion lock it `FOR
+  NO KEY UPDATE`, so order commands that hold an order and write rows that
+  merely reference the account (KEY SHARE) never deadlock with a deletion
+  waiting for that order. Triggers `account_owner_guard` on `orders`
+  (`owner_account_id`), `checkout_quote` (`owner_account_id`) and
+  `code_application` (`account_id`) take the account `FOR SHARE` before
+  attaching anything to it: they wait for a deletion in progress and then
+  refuse with GK403 `account_deleted` (checkout answers 403). This is in the
+  database, so it protects every API build, including checkouts that read
+  the account before the deletion committed.
+- **Provider user.** The API never calls Supabase admin APIs. The provider
+  subject stays on the deleted account so a still-valid token resolves to it
+  and is refused; until the provider user is removed (operator or a later
+  worker step reading `account_provider_deletion`), the same address cannot
+  sign up again: the provider still signs the person in to the same subject,
+  and every API call answers 403 `ACCOUNT_DELETED` (the UI should say the
+  account was deleted and the address becomes free once the provider
+  deletion is done).
+- **Inactivity (K09, answer 9; BO-GK-005.retention_orders_accounts).** For
+  the worker (`gk_worker` only): `account_retention_due(now, limit)` lists
+  `warning` (24 London calendar months after the last activity: sign-in or
+  a new order on the account; month-end clamp), `reminder` (7 days before
+  deletion) and `deletion` (30 London days after the warning was recorded
+  and 7 London days after the reminder was recorded, never before either:
+  a late reminder moves deletion later instead of making it due at once;
+  not while an order's money is unsettled). Staff, disabled and deleted
+  accounts are never due. `account_retention_notice_record(account, kind,
+  anchor, now)` records a warning or reminder for that activity anchor
+  (false when no longer due: the customer came back, or recorded already)
+  and audits the kind; it is **owner only, granted to no runtime role**:
+  a warning starts the 30-day deletion clock, so it must not be recordable
+  without its email. Follow-up (with the inactivity emails): a lease-fenced
+  worker function that records the notice and its notification intent in
+  one transaction.
+- **Lock order** (K00, extended): the actor's account, the claimant/owner
+  account, claim rows, orders by UUID, then history and audit.
+- **Tests:** `internal/checkout/accounts_integration_test.go` (my orders
+  isolation and paging against `GET /orders/{id}`, profile validation,
+  versions, replay and audit, claims path c and a, chef approve/decline/no
+  leak/limits/withdraw, chef direct add, freeze),
+  `accounts_deletion_integration_test.go` (blocked reasons, only money
+  blocks: `notice_not_sent` on an upcoming and a completed order does not,
+  an unsecured change, a quarantined refund and a recorded payment do;
+  warning, staff refused, fresh sign-in, preview binding, expiry and
+  cleanup, effects, replay without a fresh sign-in and during a freeze,
+  retention steps, a late reminder delays deletion, no runtime role records
+  a notice; two
+  connections: a checkout racing an open deletion is refused and never
+  linked, an order command holding the order does not deadlock with a
+  deletion),
+  `internal/identity` (`amr` methods, activity, deleted state), `internal/httpapi`
+  `TestMyOrdersRoute`, `TestProfileRoute`, `TestClaimRoutes`,
+  `TestDeletionRoutes`, the exact `gk_api`/`gk_worker` allowlists in
+  `internal/notifications`, and the `last_active_at` backfill in
+  `internal/migrate`.
+
+Not yet (next steps):
+
+- **Emailed order link (path a).** The private order link in an email does
+  not exist (the guest capability lives in the ordering tab only), so path a
+  works only in the browser that placed the order; the email link, its
+  `link-yours` answer for the owning account and rate limits on repeated
+  claims come with it.
+- **Historical (non-website) orders.** Approving needs an existing website
+  order. Instagram and offline orders have no order row yet, so their claims
+  can only be declined or answered by contact; recording a chef-entered
+  historical order with an amount labelled "recorded by the chef" (answer 7)
+  is GK-027/GK-038 work.
+- **Account email.** The verified email is not stored locally: the chef
+  matches claims by reference, note and the optional profile; the inactivity
+  emails need the address (from the token's `email` claim or the provider).
+- **Inactivity emails and the deletion run.** Warning and reminder emails
+  (0030 notice machinery needs an account recipient, not an order one) and
+  the worker that deletes due accounts (reason `inactivity`) are not
+  implemented; the data model and the due query are.
+- **Restore replay of tombstones (K09, GK-034/GK-035 follow-up).**
+  `account_tombstone` is in the business schema and backups, but a restore
+  from a point before a deletion would bring the account, its profile and
+  its order links back. K09 requires restore/recovery replay to carry
+  tombstones: until GK-034/GK-035 re-apply tombstones after a restore (and
+  the restore check proves it), export `account_tombstone` and
+  `account_provider_deletion` from the live database before a restore, then
+  re-run those deletions by hand on the restored database (and re-request
+  any provider deletion not completed). Not implemented here.
+- **Provider deletion and sessions.** Removing the Supabase user, and
+  signing out everywhere (GK-021), are outside the API.
+- **Favourites and requests** (`/me/favourites`, `/me/custom-requests`) and
+  email change are later slices; the UI is the shop agent's.
 
 ## Not yet verified
 

@@ -488,6 +488,28 @@ var conflictMessages = map[string]string{
 	"window_open":                "The refund's provider retry window has not ended yet.",
 	"evidence_required":          "This decision needs complete provider evidence that is not recorded yet.",
 	"manual_payout_not_eligible": "A manual payout needs a definitive provider refund failure on this payment first.",
+	// Appointment changes (K06).
+	"move_too_late":     "It is now less than six hours before your time, so it can't be changed here. Please contact the chef.",
+	"move_not_eligible": "The time of this order can't be changed here. Please contact the chef.",
+	// Fulfilment (K05, K06).
+	"delivery_not_paid":      "The delivery for this order is not paid or waived yet, so it can't be sent out.",
+	"handover_not_due":       "The handover time hasn't started yet, so this can't be recorded as not collected.",
+	"transition_not_allowed": "This step isn't possible for the order in its current state.",
+	// Customer accounts (GK-016 r02b).
+	"account_deletion_blocked": "You can't delete your account yet: some orders still have money to settle. Please contact us.",
+	"claim_limit":              "You already have 5 requests waiting for the chef. Please wait for her answer.",
+	"claim_pending":            "You've already asked to add this order. The chef will check it.",
+	"already_yours":            "This order is already in your account.",
+	"order_owned":              "This order is already in another account.",
+	"account_unavailable":      "This account can't be used for this.",
+	"staff_account":            "A staff account can't be deleted here. Please ask for staff access to be removed first.",
+	"deletion_preview_stale":   "Your orders or requests changed since you reviewed the deletion, or the review expired. Please review it again.",
+	// Late-payment agreement (GK-017 r02b Q6).
+	"offer_not_current": "This offer is no longer open. Please reload your order to see the chef's current answer.",
+	// GK delivery (K03, K06, GK-017 r02b Q9).
+	"delivery_pay_by_passed": "The time to pay for this delivery has passed (48 hours before the delivery).",
+	"quote_not_current":      "This delivery quote is no longer the current one. Please reload your order.",
+	"waiver_not_eligible":    "Only an order placed with a free-delivery code can have its delivery waived.",
 }
 
 // catalogError maps catalog errors to K00 responses without SQL detail.
@@ -554,6 +576,40 @@ func catalogError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, e
 			code = "EVIDENCE_REQUIRED"
 		case "manual_payout_not_eligible":
 			code = "MANUAL_PAYOUT_NOT_ELIGIBLE"
+		case "move_too_late":
+			code = "MOVE_TOO_LATE"
+		case "move_not_eligible":
+			code = "MOVE_NOT_ELIGIBLE"
+		case "delivery_not_paid":
+			code = "DELIVERY_NOT_PAID"
+		case "handover_not_due":
+			code = "HANDOVER_NOT_DUE"
+		case "transition_not_allowed":
+			code = "TRANSITION_NOT_ALLOWED"
+		case "account_deletion_blocked":
+			code = "ACCOUNT_DELETION_BLOCKED"
+		case "claim_limit":
+			code = "CLAIM_LIMIT"
+		case "claim_pending":
+			code = "CLAIM_PENDING"
+		case "already_yours":
+			code = "ALREADY_IN_ACCOUNT"
+		case "order_owned":
+			code = "ORDER_OWNED"
+		case "account_unavailable":
+			code = "ACCOUNT_UNAVAILABLE"
+		case "staff_account":
+			code = "STAFF_ACCOUNT"
+		case "deletion_preview_stale":
+			code = "DELETION_PREVIEW_STALE"
+		case "offer_not_current":
+			code = "OFFER_NOT_CURRENT"
+		case "delivery_pay_by_passed":
+			code = "DELIVERY_PAY_BY_PASSED"
+		case "quote_not_current":
+			code = "QUOTE_NOT_CURRENT"
+		case "waiver_not_eligible":
+			code = "WAIVER_NOT_ELIGIBLE"
 		}
 		writeError(w, r, http.StatusConflict, code, msg, false)
 	case errors.As(err, &inv):

@@ -97,6 +97,17 @@ GK-021, which consumes its resource evidence.
    code; see api/README.md "Identity"); staging values are set. Creator
    identifies first manager by verified account subject in GK-010; Agent GK-021 records local role,
    never user-editable metadata. Customer/provider account recovery remains personal.
+   Owner: Creator (operator setting, before customer accounts go live; GK-016 r02b):
+   in Authentication settings turn **Secure password change on** (a password change
+   needs a recent sign-in), turn **Secure email change on** (both the old and the new
+   address must confirm an email change) and keep **manual identity linking off** (no
+   user can attach another provider identity to an account; Google and the email link
+   share an account only by the verified email). Account deletion accepts only a fresh
+   email-link/OTP or Google sign-in (token `amr` methods `otp`, `magiclink`,
+   `oauth`; never `password`, which stays staff-only); without Secure email change a
+   stolen session could change the email, sign in by magic link to the new address and
+   delete the account. Record all three settings with a date in GK-021; Agent
+   re-checks them before launch.
 4. [Storage access policy](https://supabase.com/docs/guides/storage/security/access-control):
    `catalog` public read with manager/backend-only write; `custom-private` private
    attachments and short-lived authorized reads. Record allowed origins/size and

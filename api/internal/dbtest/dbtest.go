@@ -33,8 +33,38 @@ type DB struct {
 	adminURL *url.URL
 }
 
-// New creates a database owned by the test migrator and drops it at cleanup.
+// New creates an empty database owned by the test migrator and drops it at
+// cleanup. Tests that only need a migrated database should use NewMigrated.
 func New(t *testing.T) *DB {
+	t.Helper()
+	return create(t, "")
+}
+
+// create makes a database owned by the test migrator, copied from template
+// when it is not empty, and drops it at cleanup.
+func create(t *testing.T, template string) *DB {
+	t.Helper()
+	adminURL := adminURLFromEnv(t)
+	d := &DB{Name: "gk_test_" + randomHex(6), adminURL: adminURL}
+
+	admin := d.connect(t, adminURL)
+	ctx := context.Background()
+	ignoreDuplicate(t, admin, "CREATE ROLE "+migratorRole+" LOGIN CREATEROLE PASSWORD '"+migratorRole+"'")
+	sql := "CREATE DATABASE " + d.Name + " OWNER " + migratorRole
+	if template != "" {
+		sql += " TEMPLATE " + template
+	}
+	exec(t, admin, sql)
+	t.Cleanup(func() {
+		admin := d.connect(t, adminURL)
+		if _, err := admin.Exec(ctx, "DROP DATABASE IF EXISTS "+d.Name+" WITH (FORCE)"); err != nil {
+			t.Errorf("drop %s: %v", d.Name, err)
+		}
+	})
+	return d
+}
+
+func adminURLFromEnv(t *testing.T) *url.URL {
 	t.Helper()
 	raw := os.Getenv(EnvAdminURL)
 	if raw == "" {
@@ -44,19 +74,7 @@ func New(t *testing.T) *DB {
 	if err != nil || !loopback(adminURL.Hostname()) {
 		t.Fatalf("%s must be a URL for a local disposable PostgreSQL cluster", EnvAdminURL)
 	}
-	d := &DB{Name: "gk_test_" + randomHex(6), adminURL: adminURL}
-
-	admin := d.connect(t, adminURL)
-	ctx := context.Background()
-	ignoreDuplicate(t, admin, "CREATE ROLE "+migratorRole+" LOGIN CREATEROLE PASSWORD '"+migratorRole+"'")
-	exec(t, admin, "CREATE DATABASE "+d.Name+" OWNER "+migratorRole)
-	t.Cleanup(func() {
-		admin := d.connect(t, adminURL)
-		if _, err := admin.Exec(ctx, "DROP DATABASE IF EXISTS "+d.Name+" WITH (FORCE)"); err != nil {
-			t.Errorf("drop %s: %v", d.Name, err)
-		}
-	})
-	return d
+	return adminURL
 }
 
 // MigratorConn connects as the non-superuser migration role.
@@ -144,10 +162,16 @@ func exec(t *testing.T, conn *pgx.Conn, sql string) {
 func ignoreDuplicate(t *testing.T, conn *pgx.Conn, sql string) {
 	t.Helper()
 	_, err := conn.Exec(context.Background(), sql)
-	var pgErr *pgconn.PgError
-	if err != nil && !(errors.As(err, &pgErr) && (pgErr.Code == "42710" || pgErr.Code == "23505")) {
+	if err != nil && !duplicate(err) {
 		t.Fatalf("exec: %v", err)
 	}
+}
+
+// duplicate reports a duplicate object or unique violation (a concurrent
+// creation of the same cluster-wide role).
+func duplicate(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && (pgErr.Code == "42710" || pgErr.Code == "23505")
 }
 
 // SQLState returns the PostgreSQL error code of err, or "" when absent.

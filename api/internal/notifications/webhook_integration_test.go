@@ -432,6 +432,14 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 	}
 	all, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	wantAPI := []string{ // GK-021 identity, GK-022 catalog, GK-023 schedule and lots, GK-025 codes, quotes, orders
+		// Customer accounts (0033): my orders, profile, claims, deletion.
+		"business.account_claim_get(uuid, uuid)",
+		"business.account_claim_list(uuid)",
+		"business.account_delete(uuid, text, text, uuid, text, timestamp with time zone, timestamp with time zone)",
+		"business.account_deletion_preview_create(uuid, timestamp with time zone)",
+		"business.account_order_page(uuid, timestamp with time zone, uuid, integer)",
+		"business.account_profile_get(uuid)",
+		"business.account_profile_update(uuid, text, text, integer, boolean, text, boolean, text, boolean, text)",
 		"business.capacity_day_limit_set(uuid, text, text, date, integer, integer)",
 		"business.catalog_cake_create(uuid, text, text, text, text)",
 		"business.catalog_cake_create(uuid, text, text, text, text, uuid)",
@@ -459,12 +467,15 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.catalog_variant_archive(uuid, text, text, uuid, integer)",
 		"business.catalog_variant_create(uuid, text, text, uuid, uuid, text, text)",
 		"business.checkout_create(uuid, bytea, text, text, uuid, integer, uuid, text, text, text, timestamp with time zone)",
+		// GK delivery payment (0035): the customer's separate delivery collection.
+		"business.delivery_payment_initiate(uuid, bytea, uuid, text, text, integer, uuid, uuid, text, text, text, timestamp with time zone)",
 		"business.discount_code_archive(uuid, text, text, uuid, integer)",
 		"business.discount_code_create(uuid, text, text, text, text, integer, timestamp with time zone, integer, integer)",
 		"business.discount_code_revise(uuid, text, text, uuid, integer, text, integer, timestamp with time zone, integer, integer)",
 		"business.discount_staff_list(uuid, uuid)",
 		"business.email_event_record(text, text, timestamp with time zone, text, uuid, json, text)",
 		"business.identity_resolve(uuid)",
+		"business.identity_resolve_account(uuid)",
 		"business.identity_staff_list(uuid)",
 		"business.lot_create(uuid, text, text, uuid, text, integer, bigint, bigint, timestamp with time zone, timestamp with time zone)",
 		"business.lot_public_list(timestamp with time zone)",
@@ -476,12 +487,29 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.manual_payout_request(uuid, uuid, text, text, integer, uuid, text, text, timestamp with time zone)",
 		// Order notices (0030): the API records the UI origin of order links.
 		"business.notice_settings_record(text, text, text[])",
+		// Appointment changes (0031): the chef's amendment, the customer's
+		// same-day move and its schedule choices.
+		"business.order_appointment_change_request(uuid, uuid, text, text, integer, date, uuid, text, timestamp with time zone, text, text, text, timestamp with time zone)",
 		"business.order_cancel_request(uuid, bytea, uuid, text, text, integer, uuid, text, text, timestamp with time zone)",
 		"business.order_cancellation_preview(uuid, bytea, uuid, timestamp with time zone)",
 		"business.order_chef_cancel_request(uuid, uuid, text, text, integer, text, text, timestamp with time zone)",
+		"business.order_claim_decide(uuid, text, text, uuid, integer, text, uuid, text, timestamp with time zone)",
+		"business.order_claim_staff_list(uuid, text, timestamp with time zone, uuid, integer)",
+		"business.order_claim_submit(uuid, text, text, text, text, text, text, bytea, timestamp with time zone)",
+		"business.order_claim_withdraw(uuid, text, text, uuid, integer, timestamp with time zone)",
+		// GK delivery quote and free-delivery waiver (0035, chef).
+		"business.order_delivery_quote(uuid, uuid, text, text, integer, bigint, text, timestamp with time zone)",
+		"business.order_delivery_waiver(uuid, uuid, text, text, integer, integer, text, timestamp with time zone)",
 		"business.order_free_confirm_request(uuid, bytea, uuid, text, text, integer, text, timestamp with time zone)",
+		"business.order_fulfillment_transition(uuid, uuid, text, text, integer, text, text, timestamp with time zone)",
 		"business.order_get(uuid, uuid, bytea)",
+		"business.order_handover_request(uuid, uuid, text, text, integer, text, text, timestamp with time zone)",
+		// Late-payment agreement (0034): the customer's answer and the chef's offer.
+		"business.order_late_payment_answer(uuid, bytea, uuid, text, text, integer, uuid, text, text, timestamp with time zone)",
+		"business.order_late_payment_offer(uuid, uuid, text, text, integer, text, date, uuid, timestamp with time zone)",
 		"business.order_late_payment_request(uuid, uuid, text, text, integer, text, text, timestamp with time zone, text, text, timestamp with time zone)",
+		"business.order_owner_assign(uuid, text, text, uuid, integer, uuid, uuid, text, timestamp with time zone)",
+		"business.order_pickup_move_request(uuid, bytea, uuid, text, text, integer, uuid, text, timestamp with time zone)",
 		"business.order_production_start(uuid, uuid, text, text, integer, timestamp with time zone)",
 		"business.order_staff_get(uuid, uuid)",
 		"business.order_staff_list(uuid, date, date, text[], boolean, timestamp with time zone, timestamp with time zone, uuid, integer)",
@@ -500,6 +528,7 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.refund_observation_resolve(uuid, text, text, uuid, integer, uuid, text, uuid, text)",
 		"business.refund_operation_decide(uuid, text, text, uuid, integer, uuid, text, text, text)",
 		"business.refund_remainder_reserve(uuid, text, text, uuid, integer, uuid, text)",
+		"business.schedule_move_slots(uuid, bytea, uuid, timestamp with time zone)",
 		"business.schedule_public_days(date, date, timestamp with time zone, integer)",
 		"business.schedule_public_slots(date, text, timestamp with time zone, integer)",
 		"business.schedule_staff_days(uuid, date, date, timestamp with time zone)",

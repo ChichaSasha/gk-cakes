@@ -110,10 +110,14 @@ func (w *Worker) dispatch(ctx context.Context, log *slog.Logger, store leaseStor
 	if w.Coordinator.Environment != w.Environment {
 		return errors.New("payments: worker and recovery journal must use the same environment")
 	}
+	kind, err := store.kind(ctx, b.CollectionID)
+	if err != nil {
+		return err
+	}
 	if len(b.Payload) == 0 {
 		// First dispatch: fix the exact request now, on the database clock.
 		payload, err := NewPayload(SessionRequest{CollectionID: b.CollectionID, OrderID: b.OrderID, AmountMinor: b.AmountMinor,
-			Environment: b.Environment, UIOrigin: b.ReturnOrigin, ExpiresAt: SessionExpiry(b.DBNow)}, b.Account)
+			Environment: b.Environment, UIOrigin: b.ReturnOrigin, ExpiresAt: SessionExpiry(b.DBNow), Kind: kind}, b.Account)
 		if err != nil {
 			return jobs.Attention(reasonPayload, err)
 		}
@@ -133,7 +137,7 @@ func (w *Worker) dispatch(ctx context.Context, log *slog.Logger, store leaseStor
 	}
 	d, err := CheckPayload(b.Payload, Expected{CollectionID: b.CollectionID, OrderID: b.OrderID, AmountMinor: b.AmountMinor,
 		Environment: b.Environment, Account: b.Account, Livemode: b.Livemode, UIOrigin: b.ReturnOrigin,
-		ExpiresAt: b.SessionExpiresAt}, w.Environment)
+		ExpiresAt: b.SessionExpiresAt, Kind: kind}, w.Environment)
 	if err != nil {
 		return jobs.Attention(reasonPayload, err)
 	}
@@ -596,6 +600,14 @@ func (s leaseStore) Frozen(ctx context.Context) (bool, error) {
 	var frozen bool
 	err := s.db.QueryRow(ctx, "SELECT business.payment_recovery_frozen($1::uuid, $2::uuid, $3)", s.args()...).Scan(&frozen)
 	return frozen, gatewayErr(err)
+}
+
+// kind is the leased dispatch's collection kind (payment_dispatch_kind,
+// migration 0035): cake or delivery.
+func (s leaseStore) kind(ctx context.Context, opID string) (string, error) {
+	var kind string
+	err := s.db.QueryRow(ctx, "SELECT business.payment_dispatch_kind($1::uuid, $2::uuid, $3, $4::uuid)", s.args(opID)...).Scan(&kind)
+	return kind, gatewayErr(err)
 }
 
 func (s leaseStore) admit(ctx context.Context, opID string) (string, error) {

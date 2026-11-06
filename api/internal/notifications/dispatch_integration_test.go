@@ -855,6 +855,8 @@ func TestRuntimeRolesUseOnlyTheNotificationGateway(t *testing.T) {
 		"business.payment_attempt_record(uuid, uuid, bigint, uuid, text, integer, text)",
 		"business.payment_dispatch_admit(uuid, uuid, bigint, uuid)",
 		"business.payment_dispatch_fix(uuid, uuid, bigint, uuid, text, timestamp with time zone)",
+		// GK delivery (0035): the dispatch's collection kind (its line item).
+		"business.payment_dispatch_kind(uuid, uuid, bigint, uuid)",
 		"business.payment_job_begin(uuid, uuid, bigint)",
 		"business.payment_reconcile_record(uuid, uuid, bigint, uuid, text, text, text, text, text, json, timestamp with time zone, text)",
 		"business.payment_recovery_committed(uuid, uuid, bigint, uuid, json, text)",
@@ -888,7 +890,11 @@ func TestRuntimeRolesUseOnlyTheNotificationGateway(t *testing.T) {
 		"business.refund_resolve_begin(uuid, uuid, bigint)",
 		"business.refund_resolve_committed(uuid, uuid, bigint, uuid, json, text)",
 		"business.refund_resolve_lookup(uuid, uuid, bigint, uuid, text, uuid, integer, text, text, timestamp with time zone)",
-		"business.refund_resolve_secured(uuid, uuid, bigint, uuid)"}, worker...)
+		"business.refund_resolve_secured(uuid, uuid, bigint, uuid)",
+		// GK-016 r02b inactivity retention (0033): due steps only; recording
+		// a notice is owner-only until the email step records it with its
+		// notification intent.
+		"business.account_retention_due(timestamp with time zone, integer)"}, worker...)
 	slices.Sort(want)
 	if !slices.Equal(got, want) {
 		t.Errorf("gk_worker can execute %v, want exactly %v", got, want)

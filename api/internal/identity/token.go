@@ -60,6 +60,15 @@ type Claims struct {
 	Subject   string // provider user ID (UUID)
 	SessionID string // provider session ID (UUID)
 	ExpiresAt time.Time
+	// AuthenticatedAt is when the user last signed in for this session with
+	// a customer sign-in method (FreshSignInMethods: email link/OTP or
+	// Google): the latest such timestamp of the token's amr (authentication
+	// methods) claim, which Supabase keeps across token refreshes. Password
+	// sign-ins (staff only) and other methods do not count. Zero when the
+	// token has no such entry; iat is not a substitute, because every refresh
+	// renews it. Fresh-sign-in checks (account deletion) treat zero as not
+	// fresh.
+	AuthenticatedAt time.Time
 }
 
 // Verifier checks ES256 access tokens against the provider's JWKS, fetched
@@ -212,7 +221,41 @@ func (v *Verifier) claims(payload []byte) (Claims, error) {
 	case hasAnon && string(anonymous) != "false":
 		return Claims{}, fmt.Errorf("%w: anonymous session", ErrUnauthenticated)
 	}
-	return Claims{Subject: sub, SessionID: sid, ExpiresAt: exp}, nil
+	return Claims{Subject: sub, SessionID: sid, ExpiresAt: exp, AuthenticatedAt: authenticatedAt(c["amr"], now.Add(leeway))}, nil
+}
+
+// FreshSignInMethods are the amr methods that prove a fresh customer
+// sign-in (GK-016 r02b answer 3: "a new email link or Google"): otp and
+// magiclink (the email link), oauth (Google). Not password (staff only),
+// recovery, invite, email_change or token_refresh.
+var FreshSignInMethods = map[string]bool{"otp": true, "magiclink": true, "oauth": true}
+
+// authenticatedAt reads Supabase's amr claim, a list of {method,
+// timestamp} entries, and returns the latest timestamp of a
+// FreshSignInMethods entry not after notAfter; zero when there is none (the
+// token is still valid).
+func authenticatedAt(raw json.RawMessage, notAfter time.Time) time.Time {
+	if len(raw) == 0 || raw[0] != '[' || len(raw) > 4<<10 {
+		return time.Time{}
+	}
+	var entries []map[string]json.RawMessage
+	if json.Unmarshal(raw, &entries) != nil {
+		return time.Time{}
+	}
+	var latest time.Time
+	for _, e := range entries {
+		if method, ok := str(e, "method"); !ok || !FreshSignInMethods[method] {
+			continue
+		}
+		at, ok := unix(e, "timestamp")
+		if !ok || at.After(notAfter) {
+			continue
+		}
+		if at.After(latest) {
+			latest = at
+		}
+	}
+	return latest
 }
 
 // object decodes exactly one JSON object into its members by exact name,

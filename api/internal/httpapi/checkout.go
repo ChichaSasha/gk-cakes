@@ -33,7 +33,12 @@ type Checkout interface {
 	Cancel(ctx context.Context, id, subject string, digest []byte, key string, in checkout.CancelInput) (catalog.Result, error)
 	ChefCancel(ctx context.Context, subject, key, id string, in checkout.ChefCancelInput) (catalog.Result, error)
 	StartProduction(ctx context.Context, subject, key, id string, in checkout.ProductionInput) (checkout.Started, error)
+	MovePickup(ctx context.Context, id, subject string, digest []byte, key string, in checkout.PickupMoveInput) (checkout.Moved, error)
+	ChangeAppointment(ctx context.Context, subject, key, id string, in checkout.AppointmentInput) (checkout.Moved, error)
+	Transition(ctx context.Context, subject, key, id string, in checkout.TransitionInput) (checkout.Transitioned, error)
 	LatePayment(ctx context.Context, subject, key, id string, in checkout.LatePaymentInput) (catalog.Result, error)
+	OfferLatePayment(ctx context.Context, subject, key, id string, in checkout.LatePaymentOfferInput) (catalog.Result, error)
+	AnswerLatePayment(ctx context.Context, id, subject string, digest []byte, key string, in checkout.LatePaymentAnswerInput) (catalog.Result, error)
 	RecordRefund(ctx context.Context, subject, key, id string, in checkout.RefundInput) (catalog.Result, error)
 	ResolveObservation(ctx context.Context, subject, key, orderID, observationID string, in checkout.ResolveObservationInput) (catalog.Result, error)
 	DecideOperation(ctx context.Context, subject, key, orderID, operationID string, in checkout.DecideOperationInput) (catalog.Result, error)
@@ -48,6 +53,9 @@ type Checkout interface {
 	RecordManualPayoutOutcome(ctx context.Context, subject, key, orderID, operationID string, in checkout.ManualPayoutOutcomeInput) (catalog.Result, error)
 	ManualPayouts(ctx context.Context, subject, orderID string) (json.RawMessage, error)
 	PayDeliveryRefund(ctx context.Context, subject, key, id string, in checkout.DeliveryRefundInput) (catalog.Result, error)
+	QuoteDelivery(ctx context.Context, subject, key, id string, in checkout.DeliveryQuoteInput) (catalog.Result, error)
+	WaiveDelivery(ctx context.Context, subject, key, id string, in checkout.DeliveryWaiverInput) (catalog.Result, error)
+	StartDeliveryPayment(ctx context.Context, id, subject string, digest []byte, key string, in checkout.DeliveryPaymentInput) (catalog.Result, error)
 	CurrentPolicy(ctx context.Context) (checkout.Policy, error)
 	RecordPolicy(ctx context.Context, subject, key string, in checkout.PolicyInput) (catalog.Result, error)
 }
@@ -279,7 +287,79 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 				PollAfterSeconds: checkout.PollAfterSeconds}, nil
 		})
 	}
+	// K06 same-day pickup move (owner, or a guest capability with
+	// move_pickup): 202 "move pending" while its K11 protection runs (the
+	// order shows its current time until then); 200 "unchanged" when the
+	// order already has that time.
+	postPickup := func(w http.ResponseWriter, r *http.Request) {
+		a, digest, ok := orderActor(w, r)
+		if !ok {
+			return
+		}
+		var in checkout.PickupMoveInput
+		key, ok := readCommand(w, r, &in)
+		if !ok {
+			return
+		}
+		res, err := co.MovePickup(r.Context(), r.PathValue("id"), a.Subject, digest, key, in)
+		respondMove(w, r, logger, res, err, "move_pending")
+	}
+	// K04 Q2 / GK-017 r02b Q6: the customer's answer to the chef's offer on
+	// a late-paid order (owner, or a guest capability with "cancel"): 202
+	// while its K11 protection runs; 409 SLOT_UNAVAILABLE when the offered
+	// time can no longer take the order (the offer lapsed).
+	postLatePaymentAnswer := func(w http.ResponseWriter, r *http.Request) {
+		a, digest, ok := orderActor(w, r)
+		if !ok {
+			return
+		}
+		var in checkout.LatePaymentAnswerInput
+		key, ok := readCommand(w, r, &in)
+		if !ok {
+			return
+		}
+		res, err := co.AnswerLatePayment(r.Context(), r.PathValue("id"), a.Subject, digest, key, in)
+		if errors.Is(err, checkout.ErrOrdersFrozen) {
+			writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Order changes are temporarily unavailable", true)
+			return
+		}
+		respondCommand(w, r, logger, http.StatusAccepted, res, err, func() (any, error) {
+			return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: "answer_pending",
+				PollAfterSeconds: checkout.PollAfterSeconds}, nil
+		})
+	}
+	// K03/K06 separate GK delivery payment (owner, or a guest capability with
+	// "pay", as the cake payment): 202 while the worker creates the Checkout
+	// Session; poll the order's delivery block for its link. Never paid here.
+	postDeliveryPayment := func(w http.ResponseWriter, r *http.Request) {
+		a, digest, ok := orderActor(w, r)
+		if !ok {
+			return
+		}
+		var in checkout.DeliveryPaymentInput
+		key, ok := readCommand(w, r, &in)
+		if !ok {
+			return
+		}
+		res, err := co.StartDeliveryPayment(r.Context(), r.PathValue("id"), a.Subject, digest, key, in)
+		if errors.Is(err, checkout.ErrPaymentsUnavailable) {
+			why := "payments are not configured"
+			if errors.Is(err, checkout.ErrRecoveryFrozen) {
+				why = "a restore freeze is on"
+			}
+			logger.Warn("delivery payment request refused for now", "reason", why, "request_id", requestID(r.Context()))
+			writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Payments are temporarily unavailable", true)
+			return
+		}
+		respondCommand(w, r, logger, http.StatusAccepted, res, err, func() (any, error) {
+			return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: "delivery_payment_pending",
+				PollAfterSeconds: checkout.PollAfterSeconds}, nil
+		})
+	}
 	if checkoutEnabled {
+		mux.HandleFunc("POST /api/v1/orders/{id}/delivery-payment", postDeliveryPayment)
+		mux.HandleFunc("POST /api/v1/orders/{id}/late-payment/answer", postLatePaymentAnswer)
+		mux.HandleFunc("POST /api/v1/orders/{id}/pickup", postPickup)
 		mux.HandleFunc("POST /api/v1/checkouts", postCheckout)
 		mux.HandleFunc("POST /api/v1/orders/{id}/free-confirmation", postFreeConfirm)
 		mux.HandleFunc("POST /api/v1/orders/{id}/payment", postPayment)
@@ -358,6 +438,44 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 					return map[string]string{"order_id": res.ID, "lifecycle": res.Lifecycle}, nil
 				})
 			}))
+		// K06 chef date/time amendment with the customer's recorded
+		// agreement; 202 while its K11 protection runs.
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/appointment", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+			var in checkout.AppointmentInput
+			key, ok := readCommand(w, r, &in)
+			if !ok {
+				return
+			}
+			res, err := co.ChangeAppointment(r.Context(), a.Subject, key, r.PathValue("id"), in)
+			respondMove(w, r, logger, res, err, "appointment_change_pending")
+		}))
+		// K05/K06 fulfilment steps (chef or fulfilment; the database keeps
+		// no_show to the chef): ready, dispatch and delivery_exception answer
+		// 200 with the order's state; handover and no_show are K11 commands,
+		// 202 while protected.
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/transitions", staff(id, logger, []string{identity.Chef, identity.Fulfillment},
+			func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+				var in checkout.TransitionInput
+				key, ok := readCommand(w, r, &in)
+				if !ok {
+					return
+				}
+				res, err := co.Transition(r.Context(), a.Subject, key, r.PathValue("id"), in)
+				if errors.Is(err, checkout.ErrOrdersFrozen) {
+					writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Order changes are temporarily unavailable", true)
+					return
+				}
+				if in.Protected() {
+					respondCommand(w, r, logger, http.StatusAccepted, res.Result, err, func() (any, error) {
+						return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: in.Action + "_pending",
+							PollAfterSeconds: checkout.PollAfterSeconds}, nil
+					})
+					return
+				}
+				respondCommand(w, r, logger, http.StatusOK, res.Result, err, func() (any, error) {
+					return map[string]string{"order_id": res.ID, "lifecycle": res.Lifecycle, "fulfillment_state": res.FulfillmentState}, nil
+				})
+			}))
 		// K04 Q2 late payment: honour (with the customer's agreement) or full
 		// return; 202 while its K11 protection runs.
 		mux.HandleFunc("POST /api/v1/admin/orders/{id}/late-payment", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
@@ -371,6 +489,54 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 				return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: "decision_pending",
 					PollAfterSeconds: checkout.PollAfterSeconds}, nil
 			})
+		}))
+		// GK-017 r02b Q6: the chef's offer (the requested time or another
+		// one) that the customer answers on the order page. Synchronous and
+		// versioned; 200 {order_id, offer_id}.
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/late-payment/offer", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+			var in checkout.LatePaymentOfferInput
+			key, ok := readCommand(w, r, &in)
+			if !ok {
+				return
+			}
+			res, err := co.OfferLatePayment(r.Context(), a.Subject, key, r.PathValue("id"), in)
+			if errors.Is(err, checkout.ErrOrdersFrozen) {
+				writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Order changes are temporarily unavailable", true)
+				return
+			}
+			respondCommand(w, r, logger, http.StatusOK, res, err, func() (any, error) {
+				return map[string]string{"order_id": r.PathValue("id"), "offer_id": res.ID}, nil
+			})
+		}))
+		// K03/K06 GK delivery: the chef's quote (from £100, pay by the
+		// original handover - 48 h) and free-delivery waiver (distance review).
+		// Synchronous and versioned; 200 {order_id, quote_id | waiver_id}.
+		chefDelivery := func(w http.ResponseWriter, r *http.Request, res catalog.Result, err error, field string) {
+			if errors.Is(err, checkout.ErrOrdersFrozen) {
+				writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Order changes are temporarily unavailable", true)
+				return
+			}
+			respondCommand(w, r, logger, http.StatusOK, res, err, func() (any, error) {
+				return map[string]string{"order_id": r.PathValue("id"), field: res.ID}, nil
+			})
+		}
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/delivery-quote", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+			var in checkout.DeliveryQuoteInput
+			key, ok := readCommand(w, r, &in)
+			if !ok {
+				return
+			}
+			res, err := co.QuoteDelivery(r.Context(), a.Subject, key, r.PathValue("id"), in)
+			chefDelivery(w, r, res, err, "quote_id")
+		}))
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/delivery-waiver", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+			var in checkout.DeliveryWaiverInput
+			key, ok := readCommand(w, r, &in)
+			if !ok {
+				return
+			}
+			res, err := co.WaiveDelivery(r.Context(), a.Subject, key, r.PathValue("id"), in)
+			chefDelivery(w, r, res, err, "waiver_id")
 		}))
 		// K05 chef refunds: an agreed partial refund with allocations, and
 		// the pending delivery share of a cancellation (chef-only). 202 while
@@ -606,6 +772,25 @@ func staffOrderFilter(w http.ResponseWriter, r *http.Request) (checkout.StaffOrd
 		return f, false
 	}
 	return f, true
+}
+
+// respondMove answers an appointment change: 503 during a restore freeze,
+// 200 unchanged, or 202 with the command while it is protected.
+func respondMove(w http.ResponseWriter, r *http.Request, logger *slog.Logger, res checkout.Moved, err error, pending string) {
+	if errors.Is(err, checkout.ErrOrdersFrozen) {
+		writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Order changes are temporarily unavailable", true)
+		return
+	}
+	if err == nil && res.Unchanged {
+		respondCommand(w, r, logger, http.StatusOK, res.Result, nil, func() (any, error) {
+			return map[string]string{"order_id": r.PathValue("id"), "state": "unchanged"}, nil
+		})
+		return
+	}
+	respondCommand(w, r, logger, http.StatusAccepted, res.Result, err, func() (any, error) {
+		return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: pending,
+			PollAfterSeconds: checkout.PollAfterSeconds}, nil
+	})
 }
 
 // emptyBody accepts a request without a body or with an empty JSON object

@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><title>Screenshot frame</title></head><body style="margin:0">
+<!-- Design-review tooling only (GK-016 r02): frames a prototype page at an exact width (headless Chrome's window is at least 500px wide) and reports its full height. -->
+<iframe id="f" title="Prototype page" style="border:0;display:block"></iframe>
+<script>
+const p=new URLSearchParams(location.search),f=document.getElementById('f'),src=p.get('src')||'';
+if(/^poc\/[a-z]+\.html(\?|$)/.test(src)){f.style.width=(+p.get('w')||390)+'px';f.style.height=(+p.get('h')||900)+'px';f.src=src;
+f.onload=()=>setTimeout(()=>{const d=f.contentDocument;document.title='H='+Math.max(d.documentElement.scrollHeight,d.body.scrollHeight)},900)}
+</script></body></html>

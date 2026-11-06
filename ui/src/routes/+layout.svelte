@@ -5,9 +5,13 @@
 
 	let { children }: LayoutProps = $props();
 
-	// The home and discovery pages (GK-028) bring their own header.
+	// The home and discovery pages (GK-028) and the account pages (GK-029)
+	// bring their own header.
 	const shopPage = $derived(
-		page.route.id === '/' || (page.route.id?.startsWith('/(shop)') ?? false)
+		page.route.id === '/' ||
+			(page.route.id?.startsWith('/(shop)') ?? false) ||
+			page.route.id === '/account' ||
+			(page.route.id?.startsWith('/account/') ?? false)
 	);
 	// So do the chef workspace pages (GK-018 r03b2).
 	const chefPage = $derived(page.route.id?.startsWith('/admin/orders') ?? false);

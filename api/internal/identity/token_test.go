@@ -501,3 +501,49 @@ func TestHangingProviderTimesOut(t *testing.T) {
 		t.Fatalf("provider back: %v, want a new refresh to start", err)
 	}
 }
+
+// The sign-in instant is the latest email-link/OTP or Google amr timestamp
+// (Supabase keeps it across refreshes), never a password one and never iat; a missing or unusable amr leaves it zero without
+// rejecting the token; a future timestamp beyond the leeway is ignored.
+func TestAuthenticatedAtComesFromAmr(t *testing.T) {
+	f := newFixture(t)
+	now := f.clock.Now()
+	at := func(edit func(c map[string]any)) time.Time {
+		t.Helper()
+		c, err := f.v.Verify(context.Background(), f.token(t, func(_, c map[string]any) { edit(c) }))
+		if err != nil {
+			t.Fatalf("Verify: %v", err)
+		}
+		return c.AuthenticatedAt
+	}
+	signedIn := now.Add(-3 * time.Hour)
+	if got := at(func(c map[string]any) {
+		c["amr"] = []map[string]any{{"method": "otp", "timestamp": now.Add(-30 * 24 * time.Hour).Unix()},
+			{"method": "oauth", "timestamp": signedIn.Unix()}}
+	}); !got.Equal(signedIn) {
+		t.Fatalf("latest amr: %s, want %s", got, signedIn)
+	}
+	// A later password sign-in (staff only) or refresh does not count.
+	if got := at(func(c map[string]any) {
+		c["amr"] = []map[string]any{{"method": "magiclink", "timestamp": signedIn.Unix()},
+			{"method": "password", "timestamp": now.Add(-time.Minute).Unix()},
+			{"method": "token_refresh", "timestamp": now.Unix()}}
+	}); !got.Equal(signedIn) {
+		t.Fatalf("password after the email link: %s, want %s", got, signedIn)
+	}
+	for name, edit := range map[string]func(c map[string]any){
+		"no amr":         func(map[string]any) {},
+		"password only":  func(c map[string]any) { c["amr"] = []map[string]any{{"method": "password", "timestamp": now.Unix()}} },
+		"recovery only":  func(c map[string]any) { c["amr"] = []map[string]any{{"method": "recovery", "timestamp": now.Unix()}} },
+		"amr not a list": func(c map[string]any) { c["amr"] = "otp" },
+		"no method":      func(c map[string]any) { c["amr"] = []map[string]any{{"timestamp": now.Unix()}} },
+		"string time":    func(c map[string]any) { c["amr"] = []map[string]any{{"method": "otp", "timestamp": "now"}} },
+		"future": func(c map[string]any) {
+			c["amr"] = []map[string]any{{"method": "otp", "timestamp": now.Add(time.Hour).Unix()}}
+		},
+	} {
+		if got := at(edit); !got.IsZero() {
+			t.Errorf("%s: %s, want zero (iat is never used)", name, got)
+		}
+	}
+}

@@ -1,0 +1,31 @@
+// GK-018 r02b — Today (r01b, extended): any working day, "closed online" places,
+// workload with chef extras, the 48-hour collection-details alert, dispatch and chef start with batches.
+'use strict';
+(function(){
+const days=[];for(let d=addDays(TODAY,-3);d<='2026-11-15';d=addDays(d,1))if(SCHEDULE.weekdays[weekdayNum(d)])days.push(d);
+const date=days.includes(q.get('date'))?q.get('date'):TODAY;
+const i=days.indexOf(date),prev=days[i-1],next=days[i+1];
+const s=dayStats(date);
+const day=s.list.filter(o=>o.stage!=='cancelled');
+const groups=[...new Set(day.map(o=>o.slot))].sort();
+const isToday=date===TODAY;
+const N=needs();
+const dayLink=(d,label,ic)=>d?`<a class="icon-btn" href="index.html?date=${d}" aria-label="${label}: ${dayLabel(d)}">${icon(ic)}</a>`:`<span class="icon-btn is-off" aria-hidden="true">${icon(ic)}</span>`;
+const [stLabel,stTone]=DAY_STATUS[s.status];
+let placesNote;
+if(s.status==='lead_time')placesNote=`${s.unused} standard ${s.unused===1?'place':'places'} unused ${chip('closed online','info')}<span class="muted small block">Online booking for this day has closed (less than 192 hours / 8 days before every time). You can still add an order yourself.</span>`;
+else if(s.status==='open')placesNote=`${s.remaining} ${s.remaining===1?'place':'places'} still open online ${chip('Open online','ok')}${s.tentative?`<span class="muted small block">${s.tentative} customer paying now (held for up to 15 minutes; counts until checked).</span>`:''}`;
+else placesNote=`${s.unused} standard ${s.unused===1?'place':'places'} unused ${chip(stLabel,stTone)}`;
+const over=s.committed>s.limit?`<p class="role-note">${s.committed} cakes accepted with a limit of ${s.limit}. All accepted orders stay; only you can cancel one (100% refund).</p>`:'';
+
+mount(shell(`<header class="page-head"><div><p class="eyebrow">${isToday?'Today':'Day'} · London time</p><h1>${dayLabel(date)}</h1></div><div class="head-actions">${can('neworder')?`<a class="btn btn-primary" href="new-order.html?date=${date}">${icon('plus')}New order</a>`:''}<div class="day-switch" role="group" aria-label="Change day">${dayLink(prev,'Previous working day','back')}${isToday?'<span class="chip" aria-current="date">Today</span>':`<a class="chip chip-out" href="index.html">Today</a>`}${dayLink(next,'Next working day','arrow')}</div></div></header>
+<section class="grid-top"><article class="card capacity" aria-labelledby="cap-h"><h2 id="cap-h" class="card-h">Cakes for this day</h2><p class="cap-figure"><strong>${s.committed}</strong> of ${s.limit} standard places${s.override?' <span class="muted small">(your limit for this day)</span>':''}</p><div class="cap-bar" style="--n:${Math.max(s.limit,s.committed)}" role="img" aria-label="${s.committed} of ${s.limit} standard places used">${Array.from({length:Math.max(s.limit,s.committed)},(_,k)=>`<span class="${k<s.committed?(k>=s.limit?'over':'on'):''}"></span>`).join('')}</div>
+<p class="cap-extra">${s.extras?(can('capacity')?`+${s.extras} extra ${s.extras===1?'cake':'cakes'} you approved · outside the 7 · only you see this`:`+${s.extras} extra approved by Elina · not shown to customers`):'No extras approved'}</p>
+<p class="small"><strong>${s.workload} ${s.workload===1?'cake':'cakes'} to make</strong> (standard + extras)</p><p class="small places">${placesNote}</p>${over}
+${s.awaitingDecision.length?`<p class="small warn-text">${s.awaitingDecision.length} paid late, waiting for your decision (not counted yet).</p>`:''}
+${can('capacity')?`<a class="btn" href="calendar.html?date=${date}">Adjust capacity</a>`:`<p class="role-note">Changing capacity: ${ONLY_CHEF}</p>`}</article>
+<article class="card needs" aria-labelledby="needs-h"><h2 id="needs-h" class="card-h">Needs you <span class="count">${N.length}</span></h2><ul class="needs-list">${N.map(n=>{const allowed=!n.cap||can(n.cap);const label=allowed?n.action:'View';const href=n.href&&(allowed||!n.order||REVIEW.role==='support')?n.href:n.order?`order.html?id=${n.order}`:n.href;return `<li class="need need-${n.kind}"><span class="need-dot" aria-hidden="true"></span><div><p class="need-title">${esc(n.title)} ${n.order?`<span class="need-id">${n.order}</span>`:''}</p><p class="need-detail">${esc(!seesMoney&&n.fdetail?n.fdetail:n.detail)}</p>${allowed?'':`<p class="role-note small">${n.kind==='email'&&REVIEW.role==='support'?'You flagged this. After Elina fixes the address you can resend it from the recovery queue.':ONLY_CHEF}</p>`}</div><a class="btn btn-small" href="${href}">${label}</a></li>`}).join('')}</ul></article></section>
+<section class="card" aria-labelledby="hand-h"><div class="card-row"><h2 id="hand-h" class="card-h">Handovers${isToday?' today':''}</h2><p class="muted small">${day.length} orders · ${day.filter(o=>COMMITTED.has(o.stage)).reduce((n,o)=>n+o.cakes,0)} cakes</p></div>
+${groups.length?`<ol class="timeline">${groups.map(g=>`<li class="slot"><p class="slot-time">${icon('clock','slot-icon')}${g}</p><ul>${day.filter(o=>o.slot===g).map(o=>`<li class="handover"><img src="assets/${o.img}.png" alt="" width="56" height="56"><div class="handover-main"><p class="handover-title"><a href="order.html?id=${o.id}">${esc(o.cake)}</a> <span class="need-id">${o.id}</span>${o.extra?'<span class="tag-extra">Extra</span>':''}${sourceTag(o)}${o.shortNotice?'<span class="tag-short">Short notice · your choice</span>':''}</p><p class="muted small">${esc(o.customer)} · ${MODES[o.mode]}${o.mode==='delivery'?` · delivery ${deliveryPaid(o)?'paid':'not paid yet'}`:''}${o.peanuts?' · <strong class="peanut">PEANUTS</strong>':''}${detailsOverdue(o)?' · <strong class="bad-text">details not sent</strong>':''}</p></div>${stagePill(o)}${actionButton(o)}</li>`).join('')}</ul></li>`).join('')}</ol>`:`<p class="muted">No handovers on this day.</p>`}
+<p class="muted small foot">“In production (automatic)” begins 48 hours after payment; it doesn’t mean you have started and it uses no ingredients. “You started making” is when you actually begin and choose the batches you use. Handovers can be recorded by Elina or a fulfilment helper; GK deliveries go “Out for delivery” first and are handed over at the door.</p></section>`,'today'));
+})();

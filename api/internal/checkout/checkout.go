@@ -418,30 +418,69 @@ var invalidFields = map[string]string{
 	"note_invalid": "note", "resolution_invalid": "resolution",
 	"evidence_ref_invalid": "evidence_ref", "outcome_invalid": "outcome", "payout_preview_invalid": "preview_id",
 	"range_invalid": "to", "page_limit_invalid": "limit", "lifecycle_invalid": "lifecycle", "cursor_invalid": "cursor",
+	"slot_invalid": "target_slot_id", "date_invalid": "target_date", "feasibility_invalid": "feasibility_note",
+	"appointment_agreement_invalid": "customer_agreement",
+	"action_invalid":                "action",
+	// Customer accounts (0033).
+	"profile_invalid": "profile", "claim_channel_invalid": "channel", "claim_reference_invalid": "reference",
+	"claim_note_invalid": "note", "claim_invalid": "claim", "claim_decision_invalid": "decision",
+	"claim_order_invalid": "order_id", "decision_note_invalid": "note", "evidence_invalid": "evidence",
+	"account_unknown": "account_id", "deletion_preview_invalid": "preview_id", "claim_state_invalid": "state",
+	// Late-payment agreement (0034).
+	"offer_kind_invalid": "kind", "offer_target_invalid": "target_slot_id", "offer_invalid": "offer_id",
+	"answer_invalid": "answer",
+	// GK delivery (0035).
+	"delivery_amount_invalid": "amount_minor", "distance_invalid": "distance_m",
+	"distance_source_invalid": "distance_source", "quote_invalid": "quote_id",
 }
 
 var invalidMessages = map[string]string{
-	"code_unknown":           "is not a current code",
-	"code_requires_sign_in":  "needs you to sign in (it is limited per customer)",
-	"code_not_applicable":    "applies to GK delivery only",
-	"expires_invalid":        "must be in the future",
-	"lines_duplicate":        "must not repeat a cake",
-	"proof_reused":           "must be fresh for each new quote",
-	"preview_invalid":        "must be a cancellation preview you requested for this order, with its preview_hash",
-	"reason_invalid":         "must be 1 to 500 characters on one line without surrounding spaces",
-	"decision_invalid":       "is not a decision this command accepts",
-	"note_invalid":           "must be 1 to 500 characters on one line without surrounding spaces",
-	"resolution_invalid":     "must be match (with refund_operation_id) or accept_external",
-	"evidence_ref_invalid":   "must be an evidence reference (1 to 200 visible characters; never bank details: no 6 or more digits once spaces, hyphens and dots are removed, nothing IBAN-like)",
-	"outcome_invalid":        "must be submitted, succeeded (with transfer_identity, evidence_ref, amount_minor, currency), failed or withdrawn (with evidence_ref), or unknown",
-	"payout_preview_invalid": "must be a manual payout preview you requested for this order, with its preview_hash",
-	"agreement_invalid":      "must give channel, agreed_at (after the payment, not in the future) and evidence_ref to honour, and nothing for full_return",
-	"amount_invalid":         "must be 1 to 100000000 pence",
-	"currency_invalid":       "must be GBP",
-	"range_invalid":          "must not be before from, and the range must be at most 93 days",
-	"page_limit_invalid":     "must be 1 to 100",
-	"lifecycle_invalid":      "must be distinct visible lifecycles",
-	"allocations_invalid":    "must name each succeeded payment collection of the order once, each at least 1 penny, adding up to amount_minor",
+	"code_unknown":                  "is not a current code",
+	"code_requires_sign_in":         "needs you to sign in (it is limited per customer)",
+	"code_not_applicable":           "applies to GK delivery only",
+	"expires_invalid":               "must be in the future",
+	"lines_duplicate":               "must not repeat a cake",
+	"proof_reused":                  "must be fresh for each new quote",
+	"preview_invalid":               "must be a cancellation preview you requested for this order, with its preview_hash",
+	"reason_invalid":                "must be 1 to 500 characters on one line without surrounding spaces",
+	"decision_invalid":              "is not a decision this command accepts",
+	"note_invalid":                  "must be 1 to 500 characters on one line without surrounding spaces",
+	"resolution_invalid":            "must be match (with refund_operation_id) or accept_external",
+	"evidence_ref_invalid":          "must be an evidence reference (1 to 200 visible characters; never bank details: no 6 or more digits once spaces, hyphens and dots are removed, nothing IBAN-like)",
+	"outcome_invalid":               "must be submitted, succeeded (with transfer_identity, evidence_ref, amount_minor, currency), failed or withdrawn (with evidence_ref), or unknown",
+	"payout_preview_invalid":        "must be a manual payout preview you requested for this order, with its preview_hash",
+	"agreement_invalid":             "must give channel, agreed_at (after the payment, not in the future) and evidence_ref to honour, and nothing for full_return",
+	"amount_invalid":                "must be 1 to 100000000 pence",
+	"currency_invalid":              "must be GBP",
+	"range_invalid":                 "must not be before from, and the range must be at most 93 days",
+	"page_limit_invalid":            "must be 1 to 100",
+	"lifecycle_invalid":             "must be distinct visible lifecycles",
+	"allocations_invalid":           "must name each succeeded payment collection of the order once, each at least 1 penny, adding up to amount_minor",
+	"slot_invalid":                  "must be a slot ID",
+	"date_invalid":                  "must be a date (YYYY-MM-DD)",
+	"feasibility_invalid":           "must be 1 to 500 characters on one line without surrounding spaces",
+	"appointment_agreement_invalid": "must give channel, agreed_at (after the order was placed, not in the future) and evidence_ref",
+	// Customer accounts (0033).
+	"profile_invalid":          "is not valid",
+	"claim_channel_invalid":    "must be instagram, offline or website_email_link (website_email_link alone when you add an order from its link)",
+	"claim_reference_invalid":  "is required: the order reference from the chef",
+	"claim_note_invalid":       "must be 1 to 500 characters without surrounding spaces",
+	"claim_order_invalid":      "must be an existing order (for a claim from an order's link, that order)",
+	"decision_note_invalid":    "must be 1 to 500 characters on one line without surrounding spaces",
+	"evidence_invalid":         "must be 1 to 500 characters on one line without surrounding spaces",
+	"account_unknown":          "must name one active account (account_id or account_subject)",
+	"deletion_preview_invalid": "must be a deletion preview you requested, with its preview_hash",
+	"claim_state_invalid":      "must be pending, approved, declined or withdrawn",
+	// Late-payment agreement (0034).
+	"offer_kind_invalid":   "must be requested or other",
+	"offer_target_invalid": "must be another time than the requested one (kind other), or absent for kind requested",
+	"offer_invalid":        "must be the offer shown on the order page",
+	"answer_invalid":       "must be accept or decline",
+	// GK delivery (0035).
+	"delivery_amount_invalid": "must be whole pence from 10000 (£100) to 99999999",
+	"distance_invalid":        "must be the measured driving distance in whole metres (1 to 1000000)",
+	"distance_source_invalid": "must be 1 to 200 characters on one line without surrounding spaces",
+	"quote_invalid":           "must be the delivery quote shown on the order page",
 }
 
 var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "state_conflict": true,
@@ -449,7 +488,16 @@ var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "
 	"quote_expired": true, "policy_changed": true, "code_used_up": true, "payment_required": true, "lead_time": true,
 	"payment_in_progress": true, "preview_stale": true, "cancellation_not_eligible": true, "honour_too_late": true,
 	"refund_limit": true, "reconciliation_required": true, "refund_in_progress": true, "no_refund_pending": true,
-	"identity_unproven": true, "window_open": true, "evidence_required": true, "manual_payout_not_eligible": true}
+	"identity_unproven": true, "window_open": true, "evidence_required": true, "manual_payout_not_eligible": true,
+	"move_too_late": true, "move_not_eligible": true, "delivery_not_paid": true, "handover_not_due": true,
+	"transition_not_allowed": true,
+	// Customer accounts (0033).
+	"account_deletion_blocked": true, "claim_limit": true, "claim_pending": true, "already_yours": true,
+	"order_owned": true, "account_unavailable": true, "staff_account": true, "deletion_preview_stale": true,
+	// Late-payment agreement (0034).
+	"offer_not_current": true,
+	// GK delivery (0035).
+	"delivery_pay_by_passed": true, "quote_not_current": true, "waiver_not_eligible": true}
 
 // conflictAliases name engine refusals in the customer's terms.
 var conflictAliases = map[string]string{"day_full": "slot_unavailable", "stock_unavailable": "item_unavailable"}

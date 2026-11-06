@@ -96,6 +96,8 @@ func identityError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, 
 		writeError(w, r, http.StatusUnauthorized, "UNAUTHENTICATED", "Sign in to continue", false)
 	case errors.Is(err, identity.ErrDisabled):
 		writeError(w, r, http.StatusForbidden, "ACCOUNT_DISABLED", "This account is disabled", false)
+	case errors.Is(err, identity.ErrDeleted):
+		writeError(w, r, http.StatusForbidden, "ACCOUNT_DELETED", "This account was deleted", false)
 	default:
 		logger.Warn("identity check failed", "request_id", requestID(r.Context()), "error", err.Error())
 		writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Service temporarily unavailable", true)
