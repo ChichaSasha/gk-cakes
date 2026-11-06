@@ -4,10 +4,12 @@
 #
 #   scripts/dev/merge-flow.sh <pr> <reviewed-sha> [--wait] [--dry-run] [--repost] [-m "<ai-review description>"]
 #
+# <reviewed-sha> must be the commit ID the reviewer saw (7-40 hex
+# characters), never a branch or other ref name.
 # 1. Checks the PR is open against main and its head is the reviewed commit,
-#    or the reviewed commit plus a merge of main that changes nothing but
-#    main's own changes (as `gh pr update-branch` makes). Anything else stops:
-#    the new code needs review.
+#    or a clean merge of a main commit onto it whose tree is exactly what Git's
+#    own merge of the two produces (as `gh pr update-branch` makes). Anything
+#    else stops: the new code needs review.
 # 2. If the branch is BEHIND main, updates it and checks that again.
 # 3. Marks the PR ready, enables native auto-merge (merge commit) bound to that
 #    exact head (expectedHeadOid), then posts the commit status
@@ -26,7 +28,7 @@ set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 need git; need gh
 
-usage() { sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { usage_of "$0"; }
 [ $# -ge 2 ] || usage
 PR="$1"; REVIEWED_IN="$2"; shift 2
 WAIT=0; DRY=0; REPOST=0; VERIFY_ONLY=0; DESC=""
@@ -36,7 +38,7 @@ while [ $# -gt 0 ]; do
 		--dry-run) DRY=1; shift ;;
 		--repost) REPOST=1; shift ;;
 		--verify-only) VERIFY_ONLY=1; shift ;;
-		-m) DESC="${2:-}"; shift 2 ;;
+		-m) need_value -m $#; DESC="$2"; shift 2 ;;
 		*) usage ;;
 	esac
 done
@@ -44,8 +46,11 @@ printf '%s' "$PR" | grep -Eq '^[0-9]+$' || die "PR must be a number"
 WAIT_MINUTES="${GK_WAIT_MINUTES:-45}"
 
 MAIN="$(main_clone)"
-git -C "$MAIN" fetch -q origin main "pull/$PR/head"
-REVIEWED="$(git -C "$MAIN" rev-parse --verify "$REVIEWED_IN^{commit}")" || die "unknown commit $REVIEWED_IN"
+ORIGIN_MAIN=refs/remotes/origin/main
+git -C "$MAIN" fetch -q origin "+refs/heads/main:$ORIGIN_MAIN" "pull/$PR/head"
+printf '%s' "$REVIEWED_IN" | grep -Eq '^[0-9a-f]{7,40}$' || die "<reviewed-sha> must be a commit ID (7-40 hex characters), not '$REVIEWED_IN'"
+REVIEWED="$(git -C "$MAIN" rev-parse --verify --quiet "$REVIEWED_IN^{commit}")" || die "unknown commit $REVIEWED_IN"
+case "$REVIEWED" in "$REVIEWED_IN"*) ;; *) die "'$REVIEWED_IN' resolves through a ref name; give the commit ID" ;; esac
 [ -n "$DESC" ] || DESC="Independent review PASS on ${REVIEWED:0:7}"
 [ "${#DESC}" -le 140 ] || die "the status description must be at most 140 characters"
 
@@ -53,7 +58,7 @@ pr_field() { gh pr view "$PR" -R "$GK_REPO" --json "$1" -q ".$1"; }
 
 # Prints why HEAD is acceptable for the reviewed commit, or fails.
 verify_head() {
-	local head="$1" parents second base
+	local head="$1" parents second expected
 	if [ "$head" = "$REVIEWED" ]; then
 		note "head ${head:0:7} is the reviewed commit"
 		return 0
@@ -64,12 +69,14 @@ verify_head() {
 	set -- $parents
 	[ $# -eq 3 ] && [ "$2" = "$REVIEWED" ] || die "head ${head:0:7} is not the reviewed commit ${REVIEWED:0:7} or a merge onto it: review the new code first"
 	second="$3"
-	git -C "$MAIN" merge-base --is-ancestor "$second" origin/main || die "head ${head:0:7} merges ${second:0:7}, which is not on main"
-	base="$(git -C "$MAIN" merge-base "$REVIEWED" "$second")"
-	if ! cmp -s <(git -C "$MAIN" diff --binary "$REVIEWED" "$head") <(git -C "$MAIN" diff --binary "$base" "$second"); then
-		die "the merge in ${head:0:7} changes more than main's own changes (a conflict resolution?): review it first"
-	fi
-	note "head ${head:0:7} = reviewed ${REVIEWED:0:7} + merge of main ${second:0:7} (only main's changes)"
+	git -C "$MAIN" merge-base --is-ancestor "$second" "$ORIGIN_MAIN" || die "head ${head:0:7} merges ${second:0:7}, which is not on main"
+	# Git's own merge of the reviewed commit and that main commit must be clean
+	# and give exactly the head's tree: no conflict resolution, no extra edit.
+	expected="$(git -C "$MAIN" merge-tree --write-tree "$REVIEWED" "$second" 2>/dev/null | head -n 1)" ||
+		die "merging ${second:0:7} into the reviewed commit conflicts: review the resolution first"
+	[ "$expected" = "$(git -C "$MAIN" rev-parse "$head^{tree}")" ] ||
+		die "the merge in ${head:0:7} differs from a clean merge of main ${second:0:7}: review it first"
+	note "head ${head:0:7} = reviewed ${REVIEWED:0:7} + clean merge of main ${second:0:7}"
 }
 
 if [ "$VERIFY_ONLY" = 1 ]; then
@@ -88,7 +95,8 @@ case "$MERGE_STATE" in
 	DIRTY) die "PR #$PR has conflicts with main: resolve them on the branch, then review that change" ;;
 	BEHIND)
 		if [ "$DRY" = 1 ]; then
-			note "would run: gh pr update-branch $PR, then check the new head again"
+			note "would run: gh pr update-branch $PR, check the new head, then continue with that head"
+			exit 0
 		else
 			note "branch is behind main: updating"
 			gh pr update-branch "$PR" -R "$GK_REPO" >/dev/null
@@ -99,7 +107,7 @@ case "$MERGE_STATE" in
 			done
 			[ "$NEW" != "$HEAD" ] || die "the branch update did not produce a new head"
 			HEAD="$NEW"
-			git -C "$MAIN" fetch -q origin main "pull/$PR/head"
+			git -C "$MAIN" fetch -q origin "+refs/heads/main:$ORIGIN_MAIN" "pull/$PR/head"
 			verify_head "$HEAD"
 		fi
 		;;
@@ -162,7 +170,7 @@ note "waiting for the Staging run of ${MERGE_SHA:0:7}"
 deadline=$(( $(date +%s) + WAIT_MINUTES * 60 ))
 while :; do
 	line="$(gh run list -R "$GK_REPO" --workflow staging.yml --limit 20 --json headSha,status,conclusion,databaseId \
-		-q ".[] | select(.headSha==\"$MERGE_SHA\") | [.status, .conclusion, (.databaseId|tostring)] | join(\" \")" | head -n 1)"
+		-q "[.[] | select(.headSha==\"$MERGE_SHA\")] | first | select(. != null) | [.status, .conclusion, (.databaseId|tostring)] | join(\" \")")"
 	case "$line" in completed*) break ;; esac
 	[ "$(date +%s)" -lt "$deadline" ] || die "no completed Staging run for ${MERGE_SHA:0:7} after $WAIT_MINUTES minutes (a newer main commit may deploy it instead)"
 	sleep 30

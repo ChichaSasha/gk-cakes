@@ -22,9 +22,9 @@ BUILD=1; AUTH=staging
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--no-build) BUILD=0; shift ;;
-		--auth) AUTH="${2:-}"; shift 2 ;;
+		--auth) need_value "$1" $#; AUTH="$2"; shift 2 ;;
 		--) shift; break ;;
-		*) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+		*) usage_of "$0" ;;
 	esac
 done
 [ $# -gt 0 ] || die "give a command after --"
@@ -44,10 +44,12 @@ if [ "$BUILD" = 1 ] || [ ! -d "$ui/build" ]; then (cd "$ui" && npm run --silent 
 
 pids=""
 trap 'kill $pids 2>/dev/null || true' EXIT
-PORT="$PROXY_PORT" node "$here/proxy.mjs" & pids="$pids $!"
-(cd "$ui" && PORT="$UI_PORT" ORIGIN="http://127.0.0.1:$UI_PORT" PUBLIC_API_URL="http://127.0.0.1:$PROXY_PORT" \
-	PUBLIC_AUTH_URL="$AUTH_URL" PUBLIC_AUTH_PUBLISHABLE_KEY="$AUTH_KEY" exec node build >/dev/null 2>&1) & pids="$pids $!"
+# The servers never see a test password meant for the browser script.
+PORT="$PROXY_PORT" env -u STAFF_PW node "$here/proxy.mjs" & pids="$pids $!"
+(cd "$ui" && exec env -u STAFF_PW PORT="$UI_PORT" ORIGIN="http://127.0.0.1:$UI_PORT" PUBLIC_API_URL="http://127.0.0.1:$PROXY_PORT" \
+	PUBLIC_AUTH_URL="$AUTH_URL" PUBLIC_AUTH_PUBLISHABLE_KEY="$AUTH_KEY" node build >/dev/null 2>&1) & pids="$pids $!"
 for _ in $(seq 1 75); do curl -fs -o /dev/null "http://127.0.0.1:$UI_PORT/" && break; sleep 0.2; done
+curl -fs -o /dev/null "http://127.0.0.1:$PROXY_PORT/__ctl?log=1" || die "the QA proxy did not start"
 curl -fs -o /dev/null "http://127.0.0.1:$UI_PORT/" || die "the UI did not start"
 
 export GK_QA_BASE="http://127.0.0.1:$UI_PORT" GK_QA_PROXY="http://127.0.0.1:$PROXY_PORT"

@@ -36,8 +36,10 @@ While CI, auto-merge and the staging deployment run, start the next slice
 ## 2. Build and check
 
 - Iterate with `scripts/dev/ui-preflight.sh --fast` (check, lint, tests,
-  bundle-secret check). Before the PR, run it without `--fast`: it also builds
-  and runs the header check against a local production build.
+  bundle-secret check). Before the PR, run it without `--fast`: it also builds,
+  checks `/healthz` on a server started without sign-in settings and runs the
+  header check, as the PR's `ui` job does. Only the container image build is
+  left to CI.
 - API changes: the commands in `api/README.md`, including the PostgreSQL
   integration tests for anything touching migrations, reservations or money.
 
@@ -67,12 +69,17 @@ owner's behalf), **Tests** (what ran, with results) and, after review,
 ## 5. Review
 
 - `scripts/dev/review-worktree.sh review-pr-<n> <n> --node-modules-from <your worktree>`
-  creates a detached worktree of the PR head outside every clone and reuses
-  your installed dependencies when the lockfile is the same.
+  creates a detached worktree of the PR head outside every clone (in
+  `GK_SCRATCH`, default `$TMPDIR`) and reuses your installed dependencies when
+  the lockfile is the same. Targets are a PR number, a commit ID or a branch of
+  origin; local branches are never used.
 - Start a fresh reviewer (a new subagent or session, no author context) with a
   short prompt: "Use the gk-code-review skill. PR #n, head, base, worktree path,
   PR description file, round, boundaries, ports, focus". The skill holds the
   checklist, severity scale and output format.
+- A PR that spans areas, for example API money or migrations and UI, gets a
+  reviewer (or at least a stated focus) for each area: GK-006 asks for review
+  expertise appropriate to the affected areas.
 - **Stop rule.** A PASS (no blocker or major finding) ends the review. Do not
   change code in that PR for minor findings or nits unless they touch money,
   privacy, security or data loss; list them under Review and fix them in the
@@ -85,10 +92,11 @@ owner's behalf), **Tests** (what ran, with results) and, after review,
 ## 6. Merge
 
 1. Post a short review record on the PR (rounds, verdicts, checks, merge head).
-2. `scripts/dev/merge-flow.sh <pr> <reviewed-sha> --wait`. It refuses a head
-   that is not the reviewed code (a merge of main that changes only main's
-   files is accepted), updates a branch that is behind main and checks that
-   again, marks the PR ready, enables native auto-merge bound to that head,
+2. `scripts/dev/merge-flow.sh <pr> <reviewed-sha> --wait`, with the commit ID
+   the reviewer saw (never a branch name). It refuses a head that is not the
+   reviewed code (it accepts a clean merge of a main commit whose tree equals
+   Git's own merge of the two), updates a branch that is behind main and checks
+   that again, marks the PR ready, enables native auto-merge bound to that head,
    then posts `ai-review` = success on it, waits for the merge and the Staging
    run and prints its jobs. `--repost` re-posts the status when auto-merge
    stalls on a green PR; `--verify-only` checks a head against the reviewed
@@ -124,7 +132,9 @@ owner's behalf), **Tests** (what ran, with results) and, after review,
 - Importing a script that runs its work on import (no `__main__` guard) runs
   it; read a helper before reusing it.
 - SvelteKit's server-side render checks CORS on cross-origin API calls like a
-  browser; a local proxy must answer `*` when no Origin is sent.
+  browser and sends the page origin (as `https://127.0.0.1:<port>`); a local
+  proxy that does not allow it makes the page fail in confusing ways (an
+  unknown cake showed "couldn't load" instead of a 404).
 - Background processes started in one agent shell call may be killed when the
   call returns; start servers and the check in the same command
   (`with-ui.sh` does).

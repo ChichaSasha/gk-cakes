@@ -11,14 +11,20 @@ const qa = require('./lib.cjs');
 	const cake = await page.$eval('.grid .product a', (a) => a.getAttribute('href')).catch(() => null);
 	const paths = ['/', '/shop', '/sizes', '/bag', '/favourites', ...(cake ? [cake] : [])];
 	const rows = await qa.sweep(page, paths);
-	const missing = await page.goto(`${qa.BASE}/cakes/00000000-0000-4000-8000-000000000000`);
+	if (process.env.GK_QA_OUT) {
+		await page.setViewport({ width: 1440, height: 900 });
+		await page.goto(`${qa.BASE}/shop`, { waitUntil: 'networkidle0' });
+		await page.screenshot({ path: `${process.env.GK_QA_OUT}/shop.png`, fullPage: true });
+	}
+	// The unknown cake's 404 logs an expected console error: ignore only those.
+	const before = errors.length;
+	const missing = await page.goto(`${qa.BASE}/cakes/00000000-0000-4000-8000-000000000000`, { waitUntil: 'networkidle0' });
+	const expected = errors.splice(before).filter((e) => !/status of 404/.test(e));
+	errors.push(...expected);
 	const problems = rows.filter((r) => r.status !== 200 || r.overflow).map((r) => `${r.width} ${r.path}: status ${r.status}${r.overflow ? ', overflow' : ''}`);
 	if (missing.status() !== 404) problems.push(`unknown cake: status ${missing.status()}, want 404`);
 	if (!api || api.status() !== 200) problems.push('shop did not load');
-	if (process.env.GK_QA_OUT) await page.screenshot({ path: `${process.env.GK_QA_OUT}/shop.png`, fullPage: true });
 	await browser.close();
-	// The unknown cake's 404 logs one expected console error per visit.
-	const unexpected = errors.filter((e) => !/status of 404/.test(e));
-	console.log(JSON.stringify({ base: qa.BASE, pages: rows.length, problems, errors: unexpected }, null, 1));
-	process.exit(problems.length || unexpected.length ? 1 : 0);
+	console.log(JSON.stringify({ base: qa.BASE, pages: rows.length, problems, errors }, null, 1));
+	process.exit(problems.length || errors.length ? 1 : 0);
 })();

@@ -9,7 +9,8 @@ You are a fresh, independent reviewer: you did not write this change and have
 no author conversation. The author's prompt gives the PR number, reviewed head,
 base, round, review worktree, the PR description file and any focus. Everything
 else is here. Use the engineering method of [work-review](../work-review/SKILL.md)
-with these GK Cakes rules; its Jira and manual-merge notes do not apply.
+with these GK Cakes rules. Its workplace parts do not apply: do not load
+`~/.agents/work` rules, and ignore its Jira and manual-merge notes.
 
 ## Limits
 
@@ -17,11 +18,18 @@ with these GK Cakes rules; its Jira and manual-merge notes do not apply.
   GitHub or Trello, change GitHub settings, or touch production. `node_modules`,
   builds and scratch scripts in your own scratch folder are fine.
 - No Glean, Slack, Jira, Grafana or other workplace tools, and no Snoocode
-  GitHub tools. `gh` may be unavailable; read the PR description file instead.
+  GitHub tools. Read-only `gh` calls (for example `gh pr view`, or
+  `scripts/dev/merge-flow.sh --verify-only` / `--dry-run`) are fine when `gh`
+  works; never one that writes. Without `gh`, read the PR description file.
+- If a check modifies a tracked file (for example `scripts/__pycache__`),
+  restore it and say so.
 - Never print or store passwords, tokens or keys. Staging writes are out of
   scope; the QA proxy forwards reads only.
 - Use only the ports the prompt gives (default 4190–4199) and stop every
-  process you start.
+  process you start: `scripts/dev/ui-preflight.sh --port <p>`,
+  `GK_QA_UI_PORT` / `GK_QA_PROXY_PORT` for the QA kit. Keep files in your own
+  scratch folder: `GK_SCRATCH` for review worktrees, `GK_QA_OUT` for
+  screenshots.
 
 ## Inputs to read
 
@@ -56,6 +64,13 @@ with these GK Cakes rules; its Jira and manual-merge notes do not apply.
 
 ## What to judge
 
+For a process or tooling PR (scripts, skills, planning documents) judge it
+against the [delivery contract](../../docs/planning/DELIVERY.md), Creator
+decision [GK-006](../../docs/creator/GK-006/README.md) and `AGENTS.md`: no
+script may weaken a gate (review, auto-merge on the reviewed head, release
+only by Sasha) or leak a credential, and each script must do safely what it
+claims. Try to make it accept what it should refuse. Otherwise:
+
 - **Requirements and design:** the ticket's acceptance criteria and the approved
   sketch's layout, copy and accessibility patterns. Deviations must be small,
   reversible and listed in the PR. Do not add your own feature requirements.
@@ -80,9 +95,11 @@ with these GK Cakes rules; its Jira and manual-merge notes do not apply.
 ## Severity and verdict
 
 - **Blocker:** wrong money, data loss, privacy or security exposure, broken
-  build or checks, or a forbidden boundary crossed.
-- **Major:** a requirement or contract not met, a real user-facing bug or a
-  design deviation that is not small and reversible.
+  build or checks, a forbidden boundary crossed, or a required delivery gate
+  weakened.
+- **Major:** a requirement or contract not met, a real user-facing bug, a
+  design deviation that is not small and reversible, or a tool that fails its
+  own safety claim.
 - **Minor:** a real but limited defect, an edge case, a missing test for risky
   logic, or an unlisted small deviation.
 - **Nit:** wording, style or optional polish.

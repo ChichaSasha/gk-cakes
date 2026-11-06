@@ -3,10 +3,15 @@
 // through this proxy, which adds CORS for loopback origins.
 //
 //   PORT=4191 UPSTREAM=https://staging-api.gkcake.com node scripts/dev/qa/proxy.mjs
+//   (Node 18 or later; with-ui.sh uses the version in ui/.nvmrc)
 //
 // Read-only by design: only GET (and CORS preflight) is forwarded, so no
-// command can reach staging through it. A bearer token from a signed-in test
-// user is forwarded and never logged. Test controls (loopback only):
+// command can reach staging through it. A signed-in test user's bearer token
+// and a guest's X-Quote-Proof / X-Order-Capability secret are forwarded and
+// never logged. CORS: a loopback origin is echoed (the UI's server-side render
+// sends one, and SvelteKit checks CORS like a browser), a request without an
+// Origin gets '*', and any other site gets no CORS header. Test controls, refused when
+// sent from a non-loopback page:
 //   GET /__ctl?path=/api/v1/schedule&delay=2500   delay matching requests (ms)
 //   GET /__ctl?path=/api/v1/cakes&fail=2          answer the next 2 with 503
 //   GET /__ctl?path=/api/v1/schedule&body=<json>  answer with this JSON (200)
@@ -19,6 +24,10 @@ const PORT = Number(process.env.PORT || 4191);
 const UPSTREAM = process.env.UPSTREAM || 'https://staging-api.gkcake.com';
 const rules = new Map(); // path prefix -> { delay, fail, body }
 let log = [];
+// SvelteKit's server-side fetch sends the page origin, as https.
+const LOOPBACK = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/;
+const FORWARD = ['authorization', 'x-quote-proof', 'x-order-capability'];
+const PASS_BACK = ['content-type', 'cache-control', 'x-request-id', 'retry-after'];
 
 function rule(pathname) {
 	let best;
@@ -29,17 +38,18 @@ function rule(pathname) {
 http
 	.createServer(async (req, res) => {
 		const origin = req.headers.origin;
-		const cors = {
-			// The UI's server-side render fetches without an Origin and SvelteKit
-			// checks CORS like a browser would, so answer '*' then (public data;
-			// the proxy only listens on loopback and never sees cookies).
-			'access-control-allow-origin': origin && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin) ? origin : '*',
-			'access-control-allow-headers': 'authorization, content-type',
-			'access-control-allow-methods': 'GET',
-			vary: 'origin'
-		};
+		const cors = { vary: 'origin' };
+		if (!origin || LOOPBACK.test(origin)) {
+			cors['access-control-allow-origin'] = origin || '*';
+			cors['access-control-allow-headers'] = 'authorization, content-type, x-quote-proof, x-order-capability';
+			cors['access-control-allow-methods'] = 'GET';
+		}
 		const url = new URL(req.url, 'http://proxy');
 		if (url.pathname === '/__ctl') {
+			if (origin && !LOOPBACK.test(origin)) {
+				res.writeHead(403);
+				return res.end();
+			}
 			const q = url.searchParams;
 			if (q.has('reset')) rules.clear();
 			if (q.has('log')) {
@@ -67,6 +77,7 @@ http
 			return res.end('{"error":{"code":"READ_ONLY_PROXY","message":"Only GET is forwarded","request_id":"","retryable":false}}');
 		}
 		log.push(url.pathname + url.search);
+		if (log.length > 500) log = log.slice(-500);
 		const r = rule(url.pathname);
 		if (r?.delay) await new Promise((done) => setTimeout(done, r.delay));
 		if (r?.fail > 0) {
@@ -79,13 +90,16 @@ http
 			return res.end(r.body);
 		}
 		const headers = { accept: 'application/json' };
-		if (req.headers.authorization) headers.authorization = req.headers.authorization;
+		for (const h of FORWARD) if (req.headers[h]) headers[h] = req.headers[h];
 		try {
 			const up = await fetch(UPSTREAM + url.pathname + url.search, { headers });
 			const body = Buffer.from(await up.arrayBuffer());
-			res.writeHead(up.status, { ...cors, 'content-type': up.headers.get('content-type') || 'application/json' });
+			const back = { ...cors };
+			for (const h of PASS_BACK) if (up.headers.get(h)) back[h] = up.headers.get(h);
+			res.writeHead(up.status, back);
 			res.end(body);
-		} catch {
+		} catch (e) {
+			console.error(`QA proxy: upstream ${url.pathname} failed: ${e.message}`);
 			res.writeHead(502, cors);
 			res.end();
 		}
