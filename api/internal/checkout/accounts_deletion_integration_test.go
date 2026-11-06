@@ -13,8 +13,10 @@ import (
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/catalog"
 	"github.com/ChichaSasha/gk-cakes/api/internal/checkout"
+	"github.com/ChichaSasha/gk-cakes/api/internal/dbtest"
 	"github.com/ChichaSasha/gk-cakes/api/internal/identity"
 	"github.com/ChichaSasha/gk-cakes/api/internal/schedule"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Account deletion (GK-016 r02b answers 2, 3, 11; K09).
@@ -107,6 +109,82 @@ func TestAccountDeletionIsBlockedWhileMoneyIsUnsettled(t *testing.T) {
 	}
 }
 
+// Only unsettled money blocks (answer 2). An order email that was not
+// queued (the staff flag notice_not_sent) is staff work, not money: on an
+// upcoming or a completed order it neither blocks nor stops the deletion.
+// An unsecured order change, an unresolved quarantined refund and a
+// cancelled order with a payment and no refund goal block.
+func TestAccountDeletionBlocksOnlyOnUnsettledMoney(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	h.staffGrants(t)
+	h.resolve(t, customerA)
+	h.resolve(t, customerB)
+	upcoming, _, _ := h.paidCollection(t, f, pol, "up")
+	completed, d, _ := h.readyOrder(t, f, pol, "done")
+	changing, _ := h.tenThousandOrder(t, f, pol, "chg")
+	quarantined, qcoll, _ := h.paidCollection(t, f, pol, "qr")
+	recorded, _, _ := h.paidCollection(t, f, pol, "rec")
+
+	start := h.now
+	v, _ := h.fulfilView(t, completed, d)
+	h.now = time.Date(2026, 11, 14, 12, 40, 0, 0, time.UTC)
+	hand, err := h.fulfil(fulfilment, "h-done", completed, checkout.ActionHandover, v.Version)
+	if err != nil {
+		t.Fatalf("handover: %v", err)
+	}
+	if err := h.moveJob(t, hand.ID); err != nil {
+		t.Fatalf("secure the handover: %v", err)
+	}
+	if v, raw := h.fulfilView(t, completed, d); v.Lifecycle != "completed" {
+		t.Fatalf("handed over %s", raw)
+	}
+	h.now = start
+	for _, o := range []string{upcoming, completed} {
+		h.owner(t, `INSERT INTO business.order_notice (id, order_id, kind, dedupe, transition_id, template_revision, outcome, detail)
+			VALUES (gen_random_uuid(), $1::uuid, 'confirmed', 'test-unsent', gen_random_uuid(), 'test', 'not_queued', 'recipient')`, o)
+		if n := h.count(t, `SELECT count(*) FROM business.orders o WHERE o.id = $1::uuid
+			AND business.order_attention_flags(o) = ARRAY['notice_not_sent']`, o); n != 1 {
+			t.Fatalf("order %s is not flagged notice_not_sent only", o)
+		}
+	}
+	h.owner(t, "UPDATE business.orders SET recovery_state = 'confirmation_pending' WHERE id = $1::uuid", changing)
+	h.owner(t, `INSERT INTO business.refund_observation (id, collection_id, provider_account_id, livemode, provider_refund_id,
+		amount_minor, currency, status, quarantined, quarantine_reason, source)
+		VALUES (gen_random_uuid(), $1::uuid, 'acct_test', false, 're_quarantined', 100, 'gbp', 'succeeded', true, 'unmatched', 'webhook')`, qcoll)
+	h.owner(t, `UPDATE business.orders SET lifecycle = 'cancelled', cancel_reason = 'chef_cancelled', cancelled_at = now()
+		WHERE id = $1::uuid`, recorded)
+	for i, o := range []string{upcoming, completed} {
+		h.assign(t, o, customerA, "a"+string(rune('0'+i)))
+	}
+	for i, o := range []string{changing, quarantined, recorded} {
+		h.assign(t, o, customerB, "b"+string(rune('0'+i)))
+	}
+
+	p := h.deletionPreview(t, customerB)
+	got := map[string]string{}
+	for _, b := range p.Blocked {
+		got[b.OrderID] = b.Reason
+	}
+	want := map[string]string{changing: "order_change_in_progress", quarantined: "refund_being_checked", recorded: "payment_recorded"}
+	if p.CanDelete || len(got) != 3 || got[changing] != want[changing] || got[quarantined] != want[quarantined] ||
+		got[recorded] != want[recorded] || p.LinkedOrders != 3 {
+		t.Fatalf("preview %+v, want blocked %v", p, want)
+	}
+	if _, err := h.deleteAccount(customerB, h.now, "del-b", p); conflict(err) != "account_deletion_blocked" {
+		t.Fatalf("delete with unsettled money: %v", err)
+	}
+
+	p = h.deletionPreview(t, customerA)
+	if !p.CanDelete || len(p.Blocked) != 0 || len(p.Upcoming) != 1 || p.Upcoming[0].OrderID != upcoming || p.LinkedOrders != 2 {
+		t.Fatalf("notice_not_sent blocks: %+v", p)
+	}
+	if res, err := h.deleteAccount(customerA, h.now, "del-a", p); err != nil || res.OrdersUnlinked != 2 {
+		t.Fatalf("delete with only unsent order emails: %+v %v", res, err)
+	}
+}
+
 // A confirmed upcoming order warns but does not block; an active staff
 // account is refused (operator path). Deletion needs a fresh sign-in and
 // the unchanged preview; it unlinks the orders (kept), revokes guest
@@ -164,13 +242,13 @@ func TestAccountDeletionEffects(t *testing.T) {
 	// The facts changed (another claim) or the preview expired: stale.
 	second := must[catalog.Result](t)(h.co.SubmitClaim(h.ctx, customerA, nil, "cl2", checkout.ClaimInput{Channel: "offline",
 		Reference: "Cash", Note: "Paid in cash"}))
-	if _, err := h.deleteAccount(customerA, fresh, "d2", p); conflict(err) != "preview_stale" {
+	if _, err := h.deleteAccount(customerA, fresh, "d2", p); conflict(err) != "deletion_preview_stale" {
 		t.Fatalf("changed facts: %v", err)
 	}
 	must[catalog.Result](t)(h.co.WithdrawClaim(h.ctx, customerA, "wd", second.ID, catalog.VersionInput{ExpectedVersion: 1}))
 	p = h.deletionPreview(t, customerA)
 	h.now = h.now.Add(15 * time.Minute)
-	if _, err := h.deleteAccount(customerA, h.now, "d3", p); conflict(err) != "preview_stale" {
+	if _, err := h.deleteAccount(customerA, h.now, "d3", p); conflict(err) != "deletion_preview_stale" {
 		t.Fatalf("expired preview: %v", err)
 	}
 	p = h.deletionPreview(t, customerA)
@@ -305,11 +383,24 @@ func (h *commandHarness) retentionDue(t *testing.T, at time.Time) map[string]ret
 	return out
 }
 
+// recordNotice records a retention notice as the owner: no runtime role
+// may until the email step records it with its notification intent.
 func (h *commandHarness) recordNotice(t *testing.T, account, kind string, anchor, at time.Time) bool {
 	t.Helper()
+	tx, err := h.db.MigratorConn(t).Begin(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(h.ctx)
+	if _, err := tx.Exec(h.ctx, "SET LOCAL ROLE gk_owner"); err != nil {
+		t.Fatal(err)
+	}
 	var ok bool
-	if err := h.worker.QueryRow(h.ctx, "SELECT business.account_retention_notice_record($1::uuid, $2, $3, $4)",
+	if err := tx.QueryRow(h.ctx, "SELECT business.account_retention_notice_record($1::uuid, $2, $3, $4)",
 		account, kind, anchor, at).Scan(&ok); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(h.ctx); err != nil {
 		t.Fatal(err)
 	}
 	return ok
@@ -376,7 +467,7 @@ func TestInactivityRetentionSteps(t *testing.T) {
 	if _, ok := h.retentionDue(t, london("2026-12-02 08:59"))[a]; ok {
 		t.Fatal("deletion due early")
 	}
-	if r := h.retentionDue(t, london("2026-12-02 09:00"))[a]; r.Notice != "deletion" {
+	if r := h.retentionDue(t, london("2026-12-02 09:00"))[a]; r.Notice != "deletion" || !r.Due.Equal(london("2026-12-02 09:00")) {
 		t.Fatalf("deletion %+v", r)
 	}
 	// Signing in again starts a new cycle.
@@ -394,6 +485,59 @@ func TestInactivityRetentionSteps(t *testing.T) {
 	}
 	if _, err := h.api.Exec(h.ctx, "SELECT * FROM business.account_retention_due(now(), 10)"); err == nil {
 		t.Fatal("gk_api reads retention steps")
+	}
+	// No runtime role records a notice (it starts the deletion clock) until
+	// the email step records it with its email.
+	for name, db := range map[string]*pgxpool.Pool{"gk_worker": h.worker, "gk_api": h.api} {
+		if _, err := db.Exec(h.ctx, "SELECT business.account_retention_notice_record($1::uuid, 'warning', now(), now())", a); dbtest.SQLState(err) != "42501" {
+			t.Errorf("%s records a retention notice: %v", name, err)
+		}
+	}
+}
+
+func londonTime(t *testing.T, s string) time.Time {
+	t.Helper()
+	loc, err := time.LoadLocation("Europe/London")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := time.ParseInLocation("2006-01-02 15:04", s, loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+// The reminder comes 7 days before deletion: a reminder recorded after the
+// warning's deletion instant (the worker was down) moves deletion to 7
+// London days after the reminder instead of making it due at once.
+func TestLateReminderDelaysDeletion(t *testing.T) {
+	h := newCommandHarness(t)
+	a := h.resolve(t, customerA).AccountID
+	anchor := londonTime(t, "2024-11-01 12:00")
+	h.owner(t, "UPDATE business.account SET last_active_at = $1, created_at = $1 WHERE id = $2::uuid", anchor, a)
+	if !h.recordNotice(t, a, "warning", anchor, londonTime(t, "2026-11-02 09:00")) {
+		t.Fatal("warning not recorded")
+	}
+	late := londonTime(t, "2026-12-05 10:00") // the warning set deletion for 2 December 09:00
+	if r := h.retentionDue(t, late)[a]; r.Notice != "reminder" || !r.Due.Equal(londonTime(t, "2026-12-12 10:00")) {
+		t.Fatalf("late reminder %+v", r)
+	}
+	if !h.recordNotice(t, a, "reminder", anchor, late) {
+		t.Fatal("reminder not recorded")
+	}
+	var stored time.Time
+	if err := h.admin.QueryRow(h.ctx, `SELECT deletion_due_at FROM business.account_retention_notice
+		WHERE account_id = $1::uuid AND kind = 'reminder'`, a).Scan(&stored); err != nil || !stored.Equal(londonTime(t, "2026-12-12 10:00")) {
+		t.Fatalf("reminder deletion instant %v %v", stored, err)
+	}
+	for _, at := range []string{"2026-12-05 10:00", "2026-12-12 09:59"} {
+		if r, ok := h.retentionDue(t, londonTime(t, at))[a]; ok {
+			t.Fatalf("due at %s, less than 7 days after the reminder: %+v", at, r)
+		}
+	}
+	if r := h.retentionDue(t, londonTime(t, "2026-12-12 10:00"))[a]; r.Notice != "deletion" || !r.Due.Equal(londonTime(t, "2026-12-12 10:00")) {
+		t.Fatalf("deletion %+v", r)
 	}
 }
 

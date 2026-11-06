@@ -266,6 +266,14 @@ func TestDeletionRoutes(t *testing.T) {
 	expectStatus(t, "blocked", serveAccount(t, id, acc, &logs, del), 409, "ACCOUNT_DELETION_BLOCKED")
 	acc.err = &catalog.ConflictError{Code: "staff_account"}
 	expectStatus(t, "staff", serveAccount(t, id, acc, &logs, del), 409, "STAFF_ACCOUNT")
+	// A changed or expired deletion preview has its own code and wording,
+	// not the cancellation's refund-amount PREVIEW_STALE.
+	acc.err = &catalog.ConflictError{Code: "deletion_preview_stale"}
+	rec = serveAccount(t, id, acc, &logs, del)
+	expectStatus(t, "deletion preview stale", rec, 409, "DELETION_PREVIEW_STALE")
+	if msg := decodeError(t, rec).Error.Message; strings.Contains(strings.ToLower(msg), "refund") || !strings.Contains(msg, "deletion") {
+		t.Fatalf("deletion preview stale message %q", msg)
+	}
 	// A deleted account: its deletion replays; a new deletion is refused.
 	acc.err, acc.replayed = nil, true
 	gone := del
