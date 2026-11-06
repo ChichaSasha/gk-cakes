@@ -73,8 +73,8 @@ owner's behalf), **Tests** (what ran, with results) and, after review,
   `GK_SCRATCH`, default `$TMPDIR`) and reuses your installed dependencies when
   the lockfile is the same. Targets are a PR number, a commit ID or a branch of
   origin; local branches are never used. Use one name per reviewer (for
-  example `review-pr-52-api`); only a detached worktree without changes is ever
-  refreshed or removed.
+  example `review-pr-52-api`); only a review worktree your checkout created,
+  detached and without changes, is ever refreshed or removed.
 - Start a fresh reviewer (a new subagent or session, no author context) with a
   short prompt: "Use the gk-code-review skill. PR #n, head, base, worktree path,
   PR description file, round, boundaries, ports, focus". The skill holds the
@@ -100,9 +100,8 @@ owner's behalf), **Tests** (what ran, with results) and, after review,
    not the reviewed code (it accepts clean merges of main commits whose trees
    equal Git's own merges), updates a branch that is behind main (again while
    waiting, if main moves) and checks that again, marks the PR ready, enables
-   native auto-merge bound to that head,
-   then posts `ai-review` = success on it, waits for the merge and the Staging
-   run and prints its jobs. `--repost` re-posts the status when auto-merge
+   native auto-merge (merge commit) and posts `ai-review` = success only on a
+   checked head, waits for the merge and the Staging run and prints its jobs. `--repost` re-posts the status when auto-merge
    stalls on a green PR; `--verify-only` checks a head against the reviewed
    commit.
 3. Never merge by hand. Production releases are separate and need Sasha.

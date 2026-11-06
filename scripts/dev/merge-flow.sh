@@ -11,8 +11,9 @@
 #    exactly what Git's own merges produce (as `gh pr update-branch` makes).
 #    Anything else stops: the new code needs review. Prefer the full SHA.
 # 2. If the branch is BEHIND main, updates it and checks that again (also
-#    while waiting, up to 3 times, re-binding auto-merge and the status to the
-#    new head).
+#    while waiting, up to 3 times, posting the status on each checked new
+#    head; auto-merge stays enabled, and an unchecked head never gets the
+#    status, so it cannot merge).
 # 3. Marks the PR ready, enables native auto-merge (merge commit) bound to that
 #    exact head (expectedHeadOid), then posts the commit status
 #    "ai-review" = success on that head. Auto-merge first, status second.
@@ -116,7 +117,8 @@ update_branch() {
 	verify_head "$HEAD"
 }
 
-# Auto-merge bound to $HEAD (merge commit), then ai-review = success on $HEAD.
+# Auto-merge (merge commit; bound to $HEAD when first enabled), then
+# ai-review = success on $HEAD.
 land() {
 	local method
 	method="$(gh pr view "$PR" -R "$GK_REPO" --json autoMergeRequest -q '.autoMergeRequest.mergeMethod // empty')"
