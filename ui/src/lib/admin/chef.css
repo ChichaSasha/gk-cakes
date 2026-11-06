@@ -886,3 +886,237 @@
 		animation: none;
 	}
 }
+
+/* Account requests: deciding a request (r04d-claims request.js). */
+.chef .actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 10px;
+}
+.chef .actions.stack {
+	flex-direction: column;
+}
+.chef .actions.stack .btn {
+	width: 100%;
+}
+.chef .btn-danger {
+	border-color: var(--bad);
+	background: var(--bad);
+	color: #fff;
+}
+.chef .btn-quiet {
+	border-color: transparent;
+	background: transparent;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+.chef .banner-warn {
+	background: var(--warn-bg);
+	color: #5a3700;
+}
+.chef .banner-ok {
+	background: var(--ok-bg);
+	color: #14472e;
+}
+.chef .future-banner {
+	margin-bottom: 18px;
+}
+.chef .card-alert {
+	border-color: #efd3a6;
+	background: #fffaf1;
+}
+.chef .card-h .icon {
+	width: 18px;
+	height: 18px;
+}
+.chef .list-tight {
+	margin: 4px 0 8px;
+	padding-left: 18px;
+}
+.chef .list-tight li {
+	margin: 2px 0;
+}
+.chef .steps {
+	margin: 8px 0 12px;
+	padding-left: 20px;
+}
+.chef .steps li {
+	margin: 4px 0;
+}
+.chef .find-form {
+	display: grid;
+	grid-template-columns: minmax(200px, 2fr) minmax(120px, 1fr) minmax(120px, 1fr);
+	gap: 4px 12px;
+	align-items: end;
+}
+.chef .find-form .field select {
+	min-height: 44px;
+}
+.chef .find-form .search-box input {
+	min-height: 42px;
+}
+.chef .quick {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	align-items: center;
+	margin: 4px 0 10px;
+}
+.chef .pick-list {
+	display: grid;
+	gap: 6px;
+	margin: 8px 0;
+	padding: 0;
+	border: 0;
+}
+.chef .pick {
+	display: flex;
+	gap: 10px;
+	align-items: flex-start;
+	min-height: 44px;
+	padding: 10px 12px;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	background: #fff;
+	cursor: pointer;
+}
+.chef .pick input {
+	width: 18px;
+	height: 18px;
+	flex: none;
+	margin-top: 4px;
+	accent-color: var(--ink);
+}
+.chef .pick:has(input:checked) {
+	border-color: var(--ink);
+	box-shadow: inset 0 0 0 1px var(--ink);
+}
+.chef .order-sum p {
+	margin: 0 0 4px;
+}
+.chef .order-sum .chip-s {
+	margin-left: 4px;
+}
+.chef .wrong-person {
+	display: flex;
+	gap: 6px;
+	align-items: flex-start;
+	margin: 8px 0;
+	padding: 8px 10px;
+	border-radius: 10px;
+	background: var(--bad-bg);
+	color: #6d1820;
+}
+.chef .confirm-box {
+	margin-top: 6px;
+	padding: 14px;
+	border: 1px solid var(--line);
+	border-radius: 14px;
+	background: #fff;
+}
+.chef .confirm-box > p {
+	margin: 0 0 6px;
+}
+.chef .confirm-box .field {
+	margin-top: 8px;
+}
+.chef .confirm-box .check {
+	min-height: 44px;
+	margin: 8px 0 2px;
+	padding: 6px 10px;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	background: #fff;
+}
+.chef .confirm-box .check input {
+	flex: none;
+	margin: 0;
+}
+.chef .counter {
+	margin: -4px 0 6px;
+}
+.chef #note-err:empty,
+.chef #conf-err:empty {
+	margin: 0;
+}
+.chef .draft {
+	margin-top: 12px;
+}
+.chef .draft > summary {
+	display: inline-flex;
+	list-style: none;
+}
+.chef .draft > summary::-webkit-details-marker {
+	display: none;
+}
+.chef .draft-body {
+	margin-top: 12px;
+	padding: 14px;
+	border: 1px solid var(--line);
+	border-radius: 14px;
+	background: #fff;
+}
+.chef .mail-body {
+	margin: 10px 0;
+	padding: 12px;
+	border-radius: 10px;
+	background: #f7f7f9;
+	font-size: 14px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+.chef .result {
+	margin: 6px 0 0;
+}
+.chef .result:focus-visible,
+.chef [data-focus]:focus-visible {
+	outline: 3px solid var(--focus);
+	outline-offset: 2px;
+}
+.chef .spinner.light {
+	width: 16px;
+	height: 16px;
+	border-color: #ffffff66;
+	border-top-color: #fff;
+}
+.chef .decision.sticky {
+	position: sticky;
+	top: 16px;
+}
+/* Long typed values (Instagram names, references, emails) wrap rather than scroll. */
+.chef .claims-table tbody th,
+.chef .facts dd,
+.chef .claims-table .mono,
+.chef .wrong-person,
+.chef .confirm-box .check {
+	overflow-wrap: anywhere;
+}
+@media (max-width: 1080px) {
+	/* On one column the decision follows the main card, before the secondary cards. */
+	.chef .claim-grid {
+		display: flex;
+		flex-direction: column;
+		gap: 0;
+	}
+	.chef .claim-main {
+		display: contents;
+	}
+	.chef .claim-side {
+		order: 2;
+	}
+	.chef .card-later {
+		order: 3;
+	}
+	.chef .decision.sticky {
+		position: static;
+	}
+}
+@media (max-width: 860px) {
+	.chef .find-form {
+		grid-template-columns: 1fr 1fr;
+	}
+	.chef .find-form .find-term {
+		grid-column: 1 / -1;
+	}
+}

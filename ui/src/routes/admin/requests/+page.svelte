@@ -104,6 +104,7 @@
 			if (state === 'pending') claimsWaiting.set(first);
 			phase = 'ready';
 		} catch (e) {
+			if (state === 'pending') claimsWaiting.release();
 			if (rev !== revision || !mounted || (await ended(e))) return;
 			phase = 'error';
 		}

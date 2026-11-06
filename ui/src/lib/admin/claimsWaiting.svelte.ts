@@ -16,6 +16,11 @@ class ClaimsWaiting {
 		this.fromPage = true;
 	}
 
+	/** The page's own read failed: the count may be read again elsewhere. */
+	release(): void {
+		this.fromPage = false;
+	}
+
 	/** Reads the first waiting page unless a page already gave the count; failures may be retried. */
 	async load(): Promise<void> {
 		if (this.known || this.loading || this.fromPage) return;
