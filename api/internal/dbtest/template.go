@@ -18,13 +18,17 @@ import (
 )
 
 // templateMaxAge is how old another run's template database must be before
-// a new run drops it. Templates live for one test binary; the CI test step
-// times out after 25 minutes, so two hours leaves a wide margin for
-// concurrent runs from other worktrees sharing a local cluster.
+// a new run drops it. Templates live for one test binary; the CI shard
+// script stops a binary after 15 minutes (-timeout 15m), so two hours leaves
+// a wide margin for concurrent runs from other worktrees sharing a local
+// cluster.
 const templateMaxAge = 2 * time.Hour
 
 // templateName is gk_tpl_<unix seconds>_<label>_<random>.
 var templateName = regexp.MustCompile(`^gk_tpl_([0-9]+)_[a-z0-9]+_[0-9a-f]+$`)
+
+// targetName is a migration version as the migrate package names them.
+var targetName = regexp.MustCompile(`^[0-9]{4}_[a-z0-9_]+$`)
 
 var templates struct {
 	sync.Mutex
@@ -72,7 +76,7 @@ func migratedTemplate(t *testing.T, target string) string {
 
 	label := "all"
 	if target != "" {
-		if len(target) < 4 {
+		if !targetName.MatchString(target) {
 			t.Fatalf("unknown target migration %q", target)
 		}
 		label = target[:4]

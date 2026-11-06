@@ -17,10 +17,18 @@ checkout=./internal/checkout
 
 case "${1:-}" in
 rest)
+	# List with the build tag the tests use: packages whose files are all
+	# integration-only (internal/dbtest) are invisible without it. A failing
+	# go list stops the script (set -e covers the assignment, not a < <() list).
+	all=$(go list -tags=integration ./...)
 	pkgs=()
 	while IFS= read -r p; do
-		pkgs+=("$p")
-	done < <(go list ./... | grep -v '/internal/checkout$')
+		[[ $p == */internal/checkout ]] || pkgs+=("$p")
+	done <<<"$all"
+	if ((${#pkgs[@]} == 0)); then
+		echo "no packages found" >&2
+		exit 1
+	fi
 	go test "${flags[@]}" "${pkgs[@]}"
 	;;
 checkout)
@@ -30,10 +38,11 @@ checkout)
 		echo "usage: $0 checkout K N (1 <= K <= N)" >&2
 		exit 2
 	fi
+	listed=$(sed -nE 's/^func (Test[A-Za-z0-9_]*)\(t \*testing\.T\) \{$/\1/p' "$checkout"/*_test.go | LC_ALL=C sort -u)
 	names=()
 	while IFS= read -r name; do
-		names+=("$name")
-	done < <(sed -nE 's/^func (Test[A-Za-z0-9_]*)\(t \*testing\.T\) \{$/\1/p' "$checkout"/*_test.go | LC_ALL=C sort -u)
+		[[ -z $name ]] || names+=("$name")
+	done <<<"$listed"
 	if ((${#names[@]} == 0)); then
 		echo "no tests found in $checkout" >&2
 		exit 1

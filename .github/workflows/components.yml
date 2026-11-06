@@ -59,6 +59,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # "checkout K N" legs must share N and cover K = 1..N.
         shard: [rest, checkout 1 3, checkout 2 3, checkout 3 3]
     services:
       postgres:
@@ -120,7 +121,9 @@ jobs:
   api-postgres:
     name: api-postgres
     needs: [api-postgres-shard]
-    if: ${{ !cancelled() }}
+    # always(): a cancelled or skipped shard must fail this required check;
+    # a gate skipped by its condition would count as passing.
+    if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

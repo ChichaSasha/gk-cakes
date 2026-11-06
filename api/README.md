@@ -42,7 +42,8 @@ template database once per target and copies it for every test (`CREATE DATABASE
 package only for tests about migrating itself: ordering, backfills, upgrades.
 A binary keeps its templates (`gk_tpl_<unix time>_<target>_<random>`, not
 connectable) until a later run drops those older than two hours. To clear them
-by hand:
+by hand, only while no integration run uses this cluster (a running binary
+copies from its templates):
 
 ```sh
 docker exec gk-pg psql -U postgres -qAt -c "SELECT format('ALTER DATABASE %I IS_TEMPLATE false; DROP DATABASE %I;', datname, datname) FROM pg_database WHERE datname LIKE 'gk\_tpl\_%'" | docker exec -i gk-pg psql -U postgres -q
