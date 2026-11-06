@@ -269,13 +269,73 @@ own answer or choice counts only when newer than the order it was sent from.
   "Collect it today · delivery refunded" (times still ahead today; redelivery
   alone when none is left; `POST /orders/{id}/delivery-failure-choice`) and
   both results; nobody available: 50% of the cake (`cake_refund_minor`) and
-  the delivery kept (`delivery_kept_minor`), with the refund tracker.
+  the delivery kept (`delivery_kept_minor`); its progress is the timeline's
+  money lane (slice 3).
+
+**Order timeline, paid after cancellation and the API's actions (GK-030
+slice 3)** follow GK-017 r02b states 19 and 11 (Q7, Q17–Q20) and the 0038
+order view refinements (`src/lib/checkout/timeline.ts`,
+`ui/OrderTimeline.svelte`; status words in `order.ts`; actions in
+`changes.ts` and `recovery.ts`).
+
+- **Timeline** ("Order timeline", after the status and any choice card, before
+  Change or cancel): two lanes side by side, Money and Your cake (one column
+  under 760 px), each step ticked (done), ringed (now), a problem or still to
+  come, with the state also spoken (" · done", " · now", " · problem",
+  " · not yet"); not a live region, no tab stops. Shown for confirmed, in
+  production, ready and completed orders, except while the delivery quote or
+  the Q5 choice is open (states 14 and 15 keep their own screens). Money: paid
+  (`paid_at`) or cakes and delivery paid separately (`delivery.paid_minor`;
+  waived; the quote still to come), the full-refund window before any refund,
+  "Delivery refund · 100% if you collect instead" beside an our-side failure,
+  then the refund: one "Refund of £X requested" step per `refund.parts` kind
+  (why for a no-show, Q19, or a refund agreed with the chef, Q20; the chef's
+  delivery share waiting for the chef; a stray payment returned in full) and
+  "Return to your payment method", ticked ("Returned …") only when
+  `refund.state` is returned; "Delivery payment kept" after nobody was
+  available (Q18). With the lanes there is no separate refund tracker.
+  Your cake: confirmed, being made (`in_production`) or prepared, ready for
+  collection and collected / not collected, or for a GK delivery: delivery
+  confirmed by the chef, out for delivery (`fulfillment.at`) and delivered;
+  a failed delivery keeps its history (couldn't be completed or nobody
+  available, `delivery_failure.at`) followed by the secured choice
+  (collection, or redelivery with the chef's time). The order view has no
+  confirmation, production-start or ready time, so those steps carry none.
+- **Status words**: being made ("Your cake is now being prepared"; cakes and
+  delivery paid for a GK delivery); collected ("Something wrong with your
+  cake? Please contact the chef…" with "Contact the chef about your cake");
+  a refund agreed with the chef after collection (`chef_exception`, "Refund
+  agreed" in the summary); not collected (50% from the cake part, requested
+  automatically when the chef recorded it). The cancel panel adds "Your cake
+  already being made doesn't reduce your refund" while in production.
+- **Paid after the order was cancelled** (state 11: `payment_not_completed`
+  with a refund, `late_capture_terminal`): kept safe and all of it being
+  returned (past tense once returned), the API's refund line, "Please don't
+  pay again. Your cake won't be made for this order.", the tracker, "Start a
+  new order" and "Contact us", and "Paid (after cancellation)" /
+  "Refund · requested" in the summary.
+- **Actions** (`actions`, per caller at the API's clock, a guest link by its
+  grants): `cancel` decides Preview cancellation (an open delivery choice is
+  still shown instead, so the API's cancel there means "contact the chef");
+  `move_pickup` decides Change your time (otherwise "This order's time can't
+  be changed online…"); `answer_late_payment` the answer buttons; `pay`,
+  `free_confirmation` and `pay_delivery` their buttons (otherwise a new order,
+  or "Delivery payment isn't available just now…"; an open payment page is the
+  same payment and stays); `delivery_choice` with
+  `delivery_choice.allowed_choices` and `delivery_failure_choice` the choice
+  cards. Without `actions` (an older API) the page's own rules apply. It is a
+  hint: every command is still checked by the API.
+- **Refund parts and allocations**: the cancelled order's split shows each
+  kind's own amount from `refund.parts` (the cake line too; the chef's
+  delivery line stays after the chef sends it); the cancellation preview
+  labels `allocations[].kind` (cakes, delivery, a delivery payment that
+  couldn't be used). The Q5 full refund still reads "everything paid": no
+  field states that amount before the choice.
 
 **Not built here:** the discovery pages and real basket (GK-016), the GK
-delivery request flow, the two-lane order timeline of state 19, and the other
-GK-017 r02b problem states (approved 2026-11-05; states 10, 12–15, 18 and the
-delivery failures of 19 are built, above): those are shown plainly with the
-messages above.
+delivery request flow, and the other GK-017 r02b problem states (approved
+2026-11-05; states 10–15, 18 and 19 are built, above): those are shown
+plainly with the messages above.
 Confirmation emails are not sent yet, so the pages do not promise one.
 
 No browser test runner is configured yet; one is added when a runner is approved

@@ -827,6 +827,8 @@ describe('failed delivery (state 19)', () => {
 		expect(v.refund).toBe('Refund of £45 requested. We’ll update this page as it progresses.');
 		expect(v.refundTracker).toBe(true);
 		expect(v.contactChef).toBe(true);
+		// Not the collected order's "about your cake" link (slice 3).
+		expect(v.contactLabel).toBeUndefined();
 	});
 
 	it('nobody available on a free-confirmed cake: no “£0” refund, the kept delivery said', () => {

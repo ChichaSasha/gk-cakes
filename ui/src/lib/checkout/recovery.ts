@@ -506,6 +506,7 @@ function nobodyAvailableView(order: Order, view: OrderView): OrderView | undefin
 					])
 		],
 		contactChef: true,
+		contactLabel: undefined,
 		refundTracker: Boolean(order.refund)
 	};
 }
