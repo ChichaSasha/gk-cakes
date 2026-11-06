@@ -13,6 +13,10 @@ away. The planning master pushed it as **draft PR #59**.
   evidence message contained the request reference) and a nit. r04d, in the same folder, addresses them; see
   [Review round 3 changes](#review-round-3-changes).
 
+**r04d wording fixes after round 4.** Round 4 (a fresh reviewer, on 125a51c) returned **READY FOR CREATOR**,
+with one minor and three nits. They're applied in r04d without a new revision letter; see
+[r04d wording fixes after round 4](#r04d-wording-fixes-after-round-4).
+
 r04d still needs a fresh re-review and the Creator's exact-version approval. No implementation ticket may treat it
 as approved.
 
@@ -71,8 +75,7 @@ settle the decision:
     r04d);
   - waiting for the order-page button.
 
-  They're for the Creator, for the Creator, with the
-  master's routing check.
+  They're for the Creator to decide, with the master's routing check.
 - Acceptance needs the master to confirm the model choice for this decision, or to route it to a qualified worker
   or reviewer, plus an independent re-review.
 - Nothing here is implementation-ready until then.
@@ -109,7 +112,8 @@ Readback:
 
 | Input | Hash |
 | --- | --- |
-| Review findings `pr59-round1.md` (round 1, REVISE on a338fd2) / `pr59-round2.md` (round 2, REVISE on b085103) / `pr59-round3.md` (round 3, REVISE on 39e5093) | 8bba039551095f32 / 2fd838b963aef899 / f337cb0c8151ff6d |
+| Review findings `pr59-round1.md` (round 1, REVISE on a338fd2) / `pr59-round2.md` (round 2, REVISE on b085103) / `pr59-round3.md` (round 3, REVISE on 39e5093) / `pr59-round4.md` (round 4, READY FOR CREATOR on 125a51c) | 8bba039551095f32 / 2fd838b963aef899 / f337cb0c8151ff6d / f2e1bab63e4786c1 |
+| api/README.md "Cancellation (K05)" (lines 1708–1717: customer cancellation 100% strictly before `full_refund_deadline_at` = original handover − 120 h, exactly 50% at or after; chef 100%) and "Customer move" (2303–2317: collection and customer-courier only, `confirmed`/`in_production`/`ready`, current start at least 6 hours away, another published start the same London day) | in the README hash above |
 | api/README.md owner routes, read for round 3: cancellation preview/cancel "the owner (bearer)" (lines 1718–1723) and its refund reservation per payment collection, dispatched to Stripe (1726–1757); late-payment answer (1866); same-day pickup move (1084, 2292) | in the README hash above |
 | ui/src/lib/guest.ts (guest capability: this tab's sessionStorage only, gone when the tab closes) | 11f61ce0ae207e2c |
 | AGENTS.md | d357f39d8b39ec72 |
@@ -205,9 +209,18 @@ The r04c screenshots are in 39e5093's tree; r04d replaces them (all re-shot, bel
 
 | Finding | Change in r04d |
 | --- | --- |
-| **Major:** the wrong-approval warning left out that the wrong person can act on the order | I checked `api/README.md` first. "The owner (bearer)" may:<br>- preview and cancel the order (`/orders/{id}/cancellation-preview`, `/cancel`, lines 1718–1723);<br>- move its pickup time on the same day (`/orders/{id}/pickup`, 2292; "same-day move choices", 1084);<br>- answer a late-payment offer (`/late-payment/answer`, 1866).<br>A cancellation's refund is reserved against the order's own payment collections and dispatched to the payment provider, Stripe (1726–1757). **For an order still upcoming** (not handed over or cancelled), the red confirmation line now says they can also **cancel it** (any refund goes back against the order's own payment through the payment provider, not to them), **move its pickup time** that day, or answer a late-payment question if there is one, and that the real buyer, having lost guest access, couldn't step in. For a handed-over or cancelled order it says "so they can't change it". The evidence card and the decision column add, for upcoming orders, "whoever it's added to can cancel it or move its pickup time. Take extra care, or wait for the order-page route (question 3)". New state S48 (upcoming order a41c09e7). Question 3 lists the same risks and gives upcoming orders their own advice. Option A's warning mentions it. |
+| **Major:** the wrong-approval warning left out that the wrong person can act on the order | I checked `api/README.md` first. "The owner (bearer)" may:<br>- preview and cancel the order (`/orders/{id}/cancellation-preview`, `/cancel`, lines 1718–1723);<br>- move its pickup time on the same day (`/orders/{id}/pickup`, 2292; "same-day move choices", 1084);<br>- answer a late-payment offer (`/late-payment/answer`, 1866).<br>A cancellation's refund is reserved against the order's own payment collections and dispatched to the payment provider, Stripe (1726–1757). **For an order still upcoming** (not handed over or cancelled), the red confirmation line now says they can also **cancel it** (any refund goes back against the order's own payment through the payment provider, not to them), **move its pickup time** that day, or answer a late-payment question if there is one, and that the real buyer, having lost guest access, couldn't step in. For a handed-over or cancelled order it says "so they can't change it". For upcoming orders the evidence card adds "whoever it's added to can cancel it or move its pickup time. Take extra care, or wait for the order-page route (question 3)", and the decision column adds "Still upcoming: whoever it's added to can cancel it or move its pickup." (After round 4 both read as in the round-4 table below.) New state S48 (upcoming order a41c09e7). Question 3 lists the same risks and gives upcoming orders their own advice. Option A's warning mentions it. |
 | **Minor:** the evidence message contained the request reference, and could be sent to the order's address | The evidence method is reversed, on its merits (question 3 explains):<br>1. The chef emails the order's contact address herself, from `gk.cake.london@gmail.com`, with a one-off code she makes up (example `4487`) and **without** the request reference.<br>2. She waits for a reply **from that address** quoting the code and the request reference, which only the account holder can read.<br>3. If nobody replies, the reply lacks either, or the buyer says it wasn't them: don't add it.<br>The copyable email goes to the order's address, never contains the reference, and says why ("the real buyer could reply with it and confirm someone else's request"). It also tells the real buyer someone asked. The card explains why the requester isn't asked to email from the address (a sender address can be forged, and email warnings catch only some of it). The tick now reads "I emailed the order's contact address (…) and got a reply from it quoting my code and their request reference", and the placeholder reads "Emailed … with code 4487; reply quoted 4487 and 9a3f2c71". Option A's reply and steps follow the same method. |
 | **Nit:** no r04c output hashes | Added (above), next to r04 and r04b. |
+
+## r04d wording fixes after round 4
+
+| Finding (round 4, READY FOR CREATOR) | Change |
+| --- | --- |
+| **Minor:** refund amount understated ("any refund goes back…" read as if the buyer is made whole) | Per api/README "Cancellation (K05)", a customer cancellation returns 100% strictly before `full_refund_deadline_at` (original handover − 120 h) and exactly 50% at or after. The upcoming-order warning in `wrongPerson()` now reads "they can also **cancel it** (the refund, 100% or 50% under the cancellation policy, goes back to the order's own payment, not to them)". The same wording is in question 3 (i) "Against", the Approve list, S48 and the PR text. Option A's warning: "the buyer may get only 50% back under the cancellation policy". |
+| **Nit:** garbled line in the execution check ("for the Creator, for the Creator") | "They're for the Creator to decide, with the master's routing check." |
+| **Nit:** the round-3 table said the decision column also says "Take extra care…" | I chose to add the line to the decision column: "Still upcoming: whoever it's added to can cancel it and may be able to move its pickup time. Take extra care (see 'Before adding')." The round-3 table now quotes what r04d originally showed, and points here. |
+| **Nit:** pickup move worded too broadly | Per api/README "Customer move": collection and customer-courier orders only, at least 6 hours before the current start, to another published start that day. The warning now says "may be able to **move its pickup time** to another start that day (until 6 hours before the current start)". It's left out entirely for GK delivery orders, whose times only the chef changes. The short warnings read "can cancel it and may be able to move its pickup time" (or "can cancel it" for GK delivery). |
 
 **For the PR #59 description** (the master edits it; I don't). r04d, still not approved:
 
@@ -219,8 +232,10 @@ The r04c screenshots are in 39e5093's tree; r04d replaces them (all re-shot, bel
   - a reply from it must quote the code and the request reference from the account;
   - the chef must tick "I emailed … and got a reply …" and say how.
 - **A wrong-person warning shows what a wrong approval does.** The wrong person sees the order with its contact
-  email. For an upcoming order they can also cancel it (any refund goes back against the order's own payment), move
-  its pickup time or answer a late-payment question, while the buyer has lost guest access. There's no undo.
+  email. For an upcoming order they can also cancel it (the refund, 100% or 50% under the cancellation policy, goes
+  back to the order's own payment, not to them), may be able to move its pickup time (collection and courier orders,
+  until 6 hours before the start), or answer a late-payment question, while the buyer has lost guest access. There's
+  no undo.
 
   The alternative, waiting for the order-page button, is put to the Creator (questions 3 and 6).
 - Approving revokes guest access, which today is only the order page in the tab that placed the order, if still
@@ -310,7 +325,8 @@ from their profile", then **Find the order**:
   - **The chef emails that address** with the code and without the request reference.
   - She waits for a reply from that address quoting the code and the request reference, which is only in the
     account. If either is missing, or the buyer says it wasn't them, she doesn't add it.
-  - For upcoming orders there's a red line: whoever it's added to can cancel it or move its pickup time.
+  - For upcoming orders there's a red line: whoever it's added to can cancel it and may be able to move its pickup
+    time (not for GK delivery). The decision column repeats it with "Take extra care".
   - The email to copy goes to the order's address, never contains the reference, and says why. The card explains
     why the requester isn't asked to email from the address (forgeable sender).
   - The search list never shows contact emails.
@@ -326,9 +342,10 @@ banner when two requests name it, then what they sent and who.
 - their request shows "Added to your account";
 - if it's already in their account it's just marked added;
 - in red: if this is the wrong person, they see the order in their account, including the name and contact email
-  on it and the handover details. **For an upcoming order** they can also cancel it (any refund goes back against
-  the order's own payment through the payment provider, not to them), move its pickup time that day, or answer a
-  late-payment question if there is one, and the real buyer, having lost guest access, couldn't step in. There's
+  on it and the handover details. **For an upcoming order** they can also cancel it (the refund, 100% or 50% under
+  the cancellation policy, goes back to the order's own payment, not to them), may be able to move its pickup time
+  to another start that day (collection and customer-courier orders, until 6 hours before the current start), or
+  answer a late-payment question if there is one, and the real buyer, having lost guest access, couldn't step in. There's
   no undo. For a handed-over or cancelled order: "so they can't change it".
 
 For a path c request, the chef must tick "I emailed the order's contact address (…) and got a reply from it quoting
@@ -409,7 +426,7 @@ today).
 | S20 Chosen + evidence step | "Chosen: … · contact email tom.b@example.com"; "Before adding: confirm it's theirs" (contact email, chef only; example code 4487; you email the address, the reply quotes the code and reference; email to copy without the reference) | Add order 8b20d4e6…; Decline; Show the email to the order's address | S21 | `GET /admin/orders` row incl. chef-only `contact_email` |
 | S21 Confirm add (handed over) | Consequences true today; red wrong-person line ("so they can't change it"); required tick and "How you confirmed" | Yes, add…; Not yet | alert + focus if missing; busy → S22 | — |
 | S47 Confirm add, filled in | Tick ticked; "Emailed tom.b@example.com 6 Nov with code 4487; reply quoted 4487 and 9a3f2c71" | Yes, add… | busy → S22 | `decision: approve, order_id, note` |
-| S48 Confirm add (upcoming) | a41c09e7 (paid, Sun 15 Nov). The red line adds: they could cancel it (refund back against the order's own payment), move its pickup time or answer a late-payment question; the buyer couldn't step in. The evidence card and decision column warn too | Yes, add…; Not yet | busy → result | — |
+| S48 Confirm add (upcoming) | a41c09e7 (paid, Sun 15 Nov). The red line adds: they could cancel it (the refund, 100% or 50% under the cancellation policy, goes back to the order's own payment, not to them), may be able to move its pickup time to another start that day (until 6 hours before), or answer a late-payment question; the buyer couldn't step in. The evidence card and decision column warn too | Yes, add…; Not yet | busy → result | — |
 | S22 Added | "The order you added" + result | Next waiting request | — | `decision: approve, order_id` → 200 |
 | S23 In another account | Refusal (Daniel Okafor, a41c09e7) | Choose another order; Decline | — | 409 `ORDER_OWNED` |
 | S24 In another account (choose another) | Refusal | Choose another order; Decline | S19 / S14 | 409 `ORDER_OWNED` |
@@ -560,8 +577,10 @@ key is made when the decision, the chosen order or the note changes.
        - the address can be mistyped, shared or stale;
        - the evidence is free text;
        - a wrong approval shows the order (with its contact email) to the wrong person, with no undo;
-       - **for an upcoming order**, the wrong person could also cancel it (the refund goes back against the order's
-         own payment, not to them), move its pickup time or answer a late-payment question, and the real buyer,
+       - **for an upcoming order**, the wrong person could also cancel it (the refund, 100% or 50% under the
+         cancellation policy, goes back to the order's own payment, not to them; within 5 days of the handover the
+         buyer would lose the cake and half their money), may be able to move its pickup time (collection and
+         courier orders, until 6 hours before the start), or answer a late-payment question, and the real buyer,
          who has lost guest access, couldn't step in.
      - *Which email method?* Two methods were considered:
        - **(a)** The requester emails the chef from the order's address, quoting the request reference (r04c).
@@ -632,6 +651,13 @@ Creator questions.
   the review bar reads r04d on every page. Looked at: S48 (desktop) and S47 (mobile). Both read correctly, with no
   fixes needed.
 - `python3 scripts/check_planning_kit.py` passes (run before the commit).
+- **After the round-4 wording fixes:**
+  - `node --check` passes.
+  - `check.html` passes 107 of 107. The upcoming-order checks now require "100% or 50% under the cancellation
+    policy", "6 hours before the current start" and the decision column's "Take extra care".
+  - `check_planning_kit.py` passes.
+  - Re-shot only the screenshots whose text changed: S23 and S48 (the upcoming order's evidence card, decision and
+    confirmation) and S34 (option A's warning). I looked at S48 desktop and S34 mobile; both read correctly.
 
 ## Screenshots (`screenshots/`)
 
