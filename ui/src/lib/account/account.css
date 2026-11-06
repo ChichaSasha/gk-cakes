@@ -1,0 +1,308 @@
+/* Customer account pages (approved GK-016 r02b sketch, poc/styles.css "acc-*"),
+   on the shop's visual foundation (shop.css); scoped to .shop. */
+.shop .acc-page {
+	padding-bottom: 90px;
+}
+.shop .acc-layout {
+	display: grid;
+	grid-template-columns: 240px minmax(0, 1fr);
+	gap: 28px;
+	align-items: start;
+}
+.shop .acc-nav {
+	position: sticky;
+	top: 104px;
+	display: grid;
+	gap: 4px;
+	padding: 14px;
+	border-radius: var(--r-l);
+	background: #ffffffc7;
+	box-shadow: var(--glass-ring), var(--sh-1);
+}
+.shop .acc-nav a,
+.shop .acc-nav button {
+	display: flex;
+	align-items: center;
+	min-height: 44px;
+	padding: 0 14px;
+	border: 0;
+	border-radius: 12px;
+	background: none;
+	font: 500 14px/1.2 var(--sans);
+	text-align: left;
+	text-decoration: none;
+	color: var(--ink);
+	cursor: pointer;
+}
+.shop .acc-nav a:hover,
+.shop .acc-nav button:hover {
+	background: #14141609;
+}
+.shop .acc-nav a[aria-current='page'] {
+	background: var(--ink);
+	color: #fff;
+}
+.shop .acc-nav .acc-nav-out {
+	margin-top: 8px;
+	border-top: 1px solid #14141617;
+	border-radius: 0 0 12px 12px;
+	color: var(--muted);
+}
+.shop .acc-main {
+	min-width: 0;
+}
+.shop .acc-card {
+	margin: 0 0 18px;
+	padding: 28px 30px;
+	border-radius: var(--r-xl);
+	background: #ffffffc7;
+	box-shadow: var(--glass-ring), var(--sh-1);
+}
+.shop .acc-h {
+	margin: 0 0 16px;
+	font: 500 24px/1.2 var(--sans);
+	letter-spacing: -0.025em;
+}
+.shop .acc-sub {
+	margin: 20px 0 4px;
+	font: 500 11px/1 var(--mono);
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+.shop .acc-card p {
+	margin: 0 0 10px;
+}
+.shop .acc-card .notice {
+	margin: 0 0 14px;
+}
+.shop .acc-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 12px;
+	margin: 18px 0 6px;
+}
+.shop .acc-small-btn {
+	min-height: 44px;
+	padding: 8px 16px;
+	font-size: 12.5px;
+}
+.shop .acc-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 26px;
+	padding: 3px 11px;
+	border: 1px solid currentColor;
+	border-radius: 999px;
+	font: 600 12px/1.2 var(--sans);
+}
+.shop .acc-chip::before {
+	content: '';
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: currentColor;
+}
+.shop .acc-chip.ok {
+	color: #165a2e;
+	background: #eef8f1;
+}
+.shop .acc-chip.wait {
+	color: #653d00;
+	background: #fff6e0;
+}
+.shop .acc-chip.bad {
+	color: #8f1d1d;
+	background: #fff1f1;
+}
+.shop .acc-chip.info {
+	color: #3c4148;
+	background: #f1f2f4;
+}
+.shop .acc-chip.done {
+	color: #3c4148;
+	background: #fff;
+}
+.shop .acc-order {
+	display: grid;
+	grid-template-columns: 76px minmax(0, 1fr) auto;
+	gap: 18px;
+	align-items: start;
+	padding: 18px 0;
+	border-top: 1px solid #14141617;
+}
+.shop .acc-tile {
+	display: grid;
+	place-items: center;
+	width: 76px;
+	height: 76px;
+	border-radius: 18px;
+	background:
+		radial-gradient(60% 50% at 50% 34%, #fff 0%, #fff0 72%),
+		linear-gradient(150deg, #f9f2f5, #eceef2);
+	box-shadow: inset 0 0 0 1px #fff;
+	color: #55585e;
+}
+.shop .acc-tile .icon {
+	width: 26px;
+	height: 26px;
+}
+.shop .acc-order-body h3 {
+	margin: 2px 0 4px;
+	font: 600 17px/1.3 var(--sans);
+	letter-spacing: -0.01em;
+}
+.shop .acc-order-body p {
+	margin: 0 0 6px;
+}
+.shop .acc-ref {
+	font: 500 11.5px/1.3 var(--mono);
+	letter-spacing: 0.04em;
+	color: var(--muted);
+}
+.shop .acc-order-side {
+	display: grid;
+	justify-items: end;
+	gap: 8px;
+	text-align: right;
+}
+.shop .acc-amount {
+	margin: 0;
+	font: 600 18px/1.2 var(--sans);
+}
+.shop .acc-foot {
+	margin: 14px 0 0;
+	padding-top: 14px;
+	border-top: 1px solid #14141617;
+}
+.shop .acc-req {
+	padding: 16px 0;
+	border-top: 1px solid #14141617;
+}
+.shop .acc-req:first-of-type {
+	padding-top: 0;
+	border-top: 0;
+}
+.shop .acc-req h3 {
+	margin: 2px 0 4px;
+	font: 600 16px/1.3 var(--sans);
+}
+.shop .acc-req p {
+	margin: 0 0 6px;
+}
+.shop .acc-cta {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 20px;
+}
+.shop .acc-cta .acc-h {
+	margin-bottom: 6px;
+}
+.shop .acc-cta p {
+	margin: 0;
+}
+.shop .acc-empty {
+	display: grid;
+	justify-items: start;
+	gap: 4px;
+}
+.shop .acc-empty h3 {
+	margin: 6px 0 0;
+	font: 600 18px/1.3 var(--sans);
+}
+.shop .acc-past-toggle {
+	margin: 10px 0 6px;
+}
+.shop .acc-dl {
+	display: grid;
+	margin: 8px 0 14px;
+}
+.shop .acc-dl > div {
+	display: grid;
+	grid-template-columns: minmax(120px, 38%) minmax(0, 1fr);
+	gap: 12px;
+	padding: 10px 0;
+	border-top: 1px solid #14141617;
+	font-size: 14px;
+}
+.shop .acc-dl dt {
+	color: var(--muted);
+}
+.shop .acc-dl dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+@media (max-width: 1050px) {
+	.shop .acc-layout {
+		grid-template-columns: 1fr;
+	}
+	.shop .acc-nav {
+		position: static;
+		display: flex;
+		gap: 6px;
+		padding: 8px;
+		overflow-x: auto;
+		border-radius: 22px;
+		scrollbar-width: none;
+	}
+	.shop .acc-nav a,
+	.shop .acc-nav button {
+		flex: none;
+		white-space: nowrap;
+	}
+	.shop .acc-nav .acc-nav-out {
+		margin: 0;
+		border: 0;
+		border-radius: 12px;
+	}
+}
+@media (max-width: 760px) {
+	.shop .acc-card {
+		padding: 22px 18px;
+		border-radius: 28px;
+	}
+	.shop .acc-h {
+		font-size: 21px;
+	}
+	.shop .acc-order {
+		grid-template-columns: 56px minmax(0, 1fr);
+		gap: 12px;
+	}
+	.shop .acc-tile {
+		width: 56px;
+		height: 56px;
+		border-radius: 14px;
+	}
+	.shop .acc-order-side {
+		grid-column: 1 / -1;
+		grid-template-columns: auto 1fr;
+		align-items: center;
+		justify-items: start;
+		text-align: left;
+	}
+	.shop .acc-order-side .button {
+		justify-self: end;
+	}
+	.shop .acc-actions > * {
+		width: 100%;
+	}
+	.shop .acc-cta {
+		flex-direction: column;
+		align-items: stretch;
+	}
+	.shop .acc-dl > div {
+		grid-template-columns: 1fr;
+		gap: 2px;
+	}
+}
+@media (max-width: 380px) {
+	.shop .acc-order-side {
+		grid-template-columns: 1fr;
+	}
+	.shop .acc-order-side .button {
+		justify-self: stretch;
+	}
+}
