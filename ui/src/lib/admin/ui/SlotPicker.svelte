@@ -12,6 +12,7 @@
 		lastDate,
 		scheduleDay,
 		slotOptions,
+		type ScheduleChoices,
 		type SlotOption
 	} from '../order-decisions';
 	import type { StaffOrderDetail } from '../order-detail';
@@ -39,31 +40,47 @@
 	} = $props();
 
 	let phase = $state<'idle' | 'loading' | 'ready' | 'error'>('idle');
-	let options = $state<SlotOption[]>([]);
-	let note = $state('');
+	let day = $state.raw<ScheduleChoices | null>(null);
+	let loadNote = $state('');
+	let passedNote = $state('');
 	let seq = 0;
 
-	async function load(day: string) {
+	// The fetched day is filtered against the page's clock as it ticks (no
+	// refetch): a start that has begun drops out.
+	const shown = $derived(day ? slotOptions(day, order, now, purpose) : null);
+	const options = $derived(shown?.options ?? []);
+	const note = $derived(phase === 'error' ? loadNote : (shown?.note ?? ''));
+
+	// A chosen time that has started since is cleared, with a short note.
+	$effect(() => {
+		const c = choice;
+		if (c && new Date(c.starts_at) <= now) {
+			untrack(() => {
+				passedNote = `${c.label} has started, so it was cleared. Choose another time.`;
+				choice = null;
+			});
+		}
+	});
+
+	async function load(target: string) {
 		const mine = ++seq;
 		choice = null;
-		options = [];
-		note = '';
-		if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+		day = null;
+		passedNote = '';
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(target)) {
 			phase = 'idle';
 			return;
 		}
 		phase = 'loading';
 		try {
-			const c = await scheduleDay(api, order, day);
+			const c = await scheduleDay(api, order, target);
 			if (mine !== seq) return;
-			const s = slotOptions(c, order, now, purpose);
-			options = s.options;
-			note = s.note;
+			day = c;
 			phase = 'ready';
 		} catch (e) {
 			if (mine !== seq) return;
 			phase = 'error';
-			note =
+			loadNote =
 				e instanceof ApiError && e.status === 422
 					? 'Choose a date as day, month and year.'
 					: 'The times for that day couldn’t be loaded.';
@@ -72,8 +89,8 @@
 
 	// Only the date reloads the times (an order read again keeps the choice).
 	$effect(() => {
-		const day = date;
-		untrack(() => void load(day));
+		const target = date;
+		untrack(() => void load(target));
 	});
 </script>
 
@@ -98,6 +115,7 @@
 		</div>
 	{:else if phase === 'ready'}
 		{#if note}<p class="small" role="status">{note}</p>{/if}
+		{#if passedNote}<p class="small warn-text" role="status">{passedNote}</p>{/if}
 		{#if options.length}
 			<fieldset class="slot-fieldset" {disabled}>
 				<legend>Time (London time)</legend>
@@ -110,7 +128,10 @@
 								value={opt.id}
 								disabled={opt.disabled}
 								checked={choice?.id === opt.id}
-								onchange={() => (choice = opt)}
+								onchange={() => {
+									choice = opt;
+									passedNote = '';
+								}}
 							/>
 							<span>{opt.label}</span>
 							{#if opt.hint}<span class="slot-hint">· {opt.hint}</span>{/if}

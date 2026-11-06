@@ -477,7 +477,7 @@ export function banners(o: StaffOrderDetail, view: StaffView, now: Date): Banner
 			title: 'A delivery payment couldn’t be used.',
 			text: `${amount} arrived but couldn’t be matched to the current quote (for example it paid a replaced quote, or arrived after the order closed). It’s kept as received; the customer sees that the chef will return it and mustn’t pay again.`,
 			small: [
-				'A later cancellation or no-show returns it in full automatically. Returning it before that is a refund from this order (sending refunds from this page comes in a later update).'
+				'Return it with a refund from this order (sending refunds from this page comes in the next slice), or a later cancellation or no-show usually returns it in full automatically. When that cancellation or no-show owes nothing else (for example a free cake), it stays flagged here for you to return.'
 			]
 		});
 	}

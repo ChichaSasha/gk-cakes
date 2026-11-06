@@ -12,7 +12,7 @@
 // README at the page's clock; the API still decides and its refusals are
 // shown in plain words.
 import { ApiError, apiGet, apiPost } from '../api';
-import { addDays, formatMoney, londonTime, londonToday, timeRange } from '../checkout/format';
+import { addDays, formatMoney, londonToday, timeRange } from '../checkout/format';
 import type { StaffApi } from './catalogue';
 import {
 	dayShort,
@@ -351,6 +351,23 @@ export function originalHandover(o: DecisionOrder): string {
 	return h[0]?.from?.starts_at ?? o.slot.starts_at;
 }
 
+/**
+ * The original handover when this view can be sure of it, else null. The
+ * staff read has no `original_handover_at`: an accepted late-payment offer
+ * of another date moves the appointment without an appointment-history row,
+ * so after one the current or first-recorded time isn't the anchor.
+ */
+export function knownOriginalHandover(o: DecisionOrder): string | null {
+	const moved = (o.late_payment_offers ?? []).some(
+		(f) =>
+			f.kind === 'other' &&
+			(f.state === 'accepted' ||
+				f.state === 'processing' ||
+				(f.answer?.answer === 'accept' && !f.answer.lapsed))
+	);
+	return moved ? null : originalHandover(o);
+}
+
 /** The latest dispatch's time, or null when the cake never went out. */
 export function lastDispatch(o: DecisionOrder): string | null {
 	const d = [...(o.fulfillment_history ?? [])].reverse().find((e) => e.action === 'dispatch');
@@ -528,7 +545,10 @@ export interface QuoteChoices {
 	replace: boolean;
 	/** Waive the current quote (free-delivery code). */
 	waive: boolean;
-	/** Pay-by: the quote's, or the original handover − 48 h before any quote. */
+	/**
+	 * Pay-by: the quote's, or the original handover − 48 h before any quote;
+	 * null when the anchor isn't certain here (the API decides).
+	 */
 	payBy: string | null;
 	note: string;
 }
@@ -545,8 +565,10 @@ const H = 3600 * 1000;
  */
 export function quoteChoices(o: DecisionOrder, view: StaffView, now: Date): QuoteChoices {
 	const d = o.delivery;
+	const anchor = knownOriginalHandover(o);
 	const payBy =
-		d?.quote?.pay_by ?? new Date(new Date(originalHandover(o)).getTime() - 48 * H).toISOString();
+		d?.quote?.pay_by ??
+		(anchor ? new Date(new Date(anchor).getTime() - 48 * H).toISOString() : null);
 	const none = (note = ''): QuoteChoices => ({
 		quote: false,
 		replace: false,
@@ -569,7 +591,9 @@ export function quoteChoices(o: DecisionOrder, view: StaffView, now: Date): Quot
 		);
 	}
 	if (d.state === 'paid' || d.state === 'cancelled_by_choice') return none();
-	const beforePayBy = now < new Date(payBy);
+	// Without a certain anchor nothing is gated here: the API refuses after
+	// pay-by (DELIVERY_PAY_BY_PASSED, worded plainly).
+	const beforePayBy = payBy === null || now < new Date(payBy);
 	const hasQuote = Boolean(d.quote) && (d.state === 'quoted' || d.state === 'pay_by_passed');
 	return {
 		quote: d.state === 'awaiting_quote' && beforePayBy,
@@ -583,13 +607,31 @@ export function quoteChoices(o: DecisionOrder, view: StaffView, now: Date): Quot
 	};
 }
 
+/**
+ * The quote form's notes: pay-by (when it's certain here), what replacing
+ * means, and that a new price ends a waiver.
+ */
+export function quoteFormNotes(o: DecisionOrder, c: QuoteChoices): string[] {
+	const d = o.delivery;
+	const out = [
+		`You price each address; there are no zones. The customer sees the price on their order page and pays delivery separately there ${c.payBy ? `by ${when(c.payBy)} (48 hours before the original delivery time)` : 'by 48 hours before the original delivery time (the system works out the exact time and refuses a quote once it has passed)'}. It doesn’t hold a place: the cake is already booked. No email is sent yet.`
+	];
+	if (c.replace && d?.state === 'waived') {
+		out.push('Delivery is waived now; a new price ends the waiver and the customer pays it.');
+	} else if (c.replace && d?.quote?.amount_minor != null) {
+		out.push(
+			`The new price replaces ${money(o, d.quote.amount_minor, d.quote.currency)}; agree it with the customer (paying a quote is their agreement to its amount).`
+		);
+	}
+	return out;
+}
+
 /** The delivery card's state lines (money for the chef only). */
 export function deliveryStatus(o: DecisionOrder, view: StaffView): string[] {
 	const d = o.delivery;
 	if (!d) return [];
 	const q = d.quote;
 	const chef = view === 'chef';
-	const amount = chef && q?.amount_minor != null ? `${money(o, q.amount_minor, q.currency)} ` : '';
 	switch (d.state) {
 		case 'awaiting_quote':
 			return [
@@ -597,22 +639,22 @@ export function deliveryStatus(o: DecisionOrder, view: StaffView): string[] {
 					? 'The customer asked for GK delivery. No price yet: you price each address (from £100). The cake is already booked; a quote doesn’t hold anything.'
 					: 'Waiting for Elina’s delivery price.'
 			];
+		// The Delivery fact above states the price, its state and pay-by; these
+		// lines add only what it doesn't.
 		case 'quoted':
 			return [
-				`Quote ${amount}sent${q ? ` ${when(q.quoted_at)}` : ''}. Not paid yet${q?.pay_by ? `: the customer can pay on their order page until ${when(q.pay_by)} (48 hours before the original delivery time)` : ''}.`,
+				`Sent${q ? ` ${when(q.quoted_at)}` : ''}; the customer pays it on their order page (pay-by is 48 hours before the original delivery time).`,
 				'The cake can’t go out for delivery until delivery is paid or waived.'
 			];
 		case 'payment_checking':
-			return [
-				`Quote ${amount}· delivery payment being checked. The customer sees “Still checking delivery payment; do not pay again”.`
-			];
+			return ['The customer sees “Still checking delivery payment; do not pay again”.'];
 		case 'paid':
 		case 'waived':
 			// The Delivery fact above already says it.
 			return [];
 		case 'pay_by_passed':
 			return [
-				`Quote ${amount}wasn’t paid by ${q?.pay_by ? when(q.pay_by) : 'its pay-by time'}. GK won’t deliver unpaid: the customer can choose collection, their own courier or a full refund on their order page (no deadline).`
+				`It wasn’t paid by ${q?.pay_by ? when(q.pay_by) : 'its pay-by time'}. GK won’t deliver unpaid: the customer can choose collection, their own courier or a full refund on their order page (no deadline).`
 			];
 		case 'cancelled_by_choice':
 			return [
@@ -1321,17 +1363,3 @@ const INVALID_WORDS: Record<Decision, string> = {
 	appointment:
 		'Check the details: when they agreed must be after the order was placed and not in the future; your note (up to 500 characters) and the evidence (up to 200) one line each.'
 };
-
-/** A chef-only hint for views that can't act (fulfilment, technical support). */
-export function lookOnly(view: StaffView): string {
-	return view === 'chef'
-		? ''
-		: view === 'fulfillment'
-			? 'Elina decides these.'
-			: 'Elina decides these; technical support can look but not change orders.';
-}
-
-/** "11:00 on Thu 29 Oct" (London time). */
-export function atTime(iso: string): string {
-	return `${londonTime(iso)} on ${dayShort(londonToday(new Date(iso)))}`;
-}

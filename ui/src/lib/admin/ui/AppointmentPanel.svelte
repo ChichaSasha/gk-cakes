@@ -72,6 +72,13 @@
 			target || 'the new time'
 		)
 	]);
+	const noteWrong = $derived(
+		feasibility.trim() !== '' && lineProblem(feasibility, 500, 'x') !== ''
+	);
+	const whenWrong = $derived(
+		missing.some((m) => m === 'a time that isn’t in the future' || m.startsWith('a time after'))
+	);
+	const evidenceWrong = $derived(missing.some((m) => m.startsWith('evidence on one line')));
 	const active = $derived(['confirmed', 'in_production', 'ready'].includes(order.lifecycle));
 	const selfMove = $derived(
 		order.fulfillment_mode === 'collection' || order.fulfillment_mode === 'customer_courier'
@@ -213,6 +220,8 @@
 					autocomplete="off"
 					maxlength="500"
 					bind:value={feasibility}
+					aria-invalid={noteWrong ? 'true' : undefined}
+					aria-describedby="appt-missing"
 				/>
 			</label>
 			<AgreementFields
@@ -220,14 +229,21 @@
 				bind:value={agreement}
 				{now}
 				exactLabel={target || 'the new time'}
+				describedBy="appt-missing"
+				invalidWhen={whenWrong}
+				invalidEvidence={evidenceWrong}
 			/>
-			<p class="small" aria-live="polite">
+			<p id="appt-missing" class="small" aria-live="polite">
 				{#if missing.length}Still needed: {missing.join(', ')}.{:else}<span class="ok-text"
 						>Ready: the customer’s agreement and your note are saved with the change.</span
 					>{/if}
 			</p>
 			<div class="actions">
-				<button class="btn btn-primary" type="submit" disabled={busy || missing.length > 0}
+				<button
+					class="btn btn-primary"
+					type="submit"
+					disabled={busy || missing.length > 0}
+					aria-describedby="appt-missing"
 					>{deciding === 'appointment'
 						? 'Changing…'
 						: target

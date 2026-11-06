@@ -18,6 +18,7 @@ import {
 	failureConfirm,
 	failureStatus,
 	isoToLondonLocal,
+	knownOriginalHandover,
 	lastDispatch,
 	latePaymentChoices,
 	latePaymentStatus,
@@ -31,13 +32,15 @@ import {
 	parsePence,
 	pollDecision,
 	quoteChoices,
+	quoteFormNotes,
 	quoteLines,
 	quotePriceProblem,
 	scheduleDay,
 	sendDecision,
 	slotOptions,
 	type DecisionInput,
-	type ScheduleChoices
+	type ScheduleChoices,
+	type StaffLatePaymentOffer
 } from './order-decisions';
 import type { StaffOrderDetail } from './order-detail';
 
@@ -456,6 +459,78 @@ describe('delivery quote and waiver', () => {
 		});
 	});
 
+	it('doesn’t derive pay-by after an accepted offer of another date moved the time', () => {
+		const accepted = (
+			state: string,
+			answer: StaffLatePaymentOffer['answer'] = null
+		): StaffLatePaymentOffer => ({
+			id: 'f',
+			kind: 'other',
+			date: '2026-11-02',
+			slot_id: 's1',
+			start: '2026-11-02T12:00:00Z',
+			end: '2026-11-02T13:00:00Z',
+			offered_at: '2026-10-20T09:00:00Z',
+			accept_until: '2026-11-02T12:00:00Z',
+			state,
+			answer
+		});
+		const moved = gk(
+			{ state: 'awaiting_quote', quote: null },
+			{ late_payment_offers: [accepted('accepted')] }
+		);
+		expect(knownOriginalHandover(moved)).toBeNull();
+		// The current time minus 48 h has passed, but the anchor is unknown: not gated, not stated.
+		const c = quoteChoices(moved, 'chef', new Date('2026-10-31T13:00:00Z'));
+		expect(c).toMatchObject({ quote: true, payBy: null, note: '' });
+		expect(quoteFormNotes(moved, c)[0]).toMatch(
+			/by 48 hours before the original delivery time \(the system works out the exact time and refuses a quote once it has passed\)/
+		);
+		expect(decisionRefusal(err(409, 'DELIVERY_PAY_BY_PASSED'), 'quote').text).toMatch(
+			/pay-by time \(48 hours before the original delivery time\) has passed/
+		);
+		// A lapsed or declined offer, or one of the requested time, keeps the anchor.
+		expect(
+			knownOriginalHandover(
+				gk(quoted, {
+					late_payment_offers: [
+						accepted('lapsed', {
+							id: 'a',
+							answer: 'accept',
+							received_at: '',
+							access: 'account',
+							command_id: null,
+							lapsed: true
+						})
+					]
+				})
+			)
+		).toBe('2026-11-02T12:00:00Z');
+		expect(
+			knownOriginalHandover(
+				gk(quoted, { late_payment_offers: [{ ...accepted('accepted'), kind: 'requested' }] })
+			)
+		).toBe('2026-11-02T12:00:00Z');
+		// With a quote, its own pay-by is used.
+		expect(quoteChoices({ ...moved, delivery: quoted }, 'chef', NOW).payBy).toBe(
+			'2026-10-31T12:00:00Z'
+		);
+	});
+
+	it('says a new price ends a waiver; otherwise what it replaces', () => {
+		const waived = gk({ ...quoted, state: 'waived', waived: { at: '2026-10-28T10:00:00Z' } });
+		const notes = quoteFormNotes(waived, quoteChoices(waived, 'chef', NOW));
+		expect(notes[1]).toBe(
+			'Delivery is waived now; a new price ends the waiver and the customer pays it.'
+		);
+		expect(notes.join(' ')).not.toMatch(/replaces/);
+		const q = quoteFormNotes(gk(quoted), quoteChoices(gk(quoted), 'chef', NOW));
+		expect(q[0]).toMatch(/pays delivery separately there by Sat 31 Oct, 12:00 \(48 hours/);
+		expect(q[1]).toMatch(/^The new price replaces £120; agree it with the customer/);
+		const first = gk({ state: 'awaiting_quote', quote: null });
+		expect(quoteFormNotes(first, quoteChoices(first, 'chef', NOW))).toHaveLength(1);
+	});
+
 	it('waits while a delivery payment is checked (PAYMENT_IN_PROGRESS)', () => {
 		const c = quoteChoices(gk({ ...quoted, state: 'payment_checking' }), 'chef', NOW);
 		expect(c.replace || c.waive).toBe(false);
@@ -489,13 +564,18 @@ describe('delivery quote and waiver', () => {
 	});
 
 	it('words the delivery for each view (money for the chef only)', () => {
+		// The Delivery fact states the price and pay-by; the lines don't repeat them.
 		expect(deliveryStatus(gk(quoted), 'chef')[0]).toBe(
-			'Quote £120 sent Wed 28 Oct, 09:00. Not paid yet: the customer can pay on their order page until Sat 31 Oct, 12:00 (48 hours before the original delivery time).'
+			'Sent Wed 28 Oct, 09:00; the customer pays it on their order page (pay-by is 48 hours before the original delivery time).'
 		);
+		expect(deliveryStatus(gk(quoted), 'chef').join(' ')).not.toMatch(/£120|Sat 31 Oct/);
+		expect(
+			deliveryStatus(gk({ ...quoted, state: 'payment_checking' }), 'chef').join(' ')
+		).not.toMatch(/£/);
 		const support = gk({ ...quoted, quote: { ...quoted.quote, amount_minor: undefined } });
 		expect(deliveryStatus(support, 'technical_support')[0]).not.toMatch(/£/);
 		expect(deliveryStatus(gk({ ...quoted, state: 'pay_by_passed' }), 'chef')[0]).toMatch(
-			/wasn’t paid by Sat 31 Oct, 12:00\. GK won’t deliver unpaid/
+			/^It wasn’t paid by Sat 31 Oct, 12:00\. GK won’t deliver unpaid/
 		);
 		expect(deliveryStatus(gk({ state: 'awaiting_quote' }), 'fulfillment')).toEqual([
 			'Waiting for Elina’s delivery price.'

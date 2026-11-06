@@ -77,6 +77,11 @@
 		)
 	]);
 
+	const whenWrong = $derived(
+		missing.some((m) => m === 'a time that isn’t in the future' || m.startsWith('a time after'))
+	);
+	const evidenceWrong = $derived(missing.some((m) => m.startsWith('evidence on one line')));
+
 	function toggle(which: 'other' | 'decide') {
 		open = open === which ? null : which;
 		if (open === 'other' && !date) date = order.date;
@@ -249,7 +254,7 @@
 							this handover. Silence never counts.
 						</p>
 						<label class="check">
-							<input type="checkbox" bind:checked={feasible} />
+							<input type="checkbox" bind:checked={feasible} aria-describedby="honour-missing" />
 							<span
 								>I can make it for {requested} (time, ingredients, workload) · recorded as you</span
 							>
@@ -259,8 +264,11 @@
 							bind:value={agreement}
 							{now}
 							exactLabel={requested}
+							describedBy="honour-missing"
+							invalidWhen={whenWrong}
+							invalidEvidence={evidenceWrong}
 						/>
-						<p class="small" aria-live="polite">
+						<p id="honour-missing" class="small" aria-live="polite">
 							{#if missing.length}Still needed: {missing.join(', ')}.{:else}<span class="ok-text"
 									>Ready: your check and the customer’s agreement are saved with the order.</span
 								>{/if}
@@ -269,7 +277,11 @@
 							Before confirming, the system rechecks the original date and time, the day place and
 							the cakes. No date is moved automatically. Its day place is already counted.
 						</p>
-						<button class="btn btn-primary" type="submit" disabled={busy || missing.length > 0}
+						<button
+							class="btn btn-primary"
+							type="submit"
+							disabled={busy || missing.length > 0}
+							aria-describedby="honour-missing"
 							>{deciding === 'honour'
 								? 'Confirming…'
 								: `Confirm the order for ${requested}`}</button

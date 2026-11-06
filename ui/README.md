@@ -602,7 +602,11 @@ at the page's clock, and the API still decides:
   the customer's agreement, "exactly" tick; "Still needed: …" until complete)
   or return everything (202, polled).
 - **GK delivery** (0035–0037): send or replace a quote (pounds typed, parsed
-  to whole pence as text, from £100; optional staff note; pay-by shown);
+  to whole pence as text, from £100; optional staff note; pay-by shown;
+  before any quote it is the original handover − 48 h, but after an accepted
+  offer of another date the staff read has no `original_handover_at`, so the
+  page neither gates on nor states it and the API decides; replacing a
+  waived quote says the waiver ends);
   waive it for a free-delivery code (measured distance in miles or km, sent
   as whole metres, and how it was measured; the page can't see the code, the
   API refuses otherwise); "We can't deliver this…" (confirm with the
@@ -618,8 +622,11 @@ at the page's clock, and the API still decides:
 
 Times come from the public `GET /api/v1/schedule?purpose=new_purchase` for
 the order's mode and cake count (there is no staff schedule-choices read):
-starts still ahead, never a closed date or the order's own time; online
-fullness is a hint. Keys are `chef-<decision>-<order>-v<version>-<nonce>`,
+starts still ahead (re-filtered as the page clock ticks; a chosen time that
+starts is cleared with a note), never a closed date or the order's own time;
+online fullness is a hint. Field errors are linked to their fields
+(`aria-invalid`, `aria-describedby`); the agreement forms link their fields
+and submit button to the "Still needed" line. Keys are `chef-<decision>-<order>-v<version>-<nonce>`,
 renewed when anything sent changes; refusals are plain words
 (`decisionRefusal`); 409 `STALE_VERSION` reloads with the banner and keeps
 the form. Status and errors are live regions in the card the decision

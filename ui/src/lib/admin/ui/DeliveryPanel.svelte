@@ -21,6 +21,7 @@
 		parseDistance,
 		parsePence,
 		quoteChoices,
+		quoteFormNotes,
 		quoteLines,
 		quotePriceProblem,
 		lineProblem,
@@ -65,11 +66,13 @@
 	let distance = $state('');
 	let unit = $state<'mi' | 'km'>('mi');
 	let source = $state('');
-	let waiverError = $state('');
+	let distanceError = $state('');
+	let sourceError = $state('');
 	let npReason = $state('');
 	let npError = $state('');
 	let cause = $state<'' | 'our_side' | 'nobody_available'>('');
 	let failReason = $state('');
+	let causeError = $state('');
 	let failError = $state('');
 
 	const chef = $derived(view === 'chef');
@@ -90,11 +93,7 @@
 		const r = parseDistance(distance, unit);
 		return 'metres' in r ? r.metres : null;
 	});
-	const current = $derived(
-		order.delivery?.quote?.amount_minor != null
-			? formatMoney(order.delivery.quote.amount_minor, order.delivery.quote.currency ?? 'GBP')
-			: ''
-	);
+	const formNotes = $derived(quoteFormNotes(order, q));
 
 	async function toggle(which: Open, focusId: string) {
 		open = open === which ? null : which;
@@ -134,11 +133,11 @@
 
 	async function sendWaiver() {
 		const d = parseDistance(distance, unit);
-		const s = lineProblem(source, 200, 'how you measured it');
-		waiverError = 'error' in d ? d.error : s;
-		if (waiverError || !('metres' in d)) {
+		distanceError = 'error' in d ? d.error : '';
+		sourceError = lineProblem(source, 200, 'how you measured it');
+		if (distanceError || sourceError || !('metres' in d)) {
 			await tick();
-			document.getElementById('error' in d ? 'waiver-distance' : 'waiver-source')?.focus();
+			document.getElementById(distanceError ? 'waiver-distance' : 'waiver-source')?.focus();
 			return;
 		}
 		if (await decide({ d: 'waiver', distanceM: d.metres, source })) {
@@ -162,10 +161,11 @@
 	}
 
 	async function sendFailure() {
-		failError = cause ? optionalLineProblem(failReason, 500) : 'Choose what happened.';
-		if (failError || !cause) {
+		causeError = cause ? '' : 'Choose what happened.';
+		failError = optionalLineProblem(failReason, 500);
+		if (causeError || failError || !cause) {
 			await tick();
-			document.getElementById(cause ? 'fail-reason' : 'fail-legend')?.focus();
+			document.getElementById(causeError ? 'fail-legend' : 'fail-reason')?.focus();
 			return;
 		}
 		const ok = await decide({
@@ -252,14 +252,9 @@
 			</div>
 			{#if priceError}<p id="quote-price-error" class="small bad-text">{priceError}</p>{/if}
 			{#if noteError}<p id="quote-note-error" class="small bad-text">{noteError}</p>{/if}
-			<p id="quote-help" class="small muted">
-				You price each address; there are no zones. The customer sees the price on their order page
-				and pays delivery separately there by {q.payBy ? when(q.payBy) : 'the pay-by time'} (48 hours
-				before the original delivery time). It doesn’t hold a place: the cake is already booked. No email
-				is sent yet.{q.replace && current
-					? ` The new price replaces ${current}; agree it with the customer (paying a quote is their agreement to its amount).`
-					: ''}
-			</p>
+			<div id="quote-help" class="small muted">
+				{#each formNotes as line, i (i)}<p>{line}</p>{/each}
+			</div>
 			<div class="actions">
 				<button class="btn btn-primary" type="submit" disabled={busy}
 					>{deciding === 'quote' ? 'Sending…' : `Send quote${priceLabel}`}</button
@@ -299,9 +294,9 @@
 							autocomplete="off"
 							placeholder="e.g. 5.1"
 							bind:value={distance}
-							oninput={() => (waiverError = '')}
-							aria-invalid={waiverError && metres === null ? 'true' : undefined}
-							aria-describedby="waiver-metres"
+							oninput={() => (distanceError = '')}
+							aria-invalid={distanceError ? 'true' : undefined}
+							aria-describedby="waiver-metres{distanceError ? ' waiver-distance-error' : ''}"
 						/>
 					</label>
 					<label class="field" for="waiver-unit"
@@ -320,14 +315,19 @@
 						maxlength="200"
 						placeholder="e.g. Google Maps driving route"
 						bind:value={source}
-						oninput={() => (waiverError = '')}
+						oninput={() => (sourceError = '')}
+						aria-invalid={sourceError ? 'true' : undefined}
+						aria-describedby={sourceError ? 'waiver-source-error' : undefined}
 					/>
 				</label>
 			</div>
 			<p id="waiver-metres" class="small muted">
 				{metres !== null ? `Recorded as ${distanceText(metres)}.` : 'Recorded in metres.'}
 			</p>
-			{#if waiverError}<p class="small bad-text">{waiverError}</p>{/if}
+			{#if distanceError}<p id="waiver-distance-error" class="small bad-text">
+					{distanceError}
+				</p>{/if}
+			{#if sourceError}<p id="waiver-source-error" class="small bad-text">{sourceError}</p>{/if}
 			<div class="actions">
 				<button class="btn btn-primary" type="submit" disabled={busy}
 					>{deciding === 'waiver'
@@ -367,7 +367,7 @@
 					void sendFailure();
 				}}
 			>
-				<fieldset class="choice">
+				<fieldset class="choice" aria-describedby={causeError ? 'fail-cause-error' : undefined}>
 					<legend id="fail-legend" tabindex="-1">What happened?</legend>
 					<label
 						><input
@@ -375,7 +375,7 @@
 							name="cause"
 							value="our_side"
 							bind:group={cause}
-							onchange={() => (failError = '')}
+							onchange={() => (causeError = '')}
 						/> It failed on our side (for example a breakdown, or we couldn’t reach the address)</label
 					>
 					<label class:is-off={!failure.nobody}
@@ -384,7 +384,7 @@
 							name="cause"
 							value="nobody_available"
 							bind:group={cause}
-							onchange={() => (failError = '')}
+							onchange={() => (causeError = '')}
 							disabled={!failure.nobody}
 						/>
 						Nobody was available to take it{failure.nobodyFrom
@@ -392,6 +392,9 @@
 							: ''}</label
 					>
 				</fieldset>
+				<div role="alert">
+					{#if causeError}<p id="fail-cause-error" class="small bad-text">{causeError}</p>{/if}
+				</div>
 				{#if cause}<p class="small"><strong>{failureConfirm(order, cause)}</strong></p>{/if}
 				<label class="field" for="fail-reason"
 					>What happened, in a line (optional; only you see it)
@@ -402,10 +405,11 @@
 						maxlength="500"
 						bind:value={failReason}
 						oninput={() => (failError = '')}
-						aria-invalid={failError && cause ? 'true' : undefined}
+						aria-invalid={failError ? 'true' : undefined}
+						aria-describedby={failError ? 'fail-reason-error' : undefined}
 					/>
 				</label>
-				{#if failError}<p class="small bad-text">{failError}</p>{/if}
+				{#if failError}<p id="fail-reason-error" class="small bad-text">{failError}</p>{/if}
 				<div class="actions">
 					<button
 						class="btn {cause === 'nobody_available' ? 'btn-danger' : 'btn-primary'}"
@@ -463,9 +467,10 @@
 						bind:value={npReason}
 						oninput={() => (npError = '')}
 						aria-invalid={npError ? 'true' : undefined}
+						aria-describedby={npError ? 'np-reason-error' : undefined}
 					/>
 				</label>
-				{#if npError}<p class="small bad-text">{npError}</p>{/if}
+				{#if npError}<p id="np-reason-error" class="small bad-text">{npError}</p>{/if}
 				<div class="actions">
 					<button class="btn btn-danger" type="submit" disabled={busy}
 						>{deciding === 'not_possible' ? 'Recording…' : 'Record: GK can’t deliver'}</button
