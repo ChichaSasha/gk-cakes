@@ -4,8 +4,10 @@
 	// role, with the day-to-day steps the API allows: Start making, Mark
 	// ready, Out for delivery, a problem, Hand over and (chef) Customer
 	// didn't come. Every step sends the version shown and its own key; a
-	// changed order is read again and said so. Cancelling, refunds, late
-	// payments, delivery quotes and problems and time changes come later.
+	// changed order is read again and said so. Slice 2 adds the chef's date
+	// and delivery decisions (late-payment offers and decision, delivery
+	// quote and waiver, GK can't deliver, a failed delivery, the time
+	// change); cancelling and refunds come later.
 	import { resolve } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -53,14 +55,30 @@
 		type StaffOrderDetail,
 		type StepAction
 	} from '../../../../lib/admin/order-detail';
+	import {
+		decisionDone,
+		decisionKey,
+		decisionRefusal,
+		decisionSlot,
+		DECISION_REFUSED,
+		offerLines,
+		pollDecision,
+		sendDecision,
+		type Decision,
+		type DecisionInput
+	} from '../../../../lib/admin/order-decisions';
 	import { staffApi } from '../../../../lib/admin/session';
+	import AppointmentPanel from '../../../../lib/admin/ui/AppointmentPanel.svelte';
+	import DeliveryPanel from '../../../../lib/admin/ui/DeliveryPanel.svelte';
+	import LatePaymentPanel from '../../../../lib/admin/ui/LatePaymentPanel.svelte';
 	import ChefIcon from '../../../../lib/admin/ui/ChefIcon.svelte';
 	import ChefShell from '../../../../lib/admin/ui/ChefShell.svelte';
 	import '../../../../lib/admin/order-detail.css';
+	import '../../../../lib/admin/order-decisions.css';
 
 	const orderId = orderIdFrom(page.params.id ?? '');
 
-	let api: StaffApi | null = null;
+	let api = $state.raw<StaffApi | null>(null);
 	let view = $state<StaffView | null>(null);
 	let order = $state<StaffOrderDetail | null>(null);
 	let phase = $state<'loading' | 'ready' | 'error' | 'missing'>('loading');
@@ -82,6 +100,31 @@
 	// One key per request (action, version and a problem's exact reason): a
 	// retry of the same request reuses it (not shown, so a plain record).
 	const keys: Record<string, string> = {};
+	// Decisions (slice 2): one in flight at a time, its messages shown in
+	// the card it belongs to; keys as for the steps (decision, version and
+	// exactly what is sent).
+	type Area = 'late' | 'delivery' | 'time';
+	const AREA: Record<Decision, Area> = {
+		offer: 'late',
+		honour: 'late',
+		full_return: 'late',
+		quote: 'delivery',
+		waiver: 'delivery',
+		not_possible: 'delivery',
+		failed_our_side: 'delivery',
+		failed_nobody: 'delivery',
+		appointment: 'time'
+	};
+	let deciding = $state<Decision | null>(null);
+	let area = $state<Area | null>(null);
+	let decisionStatus = $state('');
+	let decisionError = $state('');
+	let decisionPending = $state<{
+		input: DecisionInput;
+		operation_id: string;
+		poll_after_seconds: number;
+	} | null>(null);
+	const decisionKeys: Record<string, string> = {};
 	let mounted = true;
 	const isActive = () => mounted;
 
@@ -94,9 +137,28 @@
 	);
 	const status = $derived(order && view ? detailStatus(order, view) : null);
 	const notices = $derived(order && view ? banners(order, view, now) : []);
-	const late = $derived(order && view ? latePaymentCard(order, view) : null);
+	// After the chef's paid-late decision the order leaves paid late; the card
+	// stays (without its explanation) while it shows that decision's outcome.
+	const late = $derived(
+		order && view
+			? (latePaymentCard(order, view) ??
+					(area === 'late' && (decisionStatus || decisionError || decisionPending)
+						? { title: 'Paid late · decided', text: [] }
+						: null))
+			: null
+	);
 	const progress = $derived(order && view ? progressSteps(order, view, now) : []);
-	const history = $derived(order ? historyLines(order) : []);
+	const history = $derived(
+		order
+			? [...historyLines(order), ...offerLines(order)].sort((x, y) => x.at.localeCompare(y.at))
+			: []
+	);
+	const anyBusy = $derived(busy !== null || deciding !== null);
+	const msg = (a: Area) => ({
+		status: area === a ? decisionStatus : '',
+		error: area === a ? decisionError : '',
+		pending: area === a && decisionPending !== null
+	});
 	const money = $derived(order && view === 'chef' ? moneyFacts(order) : []);
 	const refund = $derived(order && view === 'chef' ? refundFacts(order) : []);
 	const refundParts = $derived(order && view === 'chef' ? refundPartRows(order) : []);
@@ -211,7 +273,9 @@
 		stepStatus =
 			p.action === 'handover'
 				? 'A handover is being recorded for this order. Checking for the result…'
-				: 'That the customer didn’t come is being recorded for this order. Checking for the result…';
+				: o.fulfillment_mode === 'gk_delivery'
+					? 'That nobody was available to take the delivery is being recorded. Checking for the result…'
+					: 'That the customer didn’t come is being recorded for this order. Checking for the result…';
 		const accepted = {
 			order_id: o.id,
 			operation_id: p.operation_id,
@@ -297,7 +361,7 @@
 
 	async function run(a: StepAction) {
 		const o = order;
-		if (!api || !o || busy) return;
+		if (!api || !o || busy || deciding) return;
 		if (a === 'delivery_exception') {
 			reasonError = reasonProblem(reason);
 			if (reasonError) {
@@ -309,6 +373,8 @@
 		stale = false;
 		stepError = '';
 		stillPending = null;
+		decisionStatus = '';
+		decisionError = '';
 		stepStatus = a === 'handover' ? 'Recording the handover…' : 'Recording…';
 		const slot = keySlot(a, o, a === 'delivery_exception' ? reason : '');
 		const key = keys[slot] ?? commandKey(a, o, nonce());
@@ -380,6 +446,120 @@
 		} finally {
 			busy = null;
 			void focusLater(() => (stepError ? errorEl : statusEl));
+		}
+	}
+
+	const DECIDING: Partial<Record<Decision, string>> = {
+		honour: 'Confirming the order…',
+		full_return: 'Returning everything paid…',
+		failed_nobody: 'Recording that nobody was available…',
+		appointment: 'Changing the time…'
+	};
+
+	/** Shows a protected decision's outcome from a poll. */
+	function decisionOutcome(
+		r: Awaited<ReturnType<typeof pollDecision>>,
+		input: DecisionInput,
+		accepted: { operation_id: string; poll_after_seconds: number }
+	) {
+		if (r.order) order = r.order;
+		now = new Date();
+		if (r.outcome === 'pending') {
+			decisionStatus = STILL;
+			decisionPending = { input, ...accepted };
+			return;
+		}
+		decisionPending = null;
+		if (r.outcome === 'refused') {
+			decisionStatus = '';
+			decisionError = DECISION_REFUSED;
+		} else {
+			decisionStatus = decisionDone(input, r.outcome);
+		}
+	}
+
+	function focusDecision(a: Area) {
+		void focusLater(() => document.getElementById(decisionError ? `${a}-error` : `${a}-status`));
+	}
+
+	/**
+	 * Sends one decision at the version shown (its key per request), then
+	 * reads the order again; a protected one is watched until it's secured.
+	 * True when it was accepted (the panel closes its form).
+	 */
+	async function decide(input: DecisionInput): Promise<boolean> {
+		const o = order;
+		if (!api || !o || busy || deciding) return false;
+		const a = AREA[input.d];
+		deciding = input.d;
+		area = a;
+		stale = false;
+		stepStatus = '';
+		stepError = '';
+		decisionError = '';
+		decisionPending = null;
+		decisionStatus = DECIDING[input.d] ?? 'Recording…';
+		const slot = decisionSlot(o, input);
+		const key = decisionKeys[slot] ?? decisionKey(o, input.d, nonce());
+		decisionKeys[slot] = key;
+		try {
+			const answer = await sendDecision(api, o, input, key);
+			if (answer.kind === 'accepted') {
+				await load(true);
+				focusDecision(a);
+				const r = await pollDecision(read, input.d, answer.accepted, { active: isActive });
+				if (!isActive()) return true;
+				decisionOutcome(r, input, answer.accepted);
+			} else {
+				await load(true);
+				decisionStatus =
+					answer.kind === 'unchanged'
+						? 'The order already has that time; nothing changed.'
+						: decisionDone(input);
+			}
+			focusDecision(a);
+			return true;
+		} catch (e) {
+			const refusal = decisionRefusal(e, input.d);
+			if (refusal.signIn) {
+				await sessionEnded(e);
+				return false;
+			}
+			if (!refusal.retry) delete decisionKeys[slot];
+			decisionStatus = '';
+			if (refusal.stale) {
+				await load(true);
+				stale = true;
+				void focusLater(() => staleEl);
+				return false;
+			}
+			decisionError = refusal.text;
+			if (refusal.reload) await load(true);
+			focusDecision(a);
+			return false;
+		} finally {
+			deciding = null;
+		}
+	}
+
+	/** Reads a still-pending decision again. */
+	async function checkDecision() {
+		const p = decisionPending;
+		if (!p || busy || deciding) return;
+		deciding = p.input.d;
+		decisionStatus = 'Checking…';
+		try {
+			const r = await pollDecision(read, p.input.d, p, {
+				tries: 1,
+				active: isActive,
+				wait: async () => {}
+			});
+			decisionOutcome(r, p.input, p);
+		} catch (e) {
+			await sessionEnded(e);
+		} finally {
+			deciding = null;
+			if (area) focusDecision(area);
 		}
 	}
 
@@ -468,7 +648,17 @@
 				<section class="card card-alert" aria-labelledby="late-h">
 					<h2 id="late-h" class="card-h"><ChefIcon name="alert" />{late.title}</h2>
 					{#each late.text as line, i (i)}<p class={i ? 'small muted' : ''}>{line}</p>{/each}
-					{#if late.note}<p class="role-note">{late.note}</p>{/if}
+					<LatePaymentPanel
+						api={api as StaffApi}
+						order={o}
+						view={v}
+						{now}
+						busy={anyBusy}
+						{deciding}
+						{...msg('late')}
+						{decide}
+						oncheck={() => void checkDecision()}
+					/>
 				</section>
 			{/if}
 
@@ -525,6 +715,17 @@
 								)} · being confirmed.
 							</p>
 						{/if}
+						<AppointmentPanel
+							api={api as StaffApi}
+							order={o}
+							view={v}
+							{now}
+							busy={anyBusy}
+							{deciding}
+							{...msg('time')}
+							{decide}
+							oncheck={() => void checkDecision()}
+						/>
 					</section>
 
 					{#if o.delivery || o.fulfillment_mode === 'gk_delivery'}
@@ -549,32 +750,16 @@
 									problem to resolve, never “completed”.
 								</p>
 							{/if}
-							{#if o.delivery_choice?.open}
-								<p class="small">
-									The customer can now choose another way to get the cake: collection, their own
-									courier or a full refund.
-								</p>
-							{:else if o.delivery_choice?.reason === 'not_possible' || o.delivery_choice?.not_possible}
-								<p class="small">
-									GK can’t deliver this order (recorded). The customer chooses another way.
-								</p>
-							{/if}
-							{#if o.delivery_failure}
-								<p class="small">
-									{o.delivery_failure.cause === 'nobody_available'
-										? 'Nobody was available to take the delivery'
-										: 'The delivery failed on our side'}
-									({when(o.delivery_failure.at)}).{o.delivery_failure.open
-										? ' The customer is choosing what happens next.'
-										: ''}
-								</p>
-							{/if}
-							{#if v === 'chef'}
-								<p class="small muted">
-									Quotes, waivers and recording a delivery that can’t happen or failed aren’t on
-									this page yet.
-								</p>
-							{/if}
+							<DeliveryPanel
+								order={o}
+								view={v}
+								{now}
+								busy={anyBusy}
+								{deciding}
+								{...msg('delivery')}
+								{decide}
+								oncheck={() => void checkDecision()}
+							/>
 						</section>
 					{/if}
 
@@ -682,7 +867,7 @@
 													? 'btn-quiet'
 													: ''}"
 											type="button"
-											disabled={busy !== null || (asking !== null && asking !== a)}
+											disabled={anyBusy || (asking !== null && asking !== a)}
 											onclick={() => choose(a)}
 											>{busy === a && !asksFirst(a) ? 'Recording…' : stepLabel(a, o)}</button
 										>
@@ -792,10 +977,7 @@
 				</div>
 			</div>
 			{#if v === 'chef'}
-				<p class="muted small foot">
-					Not on this page yet: cancelling and refunds, late-payment decisions, delivery quotes and
-					problems, and moving the time or date.
-				</p>
+				<p class="muted small foot">Not on this page yet: cancelling and sending refunds.</p>
 			{/if}
 		{/if}
 	</div>
