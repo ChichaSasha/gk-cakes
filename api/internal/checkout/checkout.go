@@ -429,6 +429,9 @@ var invalidFields = map[string]string{
 	// Late-payment agreement (0034).
 	"offer_kind_invalid": "kind", "offer_target_invalid": "target_slot_id", "offer_invalid": "offer_id",
 	"answer_invalid": "answer",
+	// GK delivery (0035).
+	"delivery_amount_invalid": "amount_minor", "distance_invalid": "distance_m",
+	"distance_source_invalid": "distance_source", "quote_invalid": "quote_id",
 }
 
 var invalidMessages = map[string]string{
@@ -473,6 +476,11 @@ var invalidMessages = map[string]string{
 	"offer_target_invalid": "must be another time than the requested one (kind other), or absent for kind requested",
 	"offer_invalid":        "must be the offer shown on the order page",
 	"answer_invalid":       "must be accept or decline",
+	// GK delivery (0035).
+	"delivery_amount_invalid": "must be whole pence from 10000 (£100) to 100000000",
+	"distance_invalid":        "must be the measured driving distance in whole metres (1 to 1000000)",
+	"distance_source_invalid": "must be 1 to 200 characters on one line without surrounding spaces",
+	"quote_invalid":           "must be the delivery quote shown on the order page",
 }
 
 var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "state_conflict": true,
@@ -487,7 +495,9 @@ var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "
 	"account_deletion_blocked": true, "claim_limit": true, "claim_pending": true, "already_yours": true,
 	"order_owned": true, "account_unavailable": true, "staff_account": true, "deletion_preview_stale": true,
 	// Late-payment agreement (0034).
-	"offer_not_current": true}
+	"offer_not_current": true,
+	// GK delivery (0035).
+	"delivery_pay_by_passed": true, "quote_not_current": true, "waiver_not_eligible": true}
 
 // conflictAliases name engine refusals in the customer's terms.
 var conflictAliases = map[string]string{"day_full": "slot_unavailable", "stock_unavailable": "item_unavailable"}

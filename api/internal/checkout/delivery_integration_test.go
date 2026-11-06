@@ -1,0 +1,795 @@
+//go:build integration
+
+package checkout_test
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ChichaSasha/gk-cakes/api/internal/catalog"
+	"github.com/ChichaSasha/gk-cakes/api/internal/checkout"
+	"github.com/ChichaSasha/gk-cakes/api/internal/schedule"
+)
+
+// GK delivery quote, separate delivery payment and free-delivery waiver
+// (K03, K04, K05, K06; GK-017 r02b state 15, Q9; migration 0035).
+
+// The appointment of every delivery order here: Saturday 14 November 12:30
+// London (GMT), so pay-by is Thursday 12 November 12:30Z.
+var deliveryPayBy = time.Date(2026, 11, 12, 12, 30, 0, 0, time.UTC)
+
+type deliveryBlock struct {
+	State   string
+	Payable *bool
+	Quote   *struct {
+		ID          string
+		AmountMinor int64 `json:"amount_minor"`
+		Currency    string
+		QuotedAt    time.Time `json:"quoted_at"`
+		PayBy       time.Time `json:"pay_by"`
+	}
+	PaidMinor *int64 `json:"paid_minor"`
+	Waived    *struct{ At time.Time }
+	Payment   *struct {
+		ID          string
+		State       string
+		AmountMinor int64   `json:"amount_minor"`
+		CheckoutURL *string `json:"checkout_url"`
+	}
+}
+
+type deliveryOrderView struct {
+	Version              int
+	Lifecycle            string
+	PaidAt               *time.Time `json:"paid_at"`
+	FullRefundDeadlineAt time.Time  `json:"full_refund_deadline_at"`
+	Payment              *struct{ ID, State string }
+	Delivery             *deliveryBlock
+	Refund               *refundView
+}
+
+func (h *payHarness) deliveryView(t *testing.T, order string, d []byte) (deliveryOrderView, string) {
+	t.Helper()
+	raw, err := h.co.GetOrder(h.ctx, order, "", d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v deliveryOrderView
+	if err := json.Unmarshal(raw, &v); err != nil {
+		t.Fatal(err)
+	}
+	return v, string(raw)
+}
+
+// deliveryOrder places a 10000p GK delivery order (with discount code code,
+// if any), pays it through the fake Stripe and returns it confirmed with
+// its guest digest and cake collection.
+func (h *payHarness) deliveryOrder(t *testing.T, f fixture, pol, key, code string) (string, []byte, string) {
+	t.Helper()
+	res := must[catalog.Result](t)
+	fl := res(h.cat.CreateFlavour(h.ctx, chef, "f-"+key, catalog.FlavourInput{Name: "Lemon " + key})).ID
+	n := res(h.cat.CreateNotice(h.ctx, chef, "n-"+key, catalog.NoticeInput{Body: "Kitchen notice " + key})).ID
+	v := res(h.cat.CreateVariant(h.ctx, chef, "v-"+key, f.cake, catalog.VariantInput{FlavourID: fl, SizeCode: "xl", StockMode: catalog.MadeToOrder})).ID
+	res(h.cat.CreateRecipeVersion(h.ctx, chef, "r-"+key, catalog.RecipeVersionInput{VariantID: v, ExpectedVersion: 1,
+		PriceMinor: 10000, ServingsMin: 20, ServingsMax: 25, Coating: "Swiss meringue buttercream",
+		Composition: []string{"Lemon sponge"}, NoticeID: n, Allergens: []catalog.Allergen{{Code: "eggs", Label: "EGGS"}}}))
+	quote, d := h.guestQuote(t, "q-"+key, checkout.QuoteInput{Date: "2026-11-14", SlotID: f.slot,
+		FulfillmentMode: schedule.GKDelivery, Lines: []checkout.QuoteLine{{VariantID: v, Quantity: 1}}, DiscountCode: code})
+	order := must[catalog.Result](t)(h.checkout("", d, "k-"+key, quote, pol)).ID
+	coll, session := h.started(t, order, d)
+	h.stripe.pay(session, time.Date(2026, 11, 5, 10, 9, 0, 0, time.UTC))
+	h.deliver(t, "evt_paid_"+key, "checkout.session.completed", "checkout.session", session, coll, order)
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("cake payment: %v", errs)
+	}
+	if v, raw := h.deliveryView(t, order, d); v.Lifecycle != "confirmed" {
+		t.Fatalf("not confirmed: %s", raw)
+	}
+	return order, d, coll
+}
+
+func (h *payHarness) quoteDelivery(key, order string, version int, amount int64) (catalog.Result, error) {
+	return h.co.QuoteDelivery(h.ctx, chef, key, order, checkout.DeliveryQuoteInput{ExpectedVersion: version, AmountMinor: amount})
+}
+
+func (h *payHarness) payDelivery(order string, d []byte, key string, version int, quote string) (catalog.Result, error) {
+	return h.co.StartDeliveryPayment(h.ctx, order, "", d, key, checkout.DeliveryPaymentInput{ExpectedVersion: version, QuoteID: quote})
+}
+
+// deliveryStarted pays the current quote and runs its dispatch: the
+// collection and its session.
+func (h *payHarness) deliveryStarted(t *testing.T, order string, d []byte, key string) (string, string) {
+	t.Helper()
+	v, raw := h.deliveryView(t, order, d)
+	if v.Delivery == nil || v.Delivery.Quote == nil {
+		t.Fatalf("no quote: %s", raw)
+	}
+	res, err := h.payDelivery(order, d, key, v.Version, v.Delivery.Quote.ID)
+	if err != nil {
+		t.Fatalf("delivery payment: %v", err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("dispatch: %v", errs)
+	}
+	c := h.collection(t, res.ID)
+	if c.State != "pending" || c.SessionID == "" {
+		t.Fatalf("after dispatch %+v", c)
+	}
+	return res.ID, c.SessionID
+}
+
+// deliveryPaid completes the delivery collection's session and its webhook.
+func (h *payHarness) deliveryPaid(t *testing.T, order, coll, session, evt string) {
+	t.Helper()
+	h.stripe.pay(session, time.Date(2026, 11, 5, 11, 0, 0, 0, time.UTC))
+	h.deliver(t, evt, "checkout.session.completed", "checkout.session", session, coll, order)
+	if errs := h.drain(t); len(errs) != 0 || h.collection(t, coll).State != "succeeded" {
+		t.Fatalf("delivery paid: %v %+v", errs, h.collection(t, coll))
+	}
+}
+
+func (h *payHarness) deliveryOutcome(t *testing.T, coll string) string {
+	t.Helper()
+	var outcome string
+	var reason *string
+	if err := h.admin.QueryRow(h.ctx, "SELECT outcome, reason FROM business.delivery_payment_outcome WHERE collection_id = $1::uuid",
+		coll).Scan(&outcome, &reason); err != nil {
+		t.Fatalf("outcome of %s: %v", coll, err)
+	}
+	if reason != nil {
+		return outcome + "/" + *reason
+	}
+	return outcome
+}
+
+// makeReady starts production (chef) and marks the order ready
+// (fulfilment) at its current version.
+func (h *payHarness) makeReady(t *testing.T, order string, d []byte, key string) int {
+	t.Helper()
+	v, _ := h.deliveryView(t, order, d)
+	if _, err := h.co.StartProduction(h.ctx, chef, "p-"+key, order, checkout.ProductionInput{ExpectedVersion: v.Version}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.fulfil(fulfilment, "r-"+key, order, checkout.ActionReady, v.Version+1); err != nil {
+		t.Fatalf("ready: %v", err)
+	}
+	return v.Version + 2
+}
+
+// compactJSON is raw without insignificant spaces (the API may re-encode a
+// representation).
+func compactJSON(t *testing.T, raw json.RawMessage) string {
+	t.Helper()
+	var b bytes.Buffer
+	if len(raw) == 0 {
+		return ""
+	}
+	if err := json.Compact(&b, raw); err != nil {
+		t.Fatalf("compact %s: %v", raw, err)
+	}
+	return b.String()
+}
+
+func staffDelivery(t *testing.T, m map[string]json.RawMessage) (map[string]json.RawMessage, string) {
+	t.Helper()
+	var d map[string]json.RawMessage
+	if err := json.Unmarshal(m["delivery"], &d); err != nil {
+		t.Fatalf("delivery %s: %v", m["delivery"], err)
+	}
+	return d, string(m["delivery"])
+}
+
+// Quote rules: GK delivery only, on a confirmed cake; from £100 to the
+// money bound; versioned and idempotent; chef only; a new quote replaces an
+// unpaid one; refused at or after pay-by and during a restore freeze
+// (replays still answer); the note stays out of the audit and the
+// customer's view.
+func TestDeliveryQuoteRules(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	h.staffGrants(t)
+
+	// A collection order has no delivery block and takes no quote.
+	coll, _, _ := h.paidCollection(t, f, pol, "col")
+	cd := h.digestOf(t, coll)
+	if v, raw := h.deliveryView(t, coll, cd); v.Delivery != nil || !strings.Contains(raw, `"delivery" : null`) {
+		t.Fatalf("collection order delivery: %s", raw)
+	}
+	cv, _ := h.deliveryView(t, coll, cd)
+	if _, err := h.quoteDelivery("c0", coll, cv.Version, 12000); conflict(err) != "state_conflict" {
+		t.Fatalf("collection order quote: %v", err)
+	}
+
+	// A GK delivery order still awaiting payment takes no quote either.
+	res := must[catalog.Result](t)
+	quote, ud := h.guestQuote(t, "q-unpaid", checkout.QuoteInput{Date: "2026-11-14", SlotID: f.slot,
+		FulfillmentMode: schedule.GKDelivery, Lines: []checkout.QuoteLine{{VariantID: f.v1001, Quantity: 1}}})
+	unpaid := res(h.checkout("", ud, "k-unpaid", quote, pol)).ID
+	if v, raw := h.deliveryView(t, unpaid, ud); v.Delivery == nil || v.Delivery.State != "awaiting_quote" || v.Delivery.Payable == nil ||
+		*v.Delivery.Payable {
+		t.Fatalf("unpaid delivery order: %s", raw)
+	}
+	if _, err := h.quoteDelivery("u0", unpaid, 1, 12000); conflict(err) != "state_conflict" {
+		t.Fatalf("unpaid order quote: %v", err)
+	}
+
+	order, d, _ := h.deliveryOrder(t, f, pol, "dq", "")
+	v, raw := h.deliveryView(t, order, d)
+	if v.Delivery == nil || v.Delivery.State != "awaiting_quote" || v.Delivery.Quote != nil || *v.Delivery.Payable {
+		t.Fatalf("awaiting quote: %s", raw)
+	}
+	version := v.Version
+	for name, who := range map[string]string{"fulfilment": fulfilment, "support": support, "customer": customerA} {
+		if _, err := h.co.QuoteDelivery(h.ctx, who, "x", order, checkout.DeliveryQuoteInput{ExpectedVersion: version, AmountMinor: 12000}); !errors.Is(err, catalog.ErrForbidden) {
+			t.Errorf("quote by %s: %v", name, err)
+		}
+	}
+	// The database bounds the amount too (the store passes it through).
+	for _, amount := range []int64{9999, 100000001, 0} {
+		if _, err := h.quoteDelivery("bad", order, version, amount); !strings.HasPrefix(invalidField(err), "amount_minor") {
+			t.Errorf("amount %d: %v", amount, err)
+		}
+	}
+	if _, err := h.quoteDelivery("stale", order, version+1, 12000); conflict(err) != "stale_version" {
+		t.Fatalf("stale: %v", err)
+	}
+	note := "Route via the A13, measured 8.2 km"
+	q1, err := h.co.QuoteDelivery(h.ctx, chef, "q1", order, checkout.DeliveryQuoteInput{ExpectedVersion: version, AmountMinor: 12000, Note: &note})
+	if err != nil || q1.Replayed {
+		t.Fatalf("quote: %+v %v", q1, err)
+	}
+	if again, err := h.co.QuoteDelivery(h.ctx, chef, "q1", order, checkout.DeliveryQuoteInput{ExpectedVersion: version, AmountMinor: 12000, Note: &note}); err != nil ||
+		!again.Replayed || again.ID != q1.ID {
+		t.Fatalf("replay: %+v %v", again, err)
+	}
+	if _, err := h.quoteDelivery("q1", order, version, 13000); conflict(err) != "key_reused" {
+		t.Fatalf("key reused: %v", err)
+	}
+	v, raw = h.deliveryView(t, order, d)
+	if v.Version != version+1 || v.Delivery.State != "quoted" || !*v.Delivery.Payable || v.Delivery.Quote.ID != q1.ID ||
+		v.Delivery.Quote.AmountMinor != 12000 || v.Delivery.Quote.Currency != "GBP" || !v.Delivery.Quote.PayBy.Equal(deliveryPayBy) ||
+		!v.Delivery.Quote.QuotedAt.Equal(h.now) || v.Delivery.Payment != nil || v.Delivery.PaidMinor != nil {
+		t.Fatalf("quoted: %s", raw)
+	}
+	if strings.Contains(raw, "A13") {
+		t.Fatalf("the chef's note reached the customer: %s", raw)
+	}
+	// A new quote replaces the unpaid one (immutable history).
+	q2, err := h.quoteDelivery("q2", order, version+1, 15000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, raw := h.deliveryView(t, order, d); v.Version != version+2 || v.Delivery.Quote.ID != q2.ID || v.Delivery.Quote.AmountMinor != 15000 {
+		t.Fatalf("replaced: %s", raw)
+	}
+	if n := h.count(t, "SELECT count(*) FROM business.delivery_quote WHERE order_id = $1::uuid", order); n != 2 {
+		t.Fatalf("%d quotes, want both kept", n)
+	}
+	audits := h.auditDetails(t, "delivery.quoted")
+	if len(audits) != 2 || !strings.Contains(audits[1], `"replaced_quote_id" : "`+q1.ID) || strings.Contains(strings.Join(audits, ""), "A13") {
+		t.Fatalf("audit %v", audits)
+	}
+
+	// Staff views: the chef sees the note and amounts; technical support
+	// neither; fulfilment the state only.
+	chefView := h.staffJSON(t, chef, order)
+	if hist := compactJSON(t, chefView["delivery_history"]); !strings.Contains(hist, "A13") || !strings.Contains(hist, `"amount_minor":15000`) ||
+		!strings.Contains(hist, `"current":true`) {
+		t.Fatalf("chef history %s", hist)
+	}
+	sup := h.staffJSON(t, support, order)
+	if hist, del := string(sup["delivery_history"]), string(sup["delivery"]); strings.Contains(hist, "A13") || strings.Contains(hist, "amount") ||
+		strings.Contains(del, "amount") || strings.Contains(del, "GBP") || !strings.Contains(del, `"pay_by"`) {
+		t.Fatalf("support delivery %s history %s", del, hist)
+	}
+	ful := h.staffJSON(t, fulfilment, order)
+	if del, _ := staffDelivery(t, ful); len(del) != 1 || string(del["state"]) != `"quoted"` || ful["delivery_history"] != nil {
+		t.Fatalf("fulfilment delivery %s", ful["delivery"])
+	}
+
+	// A restore freeze refuses a new quote; the same key still replays.
+	h.owner(t, "SELECT business.recovery_set_freeze(true, 'restore drill')")
+	if _, err := h.quoteDelivery("q3", order, version+2, 16000); !errors.Is(err, checkout.ErrOrdersFrozen) {
+		t.Fatalf("frozen quote: %v", err)
+	}
+	if again, err := h.quoteDelivery("q2", order, version+1, 15000); err != nil || !again.Replayed || again.ID != q2.ID {
+		t.Fatalf("frozen replay: %+v %v", again, err)
+	}
+	h.owner(t, "SELECT business.recovery_set_freeze(false, NULL)")
+
+	// Pay-by (original handover - 48 h): quoting at it is refused; the
+	// order page says pay_by_passed at the API's clock.
+	h.now = deliveryPayBy.Add(-time.Second)
+	if v, raw := h.deliveryView(t, order, d); v.Delivery.State != "quoted" || !*v.Delivery.Payable {
+		t.Fatalf("a second before pay-by: %s", raw)
+	}
+	h.now = deliveryPayBy
+	if _, err := h.quoteDelivery("q4", order, version+2, 16000); conflict(err) != "delivery_pay_by_passed" {
+		t.Fatalf("quote at pay-by: %v", err)
+	}
+	if v, raw := h.deliveryView(t, order, d); v.Delivery.State != "pay_by_passed" || *v.Delivery.Payable {
+		t.Fatalf("at pay-by: %s", raw)
+	}
+	if _, err := h.payDelivery(order, d, "late", version+2, q2.ID); conflict(err) != "delivery_pay_by_passed" {
+		t.Fatalf("payment at pay-by: %v", err)
+	}
+	if n := h.count(t, "SELECT count(*) FROM business.payment_collection WHERE order_id = $1::uuid AND kind = 'delivery'", order); n != 0 {
+		t.Fatalf("%d delivery collections after refusals", n)
+	}
+	if del, raw := staffDelivery(t, h.staffJSON(t, chef, order)); string(del["state"]) != `"pay_by_passed"` || string(del["payable"]) != "false" {
+		t.Fatalf("chef at pay-by: %s", raw)
+	}
+}
+
+// The customer pays the current quote through the payment worker; the
+// webhook and reconcile settle it as paid: the cake's lifecycle, anchors and
+// refund deadline are untouched; the order can then be dispatched.
+func TestDeliveryPaymentIsPaidAndDispatched(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	h.staffGrants(t)
+	order, d, cake := h.deliveryOrder(t, f, pol, "dp", "")
+	before, _ := h.deliveryView(t, order, d)
+	_, anchor := h.productionJob(t, order)
+	if _, err := h.payDelivery(order, d, "early", before.Version, "cccccccc-1111-4111-8111-11111111111c"); conflict(err) != "quote_not_current" {
+		t.Fatalf("pay before any quote: %v", err)
+	}
+	q, err := h.quoteDelivery("q1", order, before.Version, 12000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	version := before.Version + 1
+	_, otherDigest := proof(t)
+	for name, c := range map[string]struct {
+		subject string
+		digest  []byte
+		version int
+		quote   string
+		check   func(error) bool
+	}{
+		"another guest":    {"", otherDigest, version, q.ID, func(err error) bool { return errors.Is(err, catalog.ErrNotFound) }},
+		"another customer": {customerB, nil, version, q.ID, func(err error) bool { return errors.Is(err, catalog.ErrNotFound) }},
+		"stale version":    {"", d, version - 1, q.ID, func(err error) bool { return conflict(err) == "stale_version" }},
+		"another quote":    {"", d, version, "cccccccc-1111-4111-8111-11111111111c", func(err error) bool { return conflict(err) == "quote_not_current" }},
+	} {
+		_, err := h.co.StartDeliveryPayment(h.ctx, order, c.subject, c.digest, "x-"+strings.ReplaceAll(name, " ", "-"), checkout.DeliveryPaymentInput{ExpectedVersion: c.version, QuoteID: c.quote})
+		if !c.check(err) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	// A restore freeze refuses a new delivery collection.
+	h.owner(t, "SELECT business.recovery_set_freeze(true, 'restore drill')")
+	if _, err := h.payDelivery(order, d, "dpay", version, q.ID); !errors.Is(err, checkout.ErrRecoveryFrozen) {
+		t.Fatalf("frozen: %v", err)
+	}
+	h.owner(t, "SELECT business.recovery_set_freeze(false, NULL)")
+	res, err := h.payDelivery(order, d, "dpay", version, q.ID)
+	if err != nil || res.Replayed {
+		t.Fatalf("delivery payment: %+v %v", res, err)
+	}
+	if again, err := h.payDelivery(order, d, "dpay", version, q.ID); err != nil || !again.Replayed || again.ID != res.ID {
+		t.Fatalf("replay: %+v %v", again, err)
+	}
+	if _, err := h.payDelivery(order, d, "dpay-2", version, q.ID); conflict(err) != "payment_in_progress" {
+		t.Fatalf("second payment: %v", err)
+	}
+	if _, err := h.quoteDelivery("q2", order, version, 13000); conflict(err) != "payment_in_progress" {
+		t.Fatalf("requote while paying: %v", err)
+	}
+	if _, err := h.co.WaiveDelivery(h.ctx, chef, "w", order, checkout.DeliveryWaiverInput{ExpectedVersion: version, DistanceM: 5000,
+		DistanceSource: "map"}); conflict(err) != "waiver_not_eligible" {
+		t.Fatalf("waiver without a free-delivery code: %v", err)
+	}
+	if v, raw := h.deliveryView(t, order, d); v.Delivery.State != "payment_checking" || *v.Delivery.Payable ||
+		v.Delivery.Payment == nil || v.Delivery.Payment.ID != res.ID || v.Delivery.Payment.State != "created" ||
+		v.Payment == nil || v.Payment.ID != cake {
+		t.Fatalf("checking: %s", raw)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("dispatch: %v", errs)
+	}
+	c := h.collection(t, res.ID)
+	if c.State != "pending" {
+		t.Fatalf("collection %+v", c)
+	}
+	h.stripe.mu.Lock()
+	form := h.stripe.forms[res.ID]
+	h.stripe.mu.Unlock()
+	if !strings.Contains(form, "unit_amount%5D=12000") || !strings.Contains(form, "currency%5D=gbp") ||
+		!strings.Contains(form, "metadata%5Bcollection_id%5D="+res.ID) || strings.Contains(form, "example.com") ||
+		strings.Contains(form, "Test Customer") {
+		t.Fatalf("Stripe request %s", form)
+	}
+	v, raw := h.deliveryView(t, order, d)
+	if v.Delivery.State != "payment_checking" || v.Delivery.Payment.State != "pending" || v.Delivery.Payment.CheckoutURL == nil ||
+		v.Delivery.Payment.AmountMinor != 12000 {
+		t.Fatalf("pending: %s", raw)
+	}
+	// The chef's view never carries the customer's payment link.
+	if del, raw := staffDelivery(t, h.staffJSON(t, chef, order)); strings.Contains(raw, "checkout.stripe.test") || del["payment"] == nil {
+		t.Fatalf("chef delivery %s", raw)
+	}
+
+	h.deliveryPaid(t, order, res.ID, c.SessionID, "evt_delivery_paid")
+	if got := h.deliveryOutcome(t, res.ID); got != "paid" {
+		t.Fatalf("outcome %s", got)
+	}
+	after, raw := h.deliveryView(t, order, d)
+	if after.Delivery.State != "paid" || after.Delivery.PaidMinor == nil || *after.Delivery.PaidMinor != 12000 || *after.Delivery.Payable ||
+		after.Delivery.Payment.CheckoutURL != nil {
+		t.Fatalf("paid: %s", raw)
+	}
+	// K03: the delivery payment never restarts the cake's preparation or
+	// deadline and changes no lifecycle; no order command was recorded.
+	if after.Lifecycle != before.Lifecycle || after.Version != version || !after.PaidAt.Equal(*before.PaidAt) ||
+		!after.FullRefundDeadlineAt.Equal(before.FullRefundDeadlineAt) || after.Payment.ID != cake {
+		t.Fatalf("cake changed: before %+v after %s", before, raw)
+	}
+	if _, at := h.productionJob(t, order); !at.Equal(anchor) {
+		t.Fatalf("production anchor %s -> %s", anchor, at)
+	}
+	if n := h.count(t, "SELECT count(*) FROM business.order_command WHERE collection_id = $1::uuid", res.ID); n != 0 {
+		t.Fatalf("%d commands for the delivery collection", n)
+	}
+	if n := h.count(t, "SELECT count(*) FROM business.order_command WHERE order_id = $1::uuid", order); n != 1 {
+		t.Fatalf("%d commands, want only the cake's paid confirmation", n)
+	}
+	if audits := h.auditDetails(t, "delivery.paid"); len(audits) != 1 || !strings.Contains(audits[0], res.ID) {
+		t.Fatalf("audit %v", audits)
+	}
+	// Paid: no new quote, no second payment.
+	if _, err := h.quoteDelivery("q3", order, version, 13000); conflict(err) != "state_conflict" {
+		t.Fatalf("requote after payment: %v", err)
+	}
+	if _, err := h.payDelivery(order, d, "dpay-3", version, q.ID); conflict(err) != "state_conflict" {
+		t.Fatalf("pay again: %v", err)
+	}
+
+	// K06: the paid delivery lets the order out for delivery.
+	ready := h.makeReady(t, order, d, "dp")
+	if r, err := h.fulfil(fulfilment, "d1", order, checkout.ActionDispatch, ready); err != nil || r.FulfillmentState != "out_for_delivery" {
+		t.Fatalf("dispatch: %+v %v", r, err)
+	}
+	if v, raw := h.deliveryView(t, order, d); v.Delivery.State != "paid" || *v.Delivery.Payable {
+		t.Fatalf("out for delivery: %s", raw)
+	}
+	h.noPersonalDataInLogs(t)
+}
+
+// Failure and expiry make the quote payable again; a payment started before
+// pay-by that succeeds after it is honoured (K04); a success after the quote
+// was replaced, or a second success for one quote, is kept as real money,
+// does not pay the current quote and asks the chef (attention).
+func TestDeliveryPaymentFailureExpiryAndLateSuccess(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	h.staffGrants(t)
+	order, d, _ := h.deliveryOrder(t, f, pol, "dx", "")
+	v, _ := h.deliveryView(t, order, d)
+	q1, err := h.quoteDelivery("q1", order, v.Version, 12000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	version := v.Version + 1
+
+	// A definitive Stripe refusal: failed, payable again.
+	h.stripe.status, h.stripe.errType = 400, "invalid_request_error"
+	rejected, err := h.payDelivery(order, d, "rej", version, q1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if errs := h.drain(t); len(attention(errs)) != 1 || h.collection(t, rejected.ID).State != "failed" {
+		t.Fatalf("rejected: %v %+v", errs, h.collection(t, rejected.ID))
+	}
+	h.stripe.status, h.stripe.errType = 0, ""
+	if v, raw := h.deliveryView(t, order, d); v.Delivery.State != "quoted" || !*v.Delivery.Payable || v.Delivery.Payment.State != "failed" {
+		t.Fatalf("after failure: %s", raw)
+	}
+
+	// An expired session: cancelled, payable again.
+	c1, s1 := h.deliveryStarted(t, order, d, "c1")
+	h.stripe.session(s1).status = "expired"
+	h.deliver(t, "evt_c1_expired", "checkout.session.expired", "checkout.session", s1, c1, order)
+	if errs := h.drain(t); len(errs) != 0 || h.collection(t, c1).State != "cancelled" {
+		t.Fatalf("expired: %v %+v", errs, h.collection(t, c1))
+	}
+	if v, raw := h.deliveryView(t, order, d); v.Delivery.State != "quoted" || !*v.Delivery.Payable {
+		t.Fatalf("after expiry: %s", raw)
+	}
+
+	// The chef replaces the quote; the expired session's money then arrives
+	// after all (real funds): kept, not the current quote's, attention.
+	q2, err := h.quoteDelivery("q2", order, version, 14000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	version++
+	h.holdProduction(t)
+	success := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	if got := h.recordDirect(t, c1, s1, "paid", `{"session_id":"`+s1+`"}`, &success, nil); got != "succeeded" {
+		t.Fatalf("late success %s", got)
+	}
+	if got := h.deliveryOutcome(t, c1); got != "unmatched/quote_replaced" {
+		t.Fatalf("outcome %s", got)
+	}
+	if v, raw := h.deliveryView(t, order, d); v.Delivery.State != "quoted" || v.Delivery.Quote.ID != q2.ID || v.Delivery.PaidMinor != nil ||
+		v.Version != version {
+		t.Fatalf("unmatched: %s", raw)
+	}
+	flags := string(h.staffJSON(t, chef, order)["attention"])
+	if !strings.Contains(flags, "delivery_payment_unmatched") {
+		t.Fatalf("attention %s", flags)
+	}
+	if hist := compactJSON(t, h.staffJSON(t, chef, order)["delivery_history"]); !strings.Contains(hist, `"reason":"quote_replaced"`) {
+		t.Fatalf("history %s", hist)
+	}
+	ready := h.makeReady(t, order, d, "dx")
+	if _, err := h.fulfil(fulfilment, "d0", order, checkout.ActionDispatch, ready); conflict(err) != "delivery_not_paid" {
+		t.Fatalf("dispatch on an unmatched payment: %v", err)
+	}
+	version = ready
+
+	// The current quote is paid by a payment started before pay-by that
+	// succeeds after it: honoured.
+	c2, s2 := h.deliveryStarted(t, order, d, "c2")
+	h.now = deliveryPayBy.Add(time.Hour)
+	if _, err := h.payDelivery(order, d, "late", version, q2.ID); conflict(err) != "payment_in_progress" {
+		t.Fatalf("pay while checking after pay-by: %v", err)
+	}
+	if v, raw := h.deliveryView(t, order, d); v.Delivery.State != "payment_checking" {
+		t.Fatalf("checking after pay-by: %s", raw)
+	}
+	h.deliveryPaid(t, order, c2, s2, "evt_c2_paid")
+	if got := h.deliveryOutcome(t, c2); got != "paid" {
+		t.Fatalf("late but underway: %s", got)
+	}
+	if v, raw := h.deliveryView(t, order, d); v.Delivery.State != "paid" || *v.Delivery.PaidMinor != 14000 {
+		t.Fatalf("paid after pay-by: %s", raw)
+	}
+	if _, err := h.fulfil(fulfilment, "d1", order, checkout.ActionDispatch, version); err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	// The stray payment stays visible until it is returned.
+	if flags := string(h.staffJSON(t, chef, order)["attention"]); !strings.Contains(flags, "delivery_payment_unmatched") {
+		t.Fatalf("attention after the current payment %s", flags)
+	}
+	if audits := h.auditDetails(t, "delivery.payment_unmatched"); len(audits) != 1 || !strings.Contains(audits[0], "quote_replaced") {
+		t.Fatalf("audit %v", audits)
+	}
+}
+
+// One quote paid twice (an expired session that succeeds after a second
+// payment did): the second success is unmatched (already_paid); a
+// succeeded payment with a recorded mismatch is not "paid" for dispatch.
+func TestDeliveryDoublePaymentIsNotUsedTwice(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d, _ := h.deliveryOrder(t, f, pol, "dd", "")
+	v, _ := h.deliveryView(t, order, d)
+	if _, err := h.quoteDelivery("q1", order, v.Version, 12000); err != nil {
+		t.Fatal(err)
+	}
+	c1, s1 := h.deliveryStarted(t, order, d, "c1")
+	h.stripe.session(s1).status = "expired"
+	h.deliver(t, "evt_c1_expired", "checkout.session.expired", "checkout.session", s1, c1, order)
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatal(errs)
+	}
+	c2, s2 := h.deliveryStarted(t, order, d, "c2")
+	h.deliveryPaid(t, order, c2, s2, "evt_c2_paid")
+	h.holdProduction(t)
+	success := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	h.recordDirect(t, c1, s1, "paid", `{"session_id":"`+s1+`"}`, &success, nil)
+	if got := h.deliveryOutcome(t, c1); got != "unmatched/already_paid" {
+		t.Fatalf("second success %s", got)
+	}
+	if v, raw := h.deliveryView(t, order, d); v.Delivery.State != "paid" || *v.Delivery.PaidMinor != 12000 {
+		t.Fatalf("paid once: %s", raw)
+	}
+	// A later contradiction on the paying collection: back to checking.
+	reason := "charge was disputed"
+	h.recordDirect(t, c2, s2, "mismatch", `{"session_id":"`+s2+`","charge_disputed":true}`, nil, &reason)
+	if v, raw := h.deliveryView(t, order, d); v.Delivery.State != "payment_checking" || v.Delivery.PaidMinor != nil {
+		t.Fatalf("under reconciliation: %s", raw)
+	}
+}
+
+// Free-delivery waiver: only with the order's free-delivery code and a
+// current unpaid quote; records the measured distance, its source and the
+// chef's approval; the quote is waived (nothing to pay, dispatch allowed);
+// the code is never used twice.
+func TestDeliveryWaiver(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	h.staffGrants(t)
+	code := h.code(t, "fd", checkout.CodeInput{Code: "FREEDEL", CodeTerms: checkout.CodeTerms{Kind: checkout.KindFreeDelivery}})
+	order, d, _ := h.deliveryOrder(t, f, pol, "dw", "FREEDEL")
+	v, _ := h.deliveryView(t, order, d)
+	in := checkout.DeliveryWaiverInput{ExpectedVersion: v.Version, DistanceM: 8200, DistanceSource: "Google Maps driving route, SE1 2AA"}
+	if _, err := h.co.WaiveDelivery(h.ctx, chef, "w0", order, in); conflict(err) != "state_conflict" {
+		t.Fatalf("waiver before a quote: %v", err)
+	}
+	q, err := h.quoteDelivery("q1", order, v.Version, 12000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.ExpectedVersion = v.Version + 1
+	for name, who := range map[string]string{"fulfilment": fulfilment, "support": support} {
+		if _, err := h.co.WaiveDelivery(h.ctx, who, "x", order, in); !errors.Is(err, catalog.ErrForbidden) {
+			t.Errorf("waiver by %s: %v", name, err)
+		}
+	}
+	for name, bad := range map[string]checkout.DeliveryWaiverInput{
+		"zero distance": {ExpectedVersion: in.ExpectedVersion, DistanceM: 0, DistanceSource: "map"},
+		"padded source": {ExpectedVersion: in.ExpectedVersion, DistanceM: 10, DistanceSource: " map"},
+	} {
+		if _, err := h.co.WaiveDelivery(h.ctx, chef, "bad-"+name, order, bad); invalidField(err) == "" {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if _, err := h.co.WaiveDelivery(h.ctx, chef, "stale", order, checkout.DeliveryWaiverInput{ExpectedVersion: v.Version,
+		DistanceM: 8200, DistanceSource: "map"}); conflict(err) != "stale_version" {
+		t.Fatalf("stale: %v", err)
+	}
+	// Not while a payment of the quote is in flight.
+	coll, err := h.payDelivery(order, d, "dpay", in.ExpectedVersion, q.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.co.WaiveDelivery(h.ctx, chef, "inflight", order, in); conflict(err) != "payment_in_progress" {
+		t.Fatalf("waiver while paying: %v", err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatal(errs)
+	}
+	s := h.collection(t, coll.ID).SessionID
+	h.stripe.session(s).status = "expired"
+	h.deliver(t, "evt_expired", "checkout.session.expired", "checkout.session", s, coll.ID, order)
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatal(errs)
+	}
+
+	w, err := h.co.WaiveDelivery(h.ctx, chef, "w1", order, in)
+	if err != nil || w.Replayed {
+		t.Fatalf("waiver: %+v %v", w, err)
+	}
+	if again, err := h.co.WaiveDelivery(h.ctx, chef, "w1", order, in); err != nil || !again.Replayed || again.ID != w.ID {
+		t.Fatalf("replay: %+v %v", again, err)
+	}
+	after, raw := h.deliveryView(t, order, d)
+	if after.Version != in.ExpectedVersion+1 || after.Delivery.State != "waived" || after.Delivery.Waived == nil ||
+		!after.Delivery.Waived.At.Equal(h.now) || *after.Delivery.Payable || after.Delivery.Quote.ID != q.ID {
+		t.Fatalf("waived: %s", raw)
+	}
+	var dist int
+	var source string
+	var approved bool
+	if err := h.admin.QueryRow(h.ctx, `SELECT distance_m, distance_source, eligibility_approved FROM business.delivery_waiver
+		WHERE id = $1::uuid`, w.ID).Scan(&dist, &source, &approved); err != nil || dist != 8200 || source != in.DistanceSource || !approved {
+		t.Fatalf("waiver row %d %q %v %v", dist, source, approved, err)
+	}
+	if n := h.count(t, "SELECT count(*) FROM business.code_application WHERE code_id = $1::uuid", code); n != 1 {
+		t.Fatalf("%d code uses, want the order's one", n)
+	}
+	if n := h.count(t, "SELECT count(*) FROM business.code_application WHERE code_id = $1::uuid AND state = 'consumed'", code); n != 1 {
+		t.Fatal("the code use is not consumed once")
+	}
+	audits := h.auditDetails(t, "delivery.waived")
+	if len(audits) != 1 || strings.Contains(audits[0], "SE1") || strings.Contains(audits[0], "distance") {
+		t.Fatalf("audit %v", audits)
+	}
+	if hist := compactJSON(t, h.staffJSON(t, support, order)["delivery_history"]); strings.Contains(hist, "SE1") || !strings.Contains(hist, `"distance_m":8200`) {
+		t.Fatalf("support history %s", hist)
+	}
+	if _, err := h.co.WaiveDelivery(h.ctx, chef, "w2", order, checkout.DeliveryWaiverInput{ExpectedVersion: after.Version,
+		DistanceM: 8000, DistanceSource: "map"}); conflict(err) != "state_conflict" {
+		t.Fatalf("second waiver: %v", err)
+	}
+	if _, err := h.payDelivery(order, d, "dpay-2", after.Version, q.ID); conflict(err) != "state_conflict" {
+		t.Fatalf("pay a waived quote: %v", err)
+	}
+	ready := h.makeReady(t, order, d, "dw")
+	if r, err := h.fulfil(fulfilment, "d1", order, checkout.ActionDispatch, ready); err != nil || r.FulfillmentState != "out_for_delivery" {
+		t.Fatalf("dispatch on a waiver: %+v %v", r, err)
+	}
+	// Dispatched: no new quote or waiver.
+	if _, err := h.quoteDelivery("q2", order, ready+1, 12000); conflict(err) != "state_conflict" {
+		t.Fatalf("quote after dispatch: %v", err)
+	}
+}
+
+// K05: a paid delivery collection stays a chef-only refund share. The chef's
+// cancellation (100%) returns the cake automatically; the delivery share is a
+// visible obligation the chef pays separately.
+func TestDeliveryRefundStaysChefOnly(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d, cake := h.deliveryOrder(t, f, pol, "dr", "")
+	v, _ := h.deliveryView(t, order, d)
+	if _, err := h.quoteDelivery("q1", order, v.Version, 12000); err != nil {
+		t.Fatal(err)
+	}
+	delivery, s := h.deliveryStarted(t, order, d, "c1")
+	h.deliveryPaid(t, order, delivery, s, "evt_delivery_paid")
+	v, _ = h.deliveryView(t, order, d)
+	h.withRefunds()
+	if _, err := h.co.ChefCancel(h.ctx, chef, "cancel", order, checkout.ChefCancelInput{ExpectedVersion: v.Version, Reason: "Oven failure"}); err != nil {
+		t.Fatal(err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("cancel:\n%s", reasons(errs))
+	}
+	v, raw := h.deliveryView(t, order, d)
+	if v.Lifecycle != "cancelled" || v.Refund == nil || v.Refund.TargetMinor != 22000 || v.Refund.SucceededMinor != 10000 ||
+		v.Refund.DeliveryPending != 12000 || v.Refund.State != "partly_returned" {
+		t.Fatalf("cancelled %s", raw)
+	}
+	if creates := h.stripe.refundCreates(); len(creates) != 1 || h.stripe.refundForm(creates[0]).Get("amount") != "10000" ||
+		len(h.operations(t, delivery)) != 0 || len(h.operations(t, cake)) != 1 {
+		t.Fatalf("refunds %v", creates)
+	}
+	if v.Delivery.State != "paid" || *v.Delivery.Payable {
+		t.Fatalf("delivery after cancellation %s", raw)
+	}
+	// The chef's separate delivery action returns it.
+	if _, err := h.co.PayDeliveryRefund(h.ctx, chef, "dref", order, checkout.DeliveryRefundInput{ExpectedVersion: v.Version,
+		CollectionID: delivery}); err != nil {
+		t.Fatal(err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("delivery refund:\n%s", reasons(errs))
+	}
+	if v, raw := h.deliveryView(t, order, d); v.Refund.State != "returned" || v.Refund.SucceededMinor != 22000 {
+		t.Fatalf("returned %s", raw)
+	}
+}
+
+// A delivery payment that succeeds after the order was cancelled is kept
+// and flagged (order_not_open), never marked paid.
+func TestDeliveryPaymentAfterCancellationIsUnmatched(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d, _ := h.deliveryOrder(t, f, pol, "dc", "")
+	v, _ := h.deliveryView(t, order, d)
+	if _, err := h.quoteDelivery("q1", order, v.Version, 12000); err != nil {
+		t.Fatal(err)
+	}
+	coll, s := h.deliveryStarted(t, order, d, "c1")
+	v, _ = h.deliveryView(t, order, d)
+	h.withRefunds()
+	if _, err := h.co.ChefCancel(h.ctx, chef, "cancel", order, checkout.ChefCancelInput{ExpectedVersion: v.Version, Reason: "Oven failure"}); err != nil {
+		t.Fatal(err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("cancel:\n%s", reasons(errs))
+	}
+	if _, err := h.payDelivery(order, d, "after", v.Version+1, v.Delivery.Quote.ID); conflict(err) != "payment_in_progress" {
+		t.Fatalf("pay on a cancelled order: %v", err)
+	}
+	h.deliveryPaid(t, order, coll, s, "evt_after_cancel")
+	if got := h.deliveryOutcome(t, coll); got != "unmatched/order_not_open" {
+		t.Fatalf("outcome %s", got)
+	}
+	if v, raw := h.deliveryView(t, order, d); v.Lifecycle != "cancelled" || v.Delivery.State == "paid" || *v.Delivery.Payable {
+		t.Fatalf("cancelled %s", raw)
+	}
+	if flags := string(h.staffJSON(t, chef, order)["attention"]); !strings.Contains(flags, "delivery_payment_unmatched") {
+		t.Fatalf("attention %s", flags)
+	}
+	// A cancelled order takes no new quote.
+	v, _ = h.deliveryView(t, order, d)
+	if _, err := h.quoteDelivery("q2", order, v.Version, 12000); conflict(err) != "state_conflict" {
+		t.Fatalf("quote on a cancelled order: %v", err)
+	}
+}

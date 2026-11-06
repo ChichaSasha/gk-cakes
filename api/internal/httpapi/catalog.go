@@ -506,6 +506,10 @@ var conflictMessages = map[string]string{
 	"deletion_preview_stale":   "Your orders or requests changed since you reviewed the deletion, or the review expired. Please review it again.",
 	// Late-payment agreement (GK-017 r02b Q6).
 	"offer_not_current": "This offer is no longer open. Please reload your order to see the chef's current answer.",
+	// GK delivery (K03, K06, GK-017 r02b Q9).
+	"delivery_pay_by_passed": "The time to pay for this delivery has passed (48 hours before the delivery).",
+	"quote_not_current":      "This delivery quote is no longer the current one. Please reload your order.",
+	"waiver_not_eligible":    "Only an order placed with a free-delivery code can have its delivery waived.",
 }
 
 // catalogError maps catalog errors to K00 responses without SQL detail.
@@ -600,6 +604,12 @@ func catalogError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, e
 			code = "DELETION_PREVIEW_STALE"
 		case "offer_not_current":
 			code = "OFFER_NOT_CURRENT"
+		case "delivery_pay_by_passed":
+			code = "DELIVERY_PAY_BY_PASSED"
+		case "quote_not_current":
+			code = "QUOTE_NOT_CURRENT"
+		case "waiver_not_eligible":
+			code = "WAIVER_NOT_ELIGIBLE"
 		}
 		writeError(w, r, http.StatusConflict, code, msg, false)
 	case errors.As(err, &inv):

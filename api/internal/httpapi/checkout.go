@@ -53,6 +53,9 @@ type Checkout interface {
 	RecordManualPayoutOutcome(ctx context.Context, subject, key, orderID, operationID string, in checkout.ManualPayoutOutcomeInput) (catalog.Result, error)
 	ManualPayouts(ctx context.Context, subject, orderID string) (json.RawMessage, error)
 	PayDeliveryRefund(ctx context.Context, subject, key, id string, in checkout.DeliveryRefundInput) (catalog.Result, error)
+	QuoteDelivery(ctx context.Context, subject, key, id string, in checkout.DeliveryQuoteInput) (catalog.Result, error)
+	WaiveDelivery(ctx context.Context, subject, key, id string, in checkout.DeliveryWaiverInput) (catalog.Result, error)
+	StartDeliveryPayment(ctx context.Context, id, subject string, digest []byte, key string, in checkout.DeliveryPaymentInput) (catalog.Result, error)
 	CurrentPolicy(ctx context.Context) (checkout.Policy, error)
 	RecordPolicy(ctx context.Context, subject, key string, in checkout.PolicyInput) (catalog.Result, error)
 }
@@ -325,7 +328,36 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 				PollAfterSeconds: checkout.PollAfterSeconds}, nil
 		})
 	}
+	// K03/K06 separate GK delivery payment (owner, or a guest capability with
+	// "pay", as the cake payment): 202 while the worker creates the Checkout
+	// Session; poll the order's delivery block for its link. Never paid here.
+	postDeliveryPayment := func(w http.ResponseWriter, r *http.Request) {
+		a, digest, ok := orderActor(w, r)
+		if !ok {
+			return
+		}
+		var in checkout.DeliveryPaymentInput
+		key, ok := readCommand(w, r, &in)
+		if !ok {
+			return
+		}
+		res, err := co.StartDeliveryPayment(r.Context(), r.PathValue("id"), a.Subject, digest, key, in)
+		if errors.Is(err, checkout.ErrPaymentsUnavailable) {
+			why := "payments are not configured"
+			if errors.Is(err, checkout.ErrRecoveryFrozen) {
+				why = "a restore freeze is on"
+			}
+			logger.Warn("delivery payment request refused for now", "reason", why, "request_id", requestID(r.Context()))
+			writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Payments are temporarily unavailable", true)
+			return
+		}
+		respondCommand(w, r, logger, http.StatusAccepted, res, err, func() (any, error) {
+			return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: "delivery_payment_pending",
+				PollAfterSeconds: checkout.PollAfterSeconds}, nil
+		})
+	}
 	if checkoutEnabled {
+		mux.HandleFunc("POST /api/v1/orders/{id}/delivery-payment", postDeliveryPayment)
 		mux.HandleFunc("POST /api/v1/orders/{id}/late-payment/answer", postLatePaymentAnswer)
 		mux.HandleFunc("POST /api/v1/orders/{id}/pickup", postPickup)
 		mux.HandleFunc("POST /api/v1/checkouts", postCheckout)
@@ -475,6 +507,36 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 			respondCommand(w, r, logger, http.StatusOK, res, err, func() (any, error) {
 				return map[string]string{"order_id": r.PathValue("id"), "offer_id": res.ID}, nil
 			})
+		}))
+		// K03/K06 GK delivery: the chef's quote (from £100, pay by the
+		// original handover - 48 h) and free-delivery waiver (distance review).
+		// Synchronous and versioned; 200 {order_id, quote_id | waiver_id}.
+		chefDelivery := func(w http.ResponseWriter, r *http.Request, res catalog.Result, err error, field string) {
+			if errors.Is(err, checkout.ErrOrdersFrozen) {
+				writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Order changes are temporarily unavailable", true)
+				return
+			}
+			respondCommand(w, r, logger, http.StatusOK, res, err, func() (any, error) {
+				return map[string]string{"order_id": r.PathValue("id"), field: res.ID}, nil
+			})
+		}
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/delivery-quote", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+			var in checkout.DeliveryQuoteInput
+			key, ok := readCommand(w, r, &in)
+			if !ok {
+				return
+			}
+			res, err := co.QuoteDelivery(r.Context(), a.Subject, key, r.PathValue("id"), in)
+			chefDelivery(w, r, res, err, "quote_id")
+		}))
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/delivery-waiver", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+			var in checkout.DeliveryWaiverInput
+			key, ok := readCommand(w, r, &in)
+			if !ok {
+				return
+			}
+			res, err := co.WaiveDelivery(r.Context(), a.Subject, key, r.PathValue("id"), in)
+			chefDelivery(w, r, res, err, "waiver_id")
 		}))
 		// K05 chef refunds: an agreed partial refund with allocations, and
 		// the pending delivery share of a cancellation (chef-only). 202 while

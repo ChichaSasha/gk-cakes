@@ -370,7 +370,25 @@ func TestDeliveryDispatchNeedsPayment(t *testing.T) {
 	if _, err := h.fulfil(fulfilment, "d0", order, checkout.ActionDispatch, v.Version); conflict(err) != "delivery_not_paid" {
 		t.Fatalf("unpaid delivery: %v", err)
 	}
-	h.seedDelivery(t, order, 2000)
+	// The chef quotes the delivery and the customer pays it (migration 0035),
+	// before the pay-by time: the quote bumps the version, the payment does not.
+	h.now = time.Date(2026, 11, 5, 11, 0, 0, 0, time.UTC)
+	q, err := h.quoteDelivery("dq", order, v.Version, 12000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.fulfil(fulfilment, "d0b", order, checkout.ActionDispatch, v.Version+1); conflict(err) != "delivery_not_paid" {
+		t.Fatalf("quoted but unpaid delivery: %v", err)
+	}
+	dcoll, err := h.payDelivery(order, d, "dpay", v.Version+1, q.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("delivery dispatch: %v", errs)
+	}
+	h.deliveryPaid(t, order, dcoll.ID, h.collection(t, dcoll.ID).SessionID, "evt_dl_paid")
+	v, _ = h.fulfilView(t, order, d)
 	res, err := h.fulfil(fulfilment, "d1", order, checkout.ActionDispatch, v.Version, "Courier ref GK-123")
 	if err != nil || res.FulfillmentState != "out_for_delivery" || res.Lifecycle != "ready" {
 		t.Fatalf("dispatch: %+v %v", res, err)

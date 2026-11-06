@@ -138,7 +138,7 @@ func (s *Store) GetOrder(ctx context.Context, id, subject string, digest []byte)
 	if raw == nil {
 		return nil, catalog.ErrNotFound
 	}
-	return Order(s.withAcceptable(raw)), nil
+	return Order(s.withDeliveryClock(s.withAcceptable(raw))), nil
 }
 
 // Policy is a customer policy version.
