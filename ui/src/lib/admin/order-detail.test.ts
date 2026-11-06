@@ -553,7 +553,7 @@ describe('delivery banners', () => {
 		const b = banners(o, 'chef', NOW).find((x) => x.key === 'unmatched');
 		expect(b?.text).toMatch(/^A delivery payment of £150 arrived/);
 		expect(b?.small[0]).toMatch(
-			/^Return it with a refund from this order .*, or a later cancellation or no-show usually returns it in full automatically\. When that cancellation or no-show owes nothing else \(for example a free cake\), it stays flagged here for you to return\.$/
+			/^Return it with “Return the unmatched delivery payment” on this page, or a later cancellation or no-show usually returns it in full automatically\. When that cancellation or no-show owes nothing else \(for example a free cake\), it stays flagged here for you to return\.$/
 		);
 		expect(b?.small[0]).not.toMatch(/returns it in full automatically\. Returning/);
 		const s = banners({ ...o, delivery: { state: 'quoted' } }, 'technical_support', NOW).find(

@@ -123,6 +123,72 @@ export interface RefundObservation {
 	observed_at: string;
 	amount_minor?: number;
 	currency?: string;
+	// Since slice 3 (README "Staff order reads"; present for chef and support).
+	id?: string;
+	collection_id?: string;
+	status?: string;
+	source?: string;
+	quarantine_reason?: string | null;
+	matched_operation_id?: string | null;
+	named_operation_id?: string | null;
+	/** Chef only. */
+	provider_refund_id?: string | null;
+	resolution_note?: string | null;
+}
+
+/** One payment collection (cake or delivery); amounts and balances for the chef only. */
+export interface StaffCollection {
+	id: string;
+	kind: 'cake' | 'delivery' | string;
+	state: string;
+	version?: number;
+	initiated_at?: string | null;
+	expires_at?: string | null;
+	succeeded_at?: string | null;
+	mismatch_reason: string | null;
+	cancel_reason?: string | null;
+	amount_minor?: number;
+	currency?: string;
+	refunded_minor?: number;
+	refund_reserved_minor?: number;
+}
+
+/** One refund operation (provider refund or manual transfer); amounts for the chef only. */
+export interface StaffRefundOperation {
+	id: string;
+	collection_id: string;
+	channel: 'provider' | 'manual_alternative' | string;
+	state: string;
+	version?: number;
+	goal_version?: number;
+	failure_reason: string | null;
+	mismatch_reason: string | null;
+	provider_status?: string | null;
+	/** The K11 dispatch record's state (reconcile: a manager decides). */
+	record_state?: string | null;
+	window_ended: boolean | null;
+	created_at: string;
+	settled_at: string | null;
+	amount_minor?: number;
+	currency?: string;
+	provider_refund_id?: string | null;
+}
+
+/** The order's refund goal; amounts for the chef only. */
+export interface StaffRefundGoal {
+	id?: string;
+	version?: number;
+	reason?: string;
+	source?: string;
+	created_at?: string;
+	updated_at?: string;
+	target_minor?: number;
+	policy_rate?: number | null;
+	paid_basis_minor?: number | null;
+	policy_target_minor?: number | null;
+	remaining_minor?: number;
+	delivery_pending_minor?: number;
+	currency?: string;
 }
 
 /** GET /api/v1/admin/orders/{id} for the caller's view; keys a view lacks are absent. */
@@ -173,8 +239,11 @@ export interface StaffOrderDetail {
 	discount_minor?: number;
 	total_minor?: number;
 	currency?: string;
-	refund_goal?: { remaining_minor: number; currency: string } | null;
+	refund_goal?: StaffRefundGoal | null;
 	refund_observations?: RefundObservation[];
+	// chef and technical support (amounts for the chef only)
+	collections?: StaffCollection[];
+	refund_operations?: StaffRefundOperation[];
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -340,6 +409,10 @@ export interface Banner {
 }
 
 const HELD_PAYMENT = ['created', 'pending', 'unknown'];
+
+/** Where a manager case is decided: on this page (the chef) or by Elina. */
+const MANAGER_NOTE = (chef: boolean) =>
+	chef ? 'It’s under Needs a manager below.' : 'Elina decides it as a manager.';
 const LONG_MS = 15 * 60 * 1000;
 
 /**
@@ -389,7 +462,7 @@ export function banners(o: StaffOrderDetail, view: StaffView, now: Date): Banner
 					`${long || p?.state === 'unknown' ? 'The customer sees “Still checking payment; do not pay again”. ' : ''}No second payment can start while this one may still succeed. The place on ${day} stays held until we know${mismatch ? ' and a manager has reconciled it' : ''}. Don’t start this cake.`
 				]
 			: ['Not paid yet. Don’t start this cake.'];
-		if (mismatch) small.push('A manager reconciles it; the tools come in a later update.');
+		if (mismatch) small.push(MANAGER_NOTE(chef));
 		out.push({
 			key: 'payment',
 			tone: mismatch ? 'bad' : 'info',
@@ -440,7 +513,7 @@ export function banners(o: StaffOrderDetail, view: StaffView, now: Date): Banner
 			tone: 'bad',
 			title: 'Payment doesn’t match the order.',
 			text: 'It isn’t accepted: the order is never confirmed on payment evidence that doesn’t match.',
-			small: ['A manager reconciles it; the tools come in a later update.']
+			small: [MANAGER_NOTE(chef)]
 		});
 	}
 	if (
@@ -463,7 +536,7 @@ export function banners(o: StaffOrderDetail, view: StaffView, now: Date): Banner
 			tone: 'bad',
 			title: 'Refund needs attention.',
 			text: 'A manager reviews this order’s refund. Nothing is resent and nothing becomes owed automatically.',
-			small: ['The manager tools come in a later update.']
+			small: [MANAGER_NOTE(chef)]
 		});
 	}
 	if (flags.includes('delivery_payment_unmatched')) {
@@ -477,7 +550,9 @@ export function banners(o: StaffOrderDetail, view: StaffView, now: Date): Banner
 			title: 'A delivery payment couldn’t be used.',
 			text: `${amount} arrived but couldn’t be matched to the current quote (for example it paid a replaced quote, or arrived after the order closed). It’s kept as received; the customer sees that the chef will return it and mustn’t pay again.`,
 			small: [
-				'Return it with a refund from this order (sending refunds from this page comes in the next slice), or a later cancellation or no-show usually returns it in full automatically. When that cancellation or no-show owes nothing else (for example a free cake), it stays flagged here for you to return.'
+				chef
+					? 'Return it with “Return the unmatched delivery payment” on this page, or a later cancellation or no-show usually returns it in full automatically. When that cancellation or no-show owes nothing else (for example a free cake), it stays flagged here for you to return.'
+					: 'Elina returns it, or a later cancellation or no-show usually returns it in full automatically.'
 			]
 		});
 	}
@@ -513,7 +588,8 @@ export function banners(o: StaffOrderDetail, view: StaffView, now: Date): Banner
 			title: 'Refund made outside GK Cakes.',
 			text: `${what} directly in the payment provider’s dashboard, not from this workspace.`,
 			small: [
-				'The order itself is unchanged. The money counts as possibly returned, and no refund can be sent from here for this payment until a manager matches or explains it.'
+				'The order itself is unchanged. The money counts as possibly returned, and no refund can be sent from here for this payment until a manager matches or explains it.',
+				MANAGER_NOTE(chef)
 			]
 		});
 	}

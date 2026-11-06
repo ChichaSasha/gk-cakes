@@ -1,0 +1,27 @@
+/* Money on the chef's order page (GK-031 slice 3), in GK-018 r03b2's
+   admin.css language: the Needs a manager card's cases (the queue's money
+   items, on their order) and their forms. Scoped to .order-page like
+   order-detail.css. */
+.chef .order-page .m-case {
+	margin-top: 12px;
+	padding-top: 12px;
+	border-top: 1px solid #efd3a6;
+	min-width: 0;
+}
+.chef .order-page .m-case-h {
+	margin: 0 0 6px;
+	font-size: 15px;
+	font-weight: 600;
+}
+.chef .order-page .m-case .facts,
+.chef .order-page .decide-box .facts {
+	margin: 0 0 8px;
+}
+.chef .order-page .decide-box .field {
+	display: grid;
+	gap: 4px;
+	margin-bottom: 6px;
+}
+.chef .order-page .decide-box select {
+	max-width: 100%;
+}
