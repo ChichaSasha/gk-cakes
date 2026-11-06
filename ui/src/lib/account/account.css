@@ -38,7 +38,7 @@
 .shop .acc-nav button:hover {
 	background: #14141609;
 }
-.shop .acc-nav a[aria-current='page'] {
+.shop .acc-nav a[aria-current] {
 	background: var(--ink);
 	color: #fff;
 }
@@ -313,7 +313,7 @@
 	border-radius: var(--r-m);
 	background: #fff6f6;
 }
-.shop .acc-errsum h2 {
+.shop .acc-errsum :is(h2, h3) {
 	margin: 0 0 8px;
 	font: 600 16px/1.3 var(--sans);
 	color: var(--error);
@@ -337,6 +337,127 @@
 	color: var(--muted);
 	font-size: 12.5px;
 }
+/* Add an older order (sketch: .acc-two, .acc-why, .acc-steps, .acc-h3,
+   .acc-radios, .acc-when; textarea and selects as the inputs). */
+.shop .acc-two {
+	display: grid;
+	grid-template-columns: minmax(0, 1.3fr) minmax(260px, 0.8fr);
+	gap: 22px;
+	align-items: start;
+	margin: 0 0 18px;
+}
+.shop .acc-two > .acc-card {
+	margin: 0;
+}
+.shop .acc-why .acc-h {
+	font-size: 20px;
+}
+.shop .acc-h3 {
+	margin: 22px 0 10px;
+	font: 600 15px/1.3 var(--sans);
+	letter-spacing: -0.01em;
+}
+.shop .acc-steps {
+	margin: 0 0 12px;
+	padding: 0;
+	list-style: none;
+	counter-reset: s;
+	font-size: 14.5px;
+	line-height: 1.55;
+}
+.shop .acc-steps li {
+	position: relative;
+	padding: 0 0 10px 34px;
+	counter-increment: s;
+}
+.shop .acc-steps li::before {
+	content: counter(s);
+	position: absolute;
+	left: 0;
+	top: 0;
+	display: grid;
+	place-items: center;
+	width: 24px;
+	height: 24px;
+	border-radius: 50%;
+	background: var(--ink);
+	color: #fff;
+	font: 600 12px/1 var(--mono);
+}
+.shop .acc-card fieldset.field {
+	display: block;
+	min-width: 0;
+	padding: 0;
+	border: 0;
+}
+.shop fieldset.field > legend {
+	padding: 0;
+	margin: 0 0 10px;
+}
+.shop .acc-radios {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 18px;
+}
+.shop .acc-radios label {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 44px;
+	font: 400 15px/1.2 var(--sans);
+}
+.shop .acc-radios input {
+	width: 20px;
+	height: 20px;
+	margin: 0;
+	accent-color: var(--ink);
+}
+.shop .acc-when {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 12px;
+}
+.shop .acc-when .field {
+	margin: 0;
+}
+.shop .field > textarea,
+.shop .field > select {
+	display: block;
+	width: 100%;
+	min-width: 0;
+	min-height: 54px;
+	padding: 14px 16px;
+	border: 0;
+	border-radius: var(--r-s);
+	background-color: #ffffffd1;
+	box-shadow:
+		inset 0 0 0 1px var(--line),
+		0 1px 2px #1414160a;
+	font: 400 16px/1.5 var(--sans);
+	color: var(--ink);
+}
+.shop .field > textarea {
+	min-height: 120px;
+	resize: vertical;
+}
+.shop .field > select {
+	cursor: pointer;
+}
+.shop .field > :is(textarea, select):hover {
+	background-color: #fff;
+	box-shadow:
+		inset 0 0 0 1px #4f535a,
+		0 1px 2px #1414160a;
+}
+.shop .field > :is(textarea, select)[aria-invalid='true'] {
+	box-shadow: inset 0 0 0 2px var(--error);
+}
+.shop .acc-main .field > :is(textarea, select) {
+	scroll-margin-top: 104px;
+}
+.shop .acc-dl .acc-note {
+	white-space: pre-line;
+}
 @media (max-width: 1050px) {
 	.shop .acc-layout {
 		grid-template-columns: 1fr;
@@ -359,6 +480,9 @@
 		margin: 0;
 		border: 0;
 		border-radius: 12px;
+	}
+	.shop .acc-two {
+		grid-template-columns: 1fr;
 	}
 }
 @media (max-width: 760px) {
@@ -406,5 +530,16 @@
 	}
 	.shop .acc-order-side .button {
 		justify-self: stretch;
+	}
+}
+/* Forced colours drop box-shadows: give fields a real edge and a distinct
+   invalid edge there. */
+@media (forced-colors: active) {
+	.shop .field > :is(input, textarea, select),
+	.shop .acc-changed {
+		border: 1px solid CanvasText;
+	}
+	.shop .field > :is(input, textarea, select)[aria-invalid='true'] {
+		border: 3px solid Highlight;
 	}
 }

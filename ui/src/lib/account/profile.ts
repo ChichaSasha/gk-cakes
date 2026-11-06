@@ -169,14 +169,15 @@ export function keptNote(saved: string | null): string {
 /**
  * One Idempotency-Key per save: the same key while the same PATCH is retried
  * (so a save whose answer was lost is not applied twice), a new key for any
- * other PATCH (the API refuses a key reused with another body).
+ * other PATCH (the API refuses a key reused with another body). Other
+ * account commands (a claim, a withdrawal) use it the same way.
  */
 export class SaveKey {
 	private last: { body: string; key: string } | null = null;
 	constructor(private readonly makeKey: () => string = newIdempotencyKey) {}
 
-	for(patch: ProfilePatch): string {
-		const body = JSON.stringify(patch);
+	for(command: object): string {
+		const body = JSON.stringify(command);
 		if (this.last?.body !== body) this.last = { body, key: this.makeKey() };
 		return this.last.key;
 	}

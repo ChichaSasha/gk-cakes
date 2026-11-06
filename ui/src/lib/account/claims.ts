@@ -15,7 +15,7 @@ export interface ClaimView {
 
 const CHANNEL: Record<string, string> = {
 	instagram: 'Instagram order',
-	offline: 'Order made in person or by phone',
+	offline: 'Order made by email, phone or in person',
 	website_email_link: 'Website order'
 };
 

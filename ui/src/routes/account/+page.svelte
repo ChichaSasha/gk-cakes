@@ -1,7 +1,8 @@
 <script lang="ts">
 	// Your account (approved GK-016 r02b sketch, account home): your orders
 	// (In progress, and Past behind "Show past orders"), your requests to add
-	// older orders, and favourites on this device. Everything comes from the
+	// older orders (each opens its own page), favourites on this device and
+	// "Ordered before?" (Add an older order). Everything comes from the
 	// account API with this browser's session (K00); a failed orders read
 	// leaves the other cards working. No analytics run here (K10).
 	import { resolve } from '$app/paths';
@@ -261,8 +262,8 @@
 				{/if}
 			{/if}
 			<p class="small acc-foot">
-				Can’t see an order? Open the private link in its order email. We never add orders to your
-				account automatically, even ones made with this email address.
+				Can’t see an order? <a href={resolve('/account/older')}>Add an older order</a>. We never add
+				orders to your account automatically, even ones made with this email address.
 			</p>
 		</section>
 
@@ -287,7 +288,13 @@
 							<p class="acc-ref">Request {c.ref}</p>
 							<h3>{c.title}</h3>
 							<p><span class="acc-chip {c.chip.tone}">{c.chip.text}</span></p>
-							<p class="small">{c.line}</p>
+							<p class="small">
+								{c.line}
+								<a
+									href={resolve('/account/requests/[id]', { id: c.id })}
+									aria-label={`View request ${c.ref}`}>View →</a
+								>
+							</p>
 						</article>
 					{/each}
 				{/if}
@@ -309,6 +316,19 @@
 				<p class="small">Nothing saved yet. Tap the heart on a cake to save it on this device.</p>
 				<a class="text-link" href={resolve('/(shop)/shop')}>Browse cakes →</a>
 			{/if}
+		</section>
+
+		<section class="acc-card" id="older" aria-labelledby="older-h">
+			<div class="acc-cta">
+				<div>
+					<h2 class="acc-h" id="older-h">Ordered before?</h2>
+					<p class="small">
+						Add an order you made on Instagram, by email or in person, with the chef’s reference.
+						The chef checks it first.
+					</p>
+				</div>
+				<a class="button acc-small-btn" href={resolve('/account/older')}>Add an older order</a>
+			</div>
 		</section>
 	{/if}
 </AccountShell>

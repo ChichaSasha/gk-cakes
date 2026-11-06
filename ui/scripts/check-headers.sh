@@ -32,7 +32,7 @@ directive() { # directive <policy> <name>
 # Public pages (cacheable, indexable): the home and discovery pages (GK-028).
 public_pages=" / /shop /sizes /bag /favourites "
 
-for page in / /sign-in /account /account/profile /admin /auth/callback /%61ccount /checkout /orders/00000000-0000-4000-8000-000000000000 /shop /sizes /bag /favourites; do
+for page in / /sign-in /account /account/profile /account/older /account/requests/00000000-0000-4000-8000-000000000000 /admin /auth/callback /%61ccount /checkout /orders/00000000-0000-4000-8000-000000000000 /shop /sizes /bag /favourites; do
   h=$(headers "$page")
   csp=$(value "$h" content-security-policy)
   [[ -n "$csp" ]] || { fail "$page: no Content-Security-Policy"; continue; }
