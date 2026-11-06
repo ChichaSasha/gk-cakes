@@ -1216,7 +1216,7 @@ proof) instead of returning one; the appointment is the quote's.
 | `POST /api/v1/checkouts` (only with `CHECKOUT_ENABLED=true`) | a guest (`guest_proof` of the quote) or the signed-in owner | `{quote_id, quote_version: 1, consented_policy_version, contact{full_name, email, payer_name?}}` with Idempotency-Key |
 | `POST /api/v1/orders/{id}/free-confirmation` (only with `CHECKOUT_ENABLED=true`) | the owner (bearer) or the guest (`X-Order-Capability` with `pay`) | `{expected_version}` with Idempotency-Key; 202 `confirmation_pending` |
 | `POST /api/v1/orders/{id}/payment` (only with `CHECKOUT_ENABLED=true`; 503 without `STRIPE_ACCOUNT_ID` or during a restore freeze) | the owner (bearer) or the guest (`X-Order-Capability` with `pay`) | `{expected_version}` with Idempotency-Key; 202 `payment_pending`, see [Payments](#payments-k04-gk-025-a3b) |
-| `GET /api/v1/orders/{id}` | the owner (bearer) or the guest (`X-Order-Capability`: the quote's proof) | the order snapshot (`lifecycle` is `confirmation_pending` until K11 secures a commit; `paid_at` only then; `payment`: the latest collection); 404 otherwise |
+| `GET /api/v1/orders/{id}` | the owner (bearer) or the guest (`X-Order-Capability`: the quote's proof) | the order snapshot (`lifecycle` is `confirmation_pending` until K11 secures a commit; `paid_at` only then; `payment`: the latest collection; since 0038 `actions`, what this caller may do now, see [Order view refinements](#order-view-refinements-gk-030-migration-0038)); 404 otherwise |
 | `POST /webhooks/stripe` (only with `STRIPE_WEBHOOK_SECRET`) | Stripe (signed) | events; 200 only after the durable insert |
 
 ## Payments (K04, GK-025 A3b)
@@ -1639,7 +1639,9 @@ alternative) without a second subsystem.
   `requested_at`, `goal_version` and `state` `requested` (nothing sent yet),
   `pending`, `partly_returned`, `returned` (all succeeded) or
   `needs_attention`; never `returned` while anything is unresolved, so the UI
-  can tell "refund requested" from "refund succeeded". No emails yet.
+  can tell "refund requested" from "refund succeeded". No emails yet. Since
+  0038 the block also has `parts` per kind (see [Order view
+  refinements](#order-view-refinements-gk-030-migration-0038)).
 
 Tests: `internal/checkout/refunds_integration_test.go` (accounting, trigger),
 `refund_gateways_integration_test.go` (the gateway call by call, lease
@@ -1719,7 +1721,7 @@ later exactly 50%; the chef's cancellation 100%; production never reduces it.
 
 | Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
 | --- | --- | --- |
-| `POST /api/v1/orders/{id}/cancellation-preview` | the owner (bearer) or the guest (`X-Order-Capability` with `cancel`) | no body (or `{}`); 200 `{preview_id, order_id, order_version, rate, paid_minor, amount_minor, currency, allocations[{collection_id, amount_minor}], full_refund_deadline_at, computed_at, expires_at, preview_hash}` |
+| `POST /api/v1/orders/{id}/cancellation-preview` | the owner (bearer) or the guest (`X-Order-Capability` with `cancel`) | no body (or `{}`); 200 `{preview_id, order_id, order_version, rate, paid_minor, amount_minor, currency, allocations[{collection_id, amount_minor, kind}], full_refund_deadline_at, computed_at, expires_at, preview_hash}` (`kind` since 0038, outside the hash) |
 | `POST /api/v1/orders/{id}/cancel` | as above | `{expected_version, preview_id, preview_hash}` with Idempotency-Key; 202 `cancellation_pending` |
 | `POST /api/v1/admin/orders/{id}/cancel` | chef | `{expected_version, reason}` (1–500 characters, one line) with Idempotency-Key; 202 `cancellation_pending` |
 
@@ -1974,8 +1976,9 @@ Creator decisions to review (built as described, not confirmed):
 
 Follow-ups (not implemented):
 
-- **`GET /me/orders` summaries** do not carry `late_payment.state` yet (only the
-  order page does); a "the chef answered" badge in the account list needs it.
+- ~~**`GET /me/orders` summaries** do not carry `late_payment.state` yet~~:
+  since 0038 a summary's `attention` lists `answer_late_payment` while an offer
+  can be accepted (see "Order view refinements").
 
 - **"The chef offered a date" email** (and a reminder while an offer is open):
   needs Creator-approved wording and a new template revision; today the
@@ -2229,7 +2232,8 @@ provider is still unavailable, then needs another decision).
   `free_confirmed_at` and `refund` (the customer's refund block: state,
   target, succeeded, in progress, `delivery_pending_minor`).
 - **Detail (chef):** everything `GET /orders/{id}` returns with the same
-  values except the customer's payment link (`payment.checkout_url`), plus
+  values except the customer's payment link (`payment.checkout_url`) and the
+  caller's `actions` (0038; the refund block's `parts` are included), plus
   `raw_lifecycle`, `recovery_state`, attention flags, `production`,
   `collections [{id, kind, state, version, initiated_at, expires_at,
   succeeded_at, mismatch_reason, cancel_reason, amount_minor, currency,
@@ -2442,7 +2446,8 @@ BO-GK-001.ready_cancellation `93a75483…`.
   no-show order accepts no further step, cancellation or appointment change
   (409 `TRANSITION_NOT_ALLOWED` / `CANCELLATION_NOT_ELIGIBLE` /
   `MOVE_NOT_ELIGIBLE`). Appointment changes also stop once an order is out
-  for delivery.
+  for delivery, or after an exception following a dispatch (see "Failed GK
+  delivery").
 - **Read models.** `order_get` gains `fulfillment {state, at, pending}`;
   until a handover or no-show is secured the order reads `ready` with the
   previous fulfilment state, `pending` handover | no_show and no `refund`
@@ -2456,7 +2461,9 @@ BO-GK-001.ready_cancellation `93a75483…`.
   earlier refunds already cover the 50%, or that the chef will contact the
   customer about a remainder not reserved automatically (a delivery share);
   the outcome evidence records `returned_before_minor` and
-  `new_refund_minor`; no
+  `new_refund_minor` (since 0038 also `stray_before_minor` and
+  `stray_new_minor` when the order has a stray delivery payment, see [Order
+  view refinements](#order-view-refinements-gk-030-migration-0038)); no
   `refund_returned` email while the no-show is unsecured (it follows once
   secured). Decision: no email for `ready` or `handover` (no noise; the chef
   sends collection details separately, K06).
@@ -2751,8 +2758,9 @@ Follow-ups (not implemented):
   with the no-show, but it has no separate stray sentence yet~~: since
   migration 0037 the refund line states the 50% part and the stray has its
   own sentence (see "Failed GK delivery").
-- `GET /me/orders` summaries and the staff list do not carry the delivery
-  state yet; the UI (state 15) and a chef screen for quotes and waivers.
+- The staff list does not carry the delivery state yet (`GET /me/orders`
+  summaries do since 0038: `delivery_state`); the UI (state 15) and a chef
+  screen for quotes and waivers.
 
 ## Q5 choice when GK can't deliver (GK-017 r02b)
 
@@ -2999,8 +3007,8 @@ Follow-ups (not implemented):
   and no redelivery choice (Q17 covers a failed delivery after a dispatch:
   state 19, built in migration 0037, see "Failed GK delivery" below).
 - A time choice sends no confirmation email (needs Creator-approved
-  wording and a template revision); `GET /me/orders` summaries do not carry
-  the block.
+  wording and a template revision); `GET /me/orders` summaries carry only
+  `attention` `delivery_choice` while it is open (0038), not the block.
 
 ## Failed GK delivery (GK-017 r02b state 19, Q17/Q18)
 
@@ -3332,7 +3340,8 @@ Follow-ups and open questions (not implemented):
   the chef (`refund_plan`'s skewed-actuals rule), as for any skew.
 - The UI (state 19) and a chef screen for recording failures; emails for the
   our-side failure and the choices need Creator-approved wording.
-- `GET /me/orders` summaries and the staff list do not carry the block.
+- The staff list does not carry the block; `GET /me/orders` summaries carry
+  only `attention` `delivery_failure_choice` while the choice is open (0038).
 
 ## Customer accounts (GK-016 r02b)
 
@@ -3408,9 +3417,11 @@ get 403 `ACCOUNT_DISABLED`, deleted ones 403 `ACCOUNT_DELETED`.
   `cancellation {state, reason, amount_minor}`, `appointment_change {kind,
   state}`, `refund {state, target_minor, succeeded_minor, in_progress_minor,
   currency}`, `items [{cake_name, flavour, size_code, quantity}]`, and
-  `added_by` `checkout`|`claim`|`chef` with `added_at`. No contact details,
-  payment link or policy detail (those are on the order page). The keyset
-  is `(placed_at, id)`.
+  `added_by` `checkout`|`claim`|`chef` with `added_at`; since 0038
+  `delivery_state`, `needs_answer` and `attention` (see [Order view
+  refinements](#order-view-refinements-gk-030-migration-0038)). No contact
+  details, payment link or policy detail (those are on the order page). The
+  keyset is `(placed_at, id)`.
 - **Profile (answer 10).** Name 1–120 characters; phone `+`, digits,
   spaces, hyphens and brackets with 7–15 digits ("07700 900123", "+44 7700
   900123"); Instagram name 1–30 letters, numbers, full stops and underscores
@@ -3580,6 +3591,166 @@ Not yet (next steps):
   signing out everywhere (GK-021), are outside the API.
 - **Favourites and requests** (`/me/favourites`, `/me/custom-requests`) and
   email change are later slices; the UI is the shop agent's.
+
+## Order view refinements (GK-030, migration 0038)
+
+Migration `0038_order_view_refinements.sql` (expand only), store
+`internal/checkout/order_actions.go`. Gaps the order page UI (GK-030 on the
+Creator-approved GK-017 r02b, states 10–19) found; every field is additive
+and no existing field changes its meaning (K09 "API v1 additive"). Contracts
+K00 (capability scope, the API owns eligibility), K05 (allocation, floors,
+delivery refunds chef-only), K09, K11 (nothing shown before it is secured).
+
+- **Actions** (`GET /orders/{id}`): `actions`, what *this caller* may do now,
+  in this order, each a customer route: `pay` (`/payment`),
+  `free_confirmation` (`/free-confirmation`), `cancel`
+  (`/cancellation-preview` then `/cancel`), `move_pickup` (`/pickup`),
+  `answer_late_payment` (`/late-payment/answer`), `pay_delivery`
+  (`/delivery-payment`), `delivery_choice` (`/delivery-choice`),
+  `delivery_failure_choice` (`/delivery-failure-choice`). The owner: by the
+  order's state; a guest: by the state and its capability's grants (`pay`:
+  pay, free_confirmation, pay_delivery; `cancel`: cancel, answer_late_payment,
+  a `full_refund` delivery choice; `move_pickup`: move_pickup, a time delivery
+  choice, delivery_failure_choice), as the routes check them. The Q5 block
+  adds `delivery_choice.allowed_choices`: the subset of `choices` this caller
+  may make (a link with `move_pickup` only: `["collection",
+  "customer_courier"]`). Example, a confirmed collection order opened through
+  its full guest link: `"actions": ["cancel", "move_pickup"]`; at a GK
+  delivery's pay-by: `["cancel", "delivery_choice"]`; out for delivery: `[]`.
+  The state facts the view does not show come from
+  `business.order_customer_actions` (gk_api; the same access rule as
+  `order_get`, read in the same statement): `pay` / `free_confirmation` when
+  awaiting payment with intact holds and nothing in flight, with the quote
+  window (equality has passed) and the 192-hour lead time (equality allowed)
+  compared at the API's clock; `cancel` when cancellable, secured, not out for
+  delivery, no cancellation or other protected change in progress; `move_pickup`
+  for collection and own courier until `pickup_move_until` (equality allowed).
+  The others follow the blocks the order page already shows at the API's
+  clock: an offered late payment (declining has no time limit, so even an
+  offer no longer `acceptable`), `delivery.payable`, `delivery_choice.open`,
+  an open `delivery_failure` choice. `pay` and `pay_delivery` also need the
+  API's payment settings (503 otherwise); without `CHECKOUT_ENABLED`
+  `actions` (and `allowed_choices`) are `[]`. It is a hint only: every route
+  still checks everything (a restore freeze, a stale version, a move target
+  that is no longer published).
+- **Labelled allocations.** The cancellation preview's `allocations[]` carry
+  `kind`: `cake`, `delivery` (a delivery collection that paid its quote) or
+  `stray` (a delivery payment whose outcome is unmatched, 0035). Outside the
+  preview hash (the stored allocations and the reuse rule are unchanged, so a
+  preview made before the migration still cancels). Cake 10000p and a stray
+  12000p after the deadline: `[{"collection_id": "…", "amount_minor": 5000,
+  "kind": "cake"}, {"collection_id": "…", "amount_minor": 12000, "kind":
+  "stray"}]`. The customer view shows no refund operations, so nothing else is
+  labelled.
+- **Refund parts.** The order's `refund` block adds `parts [{kind,
+  target_minor, succeeded_minor, in_progress_minor, pending_chef_minor}]` in
+  the order cake, delivery, stray; a part whose amounts are all 0 is left out
+  (a delivery kept after nobody was available). **Invariant:** the parts add
+  up exactly to the block's `target_minor`, `succeeded_minor`,
+  `in_progress_minor` and `delivery_pending_minor`. Per kind, succeeded and in
+  progress are the block's own sums over that kind's collections (an
+  unpublished manual payout success counts in progress, as the block does);
+  `pending_chef_minor` is `delivery_pending_minor` on the delivery part (only
+  an unfloored matched delivery waits for the chef, K05); `target_minor` is
+  the larger of the kind's K05 share of the goal (`refund_shares` with floors:
+  recorded floors and strays first, then the proportional rest) and what is
+  accounted for on it (succeeded + in progress + pending chef + what
+  `refund_plan` would reserve now). When prior actuals are skewed (a chef
+  exception gave the cake more than its share), the difference comes first
+  from the shares another part has not received; only when more went back or
+  is in flight than the goal (an external refund) from the parts in order; a
+  goal no part accounts for goes to the first part. Examples (`target /
+  succeeded / in progress / pending chef`): cake 10000p + delivery 12000p
+  after the deadline: cake `5000/5000/0/0`, delivery `6000/0/0/6000`, then
+  `6000/0/6000/0` while the chef's delivery refund is pending; after "GK
+  can't deliver" (floor): cake `5000/…`, delivery `12000/12000/0/0`; nobody
+  available: cake `5000/5000/0/0` only; a stray returned before a plain
+  no-show with a 14000p delivery paid: cake `5000/5000/0/0`, delivery
+  `7000/0/0/7000`, stray `12000/12000/0/0`; a 9500p chef exception on the
+  cake then a late cancellation (goal 11000p): cake `9500/9500/0/0`, delivery
+  `1500/0/0/1500`. The parts are on `order_view`'s block only (the chef's
+  staff detail has them; technical support's refund keys are unchanged; the
+  staff list, attention flags, notices and account summaries keep
+  `order_refund_summary` unchanged).
+- **Account summaries** (`GET /me/orders`): each row adds `delivery_state`
+  (the GK delivery block's state at the API's clock, as on the order page:
+  `awaiting_quote`, `quoted`, `payment_checking`, `paid`, `waived`,
+  `pay_by_passed`, `cancelled_by_choice`; null for other orders),
+  `needs_answer` and `attention`: what the customer must answer, named as
+  the actions: `answer_late_payment` (an offer that can still be accepted),
+  `pay_delivery` (a payable quote), `delivery_choice` (an open Q5 choice),
+  `delivery_failure_choice` (an open choice after a failed delivery).
+  Example: `{"delivery_state": "pay_by_passed", "needs_answer": true,
+  "attention": ["delivery_choice"]}`. No new money (the summary already
+  showed its total, payment, cancellation and refund amounts). The API reads
+  `business.account_order_summaries` (gk_api; `account_order_page`'s rows and
+  paging plus each order's late payment, delivery and choice blocks under
+  `order_blocks`, which the API reads at its clock and always removes);
+  `account_order_page` stays for the previous API. `order_customer_summary`
+  renders through `order_customer_summary_from` (identical output).
+- **No-show notice with a stray refund reserved earlier** (review follow-up of
+  0037). The no-show's outcome now also records, when the order has a stray
+  delivery payment, `stray_before_minor` (the strays' returns succeeded or on
+  their way before) and `stray_new_minor` (what the no-show newly reserved for
+  them). The refund line is the newly reserved amount without
+  `stray_new_minor` (before: without the stray's whole unreturned amount, so a
+  stray refund the chef had reserved before the no-show hid the 50% line and
+  the notice said "The £120 already refunded covers this"), and "already
+  refunded" leaves stray returns out (they never count towards the 50%,
+  0035): "Refund requested: £50." then the stray sentence "… so £170 is being
+  returned to you in total." Outcomes recorded before 0038 render as before;
+  orders without a stray record nothing new and their notices are unchanged.
+  The cancelled notice states the outcome's policy amount and the stray
+  beside it without subtracting one from the other, so it had no such gap.
+- **Clock audit.** No 0038 function reads the database clock for a decision:
+  the actions' instants and the summaries' blocks are compared at the API's
+  clock; the tests use the test clock only. Simulated in a scratch copy with
+  the database `now()` at 2027-06-01 (PostgreSQL 17 under libfaketime) and
+  the fake Stripe's clock shifted to match: with the fixture-only
+  database-clock validations relaxed there (lot and code expiry, policy
+  back-dating, the worker's one-minute `p_at` window, all of which compare
+  2026 fixture dates or the Go process clock with the database clock), the
+  0038 tests and the neighbouring actions, refund, delivery, Q5, failed
+  delivery, cancellation, late-payment, fulfilment, notice, staff-view and
+  account tests passed.
+- **Tests:** `internal/checkout/order_view_integration_test.go` (actions:
+  quote window boundary agreeing with the payment route, read-only and
+  partial links, free confirmation, owner and another customer, move cutoff
+  boundary agreeing with the move route, pending and finished cancellation,
+  late-payment offer and pending answer, delivery quote, pay-by with
+  allowed choices per grant, no cancel after a dispatch, failure choice;
+  labelled allocations and parts with their invariant in six cases; account
+  summaries with blocks never leaking; the no-show notice and its evidence,
+  with a no-stray outcome unchanged and the pre-0038 rendering),
+  `order_actions_test.go` (windows, grants, blocks, bytes kept,
+  `WithoutActions`, summaries at the store clock), `staff_orders_integration_test.go`
+  (the chef detail without the customer's actions), `internal/httpapi`
+  `TestOrderActionsNeedCheckout`, and the exact `gk_api` allowlist in
+  `internal/notifications`.
+
+Decisions taken (small and reversible, for review):
+
+- **Action names follow the routes and the guest grants**; `free_confirmation`
+  is its own action (a zero-amount order is not "paid"). `cancel` covers the
+  preview and the cancel; the claim of a guest order into an account (an
+  account route) is not an order action.
+- **`allowed_choices`** on the Q5 block rather than a per-choice action
+  name, because only the Q5 route mixes two grants.
+- **`answer_late_payment`** is offered while an offer is open even when it can
+  no longer be accepted (declining has no limit), but the account
+  `attention` asks for an answer only while it can be accepted (as the brief
+  asked: "open and acceptable").
+- **`move_pickup`** follows the state and the cutoff, not whether another
+  time of the day is still free (the move schedule answers that).
+- **Parts omit all-zero kinds** (a kept delivery shows no delivery part;
+  `delivery_failure.delivery_kept_minor` says it is kept).
+- **Account `attention`** does not depend on the API's payment settings or
+  `CHECKOUT_ENABLED` (it says what the customer must answer; the order page's
+  actions say whether the API can take it now).
+
+Not yet: actions for staff views (staff routes check roles); an `actions`
+field on `GET /me/orders` rows (only `attention`); a restore freeze is not
+reflected in `actions` (the routes answer 503, retryable).
 
 ## Not yet verified
 

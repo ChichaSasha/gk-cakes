@@ -434,6 +434,10 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 			digest = d
 		}
 		o, err := co.GetOrder(r.Context(), r.PathValue("id"), a.Subject, digest)
+		if err == nil && !checkoutEnabled {
+			// No customer command is served: none is offered.
+			o = checkout.WithoutActions(o)
+		}
 		respond(w, r, logger, http.StatusOK, o, err)
 	})
 	if id == nil {

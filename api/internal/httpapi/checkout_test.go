@@ -29,6 +29,8 @@ type fakeCheckout struct {
 	orderID  string
 	// unchanged answers moves as already at that time.
 	unchanged bool
+	// order is GetOrder's representation (default {"id":"o"}).
+	order string
 }
 
 func (f *fakeCheckout) CreateQuote(_ context.Context, subject string, digest []byte, _ string, _ checkout.QuoteInput) (catalog.Result, error) {
@@ -56,6 +58,9 @@ func (f *fakeCheckout) Checkout(_ context.Context, subject string, digest []byte
 func (f *fakeCheckout) GetOrder(_ context.Context, _, subject string, digest []byte) (checkout.Order, error) {
 	if subject == "" && digest == nil {
 		return nil, catalog.ErrNotFound
+	}
+	if f.order != "" {
+		return checkout.Order(f.order), nil
 	}
 	return checkout.Order(`{"id":"o"}`), nil
 }
@@ -1778,5 +1783,29 @@ func TestDeliveryFailureRoutes(t *testing.T) {
 		if rec.Code != 404 && rec.Code != 405 {
 			t.Errorf("%s while disabled: %d", p, rec.Code)
 		}
+	}
+}
+
+// The order's actions are a hint for the order page: without
+// CHECKOUT_ENABLED no customer command is served, so none is offered.
+func TestOrderActionsNeedCheckout(t *testing.T) {
+	id := catalogIdentity()
+	order := `{"actions":["cancel","delivery_choice"],"delivery_choice":{"open":true,"choices":["full_refund"],"allowed_choices":["full_refund"]},"id":"o"}`
+	hdr := map[string]string{OrderCapabilityHeader: testProof}
+	rec := serveCheckout(t, &fakeCheckout{order: order}, id, http.MethodGet, "/api/v1/orders/o", "", "", "", hdr)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"actions":["cancel","delivery_choice"]`) {
+		t.Fatalf("with checkout: %d %s", rec.Code, rec.Body)
+	}
+	var logs bytes.Buffer
+	off := NewHandler(Options{UIOrigin: "https://gkcake.com", DB: fakePinger{}, Identity: id, Checkout: &fakeCheckout{order: order},
+		Logger: slog.New(slog.NewJSONHandler(&logs, nil))})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/orders/o", nil)
+	req.Header.Set(OrderCapabilityHeader, testProof)
+	offRec := httptest.NewRecorder()
+	off.ServeHTTP(offRec, req)
+	body := offRec.Body.String()
+	if offRec.Code != 200 || !strings.Contains(body, `"actions":[]`) || !strings.Contains(body, `"allowed_choices":[]`) ||
+		!strings.Contains(body, `"choices":["full_refund"]`) {
+		t.Fatalf("without checkout: %d %s", offRec.Code, body)
 	}
 }
