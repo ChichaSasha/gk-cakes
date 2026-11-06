@@ -27,13 +27,15 @@ var (
 )
 
 type offerJSON struct {
-	ID        string
-	Kind      string
-	Date      string
-	SlotID    string `json:"slot_id"`
-	Start     time.Time
-	End       time.Time
-	OfferedAt time.Time `json:"offered_at"`
+	ID          string
+	Kind        string
+	Date        string
+	SlotID      string `json:"slot_id"`
+	Start       time.Time
+	End         time.Time
+	OfferedAt   time.Time `json:"offered_at"`
+	AcceptUntil time.Time `json:"accept_until"`
+	Acceptable  *bool
 }
 
 type lateView struct {
@@ -50,9 +52,11 @@ type lateView struct {
 	}
 	Refund      *refundView
 	LatePayment *struct {
-		State  string
-		Offer  *offerJSON
-		Answer *struct {
+		State     string
+		PaidMinor int64 `json:"paid_minor"`
+		Currency  string
+		Offer     *offerJSON
+		Answer    *struct {
 			OfferID    string `json:"offer_id"`
 			Answer     string
 			State      string
@@ -97,6 +101,7 @@ func (h *payHarness) answer(order string, d []byte, key string, version int, off
 // with a fresh guest capability, the clock half an hour after the payment.
 func (h *payHarness) lateAgreementOrder(t *testing.T, f fixture, pol, key string) (string, []byte, lateView) {
 	t.Helper()
+	h.now = time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC) // place and pay as lateOrder expects
 	order, _ := h.lateOrder(t, f, pol, key)
 	d := h.digestOf(t, order)
 	h.now = time.Date(2026, 11, 6, 13, 0, 0, 0, time.UTC)
@@ -175,6 +180,10 @@ func TestLatePaymentRequestedOfferAccepted(t *testing.T) {
 		!v1.LatePayment.Offer.End.Equal(lateHandover.Add(time.Hour)) || !v1.LatePayment.Offer.OfferedAt.Equal(h.now) {
 		t.Fatalf("offered %s", raw)
 	}
+	if o := v1.LatePayment.Offer; !o.AcceptUntil.Equal(lateHandover) || o.Acceptable == nil || !*o.Acceptable ||
+		v1.LatePayment.PaidMinor != 10000 || v1.LatePayment.Currency != "GBP" {
+		t.Fatalf("offer acceptance window and paid total %s", raw)
+	}
 	// A new offer withdraws the open one (rows are kept).
 	second, err := h.offer(order, "o2", v1.Version, checkout.OfferRequested, "", "")
 	if err != nil {
@@ -231,7 +240,8 @@ func TestLatePaymentRequestedOfferAccepted(t *testing.T) {
 	}
 	if p, raw := h.lateView(t, order, d); p.LatePayment == nil || p.LatePayment.State != "processing" ||
 		p.LatePayment.Offer == nil || p.LatePayment.Offer.ID != second.ID || p.LatePayment.Answer == nil ||
-		p.LatePayment.Answer.State != "processing" || p.LatePayment.Answer.Answer != "accept" {
+		p.LatePayment.Answer.State != "processing" || p.LatePayment.Answer.Answer != "accept" ||
+		p.LatePayment.Offer.Acceptable == nil || *p.LatePayment.Offer.Acceptable {
 		t.Fatalf("processing %s", raw)
 	}
 	if errs := h.drain(t); len(errs) != 0 {
@@ -595,8 +605,9 @@ func TestLatePaymentTooLateFreezeAndOwner(t *testing.T) {
 	if _, err := h.answer(order, d, "a-late", v1.Version, res.ID, "accept"); conflict(err) != "honour_too_late" {
 		t.Fatalf("accept after the handover: %v", err)
 	}
-	if p, _ := h.lateView(t, order, d); p.LatePayment.State != "offered" {
-		t.Fatalf("a too-late acceptance closed the offer: %+v", p.LatePayment)
+	if p, raw := h.lateView(t, order, d); p.LatePayment.State != "offered" || p.LatePayment.Offer.Acceptable == nil ||
+		*p.LatePayment.Offer.Acceptable {
+		t.Fatalf("a too-late acceptance closed the offer, or it still reads acceptable: %s", raw)
 	}
 
 	// Freeze: new offers and answers refused, replays answered.
@@ -709,5 +720,267 @@ func TestLatePaymentAcceptanceRefusedWhenTheDayFillsBeforeTheCommit(t *testing.T
 	}
 	if _, err := h.answer(order, d, "a2", v2.Version, res.ID, "accept"); conflict(err) != "offer_not_current" {
 		t.Fatalf("answering the lapsed offer again: %v", err)
+	}
+}
+
+// otherOrdersOn records cake committed standard cakes of other orders on
+// day (filler: an order of the harness that has no place that day).
+func (h *payHarness) otherOrdersOn(t *testing.T, filler, date string, cakes int) {
+	t.Helper()
+	h.owner(t, "INSERT INTO business.handover_day (day) VALUES ($1::date) ON CONFLICT DO NOTHING", date)
+	h.owner(t, `INSERT INTO business.capacity_allocation (id, order_ref, day, cake_quantity, classification, state)
+		VALUES (gen_random_uuid(), $1::uuid, $2::date, $3, 'standard', 'committed')
+		ON CONFLICT (order_ref, day) DO UPDATE SET cake_quantity = EXCLUDED.cake_quantity`, filler, date, cakes)
+}
+
+type allocationRow struct {
+	ID, State, Class string
+}
+
+func (h *payHarness) allocationOn(t *testing.T, order, date string) allocationRow {
+	t.Helper()
+	var a allocationRow
+	if err := h.admin.QueryRow(h.ctx, `SELECT id::text, state, classification FROM business.capacity_allocation
+		WHERE order_ref = $1::uuid AND day = $2::date`, order, date).Scan(&a.ID, &a.State, &a.Class); err != nil {
+		t.Fatalf("allocation of %s on %s: %v", order, date, err)
+	}
+	return a
+}
+
+// While the chef's own decision (or any protected command) is unresolved the
+// order page offers nothing to answer: processing, no offer, even next to
+// cancellation_pending for a chef full return.
+func TestLatePaymentChefDecisionHidesTheOffer(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	h.withRefunds()
+	honoured, dh, vh := h.lateAgreementOrder(t, f, pol, "ch")
+	returned, dr, vr := h.lateAgreementOrder(t, f, pol, "cr")
+	for _, o := range []struct {
+		order string
+		d     []byte
+		v     int
+	}{{honoured, dh, vh.Version}, {returned, dr, vr.Version}} {
+		if _, err := h.offer(o.order, "o-"+o.order, o.v, checkout.OfferRequested, "", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v1, _ := h.lateView(t, honoured, dh)
+	agreement := &checkout.Agreement{Channel: "phone", AgreedAt: "2026-11-06T12:45:00Z", EvidenceRef: "Call note 12"}
+	if _, err := h.co.LatePayment(h.ctx, chef, "lp-h", honoured, checkout.LatePaymentInput{ExpectedVersion: v1.Version,
+		Decision: "honour", CustomerAgreement: agreement}); err != nil {
+		t.Fatal(err)
+	}
+	if p, raw := h.lateView(t, honoured, dh); p.Lifecycle != "paid_awaiting_agreement" || p.LatePayment == nil ||
+		p.LatePayment.State != "processing" || p.LatePayment.Offer != nil {
+		t.Fatalf("chef honour pending %s", raw)
+	}
+	v2, _ := h.lateView(t, returned, dr)
+	if _, err := h.co.LatePayment(h.ctx, chef, "lp-r", returned, checkout.LatePaymentInput{ExpectedVersion: v2.Version,
+		Decision: "full_return"}); err != nil {
+		t.Fatal(err)
+	}
+	if p, raw := h.lateView(t, returned, dr); p.Lifecycle != "cancellation_pending" || p.LatePayment == nil ||
+		p.LatePayment.State != "processing" || p.LatePayment.Offer != nil {
+		t.Fatalf("chef full return pending %s", raw)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("drain:\n%s", reasons(errs))
+	}
+	if p, raw := h.lateView(t, honoured, dh); p.Lifecycle != "confirmed" || p.LatePayment != nil || p.Agreed != nil {
+		t.Fatalf("chef honour %s", raw)
+	}
+	if p, raw := h.lateView(t, returned, dr); p.Lifecycle != "cancelled" || p.LatePayment != nil {
+		t.Fatalf("chef full return %s", raw)
+	}
+}
+
+// The chef route's replay matches only the chef's own decisions: a chef who
+// is also the order's owner answers on the order page with key k, and the
+// chef route with key k is a new request (here a conflict while the answer
+// is pending), never a replay or KEY_REUSED.
+func TestLatePaymentChefRouteNeverReplaysACustomerAnswer(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, _, v := h.lateAgreementOrder(t, f, pol, "own")
+	h.owner(t, `SELECT business.order_owner_link($1::uuid, a.id, 'chef', NULL, 'Linked in a test', a.id, now())
+		FROM business.account a WHERE a.provider_subject = $2::uuid`, order, chef)
+	vo, _ := h.lateView2(t, order, chef)
+	res, err := h.offer(order, "o1", vo.Version, checkout.OfferRequested, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	vo, _ = h.lateView2(t, order, chef)
+	ans, err := h.co.AnswerLatePayment(h.ctx, order, chef, nil, "same-key", checkout.LatePaymentAnswerInput{
+		ExpectedVersion: vo.Version, OfferID: res.ID, Answer: "accept"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := h.co.LatePayment(h.ctx, chef, "same-key", order, checkout.LatePaymentInput{ExpectedVersion: vo.Version,
+		Decision: "full_return"})
+	if conflict(err) != "state_conflict" || got.ID == ans.ID {
+		t.Fatalf("chef route with the customer's key: %+v %v, want a new request refused CONFLICT", got, err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("drain:\n%s", reasons(errs))
+	}
+	if p, raw := h.lateView2(t, order, chef); p.Lifecycle != "confirmed" || p.Agreed == nil || v.Version >= p.Version {
+		t.Fatalf("owner answer %s", raw)
+	}
+}
+
+// Day-limit edges and a race (limit 3 on the 21st, other orders' committed
+// standard cakes 2, the orders' own place 1 cake): at limit - qty an offer
+// and its acceptance pass and the place is standard (never chef_extra); A and
+// B are both offered the last place, both accept, A commits first and B's
+// commit is refused slot_unavailable (limit - qty + 1 at the commit: the
+// offer lapses, B keeps its date and place); a new offer on the now full day
+// is refused.
+func TestLatePaymentDayLimitEdgesAndRace(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	next := h.slotsOn(t, "2026-11-21")
+	must[catalog.Result](t)(h.sch.SetDayLimit(h.ctx, chef, "lim", day("2026-11-21"), schedule.DayLimitInput{ExpectedVersion: ptr(0), StandardLimit: ptr(3)}))
+	filler, _ := h.tenThousandOrder(t, f, pol, "filler")
+	h.otherOrdersOn(t, filler, "2026-11-21", 2)
+	a, da, va := h.lateAgreementOrder(t, f, pol, "ra")
+	b, db, vb := h.lateAgreementOrder(t, f, pol, "rb")
+	offerA, err := h.offer(a, "oa", va.Version, checkout.OfferOther, "2026-11-21", next[1])
+	if err != nil {
+		t.Fatalf("offer at limit - qty: %v", err)
+	}
+	offerB, err := h.offer(b, "ob", vb.Version, checkout.OfferOther, "2026-11-21", next[2])
+	if err != nil {
+		t.Fatalf("second offer of the last place: %v", err)
+	}
+	va, _ = h.lateView(t, a, da)
+	vb, _ = h.lateView(t, b, db)
+	ansA, err := h.answer(a, da, "aa", va.Version, offerA.ID, "accept")
+	if err != nil {
+		t.Fatalf("acceptance at limit - qty: %v", err)
+	}
+	ansB, err := h.answer(b, db, "ab", vb.Version, offerB.ID, "accept")
+	if err != nil {
+		t.Fatalf("B accepts before A commits: %v", err)
+	}
+	if err := h.moveJob(t, ansA.ID); err != nil {
+		t.Fatalf("A's commit: %v", err)
+	}
+	if err := h.moveJob(t, ansB.ID); err != nil {
+		t.Fatalf("B's commit: %v", err)
+	}
+	pa, raw := h.lateView(t, a, da)
+	if pa.Lifecycle != "confirmed" || pa.Date != "2026-11-21" || pa.Agreed == nil {
+		t.Fatalf("A %s", raw)
+	}
+	if got := h.allocationOn(t, a, "2026-11-21"); got.State != "committed" || got.Class != "standard" {
+		t.Fatalf("A's place %+v", got)
+	}
+	pb, raw := h.lateView(t, b, db)
+	if pb.Lifecycle != "paid_awaiting_agreement" || pb.Date != "2026-11-14" || pb.LatePayment.State != "waiting" ||
+		pb.LatePayment.Answer == nil || pb.LatePayment.Answer.State != "lapsed" || *pb.LatePayment.Answer.Reason != "slot_unavailable" {
+		t.Fatalf("B %s", raw)
+	}
+	var outcome string
+	if err := h.admin.QueryRow(h.ctx, "SELECT outcome::text FROM business.recovery_operation WHERE id = $1::uuid", ansB.ID).Scan(&outcome); err != nil ||
+		!strings.Contains(outcome, "slot_unavailable") {
+		t.Fatalf("B's outcome %s %v", outcome, err)
+	}
+	if h.allocation(t, b) != "committed" || h.count(t, `SELECT count(*) FROM business.capacity_allocation
+		WHERE day = '2026-11-21' AND classification = 'chef_extra'`) != 0 {
+		t.Fatal("B moved, or a chef_extra place was created")
+	}
+	if _, err := h.offer(b, "ob2", pb.Version, checkout.OfferOther, "2026-11-21", next[3]); conflict(err) != "slot_unavailable" {
+		t.Fatalf("offer on the full day: %v", err)
+	}
+}
+
+// Same-day other offer (the appointment moves, the day place stays the same
+// row); an acceptance onto a day where the order has a released row reuses
+// that row; an other offer whose start has passed reads not acceptable and
+// can still be declined (everything back).
+func TestLatePaymentOtherOfferSameDayReleasedRowAndDecline(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	h.withRefunds()
+	same := h.slotsOn(t, "2026-11-14")
+	later := h.slotsOn(t, "2026-11-28")
+
+	s, ds, vs := h.lateAgreementOrder(t, f, pol, "sd")
+	before := h.allocationOn(t, s, "2026-11-14")
+	res, err := h.offer(s, "o1", vs.Version, checkout.OfferOther, "2026-11-14", same[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	vs, _ = h.lateView(t, s, ds)
+	if _, err := h.answer(s, ds, "a1", vs.Version, res.ID, "accept"); err != nil {
+		t.Fatal(err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("drain:\n%s", reasons(errs))
+	}
+	moved, raw := h.lateView(t, s, ds)
+	if moved.Lifecycle != "confirmed" || moved.Date != "2026-11-14" || moved.Slot.ID != same[2] ||
+		!moved.Slot.StartsAt.Equal(at("13:30")) || moved.Agreed == nil || moved.Agreed.Kind != "other" {
+		t.Fatalf("same-day move %s", raw)
+	}
+	if after := h.allocationOn(t, s, "2026-11-14"); after != before {
+		t.Fatalf("same-day place changed %+v -> %+v", before, after)
+	}
+
+	r, dr, vr := h.lateAgreementOrder(t, f, pol, "rel")
+	released := "8d3f0f8e-5d55-4c3e-9a49-34a0e2a9f0aa"
+	h.owner(t, "INSERT INTO business.handover_day (day) VALUES ('2026-11-28') ON CONFLICT DO NOTHING")
+	h.owner(t, `INSERT INTO business.capacity_allocation (id, order_ref, day, cake_quantity, classification, state)
+		VALUES ($1::uuid, $2::uuid, '2026-11-28', 1, 'standard', 'released')`, released, r)
+	res, err = h.offer(r, "o1", vr.Version, checkout.OfferOther, "2026-11-28", later[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	vr, _ = h.lateView(t, r, dr)
+	if _, err := h.answer(r, dr, "a1", vr.Version, res.ID, "accept"); err != nil {
+		t.Fatal(err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("drain:\n%s", reasons(errs))
+	}
+	if got := h.allocationOn(t, r, "2026-11-28"); got.ID != released || got.State != "committed" || got.Class != "standard" {
+		t.Fatalf("released row %+v", got)
+	}
+	if h.allocationOn(t, r, "2026-11-14").State != "released" ||
+		h.count(t, "SELECT count(*) FROM business.capacity_allocation WHERE order_ref = $1::uuid", r) != 2 {
+		t.Fatal("rows after reusing the released one")
+	}
+
+	dcl, dd, vd := h.lateAgreementOrder(t, f, pol, "dco")
+	res, err = h.offer(dcl, "o1", vd.Version, checkout.OfferOther, "2026-11-28", later[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	vd, raw = h.lateView(t, dcl, dd)
+	start := time.Date(2026, 11, 28, 13, 0, 0, 0, time.UTC)
+	if o := vd.LatePayment.Offer; !o.AcceptUntil.Equal(start) || o.Acceptable == nil || !*o.Acceptable {
+		t.Fatalf("other offer window %s", raw)
+	}
+	h.now = start
+	if p, raw := h.lateView(t, dcl, dd); p.LatePayment.State != "offered" || *p.LatePayment.Offer.Acceptable {
+		t.Fatalf("passed offer reads acceptable %s", raw)
+	}
+	if _, err := h.answer(dcl, dd, "d1", vd.Version, res.ID, "decline"); err != nil {
+		t.Fatalf("decline after the offered start: %v", err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("drain:\n%s", reasons(errs))
+	}
+	if p, raw := h.lateView(t, dcl, dd); p.Lifecycle != "cancelled" || *p.CancelReason != "late_payment_returned" ||
+		p.Refund == nil || p.Refund.TargetMinor != 10000 || p.Cancellation.RequestedBy != "customer" {
+		t.Fatalf("declined other offer %s", raw)
+	}
+	if h.allocationOn(t, dcl, "2026-11-14").State != "released" {
+		t.Fatal("the declined order kept its place")
 	}
 }

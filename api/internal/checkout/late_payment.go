@@ -1,7 +1,9 @@
 package checkout
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -135,4 +137,45 @@ func (s *Store) AnswerLatePayment(ctx context.Context, id, subject string, diges
 		return r, ErrOfferLapsed
 	}
 	return r, nil
+}
+
+// withAcceptable adds late_payment.offer.acceptable to an order
+// representation: whether the open offer can still be accepted at the
+// store's clock (state offered and now before its accept_until). Declining
+// has no such limit. Representations without an offer are returned as they
+// are.
+func (s *Store) withAcceptable(raw []byte) []byte {
+	if !bytes.Contains(raw, []byte(`"accept_until"`)) {
+		return raw
+	}
+	var top map[string]json.RawMessage
+	if json.Unmarshal(raw, &top) != nil {
+		return raw
+	}
+	var block map[string]json.RawMessage
+	if json.Unmarshal(top["late_payment"], &block) != nil || block == nil {
+		return raw
+	}
+	var offer map[string]json.RawMessage
+	if json.Unmarshal(block["offer"], &offer) != nil || offer == nil {
+		return raw
+	}
+	var state string
+	var until time.Time
+	if json.Unmarshal(block["state"], &state) != nil || json.Unmarshal(offer["accept_until"], &until) != nil {
+		return raw
+	}
+	offer["acceptable"], _ = json.Marshal(state == "offered" && s.now().Before(until))
+	var err error
+	if block["offer"], err = json.Marshal(offer); err != nil {
+		return raw
+	}
+	if top["late_payment"], err = json.Marshal(block); err != nil {
+		return raw
+	}
+	out, err := json.Marshal(top)
+	if err != nil {
+		return raw
+	}
+	return out
 }

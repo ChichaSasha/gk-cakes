@@ -138,6 +138,14 @@ CREATE TRIGGER late_payment_answer_immutable BEFORE UPDATE OR DELETE ON business
 CREATE TRIGGER late_payment_answer_no_truncate BEFORE TRUNCATE ON business.late_payment_answer
   FOR EACH STATEMENT EXECUTE FUNCTION business.catalog_immutable();
 
+-- On an order-page answer, late_payment_decision.recorded_by is the chef who
+-- made the offer (the feasibility recorder; the column is NOT NULL and a
+-- guest has no account): the decision's real actor is the order_command
+-- (actor_kind, actor_account_id or guest_capability_id) and
+-- late_payment_answer. A decline's row is therefore the customer's decision.
+COMMENT ON COLUMN business.late_payment_decision.recorded_by IS
+  'The chef who recorded feasibility. For an order-page answer (0034) the chef who made the offer; the actor is order_command / late_payment_answer.';
+
 -- ------------------------------------------------------------ helpers
 
 -- Owner-internal: the state of an offer: open, withdrawn (a newer offer),
@@ -224,24 +232,34 @@ BEGIN
 END;
 $$;
 
--- Owner-internal: an offer as the order page shows it.
+-- Owner-internal: an offer as the order page shows it. accept_until: the
+-- instant from which it can no longer be accepted (the original handover
+-- for requested, as the honour rule; the offered start for other); the API
+-- adds acceptable at its own clock. Declining has no such limit.
 CREATE FUNCTION business.late_payment_offer_json(f business.late_payment_offer)
 RETURNS jsonb
 LANGUAGE sql
-IMMUTABLE
+STABLE
 SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
 AS $$
   SELECT CASE WHEN f.id IS NOT NULL THEN pg_catalog.jsonb_build_object(
     'id', f.id, 'kind', f.kind, 'date', f.handover_day, 'slot_id', f.slot_id, 'start', f.starts_at, 'end', f.ends_at,
-    'offered_at', f.offered_at) END;
+    'offered_at', f.offered_at,
+    'accept_until', CASE f.kind WHEN 'requested'
+                      THEN (SELECT o.original_handover_at FROM business.orders o WHERE o.id = f.order_id)
+                      ELSE f.starts_at END) END;
 $$;
 
 -- Owner-internal: the late_payment block of a paid_awaiting_agreement order
 -- (NULL otherwise): waiting (no open offer: only "contact the chef"),
--- offered (the open offer can be answered) or processing (an answer is being
--- protected); answer: the latest offer's answer when it did not resolve the
--- order (processing, lapsed or refused, with the reason).
+-- offered (the open offer can be answered) or processing (a protected
+-- command of the order is unresolved: the customer's answer, with its offer,
+-- or the chef's own decision or another change, with no offer to answer);
+-- answer: the latest offer's answer when it did not resolve the order
+-- (processing, lapsed or refused, with the reason); paid_minor and currency:
+-- the actual paid aggregate a decline returns in full (server-computed, as
+-- the cancellation preview).
 CREATE FUNCTION business.order_late_payment_view(p_order business.orders)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -255,6 +273,7 @@ DECLARE
   v_a business.late_payment_answer%ROWTYPE;
   v_state text;
   v_reason text;
+  v_busy boolean := business.order_command_unresolved(p_order.id);
 BEGIN
   IF p_order.lifecycle <> 'paid_awaiting_agreement' THEN
     RETURN NULL;
@@ -274,12 +293,15 @@ BEGIN
     END IF;
   END IF;
   RETURN pg_catalog.jsonb_build_object(
-    'state', CASE WHEN v_state = 'processing' THEN 'processing' WHEN v_open.id IS NOT NULL THEN 'offered' ELSE 'waiting' END,
+    'state', CASE WHEN v_state = 'processing' OR v_busy THEN 'processing'
+                  WHEN v_open.id IS NOT NULL THEN 'offered' ELSE 'waiting' END,
     'offer', CASE WHEN v_state = 'processing' THEN business.late_payment_offer_json(v_latest)
+                  WHEN v_busy THEN NULL
                   ELSE business.late_payment_offer_json(v_open) END,
     'answer', CASE WHEN v_a.id IS NOT NULL AND v_state IN ('processing', 'lapsed', 'refused') THEN
                 pg_catalog.jsonb_build_object('offer_id', v_a.offer_id, 'answer', v_a.answer,
-                                              'received_at', v_a.received_at, 'state', v_state, 'reason', v_reason) END);
+                                              'received_at', v_a.received_at, 'state', v_state, 'reason', v_reason) END,
+    'paid_minor', business.order_paid_minor(p_order.id), 'currency', p_order.currency);
 END;
 $$;
 
@@ -641,10 +663,12 @@ BEGIN
     PERFORM business.capacity_day_lock(GREATEST(v_f.handover_day, v_o.handover_day));
   END IF;
   -- Honour: the original slot is still the order's and its holds are the
-  -- committed ones.
+  -- committed ones (the place on its day; a released row of another day is
+  -- no hold).
   IF v_o.slot_id::text IS DISTINCT FROM v_snapshot ->> 'slot_id'
      OR v_o.handover_day::text IS DISTINCT FROM v_snapshot ->> 'handover_day'
-     OR EXISTS (SELECT 1 FROM business.capacity_allocation a WHERE a.order_ref = v.order_id AND a.state <> 'committed')
+     OR EXISTS (SELECT 1 FROM business.capacity_allocation a WHERE a.order_ref = v.order_id AND a.state <> 'committed'
+                  AND a.day = v_o.handover_day)
      OR EXISTS (SELECT 1 FROM business.order_lot_reservation r WHERE r.order_id = v.order_id AND r.state <> 'sold') THEN
     v_reason := 'holds_changed';
   ELSIF v_f.kind = 'other' THEN
@@ -702,6 +726,122 @@ END;
 $$;
 
 -- ------------------------------------------------- replaced functions
+
+-- As in 0022, except that a replay matches only the chef's own decisions
+-- (actor_kind staff): customers' order-page answers are late_payment
+-- commands too, and a staff member who is also the order's owner must never
+-- replay their customer answer on the chef route.
+CREATE OR REPLACE FUNCTION business.order_late_payment_request(
+  p_actor uuid, p_order uuid, p_key text, p_body_sha256 text, p_expected_version integer, p_decision text,
+  p_channel text, p_agreed_at timestamptz, p_evidence_ref text, p_env text, p_now timestamptz)
+RETURNS TABLE (result_id uuid, replayed boolean)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_account uuid := business.catalog_staff_account(p_actor, ARRAY['chef']);
+  v_o business.orders%ROWTYPE;
+  v_prior business.order_command%ROWTYPE;
+  v_id uuid := pg_catalog.gen_random_uuid();
+  v_key text;
+  v_payload text;
+  v_hash text;
+  v_reserve text;
+  v_job uuid;
+BEGIN
+  IF p_now IS NULL OR p_order IS NULL THEN
+    RAISE EXCEPTION 'proof_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  IF p_key IS NULL OR p_key !~ '^[\x21-\x7e]{1,128}$' OR p_body_sha256 IS NULL OR p_body_sha256 !~ '^[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'idempotency_key_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  IF p_expected_version IS NULL OR p_expected_version < 1 THEN
+    RAISE EXCEPTION 'expected_version_required' USING ERRCODE = 'GK422';
+  END IF;
+  IF p_decision IS NULL OR p_decision NOT IN ('honour', 'full_return') THEN
+    RAISE EXCEPTION 'decision_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  IF p_decision = 'honour' THEN
+    -- Silence never counts: the customer's agreement, fully evidenced.
+    IF p_channel IS NULL OR p_channel NOT IN ('email', 'phone', 'instagram', 'whatsapp', 'in_person', 'other')
+       OR p_agreed_at IS NULL OR p_agreed_at > p_now
+       OR p_evidence_ref IS NULL OR p_evidence_ref <> pg_catalog.btrim(p_evidence_ref)
+       OR pg_catalog.char_length(p_evidence_ref) NOT BETWEEN 1 AND 200
+       OR p_evidence_ref ~ '[\x01-\x1f\x7f-\x9f\u2028\u2029]' THEN
+      RAISE EXCEPTION 'agreement_invalid' USING ERRCODE = 'GK422';
+    END IF;
+  ELSIF p_channel IS NOT NULL OR p_agreed_at IS NOT NULL OR p_evidence_ref IS NOT NULL THEN
+    RAISE EXCEPTION 'agreement_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  IF p_env IS NULL OR p_env !~ '^[a-z0-9][a-z0-9-]{0,31}$' THEN
+    RAISE EXCEPTION 'journal environment must be a lower-case path segment';
+  END IF;
+  SELECT * INTO v_o FROM business.orders o WHERE o.id = p_order FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'order not found' USING ERRCODE = 'GK404';
+  END IF;
+  SELECT * INTO v_prior FROM business.order_command c
+  WHERE c.order_id = p_order AND c.command = 'late_payment' AND c.actor_kind = 'staff' AND c.idempotency_key = p_key
+    AND c.actor_account_id = v_account;
+  IF FOUND THEN
+    IF v_prior.body_sha256 <> p_body_sha256 THEN
+      RAISE EXCEPTION 'key_reused' USING ERRCODE = 'GK409';
+    END IF;
+    RETURN QUERY SELECT v_prior.id, true;
+    RETURN;
+  END IF;
+  IF EXISTS (SELECT 1 FROM business.order_command c JOIN business.recovery_operation r ON r.id = c.id
+             WHERE c.order_id = p_order AND c.command IN ('late_payment', 'cancel') AND r.state <> 'secured') THEN
+    RAISE EXCEPTION 'state_conflict' USING ERRCODE = 'GK409';
+  END IF;
+  IF v_o.version <> p_expected_version THEN
+    RAISE EXCEPTION 'stale_version' USING ERRCODE = 'GK409';
+  END IF;
+  IF v_o.lifecycle <> 'paid_awaiting_agreement' OR v_o.recovery_state <> 'secured' THEN
+    RAISE EXCEPTION 'state_conflict' USING ERRCODE = 'GK409';
+  END IF;
+  IF p_decision = 'honour' THEN
+    -- The agreement answers the late payment (never before it), and the
+    -- original handover must still be ahead at the receipt instant.
+    IF p_agreed_at < v_o.paid_at THEN
+      RAISE EXCEPTION 'agreement_invalid' USING ERRCODE = 'GK422';
+    END IF;
+    IF v_o.original_handover_at <= p_now THEN
+      RAISE EXCEPTION 'honour_too_late' USING ERRCODE = 'GK409';
+    END IF;
+  END IF;
+
+  v_key := 'recovery/' || p_env || '/op/' || p_order::text || '/' || pg_catalog.lpad(v_o.version::text, 10, '0')
+           || '-' || v_id::text;
+  v_payload := pg_catalog.json_build_object(
+    'v', 1, 'environment', p_env, 'command', 'order.late_payment', 'operation_id', v_id, 'order_id', p_order,
+    'prior_version', v_o.version,
+    'received_at', pg_catalog.to_char(p_now AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+    'actor', pg_catalog.json_build_object('kind', 'staff', 'account_id', v_account),
+    'decision', pg_catalog.json_build_object('decision', p_decision, 'channel', p_channel, 'agreed_at', p_agreed_at,
+                                             'evidence_ref', p_evidence_ref),
+    'order', business.order_recovery_snapshot(p_order))::text;
+  v_hash := pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(v_payload, 'UTF8')), 'hex');
+  SELECT r.result INTO v_reserve
+  FROM business.recovery_reserve(v_id, 'command', p_order, v_o.version, v_hash, v_key, NULL) r;
+  IF v_reserve = 'busy' THEN
+    RAISE EXCEPTION 'state_conflict' USING ERRCODE = 'GK409';
+  ELSIF v_reserve <> 'reserved' THEN
+    RAISE EXCEPTION 'stale_version' USING ERRCODE = 'GK409';
+  END IF;
+  v_job := business.job_enqueue(v_id, NULL);
+  INSERT INTO business.order_command (id, order_id, command, actor_kind, actor_account_id, idempotency_key, body_sha256,
+                                      prior_version, received_at, payload, payload_sha256, envelope_key, job_id)
+  VALUES (v_id, p_order, 'late_payment', 'staff', v_account, p_key, p_body_sha256, v_o.version, p_now, v_payload, v_hash,
+          v_key, v_job);
+  INSERT INTO business.late_payment_decision (command_id, decision, channel, agreed_at, evidence_ref, recorded_by, recorded_at)
+  VALUES (v_id, p_decision, p_channel, p_agreed_at, p_evidence_ref, v_account, p_now);
+  PERFORM business.audit_record('staff', v_account, 'order.late_payment_decided', 'order', p_order, NULL,
+                                pg_catalog.json_build_object('operation_id', v_id, 'decision', p_decision));
+  RETURN QUERY SELECT v_id, false;
+END;
+$$;
 
 -- As in 0031, and while an accepted 'other' offer is committed but its
 -- outcome is not secured, the appointment it replaces (K11).
