@@ -50,11 +50,12 @@ func TestWithDeliveryFailureClock(t *testing.T) {
 		`{"id":"b","starts_at":"2026-11-14T13:00:00Z","ends_at":"2026-11-14T14:00:00Z"},` +
 		`{"id":"c","starts_at":"2026-11-14T13:30:00Z","ends_at":"2026-11-14T14:30:00Z"}]`
 	for name, c := range map[string]struct {
-		open      string
-		wantTimes string
+		open        string
+		wantTimes   string
+		wantChoices string
 	}{
-		"open":   {"true", "c"},
-		"closed": {"false", ""},
+		"open":   {"true", "c", "redelivery,collection"},
+		"closed": {"false", "", ""},
 	} {
 		raw := `{"id":"o","delivery_failure":{"cause":"our_side","open":` + c.open +
 			`,"choices":["redelivery","collection"],"times":` + times + `,"chosen":null,"delivery_paid_minor":12000}}`
@@ -77,9 +78,16 @@ func TestWithDeliveryFailureClock(t *testing.T) {
 			ids = append(ids, t.ID)
 		}
 		if got.ID != "o" || b.Cause != "our_side" || strings.Join(ids, ",") != c.wantTimes || b.Choices == nil || b.Times == nil ||
-			(b.Open != (len(b.Choices) == 2)) || b.DeliveryPaidMinor != 12000 {
+			strings.Join(b.Choices, ",") != c.wantChoices || b.DeliveryPaidMinor != 12000 {
 			t.Errorf("%s: %+v", name, b)
 		}
+	}
+	// No opening time left today: redelivery alone.
+	late := &Store{Now: func() time.Time { return time.Date(2026, 11, 14, 13, 30, 0, 0, time.UTC) }}
+	raw := `{"delivery_failure":{"open":true,"choices":["redelivery","collection"],"times":` + times + `}}`
+	if got := string(late.withDeliveryFailureClock([]byte(raw))); got !=
+		`{"delivery_failure":{"choices":["redelivery"],"open":true,"times":[]}}` {
+		t.Errorf("no time left: %s", got)
 	}
 	for _, raw := range []string{`{"id":"o","delivery_failure":null}`, `{"id":"o"}`, `{"z":1,"a":2}`,
 		`{"id":"o","delivery_failure":{"cause":"nobody_available"}}`} {
@@ -88,7 +96,7 @@ func TestWithDeliveryFailureClock(t *testing.T) {
 		}
 	}
 	// Fulfilment's block (no choices or times) keeps its keys.
-	raw := `{"delivery_failure":{"cause":"our_side","open":true,"pending":false,"chosen":null}}`
+	raw = `{"delivery_failure":{"cause":"our_side","open":true,"pending":false,"chosen":null}}`
 	if got := string(s.withDeliveryFailureClock([]byte(raw))); got !=
 		`{"delivery_failure":{"cause":"our_side","chosen":null,"open":true,"pending":false}}` {
 		t.Errorf("fulfilment block: %s", got)

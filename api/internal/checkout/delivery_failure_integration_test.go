@@ -12,6 +12,7 @@ import (
 	"github.com/ChichaSasha/gk-cakes/api/internal/catalog"
 	"github.com/ChichaSasha/gk-cakes/api/internal/checkout"
 	"github.com/ChichaSasha/gk-cakes/api/internal/recovery"
+	"github.com/ChichaSasha/gk-cakes/api/internal/schedule"
 )
 
 // A failed GK delivery (GK-017 r02b state 19; Q17, Q18, Q10; K05, K06,
@@ -149,6 +150,14 @@ func TestDeliveryFailedRules(t *testing.T) {
 	h.staffGrants(t)
 	slots := h.slotsOn(t, "2026-11-14")
 
+	// An order never visibly confirmed is outside the fulfilment scope: 404,
+	// whichever the cause.
+	unpaid, _ := h.paidOrder(t, f, pol)
+	for _, cause := range []string{checkout.CauseOurSide, checkout.CauseNobodyAvailable} {
+		if _, err := h.deliveryFailed(chef, "u-"+cause, unpaid, 1, cause, ""); !errors.Is(err, catalog.ErrNotFound) {
+			t.Fatalf("unconfirmed order %s: %v", cause, err)
+		}
+	}
 	// Not a GK delivery, and a GK delivery not dispatched yet: refused.
 	coll, cd, _ := h.readyOrder(t, f, pol, "col")
 	cv, _ := h.failureView(t, coll, cd)
@@ -410,12 +419,21 @@ func TestDeliveryFailureRedelivery(t *testing.T) {
 	if _, err := h.chooseAfterFailure(order, d, "c3", v2.Version, checkout.FailureCollection, h.slotsOn(t, "2026-11-14")[3]); conflict(err) != "choice_not_open" {
 		t.Fatalf("choice after the choice: %v", err)
 	}
-	// Back to waiting for a dispatch: an ordinary cancellation preview again
-	// (50% of everything after the deadline, the delivery share pending the
-	// chef as K05 says): no 100% delivery floor survives the redelivery.
+	// Back to waiting for a dispatch: cancellable again. The delivery GK
+	// failed and has not performed yet comes back in full beside the cake's
+	// 50% after the deadline (K05), both automatically; the preview records
+	// nothing (the floor is recorded only by the cancellation itself).
 	p := h.preview(t, order, d)
-	if p.Rate != 50 || p.PaidMinor != 22000 || p.AmountMinor != 11000 || p.DeliveryPending != 6000 {
+	alloc := map[string]int64{}
+	for _, a := range p.Allocations {
+		alloc[a.CollectionID] = a.AmountMinor
+	}
+	if p.Rate != 50 || p.PaidMinor != 22000 || p.AmountMinor != 17000 || p.DeliveryPending != 0 || alloc[delivery] != 12000 ||
+		len(alloc) != 2 {
 		t.Fatalf("preview after the redelivery choice %+v", p)
+	}
+	if n := h.count(t, "SELECT count(*) FROM business.refund_floor WHERE collection_id = $1::uuid", delivery); n != 0 {
+		t.Fatalf("the preview recorded a floor (%d)", n)
 	}
 	// The chef sets the new time (another day, agreed with the customer);
 	// only then can it be dispatched again.
@@ -431,6 +449,14 @@ func TestDeliveryFailureRedelivery(t *testing.T) {
 	}
 	if flags := string(h.staffJSON(t, chef, order)["attention"]); strings.Contains(flags, "redelivery_time_needed") {
 		t.Fatalf("flags after the new time %s", flags)
+	}
+	// Nothing was sent on the 21st yet: no failure or no-show until the
+	// redelivery is dispatched.
+	h.now = time.Date(2026, 11, 21, 12, 45, 0, 0, time.UTC)
+	for _, cause := range []string{checkout.CauseNobodyAvailable, checkout.CauseOurSide} {
+		if _, err := h.deliveryFailed(chef, "before-"+cause, order, v3.Version, cause, ""); conflict(err) != "transition_not_allowed" {
+			t.Fatalf("%s before the redelivery is dispatched: %v", cause, err)
+		}
 	}
 	h.now = time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
 	if _, err := h.fulfil(fulfilment, "d2", order, checkout.ActionDispatch, v3.Version); err != nil {
@@ -748,7 +774,19 @@ func TestDeliveryFailureWithAStray(t *testing.T) {
 	}
 	order, d, cake, stray, delivery, version := strayed("sc")
 	other, od, ocake, ostray, odelivery, oversion := strayed("sn")
+	plain, pd, pcake, pstray, _, pversion := strayed("sp")
 	h.withRefunds()
+	h.withNotices(t)
+	noShowText := func(order string) string {
+		t.Helper()
+		for _, n := range h.notices(t, order) {
+			if n.Kind == "no_show" {
+				return h.request(t, n).Text
+			}
+		}
+		t.Fatalf("no no_show notice for %s", order)
+		return ""
+	}
 	h.now = failAt
 	if _, err := h.deliveryFailed(chef, "f1", order, version, checkout.CauseOurSide, ""); err != nil {
 		t.Fatal(err)
@@ -789,6 +827,33 @@ func TestDeliveryFailureWithAStray(t *testing.T) {
 		len(dl) != 0 || len(s) != 1 || s[0] != 12000 {
 		t.Fatalf("refunds cake %v delivery %v stray %v", c, dl, s)
 	}
+	// The notice: 50% of the cake, the matched delivery kept, and the stray
+	// returned in full on its own (never a "Refund requested: £170").
+	text := noShowText(other)
+	has(t, "nobody-available notice with a stray", text, "£50 of the £100 you paid for your cakes.",
+		"Your delivery payment of £140 is not refunded, because the delivery was attempted.", "£50.",
+		"We are also returning in full a delivery payment of £120 that could not be used for your order, so £170 ")
+	hasNot(t, "nobody-available notice with a stray", text, "Refund requested: £170", "Refund: £170")
+
+	// The plain no-show (0032) states the stray the same way: 50% of the
+	// £240 paid (cake £50 sent, the delivery's £70 share pending the chef),
+	// plus the stray in full.
+	h.now = failAt
+	if _, err := h.fulfil(chef, "ns", plain, checkout.ActionNoShow, pversion); err != nil {
+		t.Fatal(err)
+	}
+	h.due(t)
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("drain:\n%s", reasons(errs))
+	}
+	if c, s := refundAmounts(t, h, pcake), refundAmounts(t, h, pstray); len(c) != 1 || c[0] != 5000 || len(s) != 1 || s[0] != 12000 {
+		t.Fatalf("plain no-show refunds cake %v stray %v", c, s)
+	}
+	text = noShowText(plain)
+	has(t, "plain no-show notice with a stray", text, "£120 of the £240 you paid.", "£50.",
+		"We are also returning in full a delivery payment of £120 that could not be used for your order, so £170 ")
+	hasNot(t, "plain no-show notice with a stray", text, "Refund requested: £170", "Refund: £170", "not refunded")
+	_ = pd
 }
 
 // #60 Q5 is before the dispatch: an order where the chef recorded "GK can't
@@ -853,5 +918,255 @@ func TestCancellationAfterDispatch(t *testing.T) {
 	if _, err := h.co.ChefCancel(h.ctx, chef, "chef-cancel", order, checkout.ChefCancelInput{ExpectedVersion: version + 2,
 		Reason: "Delivery could not be completed"}); err != nil {
 		t.Fatalf("chef cancellation: %v", err)
+	}
+}
+
+// Finding 2 of the PR #62 review: when no opening time is left that day
+// (failure at 14:30, the last start 14:00), only redelivery is offered (at
+// the API clock) and a collection request is refused.
+func TestDeliveryFailureLateInTheDay(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	h.staffGrants(t)
+	slots := h.slotsOn(t, "2026-11-14")
+	order, d, _, _, version := h.dispatchedOrder(t, f, pol, "lt")
+	h.now = at("14:30")
+	if _, err := h.deliveryFailed(chef, "f1", order, version, checkout.CauseOurSide, ""); err != nil {
+		t.Fatal(err)
+	}
+	v, raw := h.failureView(t, order, d)
+	if b := v.DeliveryFailure; !b.Open || strings.Join(b.Choices, ",") != checkout.FailureRedelivery || len(b.Times) != 0 {
+		t.Fatalf("no time left today: %s", raw)
+	}
+	if _, err := h.chooseAfterFailure(order, d, "c1", v.Version, checkout.FailureCollection, slots[3]); conflict(err) != "slot_unavailable" {
+		t.Fatalf("collection with no time left: %v", err)
+	}
+	if _, err := h.chooseAfterFailure(order, d, "c2", v.Version, checkout.FailureRedelivery, ""); err != nil {
+		t.Fatalf("redelivery: %v", err)
+	}
+}
+
+// Finding 1 of the PR #62 review: after a dispatch and a delivery exception
+// the chef cannot reschedule without recording the failure's cause (K06,
+// Q17/Q18: the customer's choice or the no-show decide the money). A
+// reschedule recorded before 0037 (0032 allowed one after an exception) is
+// simulated by hiding the exception for the request: it un-dispatches the
+// order, so the cancellation right returns and nothing can be recorded as a
+// failed delivery until the new dispatch.
+func TestDeliveryRescheduleAfterDispatch(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	h.staffGrants(t)
+	order, d, _, _, version := h.dispatchedOrder(t, f, pol, "rs")
+	if _, err := h.fulfil(fulfilment, "e1", order, checkout.ActionDeliveryException, version, "Traffic"); err != nil {
+		t.Fatal(err)
+	}
+	version++
+	next := h.slotsOn(t, "2026-11-21")
+	h.now = failAt
+	in := checkout.AppointmentInput{ExpectedVersion: version, TargetDate: "2026-11-21", TargetSlotID: next[0],
+		CustomerAgreement: &checkout.Agreement{Channel: "phone", AgreedAt: "2026-11-14T12:40:00Z", EvidenceRef: "call"},
+		FeasibilityNote:   "Another day"}
+	if _, err := h.co.ChangeAppointment(h.ctx, chef, "a0", order, in); conflict(err) != "move_not_eligible" {
+		t.Fatalf("reschedule while the delivery is on its way: %v", err)
+	}
+	if _, err := h.co.PreviewCancellation(h.ctx, order, "", d); conflict(err) != "cancellation_not_eligible" {
+		t.Fatalf("cancellation while on its way: %v", err)
+	}
+	// A pre-0037 reschedule (owner-level simulation of the old rule).
+	h.owner(t, "UPDATE business.orders SET fulfillment_state = 'awaiting_handover' WHERE id = $1::uuid", order)
+	h.chefAgreesTime(t, order, "a1", version, "2026-11-21", next[0])
+	h.owner(t, "UPDATE business.orders SET fulfillment_state = 'exception' WHERE id = $1::uuid", order)
+	v, raw := h.failureView(t, order, d)
+	if v.Date != "2026-11-21" || state2(v) != "exception" {
+		t.Fatalf("rescheduled: %s", raw)
+	}
+	// Not dispatched any more: the customer may cancel again (ordinary
+	// rates: no failure was recorded), and on the 21st nothing can be
+	// recorded as a failed delivery before a new dispatch.
+	if p := h.preview(t, order, d); p.Rate != 50 || p.AmountMinor != 11000 {
+		t.Fatalf("preview after the reschedule %+v", p)
+	}
+	h.now = time.Date(2026, 11, 21, 12, 45, 0, 0, time.UTC)
+	for _, cause := range []string{checkout.CauseNobodyAvailable, checkout.CauseOurSide} {
+		if _, err := h.deliveryFailed(chef, "f-"+cause, order, v.Version, cause, ""); conflict(err) != "transition_not_allowed" {
+			t.Fatalf("%s before the new dispatch: %v", cause, err)
+		}
+	}
+	if _, err := h.fulfil(chef, "ns", order, checkout.ActionNoShow, v.Version); conflict(err) != "transition_not_allowed" {
+		t.Fatalf("no-show before the new dispatch: %v", err)
+	}
+	h.now = time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
+	if _, err := h.fulfil(fulfilment, "d2", order, checkout.ActionDispatch, v.Version); err != nil {
+		t.Fatalf("new dispatch: %v", err)
+	}
+	if _, err := h.co.PreviewCancellation(h.ctx, order, "", d); conflict(err) != "cancellation_not_eligible" {
+		t.Fatalf("cancellation after the new dispatch: %v", err)
+	}
+	h.now = time.Date(2026, 11, 21, 12, 45, 0, 0, time.UTC)
+	if _, err := h.deliveryFailed(chef, "n1", order, v.Version+1, checkout.CauseNobodyAvailable, ""); err != nil {
+		t.Fatalf("nobody available after the new dispatch: %v", err)
+	}
+}
+
+// Finding 4 of the PR #62 review: a cancellation after an our-side failure
+// and before the redelivery is dispatched returns the paid delivery in full
+// (K05 GK-caused unperformed delivery), beside the cake's own rate: after
+// the deadline cake 50% (5000p) + delivery 100% (12000p), both automatic;
+// the floor is recorded by the cancellation; the notice explains the split.
+func TestCancellationAfterRedeliveryChoice(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	h.staffGrants(t)
+	order, d, cake, delivery, version := h.dispatchedOrder(t, f, pol, "cr")
+	h.withRefunds()
+	h.withNotices(t)
+	h.now = failAt
+	if _, err := h.deliveryFailed(chef, "f1", order, version, checkout.CauseOurSide, ""); err != nil {
+		t.Fatal(err)
+	}
+	v, _ := h.failureView(t, order, d)
+	if _, err := h.chooseAfterFailure(order, d, "c1", v.Version, checkout.FailureRedelivery, ""); err != nil {
+		t.Fatal(err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("drain:\n%s", reasons(errs))
+	}
+	v, _ = h.failureView(t, order, d)
+	h.chefAgreesTime(t, order, "a1", v.Version, "2026-11-21", h.slotsOn(t, "2026-11-21")[1])
+	v, _ = h.failureView(t, order, d)
+	p := h.preview(t, order, d)
+	if p.Rate != 50 || p.AmountMinor != 17000 || p.DeliveryPending != 0 {
+		t.Fatalf("preview %+v", p)
+	}
+	if _, err := h.cancel(order, d, "cancel", v.Version, p); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	h.due(t)
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("drain:\n%s", reasons(errs))
+	}
+	c, raw := h.cancelView(t, order, d)
+	if c.Lifecycle != "cancelled" || c.Cancellation == nil || c.Cancellation.AmountMinor == nil || *c.Cancellation.AmountMinor != 17000 {
+		t.Fatalf("cancelled %s", raw)
+	}
+	if ck, dl := refundAmounts(t, h, cake), refundAmounts(t, h, delivery); len(ck) != 1 || ck[0] != 5000 || len(dl) != 1 || dl[0] != 12000 {
+		t.Fatalf("refunds cake %v delivery %v", ck, dl)
+	}
+	var by string
+	if err := h.admin.QueryRow(h.ctx, `SELECT a.provider_subject::text FROM business.refund_floor f
+		JOIN business.account a ON a.id = f.recorded_by WHERE f.collection_id = $1::uuid AND f.floor_minor = 12000`, delivery).Scan(&by); err != nil ||
+		by != chef {
+		t.Fatalf("floor by %s: %v", by, err)
+	}
+	var text string
+	for _, n := range h.notices(t, order) {
+		if n.Kind == "cancelled" {
+			text = h.request(t, n).Text
+		}
+	}
+	has(t, "cancelled notice", text, "Refund requested: £170: 50% of the £100 you paid for your cakes",
+		"your delivery payment of £120 in full, because we could not deliver your order.")
+}
+
+// Finding 5 of the PR #62 review: the choice's commit refuses when the
+// target time is no longer published (a new schedule version: the refused
+// state shows, the choice reopens, the version moves by one, no money
+// moves) or the order changed under it (a concurrent writer, simulated at
+// owner level: through the API every order change bumps the version and is
+// refused while the command is unresolved; not_open is likewise
+// unreachable without such a change). A commit held back by a restore
+// freeze until after the target's start is decided by the persisted
+// receipt instant and succeeds.
+func TestDeliveryFailureChoiceRefusedAndDelayed(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	h.staffGrants(t)
+	h.withRefunds()
+	a, ad, _, adelivery, av := h.dispatchedOrder(t, f, pol, "ra")
+	b, bd, _, bdelivery, bv := h.dispatchedOrder(t, f, pol, "rb")
+	h.now = failAt
+	if _, err := h.deliveryFailed(chef, "fa", a, av, checkout.CauseOurSide, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.deliveryFailed(chef, "fb", b, bv, checkout.CauseOurSide, ""); err != nil {
+		t.Fatal(err)
+	}
+	slots := h.slotsOn(t, "2026-11-14")
+	h.now = at("12:50")
+	v, _ := h.failureView(t, a, ad)
+	op, err := h.chooseAfterFailure(a, ad, "c1", v.Version, checkout.FailureCollection, slots[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	must[catalog.Result](t)(h.sch.PublishVersion(h.ctx, chef, "sched2", schedule.VersionInput{ExpectedRevision: ptr(1),
+		StandardLimit: ptr(7), BookableUntil: "2027-01-31", Weekdays: []schedule.WeekdayInput{
+			{Weekday: "saturday", Opens: "12:30", Closes: "15:00", Starts: []string{"12:30", "13:00", "13:30", "14:00"}}}}))
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("drain:\n%s", reasons(errs))
+	}
+	v2, raw := h.failureView(t, a, ad)
+	blk := v2.DeliveryFailure
+	if v2.FulfillmentMode != "gk_delivery" || v2.Slot.ID != f.slot || v2.Version != v.Version+1 || blk.Chosen == nil ||
+		blk.Chosen.State != "refused" || blk.Chosen.RefusalReason == nil || *blk.Chosen.RefusalReason != "slot_unavailable" ||
+		!blk.Open || len(blk.Times) != 3 || timeIDs(blk.Times) == strings.Join(slots[1:], ",") || v2.Refund != nil ||
+		blk.Chosen.DeliveryRefundMinor != nil {
+		t.Fatalf("refused: %s", raw)
+	}
+	if n := h.count(t, "SELECT count(*) FROM business.refund_operation WHERE collection_id = $1::uuid", adelivery); n != 0 ||
+		h.count(t, "SELECT count(*) FROM business.refund_floor WHERE order_id = $1::uuid", a) != 0 ||
+		h.count(t, "SELECT count(*) FROM business.refund_goal WHERE order_id = $1::uuid", a) != 0 {
+		t.Fatalf("money moved for a refused choice (%d)", n)
+	}
+	if again, err := h.chooseAfterFailure(a, ad, "c1", v.Version, checkout.FailureCollection, slots[2]); err != nil || !again.Replayed || again.ID != op.ID {
+		t.Fatalf("replay of the refused choice: %+v %v", again, err)
+	}
+	if audits := h.auditDetails(t, "order.delivery_failure_choice_refused"); len(audits) != 1 || !strings.Contains(audits[0], "slot_unavailable") {
+		t.Fatalf("audit %v", audits)
+	}
+	// The order changes under a pending choice: order_changed.
+	slots = h.slotsOn(t, "2026-11-14")
+	op2, err := h.chooseAfterFailure(a, ad, "c2", v2.Version, checkout.FailureCollection, slots[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.owner(t, "UPDATE business.orders SET version = version + 1 WHERE id = $1::uuid", a)
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("drain:\n%s", reasons(errs))
+	}
+	if v3, raw := h.failureView(t, a, ad); v3.DeliveryFailure.Chosen.State != "refused" || *v3.DeliveryFailure.Chosen.RefusalReason != "order_changed" ||
+		v3.Version != v2.Version+2 || !v3.DeliveryFailure.Open || v3.FulfillmentMode != "gk_delivery" || v3.Refund != nil {
+		t.Fatalf("order changed (%s): %s", op2.ID, raw)
+	}
+
+	// B: chosen at 13:45 for 14:00; a restore freeze holds the commit until
+	// 14:10, after the start: decided by the receipt, it is chosen.
+	h.now = at("13:45")
+	vb, _ := h.failureView(t, b, bd)
+	opb, err := h.chooseAfterFailure(b, bd, "c1", vb.Version, checkout.FailureCollection, slots[3])
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.owner(t, "SELECT business.recovery_set_freeze(true, 'restore drill')")
+	h.now = at("14:10")
+	if err := h.moveJob(t, opb.ID); err == nil {
+		t.Fatal("committed while frozen")
+	}
+	h.owner(t, "SELECT business.recovery_set_freeze(false, NULL)")
+	h.due(t)
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("drain:\n%s", reasons(errs))
+	}
+	vb2, raw := h.failureView(t, b, bd)
+	if vb2.FulfillmentMode != "collection" || vb2.Slot.ID != slots[3] || !vb2.Slot.StartsAt.Equal(at("14:00")) ||
+		vb2.DeliveryFailure.Chosen.State != "chosen" || vb2.Refund == nil || vb2.Refund.TargetMinor != 12000 {
+		t.Fatalf("delayed commit: %s", raw)
+	}
+	if got := refundAmounts(t, h, bdelivery); len(got) != 1 || got[0] != 12000 {
+		t.Fatalf("delivery refunds %v", got)
 	}
 }

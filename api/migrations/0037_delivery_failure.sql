@@ -19,8 +19,9 @@
 -- recording a failure opens a money-relevant outcome, K00 "fulfillment can
 -- prepare/ready/dispatch/handover only"; fulfilment records what it saw as a
 -- delivery_exception). Only while the GK delivery is on its way: the order
--- is ready, fulfilment out_for_delivery or exception, and its latest
--- dispatch has no our-side failure recorded yet (business.delivery_on_its_way).
+-- is ready, fulfilment out_for_delivery or exception, its latest dispatch
+-- has no our-side failure recorded yet and no chef reschedule followed it
+-- (business.delivery_on_its_way); outside the fulfilment scope 404.
 --   our_side (GK caused it): a plain versioned command (order version + 1,
 --   409 stale_version; the same key replays, also during a restore freeze;
 --   GK503 otherwise while frozen; 409 state_conflict while a K11 command is
@@ -45,7 +46,8 @@
 --   50% of the cake (the paid aggregate without the kept delivery; the kept
 --   delivery stays out of every allocation, business.refund_shares), so
 --   nothing of the delivery is refunded or left pending for the chef. The
---   no_show notice says the delivery payment is kept.
+--   no_show notice says the delivery payment is kept; every no-show notice
+--   states a stray delivery payment returned with it (unmatched_minor).
 --
 -- Customer: the choice after an our-side failure
 -- (business.order_delivery_failure_choice_request, API). The owner, or a
@@ -59,7 +61,11 @@
 -- version the customer saw (409 stale_version). No deadline (as Q8: the case
 -- stays open with the chef; attention flag delivery_failure_open).
 --   redelivery: the order stays a GK delivery and its time and money do not
---   change; nothing more to pay and nothing refunded (no floor exists). The
+--   change; nothing more to pay and nothing refunded. A cancellation before
+--   the redelivery is dispatched records the delivery's 100% floor and
+--   returns it in full (business.delivery_failure_floor_record, from the
+--   terminal return; the preview and request compute it in a rolled-back
+--   block). The
 --   chef then agrees the new time through the existing appointment change
 --   (0031); a dispatch is accepted again once such a change, requested after
 --   the choice, is secured (business.delivery_failure_refusal; flag
@@ -86,7 +92,11 @@
 -- dispatched (out for delivery, an exception after the dispatch, or an open
 -- or pending our-side failure choice), until a secured redelivery choice
 -- returns the order to a not-yet-dispatched state (business.delivery_dispatched).
--- The chef's 100% cancellation stays available.
+-- The chef's 100% cancellation stays available. A secured chef reschedule
+-- after the latest dispatch also un-dispatches the order
+-- (business.order_rescheduled_since_dispatch); 0037 refuses such a
+-- reschedule while the delivery is on its way (the chef records the
+-- failure's cause first), so this covers one made before 0037.
 --
 -- Read models. order_view adds delivery_failure (the latest failure; NULL
 -- when none): {cause, at, state, open, pending, choices, times, delivery_paid_minor
@@ -281,9 +291,28 @@ AS $$
                    FROM (SELECT business.delivery_failure_current(p_o.id) AS f) x WHERE x.f IS NOT NULL), false);
 $$;
 
+-- Owner-internal: whether a secured chef appointment change (0031, outcome
+-- moved) was requested after the order's latest dispatch: the order then
+-- waits for a new dispatch (0037 refuses such a change while a delivery is
+-- on its way; this also covers one made before 0037).
+CREATE FUNCTION business.order_rescheduled_since_dispatch(p_order uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT EXISTS (SELECT 1 FROM business.fulfillment_event e
+                 JOIN business.pickup_change p ON p.order_id = e.order_id AND p.kind = 'appointment_change'
+                                              AND p.created_at > e.created_at
+                 JOIN business.recovery_operation r ON r.id = p.command_id
+                 WHERE e.id = business.order_last_dispatch(p_order)
+                   AND r.state = 'secured' AND r.outcome ->> 'status' = 'moved');
+$$;
+
 -- Owner-internal: whether order p_o's GK delivery is on its way: ready,
--- dispatched (out for delivery, or an exception after the dispatch) and no
--- our-side failure recorded for that dispatch.
+-- dispatched (out for delivery, or an exception after the dispatch), no
+-- our-side failure recorded for that dispatch and not rescheduled since.
 CREATE FUNCTION business.delivery_on_its_way(p_o business.orders)
 RETURNS boolean
 LANGUAGE sql
@@ -293,12 +322,13 @@ SET search_path = pg_catalog, pg_temp
 AS $$
   SELECT p_o.fulfillment_mode = 'gk_delivery' AND p_o.lifecycle = 'ready'
      AND business.order_fulfillment_state(p_o) IN ('out_for_delivery', 'exception')
-     AND business.order_last_dispatch(p_o.id) IS NOT NULL AND business.delivery_failure_current(p_o.id) IS NULL;
+     AND business.order_last_dispatch(p_o.id) IS NOT NULL AND business.delivery_failure_current(p_o.id) IS NULL
+     AND NOT business.order_rescheduled_since_dispatch(p_o.id);
 $$;
 
 -- Owner-internal: whether order p_o's GK delivery counts as dispatched for a
--- customer cancellation: it was dispatched and no secured redelivery choice
--- returned it to waiting for a new dispatch.
+-- customer cancellation: it was dispatched, not rescheduled since, and no
+-- secured redelivery choice returned it to waiting for a new dispatch.
 CREATE FUNCTION business.delivery_dispatched(p_o business.orders)
 RETURNS boolean
 LANGUAGE sql
@@ -307,7 +337,50 @@ SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
 AS $$
   SELECT p_o.fulfillment_mode = 'gk_delivery' AND business.order_last_dispatch(p_o.id) IS NOT NULL
+     AND NOT business.order_rescheduled_since_dispatch(p_o.id)
      AND business.delivery_failure_chosen(business.delivery_failure_current(p_o.id), true) IS DISTINCT FROM 'redelivery';
+$$;
+
+-- Owner-internal: once the latest dispatch failed on our side and before a
+-- redelivery is dispatched, record the paid delivery's 100% floor
+-- (business.refund_floor, reason gk_delivery_failure, recorded by the chef
+-- who recorded the failure; K05 "GK-caused unperformed delivery raises its
+-- target to 100% delivery"), once. Called by a cancellation's terminal
+-- return (the order is cancelled, so no redelivery can follow) and, rolled
+-- back, by the cancellation preview and request to compute the same amount.
+-- The caller holds the order and its collections. p_actor_kind NULL: no
+-- audit (inside a rolled-back computation). Returns the floor recorded now,
+-- or NULL.
+CREATE FUNCTION business.delivery_failure_floor_record(p_order uuid, p_actor_kind text, p_account uuid)
+RETURNS bigint
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  f business.delivery_failure%ROWTYPE;
+  v_quote uuid;
+BEGIN
+  SELECT * INTO f FROM business.delivery_failure x WHERE x.id = business.delivery_failure_current(p_order);
+  IF f.id IS NULL OR f.delivery_collection_id IS NULL
+     OR NOT EXISTS (SELECT 1 FROM business.orders o WHERE o.id = p_order AND o.fulfillment_mode = 'gk_delivery')
+     OR EXISTS (SELECT 1 FROM business.refund_floor rf WHERE rf.collection_id = f.delivery_collection_id) THEN
+    RETURN NULL;
+  END IF;
+  v_quote := business.delivery_current_quote(p_order);
+  IF v_quote IS NULL OR business.delivery_paid_collection(v_quote) IS DISTINCT FROM f.delivery_collection_id THEN
+    RETURN NULL;
+  END IF;
+  INSERT INTO business.refund_floor (id, order_id, collection_id, floor_minor, reason, recorded_by)
+  VALUES (pg_catalog.gen_random_uuid(), p_order, f.delivery_collection_id, f.delivery_minor, 'gk_delivery_failure',
+          f.recorded_by);
+  IF p_actor_kind IS NOT NULL THEN
+    PERFORM business.audit_record(p_actor_kind, p_account, 'refund.floor_recorded', 'order', p_order, NULL,
+                                  pg_catalog.json_build_object('collection_id', f.delivery_collection_id,
+                                                               'floor_minor', f.delivery_minor, 'failure_id', f.id));
+  END IF;
+  RETURN f.delivery_minor;
+END;
 $$;
 
 -- Owner-internal: whether the chef set the new time after the customer
@@ -695,7 +768,7 @@ BEGIN
   END IF;
   -- Lock order (K00): the order, its collections by ID.
   SELECT * INTO v_o FROM business.orders o WHERE o.id = p_order FOR UPDATE;
-  IF NOT FOUND THEN
+  IF NOT FOUND OR NOT business.order_fulfillment_scope(p_order) THEN
     RAISE EXCEPTION 'order not found' USING ERRCODE = 'GK404';
   END IF;
   PERFORM 1 FROM business.payment_collection pc WHERE pc.order_id = p_order ORDER BY pc.id FOR UPDATE;
@@ -976,7 +1049,9 @@ $$;
 -- of the command): the paid delivery is kept (business.delivery_kept, unless
 -- the chef recorded a floor on it) and the 50% goal is of the cake only
 -- (the paid aggregate without the kept delivery); the outcome states the
--- cause and the delivery kept. Every other handover and no-show is as before.
+-- cause and the delivery kept. Every no-show's outcome also states a stray
+-- delivery payment returned with it (unmatched_minor, only when there is
+-- one). Every other handover and no-show is as before.
 CREATE OR REPLACE FUNCTION business.order_handover_commit(v business.order_command)
 RETURNS text
 LANGUAGE plpgsql
@@ -993,6 +1068,7 @@ DECLARE
   v_after bigint;
   f business.delivery_failure%ROWTYPE;
   v_kept bigint := 0;
+  v_stray bigint := 0;
 BEGIN
   SELECT * INTO v_o FROM business.orders o WHERE o.id = v.order_id;
   IF v_o.version <> v.prior_version OR v_o.recovery_state <> 'secured' THEN
@@ -1034,6 +1110,9 @@ BEGIN
   v_target := business.cancellation_amount(v_paid, 50::smallint);
   SELECT coalesce(sum(b.succeeded_minor + b.reserved_minor), 0) INTO v_before
   FROM business.payment_collection pc CROSS JOIN LATERAL business.refund_balance(pc.id) b WHERE pc.order_id = v.order_id;
+  -- A stray delivery payment (0035) not returned yet: the goal returns it in
+  -- full beside the 50%, so the outcome (and the notice) states it.
+  v_stray := CASE WHEN v_target > 0 THEN business.delivery_unmatched_minor(v.order_id) ELSE 0 END;
   IF v_target > 0 THEN
     PERFORM business.refund_goal_apply(v.order_id, 'no_show', 'chef', 50::smallint, v_paid, v_target, 'staff',
                                        v.actor_account_id);
@@ -1048,16 +1127,18 @@ BEGIN
                                                                'cause', f.cause, 'delivery_kept_minor', v_kept));
     RETURN pg_catalog.format(
       '{"status":"no_show","evidence":{"order_version":%s,"rate":50,"paid_minor":%s,"refund_target_minor":%s,'
-      '"returned_before_minor":%s,"new_refund_minor":%s,"cause":"%s","delivery_kept_minor":%s}}',
-      v_o.version + 1, v_paid, v_target, v_before, v_after - v_before, f.cause, v_kept);
+      '"returned_before_minor":%s,"new_refund_minor":%s,"cause":"%s","delivery_kept_minor":%s%s}}',
+      v_o.version + 1, v_paid, v_target, v_before, v_after - v_before, f.cause, v_kept,
+      CASE WHEN v_stray > 0 THEN ',"unmatched_minor":' || v_stray::text ELSE '' END);
   END IF;
   PERFORM business.audit_record('staff', v.actor_account_id, 'order.no_show', 'order', v.order_id, NULL,
                                 pg_catalog.json_build_object('operation_id', v.id, 'rate', 50, 'refund_target_minor', v_target,
                                                              'new_refund_minor', v_after - v_before));
   RETURN pg_catalog.format(
     '{"status":"no_show","evidence":{"order_version":%s,"rate":50,"paid_minor":%s,"refund_target_minor":%s,'
-    '"returned_before_minor":%s,"new_refund_minor":%s}}',
-    v_o.version + 1, v_paid, v_target, v_before, v_after - v_before);
+    '"returned_before_minor":%s,"new_refund_minor":%s%s}}',
+    v_o.version + 1, v_paid, v_target, v_before, v_after - v_before,
+    CASE WHEN v_stray > 0 THEN ',"unmatched_minor":' || v_stray::text ELSE '' END);
 END;
 $$;
 
@@ -1102,9 +1183,10 @@ AS $$
     ELSE 'transition_not_allowed' END
 $$;
 
--- As in 0032, and not while the customer's choice after an our-side
--- delivery failure is open (the chef agrees a redelivery time after the
--- customer chose it). STABLE now: it reads the failure.
+-- As in 0032, and not while a GK delivery is on its way (an exception after
+-- a dispatch: the chef records the failure's cause first, then a redelivery
+-- time after the customer chose it; K06, Q17/Q18) or the customer's choice
+-- after an our-side failure is open. STABLE now: it reads the failure.
 CREATE OR REPLACE FUNCTION business.appointment_change_eligible(p_order business.orders)
 RETURNS boolean
 LANGUAGE sql
@@ -1115,6 +1197,7 @@ AS $$
   SELECT p_order.lifecycle IN ('confirmed', 'in_production', 'ready')
          AND coalesce(p_order.fulfillment_state, 'awaiting_handover') IN ('awaiting_handover', 'exception')
          AND NOT business.delivery_failure_open(p_order)
+         AND NOT business.delivery_on_its_way(p_order)
 $$;
 
 -- As in 0036, plus a choice after a delivery failure that is not secured.
@@ -1725,7 +1808,10 @@ END;
 $$;
 -- As in 0036, plus the no_show notice of a nobody-available GK delivery
 -- (0037, Q18): the 50% is of the cake price and the delivery payment is kept
--- (wording for Creator review). Every other notice renders exactly as before.
+-- (wording for Creator review); and every no-show notice whose outcome
+-- states a stray delivery payment returned with it (unmatched_minor) says so
+-- with the cancelled notice's sentence, its refund line stating the 50% part.
+-- Every other notice renders exactly as before.
 CREATE OR REPLACE FUNCTION business.order_notice_render(p_kind text, p_o business.orders, p_facts json, p_origin text,
                                              OUT subject text, OUT body_text text, OUT body_html text)
 LANGUAGE plpgsql
@@ -1753,6 +1839,7 @@ DECLARE
   v_to text;
   v_before bigint;
   v_new bigint;
+  v_stray bigint;
   v_style constant text := 'margin:0 0 16px';
   v_link_style constant text := 'color:#5b1a2e';
 BEGIN
@@ -1870,6 +1957,10 @@ BEGIN
     v_target := coalesce((p_facts ->> 'refund_target_minor')::bigint, 0);
     v_before := coalesce((p_facts ->> 'returned_before_minor')::bigint, 0);
     v_new := coalesce((p_facts ->> 'new_refund_minor')::bigint, 0);
+    -- A stray delivery payment returned with the no-show (0037): stated on
+    -- its own below; the refund line is the 50% part.
+    v_stray := coalesce((p_facts ->> 'unmatched_minor')::bigint, 0);
+    v_new := GREATEST(0, v_new - v_stray);
     v_returned := coalesce((p_facts ->> 'refund_returned')::boolean, false);
     v_text := v_text || CASE
       -- Nobody available for a GK delivery (0037, Q18): paid_minor is what
@@ -1897,6 +1988,12 @@ BEGIN
       v_text := v_text || ('The ' || business.notice_money(v_before) || ' already refunded covers this, so nothing more is due.');
     ELSIF v_target > v_before THEN
       v_text := v_text || ('The chef will contact you about the remaining ' || business.notice_money(v_target - v_before) || '.');
+    END IF;
+    IF v_stray > 0 THEN
+      v_text := v_text || ('We are also returning in full a delivery payment of ' || business.notice_money(v_stray)
+                           || ' that could not be used for your order, so ' || business.notice_money(v_new + v_stray)
+                           || CASE WHEN v_returned THEN ' has been returned to you in total.'
+                                   ELSE ' is being returned to you in total.' END);
     END IF;
     v_text := v_text || ('If you think this is a mistake, please reply to this email.' || E'\nOrder reference: ' || p_o.id::text);
   ELSIF p_kind IN ('pickup_moved', 'appointment_changed') THEN
@@ -1999,7 +2096,10 @@ AS $$
 $$;
 -- As in 0036, and refused (409 cancellation_not_eligible) once a GK delivery
 -- is dispatched, until a secured redelivery choice (business.delivery_dispatched;
--- K05/K06, Q18). The chef's cancellation is unchanged.
+-- K05/K06, Q18). The chef's cancellation is unchanged. The amount counts the
+-- paid delivery's 100% floor after an our-side failure whose redelivery is
+-- not dispatched (business.delivery_failure_floor_record, recorded inside a
+-- block that is rolled back), as the cancellation will record it.
 CREATE OR REPLACE FUNCTION business.order_cancel_request(
   p_owner uuid, p_guest_digest bytea, p_order uuid, p_key text, p_body_sha256 text, p_expected_version integer,
   p_preview_id uuid, p_preview_hash text, p_env text, p_now timestamptz)
@@ -2057,9 +2157,15 @@ BEGIN
   -- At the persisted receipt instant (K05): a boundary crossed since the
   -- preview, an expired preview or another amount needs a new preview.
   v_rate := business.cancellation_rate(v_o.full_refund_deadline_at, p_now, false);
-  v_paid := business.order_paid_minor(p_order);
-  v_amount := business.cancellation_amount(v_paid, v_rate);
-  v_amount := v_amount + CASE WHEN v_amount > 0 THEN business.cancellation_floor_topup(p_order, v_amount) ELSE 0 END;
+  BEGIN
+    PERFORM business.delivery_failure_floor_record(p_order, NULL, NULL);
+    v_paid := business.order_paid_minor(p_order);
+    v_amount := business.cancellation_amount(v_paid, v_rate);
+    v_amount := v_amount + CASE WHEN v_amount > 0 THEN business.cancellation_floor_topup(p_order, v_amount) ELSE 0 END;
+    RAISE EXCEPTION 'computed' USING ERRCODE = 'GKR01';
+  EXCEPTION WHEN SQLSTATE 'GKR01' THEN
+    NULL;
+  END;
   IF p_now >= v_p.expires_at OR v_p.order_version <> v_o.version OR v_p.rate <> v_rate
      OR v_p.amount_minor <> v_amount THEN
     RAISE EXCEPTION 'preview_stale' USING ERRCODE = 'GK409';
@@ -2072,6 +2178,10 @@ END;
 $$;
 -- As in 0036, and refused (409 cancellation_not_eligible) once a GK delivery
 -- is dispatched, until a secured redelivery choice (business.delivery_dispatched).
+-- After an our-side failure whose redelivery is not dispatched, the amount and
+-- allocations count the paid delivery's 100% floor that the cancellation will
+-- record (computed with business.delivery_failure_floor_record inside a block
+-- that is rolled back, so nothing is recorded by a preview).
 CREATE OR REPLACE FUNCTION business.order_cancellation_preview(p_owner uuid, p_guest_digest bytea, p_order uuid, p_now timestamptz)
 RETURNS json
 LANGUAGE plpgsql
@@ -2113,18 +2223,24 @@ BEGIN
     RAISE EXCEPTION 'state_conflict' USING ERRCODE = 'GK409';
   END IF;
   v_rate := business.cancellation_rate(v_o.full_refund_deadline_at, p_now, false);
-  v_paid := business.order_paid_minor(p_order);
-  v_amount := business.cancellation_amount(v_paid, v_rate);
-  -- Allocated as the goal would be (combined with any recorded floor).
-  v_alloc := business.cancellation_allocations(p_order, business.refund_goal_compute(p_order, v_amount));
-  v_pending := business.refund_delivery_pending(p_order, business.refund_goal_compute(p_order, v_amount));
-  -- A stray delivery payment (0035) returned in full with this cancellation,
-  -- beside the policy amount (it is in the allocations); none without a goal.
-  v_stray := CASE WHEN v_amount > 0 THEN business.delivery_unmatched_minor(p_order) ELSE 0 END;
-  -- What the cancellation returns: the policy amount plus any recorded
-  -- delivery floor beyond its policy share (the goal is computed from the
-  -- policy amount above, which the floor raises).
-  v_amount := v_amount + CASE WHEN v_amount > 0 THEN business.cancellation_floor_topup(p_order, v_amount) ELSE 0 END;
+  BEGIN
+    PERFORM business.delivery_failure_floor_record(p_order, NULL, NULL);
+    v_paid := business.order_paid_minor(p_order);
+    v_amount := business.cancellation_amount(v_paid, v_rate);
+    -- Allocated as the goal would be (combined with any recorded floor).
+    v_alloc := business.cancellation_allocations(p_order, business.refund_goal_compute(p_order, v_amount));
+    v_pending := business.refund_delivery_pending(p_order, business.refund_goal_compute(p_order, v_amount));
+    -- A stray delivery payment (0035) returned in full with this cancellation,
+    -- beside the policy amount (it is in the allocations); none without a goal.
+    v_stray := CASE WHEN v_amount > 0 THEN business.delivery_unmatched_minor(p_order) ELSE 0 END;
+    -- What the cancellation returns: the policy amount plus any recorded
+    -- delivery floor beyond its policy share (the goal is computed from the
+    -- policy amount above, which the floor raises).
+    v_amount := v_amount + CASE WHEN v_amount > 0 THEN business.cancellation_floor_topup(p_order, v_amount) ELSE 0 END;
+    RAISE EXCEPTION 'computed' USING ERRCODE = 'GKR01';
+  EXCEPTION WHEN SQLSTATE 'GKR01' THEN
+    NULL;
+  END;
   -- An unexpired identical preview of this actor and version is reused.
   SELECT * INTO v_p FROM business.cancellation_preview p
   WHERE p.order_id = p_order AND p.order_version = v_o.version
@@ -2155,6 +2271,81 @@ BEGIN
           v_o.full_refund_deadline_at, p_now, p_now + interval '10 minutes', v_hash);
   RETURN (v_body::jsonb || pg_catalog.jsonb_build_object('preview_hash', v_hash, 'delivery_pending_minor', v_pending,
                                                          'unmatched_minor', v_stray))::json;
+END;
+$$;
+-- As in 0036, plus: after an our-side delivery failure whose redelivery is
+-- not dispatched, the paid delivery's 100% floor is recorded first
+-- (business.delivery_failure_floor_record; K05 GK-caused unperformed
+-- delivery), so a customer's or the chef's cancellation returns it in full
+-- beside the cake's rate; the outcome then states delivery_full_minor.
+CREATE OR REPLACE FUNCTION business.order_terminal_return(p_order uuid, p_version integer, p_reason text, p_rate smallint,
+                                               p_source text, p_actor_kind text, p_account uuid, p_operation uuid,
+                                               p_at timestamptz)
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_o business.orders%ROWTYPE;
+  v_paid bigint;
+  v_policy bigint;
+  v_topup bigint;
+  v_target bigint;
+  v_floors bigint;
+  v_stray bigint;
+BEGIN
+  SELECT * INTO v_o FROM business.orders o WHERE o.id = p_order FOR UPDATE;
+  PERFORM business.delivery_not_possible_floor(p_order, CASE p_actor_kind WHEN 'guest' THEN 'system' ELSE p_actor_kind END,
+                                               p_account);
+  PERFORM business.delivery_failure_floor_record(p_order, CASE p_actor_kind WHEN 'guest' THEN 'system' ELSE p_actor_kind END,
+                                                 p_account);
+  v_paid := business.order_paid_minor(p_order);
+  v_policy := business.cancellation_amount(v_paid, p_rate);
+  v_topup := CASE WHEN v_policy > 0 THEN business.cancellation_floor_topup(p_order, v_policy) ELSE 0 END;
+  v_target := v_policy + v_topup;
+  SELECT coalesce(sum(f.floor_minor), 0) INTO v_floors FROM business.refund_floor f WHERE f.order_id = p_order;
+  -- A stray delivery payment (0035) not returned yet: the goal returns it in
+  -- full beside the policy target, so the outcome states it.
+  v_stray := CASE WHEN v_policy > 0 THEN business.delivery_unmatched_minor(p_order) ELSE 0 END;
+  UPDATE business.orders o
+  SET lifecycle = 'cancelled', cancel_reason = p_reason, cancelled_at = p_at,
+      recovery_state = 'cancellation_pending', version = o.version + 1, updated_at = pg_catalog.now()
+  WHERE o.id = p_order;
+  IF v_policy > 0 THEN
+    -- The goal from the policy target: recorded floors raise it.
+    PERFORM business.refund_goal_apply(p_order, p_reason, p_source, p_rate, v_paid, v_policy, 'system', NULL);
+    PERFORM business.refund_reserve(p_order);
+  END IF;
+  IF EXISTS (SELECT 1 FROM business.capacity_allocation a WHERE a.order_ref = p_order AND a.day = v_o.handover_day) THEN
+    PERFORM business.capacity_release(p_order, v_o.handover_day);
+  END IF;
+  PERFORM business.audit_record(CASE p_actor_kind WHEN 'guest' THEN 'system' ELSE p_actor_kind END, p_account,
+                                'order.cancelled', 'order', p_order, NULL,
+                                CASE WHEN v_stray > 0
+                                     THEN pg_catalog.json_build_object('operation_id', p_operation, 'reason', p_reason,
+                                                                       'rate', p_rate, 'refund_target_minor', v_target,
+                                                                       'unmatched_minor', v_stray)
+                                     ELSE pg_catalog.json_build_object('operation_id', p_operation, 'reason', p_reason,
+                                                                       'rate', p_rate, 'refund_target_minor', v_target) END);
+  IF v_topup > 0 THEN
+    RETURN (pg_catalog.json_build_object(
+      'status', 'cancelled',
+      'evidence', pg_catalog.jsonb_build_object('order_version', p_version + 1, 'reason', p_reason, 'rate', p_rate,
+                                                'paid_minor', v_paid, 'refund_target_minor', v_target,
+                                                'delivery_full_minor', v_floors)
+                  || CASE WHEN v_stray > 0 THEN pg_catalog.jsonb_build_object('unmatched_minor', v_stray)
+                          ELSE '{}'::jsonb END))::text;
+  END IF;
+  IF v_stray > 0 THEN
+    RETURN pg_catalog.format(
+      '{"status":"cancelled","evidence":{"order_version":%s,"reason":"%s","rate":%s,"paid_minor":%s,"refund_target_minor":%s,'
+      '"unmatched_minor":%s}}',
+      p_version + 1, p_reason, p_rate, v_paid, v_target, v_stray);
+  END IF;
+  RETURN pg_catalog.format(
+    '{"status":"cancelled","evidence":{"order_version":%s,"reason":"%s","rate":%s,"paid_minor":%s,"refund_target_minor":%s}}',
+    p_version + 1, p_reason, p_rate, v_paid, v_target);
 END;
 $$;
 -- As in 0035, plus: a delivery payment kept after a nobody-available failure
@@ -2216,7 +2407,9 @@ REVOKE ALL ON FUNCTION business.order_last_dispatch(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.delivery_failure_current(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.delivery_failure_chosen(uuid, boolean) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.delivery_failure_open(business.orders) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.order_rescheduled_since_dispatch(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.delivery_on_its_way(business.orders) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.delivery_failure_floor_record(uuid, text, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.delivery_dispatched(business.orders) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.redelivery_time_set(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.delivery_failure_refusal(business.orders) FROM PUBLIC;

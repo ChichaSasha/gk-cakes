@@ -158,10 +158,12 @@ func (s *Store) ChooseAfterDeliveryFailure(ctx context.Context, id, subject stri
 }
 
 // withDeliveryFailureClock applies the store's clock to an order
-// representation's delivery_failure block: choices are listed only while
-// the choice is open, and times only while open and starting after now (the
-// opening times still ahead today, Q10). Representations without the block,
-// or a block without these keys (fulfilment's), keep what they have.
+// representation's delivery_failure block: times are listed only while the
+// choice is open and starting after now (the opening times still ahead
+// today, Q10); choices only while open, and collection only while a time is
+// left (otherwise redelivery alone: the request would refuse collection
+// with slot_unavailable). Representations without the block, or a block
+// without these keys (fulfilment's), keep what they have.
 func (s *Store) withDeliveryFailureClock(raw []byte) []byte {
 	if !bytes.Contains(raw, []byte(`"delivery_failure"`)) {
 		return raw
@@ -178,13 +180,9 @@ func (s *Store) withDeliveryFailureClock(raw []byte) []byte {
 	if json.Unmarshal(block["open"], &open) != nil {
 		return raw
 	}
-	if _, ok := block["choices"]; ok {
-		choices := []string{}
-		if open {
-			choices = failureChoices
-		}
-		block["choices"], _ = json.Marshal(choices)
-	}
+	// Without a times list (a block without it) collection stays offered as
+	// the database listed it.
+	timesLeft := true
 	if rawTimes, ok := block["times"]; ok {
 		var times []map[string]json.RawMessage
 		if json.Unmarshal(rawTimes, &times) != nil {
@@ -199,6 +197,17 @@ func (s *Store) withDeliveryFailureClock(raw []byte) []byte {
 			}
 		}
 		block["times"], _ = json.Marshal(kept)
+		timesLeft = len(kept) > 0
+	}
+	if _, ok := block["choices"]; ok {
+		choices := []string{}
+		switch {
+		case open && timesLeft:
+			choices = failureChoices
+		case open:
+			choices = []string{FailureRedelivery}
+		}
+		block["choices"], _ = json.Marshal(choices)
 	}
 	var err error
 	if top["delivery_failure"], err = json.Marshal(block); err != nil {
