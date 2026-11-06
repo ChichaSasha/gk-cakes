@@ -477,7 +477,7 @@ var invalidMessages = map[string]string{
 	"offer_invalid":        "must be the offer shown on the order page",
 	"answer_invalid":       "must be accept or decline",
 	// GK delivery (0035).
-	"delivery_amount_invalid": "must be whole pence from 10000 (£100) to 100000000",
+	"delivery_amount_invalid": "must be whole pence from 10000 (£100) to 99999999",
 	"distance_invalid":        "must be the measured driving distance in whole metres (1 to 1000000)",
 	"distance_source_invalid": "must be 1 to 200 characters on one line without surrounding spaces",
 	"quote_invalid":           "must be the delivery quote shown on the order page",

@@ -17,7 +17,8 @@
 -- whose cake is visibly confirmed (lifecycle confirmed, in_production or
 -- ready, secured, never dispatched, no unresolved K11 command), with no
 -- delivery collection in flight and the current quote not paid: amount in
--- whole pence from 10000 (K03 "from £100") to 100000000, an optional chef
+-- whole pence from 10000 (K03 "from £100") to 99999999 (Stripe's GBP
+-- maximum for one charge), an optional chef
 -- note (staff only). The pay-by instant is the original handover - 48 h
 -- (Q9); quoting at or after it is refused (409 delivery_pay_by_passed). A new
 -- quote replaces the current one (also a waived one, which then needs a new
@@ -65,6 +66,25 @@
 -- delivery payment never touches the order's lifecycle, paid_at, production
 -- anchor or refund deadline.
 --
+-- Policy basis (K05). An unmatched payment is not what the order cost:
+-- order_paid_minor (the basis of every percentage: cancellation 100%/50%,
+-- no-show 50%, previews, notices) leaves it out, and it is an implicit floor
+-- of its full amount in refund_shares and refund_goal_compute, so a goal is
+-- the policy target plus the stray in full (capped by every succeeded
+-- collection) and the stray's own return never counts against the cake's
+-- share. The chef's exception limit counts every succeeded collection.
+--
+-- Never dispatched. A delivery collection still created whose Stripe call
+-- was never admitted 15 minutes after its request holds no money (no
+-- session can exist): it is not in flight, is flagged delivery_payment_stuck
+-- and the next quote, waiver or payment closes it as never dispatched, as
+-- the cake's hold review does (payment_dispatch_fix/admit then answer
+-- closed).
+--
+-- Line item. payment_dispatch_kind (worker, lease-fenced) gives the worker
+-- the collection's kind, so a delivery's Checkout Session line item reads
+-- "GK Cakes delivery".
+--
 -- Dispatch. fulfillment_refusal accepts a 'paid' collection of the current
 -- quote (succeeded, no recorded mismatch) or a waiver of it; otherwise 409
 -- delivery_not_paid.
@@ -93,7 +113,7 @@ SET LOCAL ROLE gk_owner;
 CREATE TABLE business.delivery_quote (
   id            uuid PRIMARY KEY,
   order_id      uuid NOT NULL REFERENCES business.orders (id),
-  amount_minor  bigint NOT NULL CHECK (amount_minor BETWEEN 10000 AND 100000000),
+  amount_minor  bigint NOT NULL CHECK (amount_minor BETWEEN 10000 AND 99999999),
   currency      text NOT NULL DEFAULT 'GBP' CHECK (currency = 'GBP'),
   -- The chef's note (staff only, never audited).
   note          text NULL CHECK (note = btrim(note) AND char_length(note) BETWEEN 1 AND 500
@@ -175,9 +195,28 @@ AS $$
   SELECT q.id FROM business.delivery_quote q WHERE q.order_id = p_order ORDER BY q.order_version DESC LIMIT 1;
 $$;
 
+-- Owner-internal: a delivery collection whose Stripe call was never
+-- admitted 15 minutes after it was requested (the later of the request
+-- instant and its insertion, as the cake's never-dispatched cleanup, 0015):
+-- no Checkout Session can exist for it (admission records
+-- dispatch_started_at under the collection lock before any call), so it can
+-- hold no money. It is not in flight, and the next delivery command closes
+-- it (business.delivery_close_never_dispatched).
+CREATE FUNCTION business.delivery_collection_stuck(p_c business.payment_collection)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT p_c.kind = 'delivery' AND p_c.state = 'created' AND p_c.dispatch_started_at IS NULL
+     AND pg_catalog.now() >= GREATEST(p_c.initiated_at, p_c.created_at) + interval '15 minutes';
+$$;
+
 -- Owner-internal: whether a delivery collection of the order may still
 -- succeed or is under reconciliation (K04: no second collection; a recorded
--- mismatch, even on a succeeded one, is checked before anything else).
+-- mismatch, even on a succeeded one, is checked before anything else). A
+-- stuck collection (never admitted to Stripe) is not in flight.
 CREATE FUNCTION business.delivery_in_flight(p_order uuid)
 RETURNS boolean
 LANGUAGE sql
@@ -187,7 +226,53 @@ SET search_path = pg_catalog, pg_temp
 AS $$
   SELECT EXISTS (SELECT 1 FROM business.payment_collection pc
                  WHERE pc.order_id = p_order AND pc.kind = 'delivery'
-                   AND (pc.state IN ('created', 'pending', 'unknown') OR pc.mismatch_reason IS NOT NULL));
+                   AND (pc.state IN ('created', 'pending', 'unknown') OR pc.mismatch_reason IS NOT NULL)
+                   AND NOT business.delivery_collection_stuck(pc));
+$$;
+
+-- Owner-internal: close order p_order's stuck delivery collections as never
+-- dispatched (cancelled, cancel_reason never_dispatched: payment_dispatch_fix
+-- and payment_dispatch_admit then answer closed, so no Stripe call is ever
+-- made). The caller holds the order and its collections (checked under the
+-- collection lock, as the hold review does for the cake). Returns how many.
+CREATE FUNCTION business.delivery_close_never_dispatched(p_order uuid)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_id uuid;
+  v_count integer := 0;
+BEGIN
+  FOR v_id IN SELECT pc.id FROM business.payment_collection pc
+              WHERE pc.order_id = p_order AND business.delivery_collection_stuck(pc)
+              ORDER BY pc.id FOR UPDATE LOOP
+    UPDATE business.payment_collection pc
+    SET state = 'cancelled', cancel_reason = 'never_dispatched', version = pc.version + 1, updated_at = pg_catalog.now()
+    WHERE pc.id = v_id;
+    PERFORM business.audit_record('system', NULL, 'payment.cancelled', 'order', p_order, NULL,
+                                  pg_catalog.json_build_object('collection_id', v_id, 'reason', 'never_dispatched'));
+    v_count := v_count + 1;
+  END LOOP;
+  RETURN v_count;
+END;
+$$;
+
+-- Owner-internal: delivery money held for order p_order that paid no
+-- current quote (outcome unmatched) and is not returned yet (the
+-- collection's succeeded refunds deducted).
+CREATE FUNCTION business.delivery_unmatched_minor(p_order uuid)
+RETURNS bigint
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT coalesce(sum(GREATEST(0, b.paid_minor - b.succeeded_minor)), 0)::bigint
+  FROM business.delivery_payment_outcome d
+  CROSS JOIN LATERAL business.refund_balance(d.collection_id) b
+  WHERE d.order_id = p_order AND d.outcome = 'unmatched';
 $$;
 
 -- Owner-internal: the collection that paid quote p_quote (outcome paid,
@@ -296,6 +381,20 @@ BEGIN
 END;
 $$;
 
+-- Owner-internal: {unmatched_minor} while the order holds delivery money
+-- that paid no current quote and is not returned yet ("a payment was
+-- received; the chef will return it"; do not pay that quote again), else {}.
+CREATE FUNCTION business.order_delivery_unmatched(p_order uuid)
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT CASE WHEN x.m > 0 THEN pg_catalog.jsonb_build_object('unmatched_minor', x.m) ELSE '{}'::jsonb END
+  FROM (SELECT business.delivery_unmatched_minor(p_order) AS m) x;
+$$;
+
 -- Owner-internal: the delivery block of a gk_delivery order (NULL
 -- otherwise; see the header). payable ignores the clock (the API applies
 -- its own: payable and now before pay_by); state uses the database clock.
@@ -319,7 +418,8 @@ BEGIN
   END IF;
   SELECT * INTO q FROM business.delivery_quote x WHERE x.id = business.delivery_current_quote(p_order.id);
   IF q.id IS NULL THEN
-    RETURN pg_catalog.jsonb_build_object('state', 'awaiting_quote', 'quote', NULL, 'payable', false, 'payment', NULL);
+    RETURN pg_catalog.jsonb_build_object('state', 'awaiting_quote', 'quote', NULL, 'payable', false, 'payment', NULL)
+           || business.order_delivery_unmatched(p_order.id);
   END IF;
   SELECT * INTO w FROM business.delivery_waiver x WHERE x.quote_id = q.id;
   v_paid := business.delivery_paid_collection(q.id);
@@ -352,7 +452,7 @@ BEGIN
   IF w.id IS NOT NULL THEN
     v := v || pg_catalog.jsonb_build_object('waived', pg_catalog.jsonb_build_object('at', w.approved_at));
   END IF;
-  RETURN v;
+  RETURN v || business.order_delivery_unmatched(p_order.id);
 END;
 $$;
 
@@ -414,7 +514,7 @@ BEGIN
   IF p_order IS NULL THEN
     RAISE EXCEPTION 'order not found' USING ERRCODE = 'GK404';
   END IF;
-  IF p_amount IS NULL OR p_amount < 10000 OR p_amount > 100000000 THEN
+  IF p_amount IS NULL OR p_amount < 10000 OR p_amount > 99999999 THEN
     RAISE EXCEPTION 'delivery_amount_invalid' USING ERRCODE = 'GK422';
   END IF;
   IF p_note IS NOT NULL AND (p_note <> pg_catalog.btrim(p_note) OR pg_catalog.char_length(p_note) NOT BETWEEN 1 AND 500
@@ -437,6 +537,7 @@ BEGIN
     RAISE EXCEPTION 'order not found' USING ERRCODE = 'GK404';
   END IF;
   PERFORM 1 FROM business.payment_collection pc WHERE pc.order_id = p_order ORDER BY pc.id FOR UPDATE;
+  PERFORM business.delivery_close_never_dispatched(p_order);
   IF business.order_command_unresolved(p_order) THEN
     RAISE EXCEPTION 'state_conflict' USING ERRCODE = 'GK409';
   END IF;
@@ -513,6 +614,7 @@ BEGIN
     RAISE EXCEPTION 'order not found' USING ERRCODE = 'GK404';
   END IF;
   PERFORM 1 FROM business.payment_collection pc WHERE pc.order_id = p_order ORDER BY pc.id FOR UPDATE;
+  PERFORM business.delivery_close_never_dispatched(p_order);
   IF business.order_command_unresolved(p_order) THEN
     RAISE EXCEPTION 'state_conflict' USING ERRCODE = 'GK409';
   END IF;
@@ -608,6 +710,7 @@ BEGIN
     RAISE EXCEPTION 'recovery_frozen' USING ERRCODE = 'GK503';
   END IF;
   PERFORM 1 FROM business.payment_collection pc WHERE pc.order_id = p_order ORDER BY pc.id FOR UPDATE;
+  PERFORM business.delivery_close_never_dispatched(p_order);
   IF v_o.fulfillment_mode <> 'gk_delivery' THEN
     RAISE EXCEPTION 'state_conflict' USING ERRCODE = 'GK409';
   END IF;
@@ -647,6 +750,22 @@ BEGIN
                                 pg_catalog.json_build_object('collection_id', p_collection, 'amount_minor', q.amount_minor,
                                                              'kind', 'delivery', 'quote_id', q.id));
   RETURN QUERY SELECT p_collection, false;
+END;
+$$;
+
+-- Worker: the kind of the leased dispatch's collection (cake or delivery),
+-- for the Checkout Session line item it builds at the first dispatch.
+CREATE FUNCTION business.payment_dispatch_kind(p_job_id uuid, p_worker uuid, p_generation bigint, p_operation_id uuid)
+RETURNS text
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v business.payment_job := business.payment_leased_dispatch(p_job_id, p_worker, p_generation, p_operation_id);
+BEGIN
+  RETURN (SELECT pc.kind FROM business.payment_collection pc WHERE pc.id = v.collection_id);
 END;
 $$;
 
@@ -785,6 +904,229 @@ BEGIN
 END;
 $$;
 
+-- As in 0021, except that it is the K05 policy basis: an unmatched
+-- delivery payment (paid no current quote, see the header) is not part of
+-- what the order costs, so a percentage (50% after the deadline, no-show)
+-- never takes from it and its own return never counts against the cake's
+-- share. Every caller is a policy, notice or preview amount; the goal cap
+-- and the chef's exception limit count every succeeded collection.
+CREATE OR REPLACE FUNCTION business.order_paid_minor(p_order uuid)
+RETURNS bigint
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT coalesce(sum(pc.amount_minor), 0)::bigint
+  FROM business.payment_collection pc
+  WHERE pc.order_id = p_order AND pc.state = 'succeeded'
+    AND NOT EXISTS (SELECT 1 FROM business.delivery_payment_outcome d
+                    WHERE d.collection_id = pc.id AND d.outcome = 'unmatched');
+$$;
+
+-- As in 0022, plus: an unmatched delivery payment is an implicit floor of
+-- its full amount (K05 "explicit collection floor", net its own returns): a
+-- floored share with p_floors (refund_plan reserves it automatically, like a
+-- recorded floor), and outside the proportional policy pool without
+-- p_floors. Without unmatched payments the result is unchanged.
+CREATE OR REPLACE FUNCTION business.refund_shares(p_order uuid, p_target bigint, p_floors boolean)
+RETURNS TABLE (collection_id uuid, ord integer, share_minor bigint, exposure_minor bigint, room_minor bigint, blocked boolean,
+               floored boolean)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  WITH c AS (
+    SELECT pc.id, CASE pc.kind WHEN 'cake' THEN 0 ELSE 1 END AS ord, b.paid_minor AS paid,
+           d.collection_id IS NOT NULL AS um,
+           CASE WHEN p_floors THEN LEAST(GREATEST(coalesce(f.floor_minor, 0),
+                                                  CASE WHEN d.collection_id IS NOT NULL THEN b.paid_minor ELSE 0 END),
+                                         b.paid_minor)
+                ELSE 0 END AS fl,
+           b.exposure_minor AS ex, b.room_minor AS room,
+           (b.unresolved OR b.quarantined OR EXISTS (SELECT 1 FROM business.refund_operation ro
+                                                    WHERE ro.collection_id = pc.id AND ro.mismatch_reason IS NOT NULL)) AS blocked,
+           (f.id IS NOT NULL OR d.collection_id IS NOT NULL) AS floored
+    FROM business.payment_collection pc
+    CROSS JOIN LATERAL business.refund_balance(pc.id) b
+    LEFT JOIN business.refund_floor f ON f.collection_id = pc.id
+    LEFT JOIN business.delivery_payment_outcome d ON d.collection_id = pc.id AND d.outcome = 'unmatched'
+    WHERE pc.order_id = p_order AND pc.state = 'succeeded'
+  ), w AS (
+    SELECT c.*, CASE WHEN p_floors THEN c.paid - c.fl WHEN c.um THEN 0 ELSE c.paid END AS wt,
+           CASE WHEN p_floors OR NOT c.um THEN c.paid ELSE 0 END AS basis
+    FROM c
+  ), t AS (
+    SELECT GREATEST(0, LEAST(p_target, coalesce(sum(w.basis), 0)) - coalesce(sum(w.fl), 0))::bigint AS tp,
+           coalesce(sum(w.wt), 0)::bigint AS pw
+    FROM w
+  ), a AS (
+    SELECT w.*, t.tp,
+           CASE WHEN t.pw > 0 THEN (t.tp * w.wt) / t.pw ELSE 0 END AS base,
+           CASE WHEN t.pw > 0 THEN (t.tp * w.wt) % t.pw ELSE 0 END AS rem
+    FROM w, t
+  ), r AS (
+    SELECT a.*, row_number() OVER (ORDER BY a.rem DESC, a.ord, a.id) AS rn, a.tp - sum(a.base) OVER () AS leftover
+    FROM a
+  )
+  SELECT r.id, r.ord, (r.fl + r.base + CASE WHEN r.rn <= r.leftover THEN 1 ELSE 0 END)::bigint, r.ex, r.room, r.blocked,
+         r.floored
+  FROM r ORDER BY r.ord, r.id;
+$$;
+
+-- As in 0022, plus: an unmatched delivery payment counts as a floor of its
+-- full amount, and the cap is every succeeded collection (order_paid_minor
+-- is the policy basis since 0035). So a 50% target over cake 10000p with an
+-- unmatched 12000p is 5000p + 12000p = 17000p, whether or not the 12000p was
+-- returned first, and never 50% of 22000p.
+CREATE OR REPLACE FUNCTION business.refund_goal_compute(p_order uuid, p_policy bigint)
+RETURNS bigint
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  WITH s AS (SELECT * FROM business.refund_shares(p_order, p_policy, false)),
+  f AS (SELECT f.collection_id, f.floor_minor FROM business.refund_floor f WHERE f.order_id = p_order
+        UNION ALL
+        SELECT d.collection_id, pc.amount_minor
+        FROM business.delivery_payment_outcome d
+        JOIN business.payment_collection pc ON pc.id = d.collection_id
+        WHERE d.order_id = p_order AND d.outcome = 'unmatched'
+          AND NOT EXISTS (SELECT 1 FROM business.refund_floor rf WHERE rf.collection_id = d.collection_id))
+  SELECT LEAST((SELECT coalesce(sum(pc.amount_minor), 0) FROM business.payment_collection pc
+                WHERE pc.order_id = p_order AND pc.state = 'succeeded'),
+               GREATEST(p_policy,
+                        CASE WHEN EXISTS (SELECT 1 FROM f JOIN s ON s.collection_id = f.collection_id)
+                             THEN coalesce((SELECT sum(CASE WHEN f.collection_id IS NOT NULL
+                                                            THEN GREATEST(f.floor_minor, s.exposure_minor)
+                                                            ELSE GREATEST(s.share_minor, s.exposure_minor) END)
+                                            FROM s LEFT JOIN f ON f.collection_id = s.collection_id), 0)
+                             ELSE 0 END))::bigint;
+$$;
+
+-- As in 0024, except that the limit and the goal cap count every succeeded
+-- collection (an unmatched delivery payment included; see order_paid_minor).
+CREATE OR REPLACE FUNCTION business.refund_exception_record(p_actor uuid, p_key text, p_body_sha256 text, p_order uuid,
+                                                 p_expected_version integer, p_amount bigint, p_currency text,
+                                                 p_collections uuid[], p_amounts bigint[], p_reason text)
+RETURNS TABLE (result_id uuid, replayed boolean)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_account uuid := business.catalog_staff_account(p_actor, ARRAY['chef']);
+  v_prior uuid;
+  v_o business.orders%ROWTYPE;
+  v_g business.refund_goal%ROWTYPE;
+  v_paid bigint;
+  v_returned bigint;
+  v_target bigint;
+  v_id uuid := pg_catalog.gen_random_uuid();
+  v_allocs json;
+  v_ops jsonb := '[]'::jsonb;
+  v_op uuid;
+  a record;
+BEGIN
+  IF p_order IS NULL THEN
+    RAISE EXCEPTION 'order not found' USING ERRCODE = 'GK404';
+  END IF;
+  IF p_expected_version IS NULL OR p_expected_version < 1 THEN
+    RAISE EXCEPTION 'expected_version_required' USING ERRCODE = 'GK422';
+  END IF;
+  IF p_amount IS NULL OR p_amount < 1 OR p_amount > 100000000 THEN
+    RAISE EXCEPTION 'amount_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  IF p_currency IS DISTINCT FROM 'GBP' THEN
+    RAISE EXCEPTION 'currency_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  IF p_collections IS NULL OR p_amounts IS NULL OR pg_catalog.cardinality(p_collections) NOT BETWEEN 1 AND 10
+     OR pg_catalog.cardinality(p_collections) <> pg_catalog.cardinality(p_amounts)
+     OR pg_catalog.array_position(p_collections, NULL) IS NOT NULL OR pg_catalog.array_position(p_amounts, NULL) IS NOT NULL
+     OR EXISTS (SELECT 1 FROM pg_catalog.unnest(p_amounts) x WHERE x < 1)
+     OR (SELECT count(DISTINCT x) FROM pg_catalog.unnest(p_collections) x) <> pg_catalog.cardinality(p_collections)
+     OR (SELECT sum(x) FROM pg_catalog.unnest(p_amounts) x) <> p_amount THEN
+    RAISE EXCEPTION 'allocations_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  IF p_reason IS NULL OR p_reason <> pg_catalog.btrim(p_reason) OR pg_catalog.char_length(p_reason) NOT BETWEEN 1 AND 500
+     OR p_reason ~ '[\x01-\x1f\x7f-\x9f\u2028\u2029]' THEN
+    RAISE EXCEPTION 'reason_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  -- The same key replays even during a restore freeze: it changes nothing.
+  v_prior := business.command_claim(v_account, 'refund.exception', p_order::text, p_key, p_body_sha256);
+  IF v_prior IS NOT NULL THEN
+    RETURN QUERY SELECT v_prior, true;
+    RETURN;
+  END IF;
+  v_o := business.refund_chef_admit(p_order, p_expected_version);
+  IF EXISTS (SELECT 1 FROM pg_catalog.unnest(p_collections) x
+             WHERE NOT EXISTS (SELECT 1 FROM business.payment_collection pc WHERE pc.id = x AND pc.order_id = p_order)) THEN
+    RAISE EXCEPTION 'allocations_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  IF EXISTS (SELECT 1 FROM business.refund_operation ro
+             WHERE ro.order_id = p_order AND ro.state IN ('reserved', 'submitting', 'pending', 'unknown', 'requires_action')) THEN
+    RAISE EXCEPTION 'refund_in_progress' USING ERRCODE = 'GK409';
+  END IF;
+  -- Every succeeded collection, an unmatched delivery payment included:
+  -- order_paid_minor is the policy basis since 0035 and leaves it out, but
+  -- the chef may return it (the per-collection room still bounds each
+  -- allocation, so nothing is returned twice).
+  SELECT coalesce(sum(pc.amount_minor), 0)::bigint INTO v_paid
+  FROM business.payment_collection pc WHERE pc.order_id = p_order AND pc.state = 'succeeded';
+  SELECT coalesce(sum(b.succeeded_minor + b.reserved_minor), 0) INTO v_returned
+  FROM business.payment_collection pc CROSS JOIN LATERAL business.refund_balance(pc.id) b
+  WHERE pc.order_id = p_order;
+  IF p_amount > v_paid - v_returned
+     OR EXISTS (SELECT 1 FROM ROWS FROM (pg_catalog.unnest(p_collections), pg_catalog.unnest(p_amounts)) AS x(cid, amt)
+                CROSS JOIN LATERAL business.refund_balance(x.cid) b
+                WHERE x.amt > b.room_minor) THEN
+    RAISE EXCEPTION 'refund_limit' USING ERRCODE = 'GK409';
+  END IF;
+
+  SELECT * INTO v_g FROM business.refund_goal g WHERE g.order_id = p_order FOR UPDATE;
+  IF NOT FOUND THEN
+    v_target := LEAST(v_paid, v_returned + p_amount);
+    INSERT INTO business.refund_goal (id, order_id, target_minor, reason, source, policy_target_minor)
+    VALUES (pg_catalog.gen_random_uuid(), p_order, v_target, 'chef_exception', 'chef', 0)
+    RETURNING * INTO v_g;
+    PERFORM business.audit_record('staff', v_account, 'refund.goal_recorded', 'order', p_order, NULL,
+                                  pg_catalog.json_build_object('goal_id', v_g.id, 'version', v_g.version,
+                                                               'target_minor', v_target, 'policy_target_minor', 0,
+                                                               'reason', v_g.reason, 'exception_id', v_id));
+  ELSE
+    v_target := LEAST(v_paid, GREATEST(v_g.target_minor, v_returned) + p_amount);
+    UPDATE business.refund_goal g SET target_minor = v_target, version = g.version + 1, updated_at = pg_catalog.now()
+    WHERE g.id = v_g.id RETURNING * INTO v_g;
+    PERFORM business.audit_record('staff', v_account, 'refund.goal_raised', 'order', p_order, NULL,
+                                  pg_catalog.json_build_object('goal_id', v_g.id, 'version', v_g.version,
+                                                               'target_minor', v_target,
+                                                               'policy_target_minor', v_g.policy_target_minor,
+                                                               'reason', v_g.reason, 'exception_id', v_id));
+  END IF;
+  FOR a IN SELECT x.cid, x.amt FROM ROWS FROM (pg_catalog.unnest(p_collections), pg_catalog.unnest(p_amounts)) AS x(cid, amt)
+           JOIN business.payment_collection pc ON pc.id = x.cid
+           ORDER BY CASE pc.kind WHEN 'cake' THEN 0 ELSE 1 END, pc.id LOOP
+    v_op := business.refund_reserve_one(p_order, a.cid, v_g, a.amt);
+    v_ops := v_ops || pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+               'collection_id', a.cid, 'amount_minor', a.amt, 'refund_operation_id', v_op));
+  END LOOP;
+  v_allocs := v_ops::json;
+  UPDATE business.orders o SET version = o.version + 1, updated_at = pg_catalog.now() WHERE o.id = p_order;
+  INSERT INTO business.refund_exception (id, order_id, goal_id, goal_version, target_minor, amount_minor, allocations, reason,
+                                         order_version, recorded_by)
+  VALUES (v_id, p_order, v_g.id, v_g.version, v_target, p_amount, v_allocs, p_reason, v_o.version + 1, v_account);
+  PERFORM business.audit_record('staff', v_account, 'refund.exception_recorded', 'order', p_order, NULL,
+                                pg_catalog.json_build_object('exception_id', v_id, 'goal_version', v_g.version,
+                                                             'target_minor', v_target, 'amount_minor', p_amount,
+                                                             'allocations', v_allocs));
+  PERFORM business.command_finish(v_account, 'refund.exception', p_order::text, p_key, v_id);
+  RETURN QUERY SELECT v_id, false;
+END;
+$$;
+
+
 -- As in 0032, except that a dispatch needs the current delivery quote paid
 -- or waived (K06), not merely any succeeded delivery collection.
 CREATE OR REPLACE FUNCTION business.fulfillment_refusal(p_o business.orders, p_action text, p_at timestamptz)
@@ -823,8 +1165,11 @@ AS $$
     ELSE 'transition_not_allowed' END
 $$;
 
--- As in 0030, plus delivery_payment_unmatched: a delivery payment that did
--- not pay the current quote (see the header) and is not fully returned yet.
+-- As in 0030, plus delivery_payment_unmatched (a delivery payment that did
+-- not pay the current quote, see the header, not fully returned yet) and
+-- delivery_payment_stuck (a delivery collection whose Stripe call was never
+-- admitted 15 minutes after it was requested; the next delivery command
+-- closes it).
 CREATE OR REPLACE FUNCTION business.order_attention_flags(p_order business.orders)
 RETURNS text[]
 LANGUAGE sql
@@ -852,15 +1197,17 @@ AS $$
                                     OR (n.outcome = 'not_configured'
                                         AND EXISTS (SELECT 1 FROM business.notice_settings s WHERE s.singleton))))
                 THEN 'notice_not_sent' END,
-           CASE WHEN EXISTS (SELECT 1 FROM business.delivery_payment_outcome d
-                             CROSS JOIN LATERAL business.refund_balance(d.collection_id) b
-                             WHERE d.order_id = p_order.id AND d.outcome = 'unmatched' AND b.succeeded_minor < b.paid_minor)
-                THEN 'delivery_payment_unmatched' END
+           CASE WHEN business.delivery_unmatched_minor(p_order.id) > 0 THEN 'delivery_payment_unmatched' END,
+           CASE WHEN EXISTS (SELECT 1 FROM business.payment_collection pc
+                             WHERE pc.order_id = p_order.id AND business.delivery_collection_stuck(pc))
+                THEN 'delivery_payment_stuck' END
          ]::text[], NULL);
 $$;
 
 -- As in 0033, plus an unmatched delivery payment not yet returned: money is
--- unsettled (payment_recorded).
+-- unsettled (payment_recorded); a stuck delivery collection (never admitted
+-- to Stripe 15 minutes after its request) holds no money and does not
+-- block.
 CREATE OR REPLACE FUNCTION business.account_order_block(p_order business.orders)
 RETURNS text
 LANGUAGE sql
@@ -873,7 +1220,8 @@ AS $$
              THEN 'order_change_in_progress'
            WHEN EXISTS (SELECT 1 FROM business.payment_collection pc
                         WHERE pc.order_id = p_order.id
-                          AND (pc.state IN ('created', 'pending', 'unknown') OR pc.mismatch_reason IS NOT NULL))
+                          AND (pc.state IN ('created', 'pending', 'unknown') OR pc.mismatch_reason IS NOT NULL)
+                          AND NOT business.delivery_collection_stuck(pc))
              THEN 'payment_being_checked'
            WHEN p_order.lifecycle = 'paid_awaiting_agreement' THEN 'paid_awaiting_agreement'
            WHEN x.rs IS NOT NULL AND (x.rs ->> 'state' <> 'returned' OR (x.rs ->> 'in_progress_minor')::bigint > 0
@@ -887,9 +1235,7 @@ AS $$
                 AND EXISTS (SELECT 1 FROM business.payment_collection pc
                             WHERE pc.order_id = p_order.id AND pc.state = 'succeeded')
              THEN 'payment_recorded'
-           WHEN EXISTS (SELECT 1 FROM business.delivery_payment_outcome d
-                        CROSS JOIN LATERAL business.refund_balance(d.collection_id) b
-                        WHERE d.order_id = p_order.id AND d.outcome = 'unmatched' AND b.succeeded_minor < b.paid_minor)
+           WHEN business.delivery_unmatched_minor(p_order.id) > 0
              THEN 'payment_recorded'
          END
   FROM (SELECT business.order_refund_summary(p_order.id)::jsonb AS rs) x;
@@ -1126,7 +1472,7 @@ BEGIN
                   'audit', business.order_staff_audit(o.id))
                 || CASE WHEN pg_catalog.jsonb_typeof(v_delivery) = 'object' THEN pg_catalog.jsonb_build_object(
                      -- Delivery without money (amounts, currency, payment link).
-                     'delivery', (v_delivery - ARRAY['paid_minor', 'quote', 'payment'])
+                     'delivery', (v_delivery - ARRAY['paid_minor', 'unmatched_minor', 'quote', 'payment'])
                                  || pg_catalog.jsonb_build_object(
                                       'quote', CASE WHEN pg_catalog.jsonb_typeof(v_delivery -> 'quote') = 'object'
                                                     THEN (v_delivery -> 'quote') - ARRAY['amount_minor', 'currency']
@@ -1164,6 +1510,11 @@ REVOKE ALL ON TABLE business.delivery_waiver FROM PUBLIC;
 REVOKE ALL ON TABLE business.delivery_payment_outcome FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.delivery_current_quote(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.delivery_in_flight(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.delivery_collection_stuck(business.payment_collection) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.delivery_close_never_dispatched(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.delivery_unmatched_minor(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.order_delivery_unmatched(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.payment_dispatch_kind(uuid, uuid, bigint, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.delivery_paid_collection(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.delivery_settled(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.delivery_order_open(business.orders) FROM PUBLIC;
@@ -1180,3 +1531,4 @@ GRANT EXECUTE ON FUNCTION business.order_delivery_quote(uuid, uuid, text, text, 
 GRANT EXECUTE ON FUNCTION business.order_delivery_waiver(uuid, uuid, text, text, integer, integer, text, timestamptz) TO gk_api;
 GRANT EXECUTE ON FUNCTION business.delivery_payment_initiate(uuid, bytea, uuid, text, text, integer, uuid, uuid, text, text, text,
   timestamptz) TO gk_api;
+GRANT EXECUTE ON FUNCTION business.payment_dispatch_kind(uuid, uuid, bigint, uuid) TO gk_worker;

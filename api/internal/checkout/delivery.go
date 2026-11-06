@@ -23,11 +23,12 @@ const (
 )
 
 // Delivery bounds the database checks too: a quote is whole pence from
-// £100 (K03 "from £100") to the money bound of chef refunds; a measured
-// driving distance is 1 m to 1000 km.
+// £100 (K03 "from £100") to 99999999 (Stripe's GBP maximum for one charge:
+// the quote is paid as one Checkout Session); a measured driving distance is
+// 1 m to 1000 km.
 const (
 	MinDeliveryMinor = 10_000
-	MaxDeliveryMinor = maxRefundMinor
+	MaxDeliveryMinor = 99_999_999
 	MaxDistanceM     = 1_000_000
 )
 

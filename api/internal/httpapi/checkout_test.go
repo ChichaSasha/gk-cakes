@@ -1377,7 +1377,7 @@ func TestDeliveryRoutes(t *testing.T) {
 		"quote address":          {quote, `{"expected_version":3,"amount_minor":12000,"address":"1 Road"}`, "k", 400},
 		"quote no version":       {quote, `{"amount_minor":12000}`, "k", 422},
 		"quote under £100":       {quote, `{"expected_version":3,"amount_minor":9999}`, "k", 422},
-		"quote over the bound":   {quote, `{"expected_version":3,"amount_minor":100000001}`, "k", 422},
+		"quote over the bound":   {quote, `{"expected_version":3,"amount_minor":100000000}`, "k", 422},
 		"quote fractional":       {quote, `{"expected_version":3,"amount_minor":12000.5}`, "k", 400},
 		"quote as text":          {quote, `{"expected_version":3,"amount_minor":"12000"}`, "k", 400},
 		"quote empty note":       {quote, `{"expected_version":3,"amount_minor":12000,"note":""}`, "k", 422},

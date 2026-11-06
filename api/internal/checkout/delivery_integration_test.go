@@ -13,6 +13,7 @@ import (
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/catalog"
 	"github.com/ChichaSasha/gk-cakes/api/internal/checkout"
+	"github.com/ChichaSasha/gk-cakes/api/internal/jobs"
 	"github.com/ChichaSasha/gk-cakes/api/internal/schedule"
 )
 
@@ -33,9 +34,10 @@ type deliveryBlock struct {
 		QuotedAt    time.Time `json:"quoted_at"`
 		PayBy       time.Time `json:"pay_by"`
 	}
-	PaidMinor *int64 `json:"paid_minor"`
-	Waived    *struct{ At time.Time }
-	Payment   *struct {
+	PaidMinor      *int64 `json:"paid_minor"`
+	UnmatchedMinor *int64 `json:"unmatched_minor"`
+	Waived         *struct{ At time.Time }
+	Payment        *struct {
 		ID          string
 		State       string
 		AmountMinor int64   `json:"amount_minor"`
@@ -259,7 +261,7 @@ func TestDeliveryQuoteRules(t *testing.T) {
 		}
 	}
 	// The database bounds the amount too (the store passes it through).
-	for _, amount := range []int64{9999, 100000001, 0} {
+	for _, amount := range []int64{9999, 100000000, 0} {
 		if _, err := h.quoteDelivery("bad", order, version, amount); !strings.HasPrefix(invalidField(err), "amount_minor") {
 			t.Errorf("amount %d: %v", amount, err)
 		}
@@ -831,5 +833,342 @@ func TestDeliveryPaymentAfterCancellationIsUnmatched(t *testing.T) {
 	v, _ = h.deliveryView(t, order, d)
 	if _, err := h.quoteDelivery("q2", order, v.Version, 12000); conflict(err) != "state_conflict" {
 		t.Fatalf("quote on a cancelled order: %v", err)
+	}
+}
+
+// strayOrder is a paid 10000p GK delivery order whose first delivery quote
+// (12000p) was paid only after its session expired and the chef had
+// replaced it with a 14000p quote: the 12000p is unmatched (quote_replaced).
+// It returns the order, its digest, the cake and stray collections and the
+// current quote.
+func (h *payHarness) strayOrder(t *testing.T, f fixture, pol, key string) (string, []byte, string, string, string) {
+	t.Helper()
+	order, d, cake := h.deliveryOrder(t, f, pol, key, "")
+	v, _ := h.deliveryView(t, order, d)
+	if _, err := h.quoteDelivery("q1", order, v.Version, 12000); err != nil {
+		t.Fatal(err)
+	}
+	stray, s := h.deliveryStarted(t, order, d, "c1")
+	h.stripe.session(s).status = "expired"
+	h.deliver(t, "evt_"+key+"_expired", "checkout.session.expired", "checkout.session", s, stray, order)
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatal(errs)
+	}
+	q2, err := h.quoteDelivery("q2", order, v.Version+1, 14000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.latePaid(t, stray, s)
+	if got := h.deliveryOutcome(t, stray); got != "unmatched/quote_replaced" {
+		t.Fatalf("stray outcome %s", got)
+	}
+	if v, raw := h.deliveryView(t, order, d); v.Delivery.UnmatchedMinor == nil || *v.Delivery.UnmatchedMinor != 12000 ||
+		v.Delivery.State != "quoted" {
+		t.Fatalf("stray view %s", raw)
+	}
+	return order, d, cake, stray, q2.ID
+}
+
+// returnStray is the chef's documented return of a stray payment: an agreed
+// exception of its full amount on that collection, dispatched.
+func (h *payHarness) returnStray(t *testing.T, order string, d []byte, stray string) {
+	t.Helper()
+	v, _ := h.deliveryView(t, order, d)
+	if _, err := h.co.RecordRefund(h.ctx, chef, "stray-"+stray[:8], order, refund(v.Version, 12000, "Paid an old delivery quote",
+		alloc(stray, 12000))); err != nil {
+		t.Fatalf("return the stray: %v", err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("stray refund:\n%s", reasons(errs))
+	}
+	if got := refundAmounts(t, h, stray); len(got) != 1 || got[0] != 12000 {
+		t.Fatalf("stray refund %v", got)
+	}
+	if v, raw := h.deliveryView(t, order, d); v.Delivery.UnmatchedMinor != nil {
+		t.Fatalf("returned stray still shown: %s", raw)
+	}
+}
+
+// refundAmounts is the collection's refund operations' amounts, oldest
+// first; each must have succeeded.
+func refundAmounts(t *testing.T, h *payHarness, coll string) []int64 {
+	t.Helper()
+	rows, err := h.admin.Query(h.ctx, `SELECT state, amount_minor FROM business.refund_operation WHERE collection_id = $1::uuid
+		ORDER BY created_at, id`, coll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var state string
+		var amount int64
+		if err := rows.Scan(&state, &amount); err != nil {
+			t.Fatal(err)
+		}
+		if state != "succeeded" {
+			t.Fatalf("refund of %s is %s", coll, state)
+		}
+		out = append(out, amount)
+	}
+	return out
+}
+
+// K05 policy basis: an unmatched delivery payment is not what the order
+// cost. A percentage (50% after the deadline, no-show) is of the cake (and a
+// matched delivery) only; the stray is returned in full, once, whether the
+// chef returned it first or not; its return never reduces the cake's share.
+func TestStrayDeliveryPaymentStaysOutOfThePolicyBasis(t *testing.T) {
+	t.Run("returned, then a late cancellation", func(t *testing.T) {
+		h := newPayHarness(t)
+		f := h.setup(t)
+		pol := h.policy(t, "p1")
+		h.withRefunds()
+		order, d, cake, stray, _ := h.strayOrder(t, f, pol, "sr")
+		h.returnStray(t, order, d, stray)
+		h.now = cancelDeadline
+		v, _ := h.cancelView(t, order, d)
+		p := h.preview(t, order, d)
+		if p.Rate != 50 || p.PaidMinor != 10000 || p.AmountMinor != 5000 || len(p.Allocations) != 1 ||
+			p.Allocations[0].CollectionID != cake || p.Allocations[0].AmountMinor != 5000 || p.DeliveryPending != 0 {
+			t.Fatalf("preview %+v", p)
+		}
+		if _, err := h.cancel(order, d, "c", v.Version, p); err != nil {
+			t.Fatal(err)
+		}
+		if errs := h.drain(t); len(errs) != 0 {
+			t.Fatalf("cancel:\n%s", reasons(errs))
+		}
+		if got := refundAmounts(t, h, cake); len(got) != 1 || got[0] != 5000 {
+			t.Fatalf("cake refunds %v", got)
+		}
+		if got := refundAmounts(t, h, stray); len(got) != 1 {
+			t.Fatalf("stray refunded again: %v", got)
+		}
+		cv, raw := h.cancelView(t, order, d)
+		if cv.Lifecycle != "cancelled" || *cv.Cancellation.Rate != 50 || *cv.Cancellation.AmountMinor != 5000 ||
+			cv.Refund.TargetMinor != 17000 || cv.Refund.SucceededMinor != 17000 || cv.Refund.State != "returned" {
+			t.Fatalf("cancelled %s", raw)
+		}
+		if flags := string(h.staffJSON(t, chef, order)["attention"]); strings.Contains(flags, "delivery") || strings.Contains(flags, "refund") {
+			t.Fatalf("attention %s", flags)
+		}
+	})
+	t.Run("not returned, then a late cancellation", func(t *testing.T) {
+		h := newPayHarness(t)
+		f := h.setup(t)
+		pol := h.policy(t, "p1")
+		h.withRefunds()
+		h.staffGrants(t)
+		order, d, cake, stray, _ := h.strayOrder(t, f, pol, "sn")
+		// The chef sees the stray amount; technical support only that a
+		// delivery is quoted (no money); fulfilment the state.
+		if del, raw := staffDelivery(t, h.staffJSON(t, chef, order)); string(del["unmatched_minor"]) != "12000" {
+			t.Fatalf("chef delivery %s", raw)
+		}
+		if _, raw := staffDelivery(t, h.staffJSON(t, support, order)); strings.Contains(raw, "unmatched") || strings.Contains(raw, "amount") {
+			t.Fatalf("support delivery %s", raw)
+		}
+		h.now = cancelDeadline
+		v, _ := h.cancelView(t, order, d)
+		p := h.preview(t, order, d)
+		// The amount is the policy amount (50% of the cake); the allocations
+		// also return the stray in full (its implicit floor).
+		allocs := map[string]int64{}
+		for _, a := range p.Allocations {
+			allocs[a.CollectionID] = a.AmountMinor
+		}
+		if p.Rate != 50 || p.PaidMinor != 10000 || p.AmountMinor != 5000 || len(allocs) != 2 || allocs[cake] != 5000 ||
+			allocs[stray] != 12000 || p.DeliveryPending != 0 {
+			t.Fatalf("preview %+v", p)
+		}
+		if _, err := h.cancel(order, d, "c", v.Version, p); err != nil {
+			t.Fatal(err)
+		}
+		if errs := h.drain(t); len(errs) != 0 {
+			t.Fatalf("cancel:\n%s", reasons(errs))
+		}
+		if c, s := refundAmounts(t, h, cake), refundAmounts(t, h, stray); len(c) != 1 || c[0] != 5000 || len(s) != 1 || s[0] != 12000 {
+			t.Fatalf("refunds cake %v stray %v", c, s)
+		}
+		cv, raw := h.cancelView(t, order, d)
+		if cv.Refund.TargetMinor != 17000 || cv.Refund.SucceededMinor != 17000 || cv.Refund.State != "returned" || cv.Refund.DeliveryPending != 0 {
+			t.Fatalf("cancelled %s", raw)
+		}
+		if v, raw := h.deliveryView(t, order, d); v.Delivery.UnmatchedMinor != nil {
+			t.Fatalf("stray still shown: %s", raw)
+		}
+		if flags := string(h.staffJSON(t, chef, order)["attention"]); strings.Contains(flags, "delivery_payment_unmatched") {
+			t.Fatalf("attention %s", flags)
+		}
+		// No double return: the chef can no longer return the stray.
+		cv, _ = h.cancelView(t, order, d)
+		if _, err := h.co.RecordRefund(h.ctx, chef, "again", order, refund(cv.Version, 12000, "Again", alloc(stray, 12000))); conflict(err) != "refund_limit" {
+			t.Fatalf("second return of the stray: %v", err)
+		}
+	})
+	t.Run("before the deadline", func(t *testing.T) {
+		h := newPayHarness(t)
+		f := h.setup(t)
+		pol := h.policy(t, "p1")
+		h.withRefunds()
+		order, d, cake, stray, _ := h.strayOrder(t, f, pol, "sb")
+		v, _ := h.cancelView(t, order, d)
+		p := h.preview(t, order, d)
+		if p.Rate != 100 || p.PaidMinor != 10000 || p.AmountMinor != 10000 {
+			t.Fatalf("preview %+v", p)
+		}
+		if _, err := h.cancel(order, d, "c", v.Version, p); err != nil {
+			t.Fatal(err)
+		}
+		if errs := h.drain(t); len(errs) != 0 {
+			t.Fatalf("cancel:\n%s", reasons(errs))
+		}
+		if c, s := refundAmounts(t, h, cake), refundAmounts(t, h, stray); len(c) != 1 || c[0] != 10000 || len(s) != 1 || s[0] != 12000 {
+			t.Fatalf("refunds cake %v stray %v", c, s)
+		}
+		if cv, raw := h.cancelView(t, order, d); cv.Refund.TargetMinor != 22000 || cv.Refund.State != "returned" {
+			t.Fatalf("cancelled %s", raw)
+		}
+	})
+	t.Run("returned, then a no-show", func(t *testing.T) {
+		h := newPayHarness(t)
+		f := h.setup(t)
+		pol := h.policy(t, "p1")
+		h.staffGrants(t)
+		h.withRefunds()
+		order, d, cake, stray, _ := h.strayOrder(t, f, pol, "so")
+		h.returnStray(t, order, d, stray)
+		// The current 14000p quote is paid, the order sent out and nobody is
+		// there: 50% of what the order cost (cake 10000p + delivery 14000p).
+		paid, s := h.deliveryStarted(t, order, d, "c2")
+		h.deliveryPaid(t, order, paid, s, "evt_so_paid")
+		ready := h.makeReady(t, order, d, "so")
+		if _, err := h.fulfil(fulfilment, "d1", order, checkout.ActionDispatch, ready); err != nil {
+			t.Fatalf("dispatch: %v", err)
+		}
+		h.now = at("12:30")
+		if _, err := h.fulfil(chef, "ns", order, checkout.ActionNoShow, ready+1); err != nil {
+			t.Fatalf("no-show: %v", err)
+		}
+		if errs := h.drain(t); len(errs) != 0 {
+			t.Fatalf("no-show:\n%s", reasons(errs))
+		}
+		if c := refundAmounts(t, h, cake); len(c) != 1 || c[0] != 5000 {
+			t.Fatalf("cake refunds %v", c)
+		}
+		if got := h.operations(t, paid); len(got) != 0 {
+			t.Fatalf("delivery refunded automatically: %+v", got)
+		}
+		v, raw := h.deliveryView(t, order, d)
+		if v.Lifecycle != "completed" || v.Refund.TargetMinor != 24000 || v.Refund.SucceededMinor != 17000 ||
+			v.Refund.DeliveryPending != 7000 {
+			t.Fatalf("no-show %s", raw)
+		}
+	})
+}
+
+// A delivery collection whose Stripe call is never admitted (no key on the
+// worker) is in flight only for its first 15 minutes: then it is flagged
+// delivery_payment_stuck, holds no money (the delivery is payable again and
+// account deletion is not blocked) and the next delivery command closes it
+// as never dispatched, so no Stripe call is ever made for it. The quote may
+// be the Stripe maximum (99999999p), and the line item names the delivery.
+func TestStuckDeliveryCollectionIsClosed(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d, _ := h.deliveryOrder(t, f, pol, "dk", "")
+	v, _ := h.deliveryView(t, order, d)
+	q1, err := h.quoteDelivery("q1", order, v.Version, 12000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	version := v.Version + 1
+	keyless := *h.pay
+	keyless.Provider = nil
+	h.handler = jobs.Chain(h.cmds.Handle, keyless.Handle, h.reviews.Handle)
+	stuck, err := h.payDelivery(order, d, "p1", version, q1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if errs := h.drain(t); len(errs) != 1 {
+		t.Fatalf("without a key: %v", errs)
+	}
+	block := func() string {
+		var b *string
+		if err := h.admin.QueryRow(h.ctx, "SELECT business.account_order_block(o) FROM business.orders o WHERE o.id = $1::uuid",
+			order).Scan(&b); err != nil {
+			t.Fatal(err)
+		}
+		if b == nil {
+			return ""
+		}
+		return *b
+	}
+	flags := func() string { return string(h.staffJSON(t, chef, order)["attention"]) }
+	if v, raw := h.deliveryView(t, order, d); v.Delivery.State != "payment_checking" || *v.Delivery.Payable {
+		t.Fatalf("young collection: %s", raw)
+	}
+	if _, err := h.payDelivery(order, d, "p2", version, q1.ID); conflict(err) != "payment_in_progress" {
+		t.Fatalf("pay again while young: %v", err)
+	}
+	if b, fl := block(), flags(); b != "payment_being_checked" || strings.Contains(fl, "delivery_payment_stuck") {
+		t.Fatalf("young: block %q flags %s", b, fl)
+	}
+
+	h.age(t, stuck.ID)
+	if v, raw := h.deliveryView(t, order, d); v.Delivery.State != "quoted" || !*v.Delivery.Payable {
+		t.Fatalf("stuck collection: %s", raw)
+	}
+	if b, fl := block(), flags(); b != "" || !strings.Contains(fl, "delivery_payment_stuck") {
+		t.Fatalf("stuck: block %q flags %s", b, fl)
+	}
+	// The chef's new quote closes it; the order can be quoted and paid
+	// again.
+	q2, err := h.quoteDelivery("q2", order, version, checkout.MaxDeliveryMinor)
+	if err != nil {
+		t.Fatalf("re-quote over a stuck collection: %v", err)
+	}
+	if n := h.count(t, `SELECT count(*) FROM business.payment_collection WHERE id = $1::uuid AND state = 'cancelled'
+		AND cancel_reason = 'never_dispatched' AND dispatch_started_at IS NULL`, stuck.ID); n != 1 {
+		t.Fatal("the stuck collection was not closed as never dispatched")
+	}
+	if fl := flags(); strings.Contains(fl, "delivery_payment_stuck") {
+		t.Fatalf("flag after the close %s", fl)
+	}
+	if got := h.auditDetails(t, "payment.cancelled"); len(got) != 1 || !strings.Contains(got[0], stuck.ID) ||
+		!strings.Contains(got[0], "never_dispatched") {
+		t.Fatalf("audit %v", got)
+	}
+	h.handler = jobs.Chain(h.cmds.Handle, h.pay.Handle, h.reviews.Handle)
+	paid, err := h.payDelivery(order, d, "p3", version+1, q2.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.due(t)
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("dispatch: %v", errs)
+	}
+	h.stripe.mu.Lock()
+	creates, form := append([]string(nil), h.stripe.creates...), h.stripe.forms[paid.ID]
+	h.stripe.mu.Unlock()
+	// One create for the new collection; none ever for the closed one (the
+	// cake's own create is the first).
+	if len(creates) != 2 || creates[1] != paid.ID {
+		t.Fatalf("creates %v", creates)
+	}
+	if c := h.collection(t, stuck.ID); c.State != "cancelled" {
+		t.Fatalf("closed collection %+v", c)
+	}
+	if !strings.Contains(form, "unit_amount%5D=99999999") || !strings.Contains(form, "GK+Cakes+delivery") ||
+		strings.Contains(form, "GK+Cakes+order") {
+		t.Fatalf("delivery request %s", form)
+	}
+	h.stripe.mu.Lock()
+	cakeForm := h.stripe.forms[creates[0]]
+	h.stripe.mu.Unlock()
+	if !strings.Contains(cakeForm, "GK+Cakes+order") {
+		t.Fatalf("cake request %s", cakeForm)
 	}
 }
