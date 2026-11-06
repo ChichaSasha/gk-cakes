@@ -48,8 +48,8 @@ trap 'kill $pids 2>/dev/null || true' EXIT
 GK_QA_CTL_TOKEN="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 export GK_QA_CTL_TOKEN
 # The servers never see a test password meant for the browser script.
-PORT="$PROXY_PORT" env -u STAFF_PW node "$here/proxy.mjs" & pids="$pids $!"
-(cd "$ui" && exec env -u STAFF_PW PORT="$UI_PORT" ORIGIN="http://127.0.0.1:$UI_PORT" PUBLIC_API_URL="http://127.0.0.1:$PROXY_PORT" \
+PORT="$PROXY_PORT" env -u STAFF_PW -u CUSTOMER_PW node "$here/proxy.mjs" & pids="$pids $!"
+(cd "$ui" && exec env -u STAFF_PW -u CUSTOMER_PW PORT="$UI_PORT" ORIGIN="http://127.0.0.1:$UI_PORT" PUBLIC_API_URL="http://127.0.0.1:$PROXY_PORT" \
 	PUBLIC_AUTH_URL="$AUTH_URL" PUBLIC_AUTH_PUBLISHABLE_KEY="$AUTH_KEY" node build >/dev/null 2>&1) & pids="$pids $!"
 for _ in $(seq 1 75); do curl -fs -o /dev/null "http://127.0.0.1:$UI_PORT/" && break; sleep 0.2; done
 curl -fs -o /dev/null -H "x-qa-ctl: $GK_QA_CTL_TOKEN" "http://127.0.0.1:$PROXY_PORT/__ctl?log=1" || die "the QA proxy did not start"
