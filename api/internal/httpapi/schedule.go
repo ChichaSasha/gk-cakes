@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/catalog"
+	"github.com/ChichaSasha/gk-cakes/api/internal/checkout"
 	"github.com/ChichaSasha/gk-cakes/api/internal/identity"
 	"github.com/ChichaSasha/gk-cakes/api/internal/schedule"
 )
@@ -19,6 +20,7 @@ import (
 type Schedule interface {
 	Availability(ctx context.Context, from, to time.Time, quantity int) (schedule.Availability, error)
 	Choices(ctx context.Context, day time.Time, mode string, quantity int) (schedule.Choices, error)
+	MoveChoices(ctx context.Context, subject string, digest []byte, orderID string) (schedule.Choices, error)
 	PublicLots(ctx context.Context) ([]schedule.Lot, error)
 	CurrentVersion(ctx context.Context, subject string) (schedule.Version, error)
 	VersionByID(ctx context.Context, subject, id string) (schedule.Version, error)
@@ -73,8 +75,9 @@ func queryRange(w http.ResponseWriter, r *http.Request) (time.Time, time.Time, b
 }
 
 // schedulePublicRoutes registers the customer schedule reads (no sign-in;
-// browsing creates no hold).
-func schedulePublicRoutes(mux *http.ServeMux, sch Schedule, logger *slog.Logger) {
+// browsing creates no hold). purpose=pickup_move needs the order's owner
+// (bearer) or its guest capability with move_pickup.
+func schedulePublicRoutes(mux *http.ServeMux, sch Schedule, id Identity, logger *slog.Logger) {
 	mux.HandleFunc("GET /api/v1/availability", func(w http.ResponseWriter, r *http.Request) {
 		from, to, ok := queryRange(w, r)
 		if !ok {
@@ -88,6 +91,10 @@ func schedulePublicRoutes(mux *http.ServeMux, sch Schedule, logger *slog.Logger)
 		respond(w, r, logger, http.StatusOK, a, err)
 	})
 	mux.HandleFunc("GET /api/v1/schedule", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("purpose") == schedule.PurposePickupMove {
+			moveChoices(w, r, sch, id, logger)
+			return
+		}
 		day, ok := queryDate(w, r, "date")
 		if !ok {
 			return
@@ -98,10 +105,10 @@ func schedulePublicRoutes(mux *http.ServeMux, sch Schedule, logger *slog.Logger)
 				"fulfillment_mode must be collection, customer_courier or gk_delivery", false)
 			return
 		}
-		// Only new purchases until orders exist (GK-025); existing checkouts
-		// and pickup moves need an owned order context.
+		// New purchases, or an owned pickup move (above); an existing
+		// checkout keeps the time on its quote and order.
 		if p := r.URL.Query().Get("purpose"); p != "" && p != "new_purchase" {
-			writeError(w, r, http.StatusUnprocessableEntity, "INVALID_INPUT", "purpose must be new_purchase", false)
+			writeError(w, r, http.StatusUnprocessableEntity, "INVALID_INPUT", "purpose must be new_purchase or pickup_move", false)
 			return
 		}
 		q, ok := queryQuantity(w, r)
@@ -115,6 +122,49 @@ func schedulePublicRoutes(mux *http.ServeMux, sch Schedule, logger *slog.Logger)
 		lots, err := sch.PublicLots(r.Context())
 		respond(w, r, logger, http.StatusOK, map[string]any{"cakes": lots}, err)
 	})
+}
+
+// moveChoices answers GET /schedule?purpose=pickup_move&order_id=...: the
+// same-day move choices of the caller's order (K06). date and
+// fulfillment_mode are optional and must be the order's when sent (a date or
+// mode change is the chef's, never this flow); quantity does not apply.
+func moveChoices(w http.ResponseWriter, r *http.Request, sch Schedule, id Identity, logger *slog.Logger) {
+	q := r.URL.Query()
+	for k := range q {
+		if !slices.Contains([]string{"purpose", "order_id", "date", "fulfillment_mode"}, k) {
+			writeError(w, r, http.StatusUnprocessableEntity, "INVALID_INPUT", k+" does not apply to purpose=pickup_move", false)
+			return
+		}
+	}
+	orderID := q.Get("order_id")
+	if !catalog.ValidUUID(orderID) {
+		writeError(w, r, http.StatusUnprocessableEntity, "INVALID_INPUT", "order_id must be the order's ID", false)
+		return
+	}
+	a, signedIn, ok := optionalCustomer(id, w, r, logger)
+	if !ok {
+		return
+	}
+	var digest []byte
+	if !signedIn {
+		d, err := checkout.GuestProofDigest(r.Header.Get(OrderCapabilityHeader))
+		if err != nil {
+			writeError(w, r, http.StatusNotFound, "NOT_FOUND", "Not found", false)
+			return
+		}
+		digest = d
+	}
+	c, err := sch.MoveChoices(r.Context(), a.Subject, digest, orderID)
+	if err != nil {
+		catalogError(w, r, logger, err)
+		return
+	}
+	if (q.Has("date") && q.Get("date") != c.Date) || (q.Has("fulfillment_mode") && q.Get("fulfillment_mode") != c.FulfillmentMode) {
+		writeError(w, r, http.StatusUnprocessableEntity, "INVALID_INPUT",
+			"a pickup move keeps the order's date and fulfillment mode; ask the chef to change them", false)
+		return
+	}
+	writeJSON(w, http.StatusOK, c)
 }
 
 // scheduleStaffRoutes registers the chef and fulfilment schedule routes.

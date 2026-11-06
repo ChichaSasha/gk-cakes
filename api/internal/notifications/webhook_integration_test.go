@@ -476,12 +476,18 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.manual_payout_request(uuid, uuid, text, text, integer, uuid, text, text, timestamp with time zone)",
 		// Order notices (0030): the API records the UI origin of order links.
 		"business.notice_settings_record(text, text, text[])",
+		// Appointment changes (0031): the chef's amendment, the customer's
+		// same-day move and its schedule choices.
+		"business.order_appointment_change_request(uuid, uuid, text, text, integer, date, uuid, text, timestamp with time zone, text, text, text, timestamp with time zone)",
 		"business.order_cancel_request(uuid, bytea, uuid, text, text, integer, uuid, text, text, timestamp with time zone)",
 		"business.order_cancellation_preview(uuid, bytea, uuid, timestamp with time zone)",
 		"business.order_chef_cancel_request(uuid, uuid, text, text, integer, text, text, timestamp with time zone)",
 		"business.order_free_confirm_request(uuid, bytea, uuid, text, text, integer, text, timestamp with time zone)",
+		"business.order_fulfillment_transition(uuid, uuid, text, text, integer, text, text, timestamp with time zone)",
 		"business.order_get(uuid, uuid, bytea)",
+		"business.order_handover_request(uuid, uuid, text, text, integer, text, text, timestamp with time zone)",
 		"business.order_late_payment_request(uuid, uuid, text, text, integer, text, text, timestamp with time zone, text, text, timestamp with time zone)",
+		"business.order_pickup_move_request(uuid, bytea, uuid, text, text, integer, uuid, text, timestamp with time zone)",
 		"business.order_production_start(uuid, uuid, text, text, integer, timestamp with time zone)",
 		"business.order_staff_get(uuid, uuid)",
 		"business.order_staff_list(uuid, date, date, text[], boolean, timestamp with time zone, timestamp with time zone, uuid, integer)",
@@ -500,6 +506,7 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.refund_observation_resolve(uuid, text, text, uuid, integer, uuid, text, uuid, text)",
 		"business.refund_operation_decide(uuid, text, text, uuid, integer, uuid, text, text, text)",
 		"business.refund_remainder_reserve(uuid, text, text, uuid, integer, uuid, text)",
+		"business.schedule_move_slots(uuid, bytea, uuid, timestamp with time zone)",
 		"business.schedule_public_days(date, date, timestamp with time zone, integer)",
 		"business.schedule_public_slots(date, text, timestamp with time zone, integer)",
 		"business.schedule_staff_days(uuid, date, date, timestamp with time zone)",
