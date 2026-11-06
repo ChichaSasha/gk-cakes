@@ -492,8 +492,8 @@ released choices are. Technical support's rows carry no money or payment
 requirement, so its wording says only what it knows ("Waiting for payment or
 confirmation", "Confirming the order", "Confirmed · automatic start later",
 "Released", "After payment or confirmation"); free orders read "Free · …"
-and "After confirmation" for the chef, never "Paid". Read
-only for now: no order page and no actions yet.
+and "After confirmation" for the chef, never "Paid". Each order ID links to
+its page (below).
 
 Differences from the sketch, each because the API doesn't give it yet:
 no order number (the first 8 characters of the order ID are shown), no
@@ -508,6 +508,42 @@ server's two amounts ("Partly refunded · £35 of £90"), never a difference
 worked out here. Who is signed in shows the role (the API has no staff
 names); the brand links to Orders (Today isn't built). The "later" labels and
 input borders are darker than the sketch's for contrast.
+
+### Order page (GK-031 slice 1)
+
+`/admin/orders/[id]` (private, `ssr = false`) is the sketch's `order.html`
+from `GET /api/v1/admin/orders/{id}` (`src/lib/admin/order-detail.ts`, styles
+`order-detail.css`) for each role, with only the keys the API sends it:
+banners for the live state (payment in progress / unknown / not matching,
+confirming, cancelling, a payment that arrived after the release, a refund
+needing attention or made outside GK Cakes), the paid-late card (chef: "your
+decision"; others: "Elina decides"), Cake, Handover, GK delivery, a Record of
+fulfilment steps and time changes, Progress, Money (chef) and the refund
+ledger (the server's amounts; technical support sees the refund state only).
+
+Steps, shown only when the API's tables allow them for this role (technical
+support looks only; "Customer didn't come…" is the chef's, collection and own
+courier only, from the start of the time): Start making
+(`POST …/start-production`), Mark ready, Out for delivery (paid or waived
+delivery, no "can't deliver" or open failed-delivery choice), a problem
+(`delivery_exception`, a one-line reason), Hand over / Delivered · hand over
+(two-step confirm, 202, then the order is read every `poll_after_seconds`
+until secured, refused or still pending with "Check again") and the no-show
+(confirm, 202, polled). Each sends the version shown and an Idempotency-Key
+`chef-<action>-<order>-v<version>-<nonce>`, reused when the same action is
+repeated at that version (a network failure, a freeze, a server error) and
+new after a reload. 409 `STALE_VERSION` reads the order again and shows "This
+order changed while you were looking" (focused); other refusals are plain
+words (`refusalOf`). Focus moves to the step's status line (a live region) or
+error after each step; Escape closes a confirm step and returns focus to its
+button.
+
+Not on this page yet (next slices): cancelling and refunds, late-payment
+offers and decisions, delivery quotes and waivers, "can't deliver" and failed
+deliveries, time/date changes, recovery tools, batches with Start making.
+The API gives no allergens, cake image, emails sent, payment-link deadlines,
+staff names or delivery address yet, so those parts of the sketch are left
+out.
 
 ## Dependency audit
 
