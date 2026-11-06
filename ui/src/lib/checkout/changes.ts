@@ -44,8 +44,30 @@ export function changeInProgress(order: Order): boolean {
 export function mayCancel(order: Order, who: Who | null | undefined): boolean {
 	if (!canAct(who) || !CHANGEABLE.includes(order.lifecycle) || changeInProgress(order))
 		return false;
+	if (deliveryProblemOpen(order)) return false;
 	const sent = ['out_for_delivery', 'exception'].includes(order.fulfillment?.state ?? '');
 	return !(order.fulfillment_mode === 'gk_delivery' && sent);
+}
+
+/**
+ * Whether a GK delivery problem gives the customer their own choice (the Q5
+ * choice when GK can't deliver or the delivery quote's pay-by passed, or a
+ * failed delivery): that choice can return everything paid, so the standard
+ * cancellation (100% / 50%) is not offered here. Those choices (states 14
+ * and 19) are not built on this page yet: the customer contacts the chef.
+ */
+export function deliveryProblemOpen(order: Order): boolean {
+	return order.delivery_choice?.open === true || order.delivery_failure?.open === true;
+}
+
+/** Whether the page says "To cancel this order, please contact the chef." instead of offering cancellation. */
+export function cancelViaChef(order: Order, who: Who | null | undefined): boolean {
+	return (
+		canAct(who) &&
+		CHANGEABLE.includes(order.lifecycle) &&
+		!changeInProgress(order) &&
+		deliveryProblemOpen(order)
+	);
 }
 
 /**
@@ -302,8 +324,16 @@ export function trackKind(r: Refund): TrackKind {
 			return 'attention';
 		case 'returned':
 			return 'returned';
-		case 'partly_returned':
-			return (r.in_progress_minor ?? 0) > 0 || DELIVERY_PENDING(r) === 0 ? 'pending' : 'returned';
+		case 'partly_returned': {
+			// The card part is back only when nothing is in progress and what is
+			// returned plus the chef's part covers the whole refund.
+			const delivery = DELIVERY_PENDING(r);
+			const covered =
+				Number.isSafeInteger(r.succeeded_minor) &&
+				Number.isSafeInteger(r.target_minor) &&
+				r.succeeded_minor + delivery >= r.target_minor;
+			return (r.in_progress_minor ?? 0) === 0 && delivery > 0 && covered ? 'returned' : 'pending';
+		}
 		default:
 			return 'requested';
 	}
@@ -617,7 +647,68 @@ export function moveProblemFor(err: unknown): { message: string; next: MoveNext;
 	};
 }
 
+/**
+ * What the order showed before this page asked for a change: the latest
+ * command's request time (and the version). Only an outcome of a newer
+ * command is this page's own (the order still carries the previous move or
+ * cancellation until it is read again).
+ */
+export interface ChangeBaseline {
+	requestedAt: string | null;
+	version: number;
+}
+
+export function moveBaseline(order: Order): ChangeBaseline {
+	return { requestedAt: order.appointment_change?.requested_at ?? null, version: order.version };
+}
+
+export function cancelBaseline(order: Order): ChangeBaseline {
+	return { requestedAt: order.cancellation?.requested_at ?? null, version: order.version };
+}
+
+/** Whether a command requested at requestedAt is newer than the baseline's. */
+function newer(requestedAt: string | null | undefined, order: Order, b: ChangeBaseline): boolean {
+	return Boolean(requestedAt) && requestedAt !== b.requestedAt && order.version > b.version;
+}
+
 /** The outcome of this page's own move, once the API reports it (moved or refused). */
+export function moveOutcomeSince(
+	order: Order,
+	baseline: ChangeBaseline
+): { ok: boolean; message: string } | undefined {
+	return newer(order.appointment_change?.requested_at, order, baseline)
+		? moveOutcome(order)
+		: undefined;
+}
+
+/**
+ * The outcome of this page's own cancellation: refused (the order changed
+ * meanwhile) or cancelled. An earlier command's outcome never counts.
+ */
+export function cancelOutcomeSince(
+	order: Order,
+	baseline: ChangeBaseline
+): 'refused' | 'cancelled' | undefined {
+	if (order.lifecycle === 'cancelled') return 'cancelled';
+	const c = order.cancellation;
+	if (!c || !newer(c.requested_at, order, baseline)) return undefined;
+	if (c.state === 'refused') return 'refused';
+	return c.state === 'cancelled' ? 'cancelled' : undefined;
+}
+
+/** A refreshed preview at the same rate whose amount or paid basis differs from the one shown. */
+export function amountChanged(
+	seen: CancellationPreview | null | undefined,
+	fresh: CancellationPreview
+): boolean {
+	return Boolean(
+		seen &&
+		fresh.rate === seen.rate &&
+		(fresh.amount_minor !== seen.amount_minor || fresh.paid_minor !== seen.paid_minor)
+	);
+}
+
+/** The latest move's outcome as the order reports it (moved or refused). */
 export function moveOutcome(order: Order): { ok: boolean; message: string } | undefined {
 	const ch = order.appointment_change;
 	if (!ch || ch.kind !== 'pickup_move' || ch.state === 'processing') return undefined;

@@ -8,7 +8,13 @@
 	// preview's, never computed here.
 	import { onMount, tick } from 'svelte';
 	import { newIdempotencyKey } from '../../api';
-	import { boundaryAlert, cancelProblemFor, previewRefreshDelay, previewView } from '../changes';
+	import {
+		amountChanged,
+		boundaryAlert,
+		cancelProblemFor,
+		previewRefreshDelay,
+		previewView
+	} from '../changes';
 	import type { OrderChangesApi } from '../client';
 	import type { ActionKeys, Who } from '../flow';
 	import type { CancellationPreview } from '../types';
@@ -57,6 +63,7 @@
 			if (!active) return false;
 			const receivedAt = Date.now();
 			const crossed = compare ? boundaryAlert(preview, p) : undefined;
+			const changed = compare && amountChanged(preview, p);
 			preview = p;
 			canRetryPreview = false;
 			if (crossed) {
@@ -64,6 +71,10 @@
 				problem = '';
 				await tick();
 				alertHeading?.focus();
+			} else if (changed) {
+				// Same side of the deadline, another amount (for example the
+				// order changed): never confirm a different amount silently.
+				problem = 'We’ve refreshed your refund amount. Please check it and confirm again.';
 			}
 			const delay = previewRefreshDelay(p, receivedAt, receivedAt);
 			if (delay !== undefined) timer = setTimeout(() => void load(true), delay);
@@ -79,6 +90,12 @@
 			canRetryPreview = !preview;
 			return false;
 		}
+	}
+
+	/** Keep my order: not while a confirmation is in flight (its answer must reach the page). */
+	function keep() {
+		if (busy) return;
+		onclose();
 	}
 
 	async function confirm() {
@@ -197,7 +214,9 @@
 				<span>{busy ? 'Cancelling your order…' : view.buttonLabel}</span>
 				<span class="co-arrow" aria-hidden="true">→</span>
 			</button>
-			<button type="button" onclick={() => onclose()}>Keep my order</button>
+			<button type="button" onclick={keep} aria-disabled={busy ? 'true' : undefined}
+				>Keep my order</button
+			>
 		</div>
 	{/if}
 </section>

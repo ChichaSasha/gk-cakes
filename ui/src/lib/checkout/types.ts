@@ -300,4 +300,6 @@ export interface Order {
 	delivery?: { state: string; paid_minor?: number } | null;
 	/** GK delivery only (0036): a protected change of the order is unresolved. */
 	delivery_choice?: { open: boolean; pending: boolean } | null;
+	/** A failed GK delivery's choice (PR #62), when the API sends it. */
+	delivery_failure?: { open: boolean } | null;
 }

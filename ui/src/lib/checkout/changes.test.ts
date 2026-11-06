@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../api';
 import {
+	amountChanged,
 	boundaryAlert,
 	canAct,
+	cancelBaseline,
+	cancelOutcomeSince,
+	cancelViaChef,
+	deliveryProblemOpen,
+	moveBaseline,
+	moveOutcomeSince,
 	cancelledStory,
 	cancelProblemFor,
 	changeInProgress,
@@ -651,5 +658,159 @@ describe('moveOutcome', () => {
 		});
 		expect(moveOutcome(ch('refused', 'too_late'))?.message).toMatch(/less than 6 hours/);
 		expect(moveOutcome(order())).toBeUndefined();
+	});
+});
+
+describe('a GK delivery problem with its own choice (M3)', () => {
+	const gk = (over: Partial<Order> = {}) => order({ fulfillment_mode: 'gk_delivery', ...over });
+
+	it('no standard cancellation while the can’t-deliver choice is open; contact the chef instead', () => {
+		const open = gk({ delivery_choice: { open: true, pending: false } });
+		expect(deliveryProblemOpen(open)).toBe(true);
+		expect(mayCancel(open, guest)).toBe(false);
+		expect(cancelViaChef(open, guest)).toBe(true);
+		expect(timeChange(open, guest)).toBe('contact_chef');
+		const closed = gk({ delivery_choice: { open: false, pending: false } });
+		expect(mayCancel(closed, guest)).toBe(true);
+		expect(cancelViaChef(closed, guest)).toBe(false);
+	});
+
+	it('the same for an open failed-delivery choice (when the API sends it)', () => {
+		const failed = gk({ lifecycle: 'ready', delivery_failure: { open: true } });
+		expect(mayCancel(failed, owner)).toBe(false);
+		expect(cancelViaChef(failed, owner)).toBe(true);
+		expect(mayCancel(gk({ delivery_failure: { open: false } }), owner)).toBe(true);
+	});
+
+	it('never for a viewer without access, a closed order or while a change is processed', () => {
+		const open = { delivery_choice: { open: true, pending: false } };
+		expect(cancelViaChef(gk(open), null)).toBe(false);
+		expect(cancelViaChef(gk({ ...open, lifecycle: 'cancelled' }), guest)).toBe(false);
+		expect(cancelViaChef(gk({ delivery_choice: { open: true, pending: true } }), guest)).toBe(
+			false
+		);
+	});
+});
+
+describe('partly returned: the card part reads returned only when covered (m4)', () => {
+	it('nothing in progress and a chef part, but returned + chef part short of the target: pending', () => {
+		expect(
+			trackKind(
+				refund({
+					state: 'partly_returned',
+					target_minor: 10500,
+					succeeded_minor: 2000,
+					in_progress_minor: 0,
+					delivery_pending_minor: 6000
+				})
+			)
+		).toBe('pending');
+		expect(
+			trackKind(
+				refund({
+					state: 'partly_returned',
+					target_minor: 10500,
+					succeeded_minor: 4500,
+					in_progress_minor: 0,
+					delivery_pending_minor: 6000
+				})
+			)
+		).toBe('returned');
+	});
+});
+
+describe('this page’s own outcome only (M1, M2)', () => {
+	const change = (state: string, requested_at: string, to = 's12') => ({
+		kind: 'pickup_move',
+		state,
+		reason: state === 'refused' ? 'slot_unavailable' : null,
+		requested_by: 'customer',
+		requested_at,
+		to: {
+			date: '2026-10-22',
+			id: to,
+			starts_at: to === 's12' ? '2026-10-22T11:00:00Z' : '2026-10-22T13:00:00Z',
+			ends_at: to === 's12' ? '2026-10-22T12:00:00Z' : '2026-10-22T14:00:00Z'
+		}
+	});
+
+	it('moving twice: the earlier move’s outcome is never taken for the new one', () => {
+		// Already moved to 12:00; the customer now asks for 14:00.
+		const before = order({
+			version: 7,
+			appointment_change: change('moved', '2026-10-21T18:00:00Z')
+		});
+		const base = moveBaseline(before);
+		// Read again before the new command shows: still the old outcome.
+		expect(moveOutcomeSince(before, base)).toBeUndefined();
+		const processing = order({
+			version: 8,
+			appointment_change: change('processing', '2026-10-21T20:01:00Z', 's14')
+		});
+		expect(moveOutcomeSince(processing, base)).toBeUndefined();
+		const moved = order({
+			version: 9,
+			appointment_change: change('moved', '2026-10-21T20:01:00Z', 's14')
+		});
+		expect(moveOutcomeSince(moved, base)?.message).toMatch(/^Your time is now 14:00–15:00/);
+		// A second move from there: the 14:00 outcome is the baseline now.
+		const base2 = moveBaseline(moved);
+		expect(moveOutcomeSince(moved, base2)).toBeUndefined();
+		const refused = order({
+			version: 10,
+			appointment_change: change('refused', '2026-10-21T21:00:00Z')
+		});
+		expect(moveOutcomeSince(refused, base2)).toEqual({
+			ok: false,
+			message:
+				'We couldn’t move your time: that time is no longer available. Your booking is unchanged.'
+		});
+	});
+
+	it('retrying a cancellation after a refusal: the old refusal is not the new outcome', () => {
+		const c = (state: string, requested_at: string) => ({
+			state,
+			reason: state === 'refused' ? 'order_changed' : 'customer_cancelled',
+			rate: state === 'cancelled' ? 100 : null,
+			amount_minor: state === 'cancelled' ? 9000 : null,
+			requested_by: 'customer',
+			requested_at
+		});
+		const before = order({ version: 6, cancellation: c('refused', '2026-10-12T06:00:00Z') });
+		const base = cancelBaseline(before);
+		expect(cancelOutcomeSince(before, base)).toBeUndefined();
+		const pending = order({
+			version: 7,
+			lifecycle: 'cancellation_pending',
+			cancellation: c('processing', '2026-10-14T06:01:00Z')
+		});
+		expect(cancelOutcomeSince(pending, base)).toBeUndefined();
+		expect(
+			cancelOutcomeSince(
+				order({
+					version: 8,
+					lifecycle: 'cancelled',
+					cancellation: c('cancelled', '2026-10-14T06:01:00Z')
+				}),
+				base
+			)
+		).toBe('cancelled');
+		expect(
+			cancelOutcomeSince(
+				order({ version: 8, cancellation: c('refused', '2026-10-14T06:01:00Z') }),
+				base
+			)
+		).toBe('refused');
+	});
+});
+
+describe('amountChanged (m1)', () => {
+	it('flags another amount or paid basis at the same rate; a rate change is the boundary alert', () => {
+		const seen = preview();
+		expect(amountChanged(seen, preview({ preview_id: 'p2' }))).toBe(false);
+		expect(amountChanged(seen, preview({ amount_minor: 8000, paid_minor: 8000 }))).toBe(true);
+		expect(amountChanged(seen, preview({ paid_minor: 9500 }))).toBe(true);
+		expect(amountChanged(seen, preview({ rate: 50, amount_minor: 4500 }))).toBe(false);
+		expect(amountChanged(null, preview())).toBe(false);
 	});
 });

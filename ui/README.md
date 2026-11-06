@@ -206,7 +206,10 @@ it with read, pay, cancel and move_pickup; the API checks it again).
 
 - **Cancel**: "Preview cancellation" on a confirmed, in-production or ready
   order (never after a GK delivery was sent out, never while another change
-  is processed) opens "Cancel your order?" with
+  is processed; while a GK delivery choice is open, `delivery_choice.open` or
+  `delivery_failure.open`, it says "To cancel this order, please contact the
+  chef" instead, as those choices can return everything) opens "Cancel your
+  order?" with
   `POST /orders/{id}/cancellation-preview`: the preview's `amount_minor`
   exactly (never computed here), the side of the deadline from its `rate`,
   the time left as of its `computed_at`, the labelled rounding example after
@@ -216,7 +219,12 @@ it with read, pay, cancel and move_pickup; the API checks it again).
   Idempotency-Key per preview. A preview is asked again at the deadline or
   its 10-minute expiry and after `PREVIEW_STALE` / `STALE_VERSION`; when the
   rate dropped, the boundary alert ("The full-refund deadline has just
-  passed…") takes focus and the button shows the new amount. The page then
+  passed…") takes focus and the button shows the new amount; another amount
+  at the same rate is announced ("We've refreshed your refund amount…").
+  "Keep my order" is inactive while a confirmation is being sent. Only an
+  outcome newer than the order as it was when the panel opened (or the move
+  was sent) counts, so an earlier refusal or move is never shown as the new
+  one. The page then
   reads "Cancelling your order" (`cancellation_pending`, polled) until the
   refund appears.
 - **Refund progress**: a cancelled order with a refund block shows why (by

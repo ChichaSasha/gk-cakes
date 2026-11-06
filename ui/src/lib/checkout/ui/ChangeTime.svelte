@@ -8,12 +8,14 @@
 	import { tick } from 'svelte';
 	import { ApiError } from '../../api';
 	import {
+		moveBaseline,
 		moveIntro,
-		moveOutcome,
+		moveOutcomeSince,
 		moveProblemFor,
 		moveView,
 		shortDate,
 		timeChange,
+		type ChangeBaseline,
 		type MoveView
 	} from '../changes';
 	import type { OrderChangesApi } from '../client';
@@ -29,9 +31,11 @@
 		keys: ActionKeys;
 		/** A move was accepted (202) or the order changed: read the order again (and poll). */
 		onchanged: () => void;
+		/** This page waits for its own move's outcome: keep reading the order until it arrives. */
+		onwaiting?: (waiting: boolean) => void;
 	}
 
-	let { order, who, api, keys, onchanged }: Props = $props();
+	let { order, who, api, keys, onchanged, onwaiting }: Props = $props();
 
 	let open = $state(false);
 	let loading = $state(false);
@@ -41,18 +45,24 @@
 	let status = $state('');
 	let problem = $state('');
 	let busy = $state(false);
-	/** This page asked for a move and waits for its outcome. */
-	let awaiting = $state(false);
+	/**
+	 * The order as it was before this page's move was sent, while it waits
+	 * for that move's outcome (null when not waiting). The order still shows
+	 * an earlier move's outcome until it is read again: only a newer one counts.
+	 */
+	let baseline = $state<ChangeBaseline | null>(null);
+	const awaiting = $derived(baseline !== null);
 
 	const mode = $derived(timeChange(order, who));
 	const moving = $derived(mode === 'moving' ? order.appointment_change : null);
 
 	// The outcome of this page's own move, once the API reports it.
 	$effect(() => {
-		if (!awaiting) return;
-		const outcome = moveOutcome(order);
+		if (!baseline) return;
+		const outcome = moveOutcomeSince(order, baseline);
 		if (!outcome) return;
-		awaiting = false;
+		baseline = null;
+		onwaiting?.(false);
 		if (outcome.ok) {
 			status = outcome.message;
 			problem = '';
@@ -106,6 +116,7 @@
 		const target = view.options.find((o) => o.id === chosen);
 		busy = true;
 		status = '';
+		const before = moveBaseline(order);
 		try {
 			const res = await api.movePickup(
 				order.id,
@@ -116,7 +127,8 @@
 			if (res.state === 'unchanged') {
 				status = 'That’s already your time.';
 			} else {
-				awaiting = true;
+				baseline = before;
+				onwaiting?.(true);
 				status = `${target ? `Moving your time to ${target.label}…` : 'Moving your time…'} This page updates by itself.`;
 				open = false;
 				view = null;

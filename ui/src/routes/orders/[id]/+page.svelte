@@ -15,11 +15,15 @@
 	import { orderCapability, takeOrderProblem } from '../../../lib/guest';
 	import { accountToken, api, changesApi, checkoutConfigured } from '../../../lib/checkout/client';
 	import {
+		cancelBaseline,
+		cancelOutcomeSince,
+		cancelViaChef,
 		changePoll,
 		deliveryPaid,
 		mayCancel,
 		refundProgress,
-		timeChange
+		timeChange,
+		type ChangeBaseline
 	} from '../../../lib/checkout/changes';
 	import CancelPanel from '../../../lib/checkout/ui/CancelPanel.svelte';
 	import ChangeTime from '../../../lib/checkout/ui/ChangeTime.svelte';
@@ -69,8 +73,17 @@
 	let cancelOpen = $state(false);
 	/** The amount of the preview this page confirmed, while its cancellation is secured. */
 	let cancelledMinor = $state<number | undefined>(undefined);
-	/** This page asked for a cancellation and waits for its outcome. */
-	let awaitingCancel = $state(false);
+	/**
+	 * The order as it was when the cancellation panel opened, while this
+	 * page waits for its own cancellation's outcome (null otherwise). An
+	 * earlier cancellation's outcome (for example a refusal) never counts.
+	 */
+	let cancelSent = $state<ChangeBaseline | null>(null);
+	let cancelOpenedAt: ChangeBaseline | null = null;
+	/** The time-change section waits for this page's own move's outcome. */
+	let awaitingMove = $state(false);
+	const REFUSED =
+		'We couldn’t cancel your order because it changed while we were cancelling it. It hasn’t been cancelled: you can try again.';
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let attempt = 0;
 	let pollStarted = 0;
@@ -82,6 +95,7 @@
 		order ? withOrderProblem(orderView(order, { returned, cancelledMinor }), handoff?.next) : null
 	);
 	const canCancel = $derived(order ? mayCancel(order, who) : false);
+	const cancelContact = $derived(order ? cancelViaChef(order, who) : false);
 	const change = $derived(order ? timeChange(order, who) : 'none');
 	const refundSummary = $derived(
 		order?.refund ? refundProgress(order.refund, order.currency) : null
@@ -90,15 +104,15 @@
 	// The outcome of this page's own cancellation: a refusal (the order
 	// changed meanwhile) leaves the order as it was, and says so.
 	$effect(() => {
-		if (!awaitingCancel || !order) return;
-		const state = order.cancellation?.state;
-		if (state === 'refused') {
-			awaitingCancel = false;
+		if (!cancelSent || !order) return;
+		const outcome = cancelOutcomeSince(order, cancelSent);
+		if (outcome === 'refused') {
+			cancelSent = null;
 			cancelledMinor = undefined;
-			actionProblem =
-				'We couldn’t cancel your order because it changed while we were cancelling it. It hasn’t been cancelled: you can try again.';
-		} else if (state === 'cancelled' || order.lifecycle === 'cancelled') {
-			awaitingCancel = false;
+			actionProblem = REFUSED;
+		} else if (outcome === 'cancelled') {
+			cancelSent = null;
+			actionProblem = '';
 		}
 	});
 
@@ -110,7 +124,7 @@
 			if (!e.persisted) return;
 			busy = false;
 			busyText = '';
-			refresh();
+			void refresh();
 		};
 		window.addEventListener('pageshow', shown);
 		return () => {
@@ -175,7 +189,7 @@
 		clearTimeout(timer);
 		if (!active || !order) return;
 		const v = orderView(order, { returned, cancelledMinor });
-		if (!v.poll && !changePoll(order) && !awaitingCancel) {
+		if (!v.poll && !changePoll(order) && !cancelSent && !awaitingMove) {
 			attempt = 0;
 			pollStarted = 0;
 			return;
@@ -188,34 +202,44 @@
 		timer = setTimeout(() => void load(), nextPollDelay(attempt++));
 	}
 
-	function refresh() {
+	function refresh(): Promise<void> {
 		pollStopped = false;
 		attempt = 0;
 		pollStarted = 0;
-		void load();
+		return load();
 	}
 
 	function openCancel() {
+		if (!order) return;
 		actionProblem = '';
+		cancelOpenedAt = cancelBaseline(order);
 		cancelOpen = true;
 	}
 
+	/** Keep my order (focus back on Preview cancellation), or a refusal that closes the panel. */
 	async function closeCancel(problem?: string) {
 		cancelOpen = false;
 		if (problem) {
 			actionProblem = problem;
-			refresh();
+			// The order is read again (Preview cancellation may go away): the
+			// status heading takes focus; the refusal is announced as an alert.
+			await refresh();
+			await tick();
+			document.getElementById('status-h')?.focus();
+			return;
 		}
 		await tick();
-		document.getElementById('preview-cancel')?.focus();
+		(document.getElementById('preview-cancel') ?? document.getElementById('status-h'))?.focus();
 	}
 
 	async function cancelled(amountMinor: number) {
 		cancelOpen = false;
 		cancelledMinor = amountMinor;
-		awaitingCancel = true;
+		cancelSent = cancelOpenedAt ?? (order ? cancelBaseline(order) : null);
 		actionProblem = '';
-		refresh();
+		// Focus the status heading once it says what happened (it is outside
+		// the live region, so it is read once).
+		await refresh();
 		await tick();
 		document.getElementById('status-h')?.focus();
 	}
@@ -263,7 +287,7 @@
 		}
 		busy = false;
 		busyText = '';
-		refresh();
+		void refresh();
 	}
 </script>
 
@@ -285,12 +309,10 @@
 			<p class="notice" role="status">Loading your order…</p>
 		{:else}
 			<section class="co-card" aria-labelledby="status-h">
-				<div aria-live="polite">
-					<h2 class="co-h oc-focus" id="status-h" tabindex="-1">{view.title}</h2>
-					<div class="notice {view.tone}">
-						{#each view.lines as line (line)}<p>{line}</p>{/each}
-						{#if view.refund}<p>{view.refund}</p>{/if}
-					</div>
+				<h2 class="co-h oc-focus" id="status-h" tabindex="-1">{view.title}</h2>
+				<div class="notice {view.tone}" aria-live="polite">
+					{#each view.lines as line (line)}<p>{line}</p>{/each}
+					{#if view.refund}<p>{view.refund}</p>{/if}
 				</div>
 				{#if order.lifecycle === 'cancelled' && order.refund}
 					<RefundProgress refund={order.refund} currency={order.currency} />
@@ -322,7 +344,7 @@
 							</button>
 						{/if}
 						{#if pollStopped}
-							<button type="button" onclick={refresh}>Refresh status</button>
+							<button type="button" onclick={() => void refresh()}>Refresh status</button>
 						{/if}
 					</div>
 				{/if}
@@ -346,11 +368,18 @@
 					onclose={(p) => void closeCancel(p)}
 					oncancelled={(amount) => void cancelled(amount)}
 				/>
-			{:else if who && (change !== 'none' || canCancel)}
+			{:else if who && (change !== 'none' || canCancel || cancelContact)}
 				<section class="co-card" aria-labelledby="change-h">
 					{#if change === 'move' || change === 'moving'}
 						<h2 class="co-h" id="change-h">Change your time</h2>
-						<ChangeTime {order} {who} api={changesApi} {keys} onchanged={refresh} />
+						<ChangeTime
+							{order}
+							{who}
+							api={changesApi}
+							{keys}
+							onchanged={() => void refresh()}
+							onwaiting={(w) => (awaitingMove = w)}
+						/>
 					{:else}
 						<h2 class="co-h" id="change-h">Change or cancel</h2>
 						{#if change === 'contact_chef'}
@@ -360,6 +389,13 @@
 								>: a GK delivery time can only change with the chef’s agreement.
 							</p>
 						{/if}
+					{/if}
+					{#if cancelContact}
+						<p>
+							To cancel this order, please <a href="mailto:gk.cake.london@gmail.com"
+								>contact the chef</a
+							>.
+						</p>
 					{/if}
 					{#if canCancel}
 						<div class="oc-actions">
@@ -451,6 +487,7 @@
 					<div class="totals">
 						<span>Returned so far</span><span>{refundSummary.returnedSoFar}</span>
 					</div>
+					<p class="small">“Returned” appears only when our payment provider confirms it.</p>
 				{/if}
 				{#if view.refundTerms === 'standard'}
 					<p class="small" id="refund-terms">
