@@ -259,6 +259,33 @@ func (f *fakeCheckout) PayDeliveryRefund(_ context.Context, subject, _, id strin
 	return catalog.Result{ID: "op-" + id, Replayed: f.replayed}, nil
 }
 
+func (f *fakeCheckout) QuoteDelivery(_ context.Context, subject, _, id string, _ checkout.DeliveryQuoteInput) (catalog.Result, error) {
+	f.calls++
+	f.subject, f.orderID = subject, id
+	if f.freeErr != nil {
+		return catalog.Result{}, f.freeErr
+	}
+	return catalog.Result{ID: "quote-" + id, Replayed: f.replayed}, nil
+}
+
+func (f *fakeCheckout) WaiveDelivery(_ context.Context, subject, _, id string, _ checkout.DeliveryWaiverInput) (catalog.Result, error) {
+	f.calls++
+	f.subject, f.orderID = subject, id
+	if f.freeErr != nil {
+		return catalog.Result{}, f.freeErr
+	}
+	return catalog.Result{ID: "waiver-" + id, Replayed: f.replayed}, nil
+}
+
+func (f *fakeCheckout) StartDeliveryPayment(_ context.Context, id, subject string, digest []byte, _ string, _ checkout.DeliveryPaymentInput) (catalog.Result, error) {
+	f.calls++
+	f.subject, f.digest, f.orderID = subject, digest, id
+	if f.freeErr != nil {
+		return catalog.Result{}, f.freeErr
+	}
+	return catalog.Result{ID: "dpay-" + id, Replayed: f.replayed}, nil
+}
+
 func (f *fakeCheckout) CurrentPolicy(context.Context) (checkout.Policy, error) {
 	return checkout.Policy{ID: "p"}, nil
 }
@@ -1295,6 +1322,145 @@ func TestLatePaymentAgreementRoutes(t *testing.T) {
 		Logger: slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))})
 	for _, p := range []string{offer, answer} {
 		req := httptest.NewRequest(http.MethodPost, p, strings.NewReader(requested))
+		req.Header.Set("Idempotency-Key", "k")
+		req.Header.Set("Authorization", "Bearer chef")
+		rec := httptest.NewRecorder()
+		off.ServeHTTP(rec, req)
+		if rec.Code != 404 && rec.Code != 405 {
+			t.Errorf("%s while disabled: %d", p, rec.Code)
+		}
+	}
+}
+
+// K03/K06 GK delivery: the chef's quote and waiver (chef only, strict
+// input, 200 with the record, 503 while frozen) and the customer's delivery
+// payment (owner or guest capability, 202, 503 while frozen or without
+// payments).
+func TestDeliveryRoutes(t *testing.T) {
+	id := catalogIdentity()
+	id.actors["fulfil"] = identity.Actor{AccountID: "acc-ful", Subject: "sub-ful", Capabilities: []string{identity.Fulfillment}}
+	const quote = "/api/v1/admin/orders/o1/delivery-quote"
+	const waiver = "/api/v1/admin/orders/o1/delivery-waiver"
+	quoteBody := `{"expected_version":3,"amount_minor":12000,"note":"Measured route, ULEZ included"}`
+	waiverBody := `{"expected_version":4,"distance_m":8200,"distance_source":"Google Maps driving route"}`
+	for _, c := range []struct{ path, body, field string }{{quote, quoteBody, "quote_id"}, {waiver, waiverBody, "waiver_id"}} {
+		for name, who := range map[string]struct {
+			auth   string
+			status int
+		}{"support": {"support", 403}, "fulfillment": {"fulfil", 403}, "customer": {secretToken, 403}, "guest": {"", 401}, "chef": {"chef", 200}} {
+			fc := &fakeCheckout{}
+			if rec := serveCheckout(t, fc, id, http.MethodPost, c.path, who.auth, "k", c.body, nil); rec.Code != who.status {
+				t.Errorf("%s by %s: %d %s, want %d", c.path, name, rec.Code, rec.Body.String(), who.status)
+			}
+		}
+		fc := &fakeCheckout{}
+		rec := serveCheckout(t, fc, id, http.MethodPost, c.path, "chef", "k", c.body, nil)
+		want, _ := json.Marshal(map[string]string{"order_id": "o1", c.field: strings.TrimSuffix(c.field, "_id") + "-o1"})
+		if rec.Code != 200 || fc.orderID != "o1" || rec.Body.String() != string(want)+"\n" {
+			t.Fatalf("%s: %d %q", c.path, rec.Code, rec.Body.String())
+		}
+		if rec := serveCheckout(t, &fakeCheckout{replayed: true}, id, http.MethodPost, c.path, "chef", "k", c.body, nil); rec.Code != 200 ||
+			rec.Header().Get("Idempotent-Replayed") != "true" {
+			t.Fatalf("%s replayed: %d %v", c.path, rec.Code, rec.Header())
+		}
+		if rec := serveCheckout(t, &fakeCheckout{freeErr: checkout.ErrOrdersFrozen}, id, http.MethodPost, c.path, "chef", "k", c.body, nil); rec.Code != 503 ||
+			!strings.Contains(rec.Body.String(), `"retryable":true`) {
+			t.Fatalf("%s frozen: %d %s", c.path, rec.Code, rec.Body.String())
+		}
+	}
+	for name, c := range map[string]struct {
+		path, body, key string
+		status          int
+	}{
+		"quote no key":           {quote, quoteBody, "", 400},
+		"quote unknown field":    {quote, `{"expected_version":3,"amount_minor":12000,"currency":"GBP"}`, "k", 400},
+		"quote address":          {quote, `{"expected_version":3,"amount_minor":12000,"address":"1 Road"}`, "k", 400},
+		"quote no version":       {quote, `{"amount_minor":12000}`, "k", 422},
+		"quote under £100":       {quote, `{"expected_version":3,"amount_minor":9999}`, "k", 422},
+		"quote over the bound":   {quote, `{"expected_version":3,"amount_minor":100000000}`, "k", 422},
+		"quote fractional":       {quote, `{"expected_version":3,"amount_minor":12000.5}`, "k", 400},
+		"quote as text":          {quote, `{"expected_version":3,"amount_minor":"12000"}`, "k", 400},
+		"quote empty note":       {quote, `{"expected_version":3,"amount_minor":12000,"note":""}`, "k", 422},
+		"quote two-line note":    {quote, `{"expected_version":3,"amount_minor":12000,"note":"a\nb"}`, "k", 422},
+		"waiver no key":          {waiver, waiverBody, "", 400},
+		"waiver unknown field":   {waiver, `{"expected_version":4,"distance_m":8200,"distance_source":"map","radius_m":10000}`, "k", 400},
+		"waiver no distance":     {waiver, `{"expected_version":4,"distance_source":"map"}`, "k", 422},
+		"waiver zero distance":   {waiver, `{"expected_version":4,"distance_m":0,"distance_source":"map"}`, "k", 422},
+		"waiver too far":         {waiver, `{"expected_version":4,"distance_m":1000001,"distance_source":"map"}`, "k", 422},
+		"waiver no source":       {waiver, `{"expected_version":4,"distance_m":8200}`, "k", 422},
+		"waiver padded source":   {waiver, `{"expected_version":4,"distance_m":8200,"distance_source":" map"}`, "k", 422},
+		"waiver no version":      {waiver, `{"distance_m":8200,"distance_source":"map"}`, "k", 422},
+		"waiver negative metres": {waiver, `{"expected_version":4,"distance_m":-5,"distance_source":"map"}`, "k", 422},
+	} {
+		fc := &fakeCheckout{}
+		if rec := serveCheckout(t, fc, id, http.MethodPost, c.path, "chef", c.key, c.body, nil); rec.Code != c.status || fc.calls != 0 {
+			t.Errorf("%s: %d %s (calls %d), want %d", name, rec.Code, rec.Body.String(), fc.calls, c.status)
+		}
+	}
+	for code, want := range map[string]string{"delivery_pay_by_passed": "DELIVERY_PAY_BY_PASSED", "payment_in_progress": "PAYMENT_IN_PROGRESS",
+		"waiver_not_eligible": "WAIVER_NOT_ELIGIBLE", "stale_version": "STALE_VERSION", "state_conflict": "CONFLICT", "key_reused": "KEY_REUSED"} {
+		for _, c := range []struct{ path, body string }{{quote, quoteBody}, {waiver, waiverBody}} {
+			rec := serveCheckout(t, &fakeCheckout{freeErr: &catalog.ConflictError{Code: code}}, id, http.MethodPost, c.path, "chef", "k", c.body, nil)
+			if rec.Code != 409 || !strings.Contains(rec.Body.String(), `"code":"`+want+`"`) {
+				t.Errorf("%s %s: %d %s, want 409 %s", c.path, code, rec.Code, rec.Body.String(), want)
+			}
+		}
+	}
+
+	// The customer's delivery payment.
+	guest := map[string]string{OrderCapabilityHeader: testProof}
+	const pay = "/api/v1/orders/o1/delivery-payment"
+	payBody := `{"expected_version":5,"quote_id":"cccccccc-1111-4111-8111-11111111111c"}`
+	fc := &fakeCheckout{}
+	rec := serveCheckout(t, fc, id, http.MethodPost, pay, "", "k", payBody, guest)
+	if rec.Code != 202 || len(fc.digest) != 32 || fc.subject != "" || fc.orderID != "o1" ||
+		rec.Body.String() != `{"order_id":"o1","operation_id":"dpay-o1","state":"delivery_payment_pending","poll_after_seconds":3}`+"\n" {
+		t.Fatalf("guest delivery payment: %d %q", rec.Code, rec.Body.String())
+	}
+	fc = &fakeCheckout{}
+	if rec := serveCheckout(t, fc, id, http.MethodPost, pay, secretToken, "k", payBody, nil); rec.Code != 202 || fc.digest != nil || fc.subject == "" {
+		t.Fatalf("signed-in delivery payment: %d", rec.Code)
+	}
+	if rec := serveCheckout(t, &fakeCheckout{replayed: true}, id, http.MethodPost, pay, "", "k", payBody, guest); rec.Code != 202 ||
+		rec.Header().Get("Idempotent-Replayed") != "true" {
+		t.Fatalf("replayed delivery payment: %d", rec.Code)
+	}
+	for name, c := range map[string]struct {
+		body, key string
+		hdr       map[string]string
+		status    int
+	}{
+		"no capability":    {payBody, "k", nil, 404},
+		"bad capability":   {payBody, "k", map[string]string{OrderCapabilityHeader: "short"}, 404},
+		"no key":           {payBody, "", guest, 400},
+		"client amount":    {`{"expected_version":5,"quote_id":"cccccccc-1111-4111-8111-11111111111c","amount_minor":1}`, "k", guest, 400},
+		"no quote":         {`{"expected_version":5}`, "k", guest, 422},
+		"upper-case quote": {`{"expected_version":5,"quote_id":"CCCCCCCC-1111-4111-8111-11111111111C"}`, "k", guest, 422},
+		"no version":       {`{"quote_id":"cccccccc-1111-4111-8111-11111111111c"}`, "k", guest, 422},
+	} {
+		fc := &fakeCheckout{}
+		if rec := serveCheckout(t, fc, id, http.MethodPost, pay, "", c.key, c.body, c.hdr); rec.Code != c.status || fc.calls != 0 {
+			t.Errorf("delivery payment %s: %d %s (calls %d), want %d", name, rec.Code, rec.Body.String(), fc.calls, c.status)
+		}
+	}
+	for code, want := range map[string]string{"delivery_pay_by_passed": "DELIVERY_PAY_BY_PASSED", "quote_not_current": "QUOTE_NOT_CURRENT",
+		"payment_in_progress": "PAYMENT_IN_PROGRESS", "stale_version": "STALE_VERSION", "state_conflict": "CONFLICT", "key_reused": "KEY_REUSED"} {
+		rec := serveCheckout(t, &fakeCheckout{freeErr: &catalog.ConflictError{Code: code}}, id, http.MethodPost, pay, "", "k", payBody, guest)
+		if rec.Code != 409 || !strings.Contains(rec.Body.String(), `"code":"`+want+`"`) {
+			t.Errorf("delivery payment %s: %d %s, want 409 %s", code, rec.Code, rec.Body.String(), want)
+		}
+	}
+	for _, err := range []error{checkout.ErrPaymentsUnavailable, checkout.ErrRecoveryFrozen} {
+		if rec := serveCheckout(t, &fakeCheckout{freeErr: err}, id, http.MethodPost, pay, "", "k", payBody, guest); rec.Code != 503 ||
+			!strings.Contains(rec.Body.String(), `"retryable":true`) {
+			t.Fatalf("delivery payment %v: %d %s", err, rec.Code, rec.Body.String())
+		}
+	}
+	// Disabled checkout: none of the routes.
+	off := NewHandler(Options{UIOrigin: "https://gkcake.com", DB: fakePinger{}, Identity: id, Checkout: &fakeCheckout{},
+		Logger: slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))})
+	for _, p := range []string{quote, waiver, pay} {
+		req := httptest.NewRequest(http.MethodPost, p, strings.NewReader(quoteBody))
 		req.Header.Set("Idempotency-Key", "k")
 		req.Header.Set("Authorization", "Bearer chef")
 		rec := httptest.NewRecorder()

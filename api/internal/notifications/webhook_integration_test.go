@@ -467,6 +467,8 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.catalog_variant_archive(uuid, text, text, uuid, integer)",
 		"business.catalog_variant_create(uuid, text, text, uuid, uuid, text, text)",
 		"business.checkout_create(uuid, bytea, text, text, uuid, integer, uuid, text, text, text, timestamp with time zone)",
+		// GK delivery payment (0035): the customer's separate delivery collection.
+		"business.delivery_payment_initiate(uuid, bytea, uuid, text, text, integer, uuid, uuid, text, text, text, timestamp with time zone)",
 		"business.discount_code_archive(uuid, text, text, uuid, integer)",
 		"business.discount_code_create(uuid, text, text, text, text, integer, timestamp with time zone, integer, integer)",
 		"business.discount_code_revise(uuid, text, text, uuid, integer, text, integer, timestamp with time zone, integer, integer)",
@@ -495,6 +497,9 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.order_claim_staff_list(uuid, text, timestamp with time zone, uuid, integer)",
 		"business.order_claim_submit(uuid, text, text, text, text, text, text, bytea, timestamp with time zone)",
 		"business.order_claim_withdraw(uuid, text, text, uuid, integer, timestamp with time zone)",
+		// GK delivery quote and free-delivery waiver (0035, chef).
+		"business.order_delivery_quote(uuid, uuid, text, text, integer, bigint, text, timestamp with time zone)",
+		"business.order_delivery_waiver(uuid, uuid, text, text, integer, integer, text, timestamp with time zone)",
 		"business.order_free_confirm_request(uuid, bytea, uuid, text, text, integer, text, timestamp with time zone)",
 		"business.order_fulfillment_transition(uuid, uuid, text, text, integer, text, text, timestamp with time zone)",
 		"business.order_get(uuid, uuid, bytea)",

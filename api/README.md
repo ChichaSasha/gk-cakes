@@ -140,8 +140,8 @@ are provisioned per environment outside Git and granted exactly one group:
 | Group       | Purpose                       | Privileges                                                  |
 | ----------- | ----------------------------- | ----------------------------------------------------------- |
 | `gk_owner`  | owns business objects         | never granted to runtime; migration credential may `SET ROLE` |
-| `gk_api`    | API runtime                   | schema `USAGE`; `EXECUTE` on `email_event_record` (webhook evidence), `identity_resolve`, `identity_resolve_account` and `identity_staff_list` (identity), the customer account functions (migration 0033), the catalog, schedule, checkout and order gateway functions, `payment_initiate` and `payment_event_record` (payments), and `notice_settings_record` (order notices); the exact list is tested |
-| `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions (`job_claim`, `job_heartbeat`, `job_complete`, `job_release`, `job_fail`, `job_attention`), the lease-fenced notification gateway (`notification_dispatch_begin`, `notification_attempt_record`, `notification_recovery_*`, `notification_dispatch_suppress`) and the lease-fenced order-command gateway (`order_command_begin`, `order_command_reserve`, `order_command_prepared`, `order_command_apply`, `order_command_secured`, `order_command_frozen`) and the lease-fenced payment gateway (`payment_job_begin`, `payment_dispatch_admit`, `payment_attempt_record`, `payment_reconcile_record`, `payment_recovery_*`, `payment_expire_admit`, `payment_expire_record`, `payment_under_reconciliation`) and the order hold review (`order_hold_review_run`), and the inactivity retention steps (`account_retention_due`, `account_retention_notice_record`, migration 0033); the exact list is tested |
+| `gk_api`    | API runtime                   | schema `USAGE`; `EXECUTE` on `email_event_record` (webhook evidence), `identity_resolve`, `identity_resolve_account` and `identity_staff_list` (identity), the customer account functions (migration 0033), the catalog, schedule, checkout and order gateway functions, `payment_initiate` and `payment_event_record` (payments), `notice_settings_record` (order notices), the late-payment agreement (`order_late_payment_offer`, `order_late_payment_answer`, migration 0034) and GK delivery (`order_delivery_quote`, `order_delivery_waiver`, `delivery_payment_initiate`, migration 0035); the exact list is tested |
+| `gk_worker` | worker runtime                | `SELECT` on `business.job`; `EXECUTE` on job lease functions (`job_claim`, `job_heartbeat`, `job_complete`, `job_release`, `job_fail`, `job_attention`), the lease-fenced notification gateway (`notification_dispatch_begin`, `notification_attempt_record`, `notification_recovery_*`, `notification_dispatch_suppress`) and the lease-fenced order-command gateway (`order_command_begin`, `order_command_reserve`, `order_command_prepared`, `order_command_apply`, `order_command_secured`, `order_command_frozen`) and the lease-fenced payment gateway (`payment_job_begin`, `payment_dispatch_admit`, `payment_dispatch_kind` (migration 0035), `payment_attempt_record`, `payment_reconcile_record`, `payment_recovery_*`, `payment_expire_admit`, `payment_expire_record`, `payment_under_reconciliation`) and the order hold review (`order_hold_review_run`), and the inactivity retention steps (`account_retention_due`, `account_retention_notice_record`, migration 0033); the exact list is tested |
 | `gk_backup` | backup reader                 | `SELECT` on business tables and future sequences, and on `gk_meta.schema_migration` (migration 0008) |
 
 The migration credential needs `CREATEROLE` and `CREATE` on the database.
@@ -1251,7 +1251,8 @@ and the API answers 202
 **2. The Checkout Session request** is built once, at the first dispatch, and
 never rebuilt (stored in the payload, form-encoded, keys sorted): `mode=payment`,
 one line item (`price_data[currency]=gbp`, `price_data[unit_amount]` = the
-order total, `price_data[product_data][name]=GK Cakes order`, `quantity=1`),
+order total, `price_data[product_data][name]=GK Cakes order` (`GK Cakes
+delivery` for a delivery collection, migration 0035), `quantity=1`),
 `client_reference_id` = the order, `metadata[order_id|collection_id|environment]`
 and the same three under `payment_intent_data[metadata]`, `success_url` and
 `cancel_url` = `<UI_ORIGIN>/orders/<id>?payment=returned` (the return never
@@ -1698,8 +1699,8 @@ Not yet:
   is GK-026 B1 part 2); confirmation emails;
 - payment-method configuration snapshot and drift detection, Q4 method
   qualification, Adaptive Pricing and presentment-currency evidence (any
-  non-GBP session, intent or charge is a mismatch for now), delivery
-  collections from checkout (the kind exists since 0022);
+  non-GBP session, intent or charge is a mismatch for now) (delivery
+  collections: done in 0035, "GK delivery quote, payment and waiver");
 - manager reconciliation tooling for `unknown` collections and dispatches in
   `reconcile`;
 - journal readiness reaching the API: initiation is refused during a restore
@@ -2424,12 +2425,11 @@ BO-GK-001.ready_cancellation `93a75483…`.
   returns count against it, K05 cumulative goal) and reserves the refunds
   (`refund_reserve`; a delivery share stays a chef-pending obligation). The
   day place stays committed (the cake was made).
-- **Delivery payment.** `dispatch` needs a succeeded delivery collection of
-  the order, else 409 `DELIVERY_NOT_PAID` (K06 "paid/waived separate
-  collection required before dispatch"). The data model has no delivery
-  waiver and checkout creates no delivery collection yet, so today every GK
-  delivery dispatch is refused until delivery payment (or a waiver record)
-  exists; tests seed a collection.
+- **Delivery payment.** `dispatch` needs the order's current delivery quote
+  paid (a succeeded delivery collection whose outcome is `paid`) or waived,
+  else 409 `DELIVERY_NOT_PAID` (K06 "paid/waived separate collection
+  required before dispatch"; since migration 0035, see "GK delivery quote,
+  payment and waiver" below).
 - **Never rewound.** `completed` is terminal (orders_guard); a completed or
   no-show order accepts no further step, cancellation or appointment change
   (409 `TRANSITION_NOT_ALLOWED` / `CANCELLATION_NOT_ELIGIBLE` /
@@ -2463,10 +2463,282 @@ BO-GK-001.ready_cancellation `93a75483…`.
   no-show before a dispatch, `DELIVERY_NOT_PAID`, dispatch, exception,
   re-dispatch, handover), `internal/httpapi` `TestTransitionRoutes`.
 
-Not yet: delivery checkout and waivers (dispatch is refused until they
-exist); courier status mapping (only a free-text reference); a GK-caused
+Not yet: courier status mapping (only a free-text reference); a GK-caused
 delivery failure route (`refund_delivery_failure_record` stays interim);
 chef screens (UI).
+
+## GK delivery quote, payment and waiver (K03/K06)
+
+Migration `0035_delivery_payment.sql` (expand only), store
+`internal/checkout/delivery.go`, routes in `internal/httpapi/checkout.go`.
+Inputs: contracts K03 ("GK Delivery individually quoted by chef from £100
+... separate collection attached to the same order ... free-delivery code
+waives the whole eligible GK fee within per-code maximum driving distance;
+chef records measured distance/source and approves eligibility ... Changed
+amount requires agreement; no double use ... A payable separate delivery
+remains awaiting separate payment and cannot be dispatched unpaid; its
+payment never restarts cake preparation/deadline"), K04 (payment authority,
+clocks), K05 (delivery refunds chef-only), K06 ("chef quote and paid/waived
+separate collection required before dispatch"), K08, K09, K11; design
+GK-017 r02b state 15 and Creator decision Q9 ("Unpaid delivery quote:
+deadline 48 h before handover, then the same choice").
+
+| Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
+| --- | --- | --- |
+| `POST /api/v1/admin/orders/{id}/delivery-quote` | chef | `{expected_version, amount_minor, note?}` with Idempotency-Key; 200 `{order_id, quote_id}` (`Idempotent-Replayed: true` for the same key, also during a restore freeze) |
+| `POST /api/v1/admin/orders/{id}/delivery-waiver` | chef | `{expected_version, distance_m, distance_source}` with Idempotency-Key; 200 `{order_id, waiver_id}` |
+| `POST /api/v1/orders/{id}/delivery-payment` | the owner (bearer) or the guest (`X-Order-Capability` with `pay`, the cake payment's access) | `{expected_version, quote_id}` with Idempotency-Key; 202 `{order_id, operation_id (the collection), state: "delivery_payment_pending", poll_after_seconds}`; 503 without `STRIPE_ACCOUNT_ID` or during a restore freeze |
+
+- **Quote** (`business.order_delivery_quote`). Only on a `gk_delivery`
+  order whose cake is visibly confirmed (paid or free-confirmed; lifecycle
+  `confirmed`, `in_production` or `ready`, secured), never dispatched, with
+  no unresolved K11 command (409 `CONFLICT` otherwise, also for any other
+  mode or lifecycle), no delivery collection in flight (409
+  `PAYMENT_IN_PROGRESS`) and the current quote not paid (409 `CONFLICT`).
+  `amount_minor` whole pence from 10000 (K03 "from £100") to 99999999
+  (Stripe's GBP maximum for one charge: a quote is paid as one Checkout
+  Session), else 422; `note` 1–500 characters on one line,
+  staff only (never audited, never in the customer's view). Pay-by =
+  original handover − 48 h (Q9; the original handover is the immutable
+  anchor, so a chef appointment change does not move it); quoting at or
+  after it is 409 `DELIVERY_PAY_BY_PASSED`. A new quote replaces the current
+  unpaid one (also a waived one, which then needs a new distance review);
+  quotes are immutable rows (`business.delivery_quote`), the latest is
+  current. The customer's payment of the current quote is the agreement to
+  its amount (K03 "changed amount requires agreement"). Versioned (order
+  version + 1; 409 `STALE_VERSION`), idempotent (K00 command receipt; the
+  same key and body replays, another body is `KEY_REUSED`), 503 during a
+  restore freeze (freeze checked before any outcome), audited
+  `delivery.quoted` `{quote_id, amount_minor, replaced_quote_id}`.
+- **Waiver** (`business.order_delivery_waiver`). Only when the order's one
+  code application is a consumed `free_delivery` code (else 409
+  `WAIVER_NOT_ELIGIBLE`; there is no other waiver kind) and a current quote
+  exists that is not paid or waived (409 `CONFLICT`) and has no payment in
+  flight (409 `PAYMENT_IN_PROGRESS`); the same order conditions as the quote.
+  `distance_m` the measured driving distance in whole metres (1–1000000),
+  `distance_source` 1–200 characters on one line. Records the distance, its
+  source, the chef's eligibility approval, the code application and the
+  receipt instant immutably (`business.delivery_waiver`, one per quote); the
+  current quote is then waived: nothing to pay. It never consumes a second
+  code use (the order-level `code_application` is only referenced).
+  Versioned, idempotent, 503 when frozen, audited `delivery.waived`
+  `{quote_id, waiver_id, code_application_id}` (no distance or source). The
+  per-code maximum driving distance is not modelled: the chef's approval is
+  the eligibility decision (no invented radius). A waiver is allowed after
+  pay-by (nothing is paid).
+- **Payment** (`business.delivery_payment_initiate`). A `payment_collection`
+  of kind `delivery` (new nullable `delivery_quote_id`) for exactly the
+  current quote's amount, with its dispatch job and audit
+  `payment.collection_requested {collection_id, amount_minor, kind, quote_id}`
+  in one transaction. From there it is the cake payment's machinery
+  unchanged: the worker fixes the Checkout Session request at the first
+  dispatch (same lifetime, `expires_at`, K11 dispatch, lease fencing,
+  freeze-first, no personal data, GBP; the line item reads "GK Cakes
+  delivery" and the return URL is the order page), the webhook and reconcile settle it
+  by its own collection ID, the 15-minute expire request and "never turns an
+  in-flight payment into a failure" apply. Refused: 409 `PAYMENT_IN_PROGRESS`
+  while a delivery collection may still succeed or is under reconciliation
+  ("do not pay again"), `STALE_VERSION`, `CONFLICT` (not GK delivery, order
+  not open as above, quote waived or paid), `QUOTE_NOT_CURRENT` (any other
+  quote ID), `DELIVERY_PAY_BY_PASSED` at or after pay-by; the same actor and
+  key replays (another body or a cake payment's key is `KEY_REUSED`); 503
+  while frozen (a replay still answers). A failed or expired collection
+  makes the quote payable again.
+- **Line item.** The worker asks `payment_dispatch_kind` (new, lease-fenced,
+  `gk_worker`) for the collection's kind when it fixes the request at the
+  first dispatch and names a delivery's line item "GK Cakes delivery" (cake:
+  "GK Cakes order", unchanged). `CheckPayload` also accepts a delivery
+  request fixed by an older build with the cake's name (compatibility with
+  persisted requests); a cake collection never accepts the delivery name.
+  Rollback: an older worker refuses a delivery request fixed by this build
+  (payload check, job attention, no Stripe call); the collection then
+  becomes stuck (below) and the next delivery command closes it, so the
+  customer can pay again.
+- **Never dispatched.** A delivery collection still `created` whose Stripe
+  call was never admitted (`dispatch_started_at` null: no key, journal
+  down, a dispatch in attention) 15 minutes after the later of its request
+  instant and insertion is *stuck*: no Checkout Session can exist for it
+  (admission records `dispatch_started_at` under the collection lock before
+  any call), so it is not in flight (the delivery reads `quoted` /
+  `pay_by_passed` again, it does not block account deletion) and staff see
+  the attention flag `delivery_payment_stuck`. The next quote, waiver or
+  delivery payment closes it under the order and collection locks as the
+  cake's never-dispatched cleanup does (`cancelled`, `cancel_reason`
+  `never_dispatched`, audit `payment.cancelled`); `payment_dispatch_fix` and
+  `payment_dispatch_admit` then answer `closed`, so it is never sent.
+- **Settlement.** A paid verdict on a delivery collection records it
+  `succeeded` (audit `payment.succeeded`) and, instead of the cake's
+  `paid_confirm` command, its outcome in `business.delivery_payment_outcome`
+  (immutable, once per collection, under the order lock): `paid` when its
+  quote is still the current one, not waived, not already paid by another
+  collection, and the order is `confirmed`, `in_production` or `ready`;
+  otherwise `unmatched` with reason `quote_replaced`, `quote_waived`,
+  `already_paid`, `order_not_open` or `no_quote` (audits `delivery.paid` /
+  `delivery.payment_unmatched`). It never touches the order: no lifecycle
+  change, no version bump, no `paid_at`, production anchor or refund
+  deadline change (K03).
+- **Dispatch** (`fulfillment_refusal`): the current quote waived, or paid by
+  a `paid` collection that is succeeded without a recorded mismatch; else
+  409 `DELIVERY_NOT_PAID`.
+- **Order view.** `GET /orders/{id}` adds `delivery` (null unless
+  `gk_delivery`): `{state, quote: {id, amount_minor, currency, quoted_at,
+  pay_by} | null, payable, paid_minor (when paid), waived: {at} (when
+  waived), unmatched_minor (while a stray delivery payment, below, is held
+  and not returned: "a payment was received; the chef will return it"; do
+  not pay that quote again), payment: {id, state, amount_minor, currency,
+  requested_at, checkout_url, expires_at} | null}`. `state`: `awaiting_quote` (no quote),
+  `quoted`, `payment_checking` (a delivery collection created, pending or
+  unknown, or with a recorded mismatch: "Still checking delivery payment; do
+  not pay again"), `paid`, `waived`, `pay_by_passed` (unpaid at or after
+  pay-by: "Your delivery wasn't paid in time"). `payment` is the current
+  quote's latest delivery collection; its `checkout_url` only while the
+  session is open, unexpired, not asked to expire and the order still takes
+  payments. `payable` (the "Pay for delivery" button) and the
+  `quoted`/`pay_by_passed` split are computed by the API at its own clock
+  (as `late_payment.offer.acceptable`); the database uses its clock where no
+  API applies one (the fulfilment view). The cake's `payment` block now
+  reads cake collections only (also the chef's list `payment_state`). The
+  address is not in the order view and stays out of the block.
+- **Staff views** (gk_delivery orders only; other orders keep their keys):
+  the chef gets the customer's block without the payment link and
+  `delivery_history` (every quote oldest first: `id, order_version,
+  quoted_at, pay_by, current, amount_minor, currency, note, waiver {id, at,
+  distance_m, distance_source, eligibility_approved, code_application_id},
+  payments [{collection_id, state, outcome, reason}]`); technical support
+  both without amounts (also `unmatched_minor`), currency, payment link,
+  note or distance source (K00 no money; K09 necessary support only);
+  fulfilment `delivery: {state}` only. New attention flags
+  `delivery_payment_unmatched` (an unmatched delivery payment not yet fully
+  returned; it also blocks account deletion as `payment_recorded`: money
+  unsettled) and `delivery_payment_stuck` (above).
+- **Stray delivery money and the policy basis (K05).** An unmatched delivery
+  payment is not part of what the order cost: `order_paid_minor`, the basis
+  of every percentage (customer cancellation 100% / 50%, no-show 50%, the
+  cancellation preview's `paid_minor` and `amount_minor`, notices), leaves it
+  out, and it is an implicit floor of its full amount (as a chef-recorded
+  K05 floor, net its own returns) in `refund_shares` and
+  `refund_goal_compute`. So the goal is the policy target over the cake
+  (and any matched delivery) plus the stray in full, capped by everything
+  succeeded, and the stray's return never counts against the cake's share.
+  Cake 10000p, stray 12000p: returned by the chef first, then a cancellation
+  after the deadline: preview paid 10000p, amount 5000p, allocation cake
+  5000p; goal 17000p (12000p + 5000p), all returned. Not returned first:
+  the same preview amount, allocations cake 5000p and stray 12000p, both
+  reserved automatically (the floor makes the stray returnable without the
+  chef, as a recorded floor does), goal 17000p. Before the deadline: 100%
+  of the cake + the stray (22000p). No-show after the chef returned the
+  stray, with the 14000p current quote paid: 50% of 24000p = cake 5000p
+  (sent) + delivery 7000p (pending the chef, K05) + the stray already
+  returned: goal 24000p. Nothing is returned twice: the per-collection room
+  bounds the chef's exception and the automatic plan alike. The chef's
+  exception limit and the goal cap count every succeeded collection.
+- **A stray after a goal (K05 cumulative goal).** When an unmatched payment
+  is recorded on an order that already has a refund goal (for example the
+  order was cancelled while the delivery payment was in flight, or the chef
+  recorded an exception), the reconcile raises that goal under the order
+  lock by the stray's implicit floor (`refund_goal_apply`) and reserves the
+  new allocation at once (`refund_reserve`), as a recorded floor does: the
+  stray goes back in full on top of what the goal already owed, never in
+  place of the cake's share. A refund still unresolved elsewhere keeps its
+  own course; if it later fails under the raised goal its remainder is
+  reserved once (`refund_operation_settled`). Probe
+  (`TestStrayAfterAGoalIsAddedOnTop`): late cancellation, goal 5000p, the
+  cake refund pending; the stray 12000p arrives (goal 17000p, stray sent);
+  the cake refund fails; the cake's 5000p is reserved again and returned:
+  17000p in all.
+- **What the customer is told.** `amount_minor` (preview and the order's
+  `cancellation` block) and the cancelled notice's policy amount keep their
+  meaning; beside them a cancellation that returns a stray states it: the
+  preview's `unmatched_minor` (always present, 0 when none or when nothing
+  is owed; outside the preview hash, like `delivery_pending_minor`), the
+  outcome evidence and `cancellation.unmatched_minor` (only when the
+  outcome states one), and one more sentence in the cancelled notice: "We
+  are also returning in full a delivery payment of £120 that could not be
+  used for your order, so £170 is being returned to you in total" (wording
+  for Creator review; notices without a stray render exactly as before).
+  Technical support's `cancellation` drops it with the other amounts.
+- **Refunds** are unchanged: a delivery collection is the chef-only share of
+  `refund_plan` (K05). A cancellation of an order whose delivery was paid
+  returns the cake automatically and leaves the delivery share as
+  `delivery_pending_minor` until the chef's
+  `POST /admin/orders/{id}/delivery-refund`.
+
+Decisions taken (small and reversible, for Creator review):
+
+- **Late delivery money.** A delivery payment started before pay-by that
+  succeeds after it pays the quote (K04: a valid payment underway is not
+  failed by a local timer; delayed observation is not lateness). A success
+  for a replaced quote, a waived quote, a quote another collection already
+  paid, or an order no longer confirmed/in production/ready (for example
+  cancelled while the payment was in flight) is real money: kept as
+  `succeeded`, never marks the delivery paid and raises
+  `delivery_payment_unmatched` for the chef, who returns it with the agreed
+  exception refund on that collection (`POST /admin/orders/{id}/refunds`),
+  and the customer's `unmatched_minor`. On an order without a refund goal
+  it is not refunded at settlement (K04 "retain actual funds ... give chef
+  an actionable resolution"); a later cancellation or no-show that records a
+  goal returns it in full with the policy refund (its implicit floor,
+  above) unless the chef returned it already. One that records no goal (a
+  policy amount of 0: a free-confirmed cake whose only delivery money is the
+  stray) leaves it flagged for the chef to return. On an order that already
+  has a goal it is added to that goal and returned at once (above).
+- **Replacement while paying is refused** (`PAYMENT_IN_PROGRESS`), and so is
+  a waiver, so an in-flight payment always pays the quote it was started
+  for; a paid quote is never replaced (the agreement stands).
+- **Pay-by uses the original handover** (the immutable placement anchor,
+  like the refund deadline); a chef-agreed later appointment does not move
+  it. Quoting and paying at exactly pay-by are refused (equality has
+  passed, as the K04 quote window).
+- **No order version bump on payment** (as for cake collections); quotes
+  and waivers bump it.
+
+Tests: `internal/checkout/delivery_integration_test.go` (quote rules: mode,
+lifecycle, minimum and bound, pay-by, replacement, freeze, idempotency,
+stale version, chef only, note kept out of audit and customer view, staff
+redaction; payment: access, current quote, pay-by, in flight, webhook
+success to paid with unchanged lifecycle, version, `paid_at`, refund
+deadline and production anchor, no order command, Stripe request without
+personal data, dispatch; failure and expiry back to quoted; success after
+replacement is unmatched with attention and refused dispatch; success after
+pay-by honoured; a second success for one quote is `already_paid`; a later
+mismatch returns to checking; success after a cancellation is
+`order_not_open`; waiver: needs the free-delivery code and a quote, not
+while paying, records distance and source, one code use, dispatch; refunds:
+the delivery share stays chef-only; a stray delivery payment stays out of
+the policy basis: returned then a late cancellation, not returned then a
+late cancellation, before the deadline, returned then a no-show, never
+returned twice, customer and staff `unmatched_minor`, the preview's and
+the cancellation's `unmatched_minor` and the notice sentence; a stray after
+a goal is added on top (the probe above; a stray after the chef's 100%
+cancellation is returned at once); a stuck collection:
+young is in flight, after 15 minutes flagged, payable and not blocking
+deletion, closed as never dispatched by the next quote and never sent; the
+99999999p quote; the delivery line item), `delivery_test.go` (the API clock and
+input checks), `internal/payments` `TestDeliveryLineItem` (both names and
+the older-build request), `fulfillment_integration_test.go`
+`TestDeliveryDispatchNeedsPayment` (now through quote and payment),
+`internal/httpapi` `TestDeliveryRoutes`, and the exact `gk_api` and
+`gk_worker` allowlists in `internal/notifications`.
+
+Follow-ups (not implemented):
+
+- **The Q5 choice** after `pay_by_passed` (collection / own courier / full
+  refund, no deadline: Q8/Q9) and its API states.
+- **Emails:** "delivery quote" (with the pay-by time) and "delivery paid"
+  need Creator-reviewed wording and new template revisions; today the
+  customer learns of a quote on the order page.
+- **Per-code maximum driving distance** on free-delivery codes (K03), so the
+  waiver can check the recorded distance against it.
+- A stuck delivery collection is closed by the next delivery command, not
+  by a timer: until someone acts it stays `created` (not in flight, flagged
+  `delivery_payment_stuck`).
+- A free-confirmed cake cancelled (or not collected) while its only
+  delivery money is a stray records no refund goal, so the stray stays
+  flagged for the chef rather than being returned automatically.
+- The no-show notice's "Refund requested" amount includes a stray reserved
+  with the no-show, but it has no separate stray sentence yet.
+- `GET /me/orders` summaries and the staff list do not carry the delivery
+  state yet; the UI (state 15) and a chef screen for quotes and waivers.
 
 ## Customer accounts (GK-016 r02b)
 

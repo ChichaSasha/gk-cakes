@@ -36,9 +36,15 @@ const (
 	// ReplayWindow is how long a dispatch may be replayed with the same
 	// idempotency key (Stripe keeps keys 24 hours).
 	ReplayWindow = 23 * time.Hour
-	// ProductName is the only line-item text sent to Stripe (no personal
-	// data, no cake details).
+	// ProductName is the only line-item text sent to Stripe for a cake
+	// collection (no personal data, no cake details).
 	ProductName = "GK Cakes order"
+	// DeliveryProductName is the line-item text of a separate GK delivery
+	// collection (migration 0035).
+	DeliveryProductName = "GK Cakes delivery"
+	// KindDelivery is a delivery collection's kind; anything else is the
+	// cake's.
+	KindDelivery = "delivery"
 	// ReturnQuery is appended to the order page for both return URLs; the
 	// return never confirms anything.
 	ReturnQuery = "?payment=returned"
@@ -71,6 +77,15 @@ type SessionRequest struct {
 	Environment  string
 	UIOrigin     string // exact origin; return URLs go to its order page
 	ExpiresAt    time.Time
+	Kind         string // the collection's kind ("delivery" names the line item)
+}
+
+// productName is the line-item text for a collection kind.
+func productName(kind string) string {
+	if kind == KindDelivery {
+		return DeliveryProductName
+	}
+	return ProductName
 }
 
 // SessionExpiry is the expires_at for a request fixed at now (the database
@@ -109,7 +124,7 @@ func (r SessionRequest) values() url.Values {
 	v.Set("mode", "payment")
 	v.Set("line_items[0][price_data][currency]", "gbp")
 	v.Set("line_items[0][price_data][unit_amount]", strconv.FormatInt(r.AmountMinor, 10))
-	v.Set("line_items[0][price_data][product_data][name]", ProductName)
+	v.Set("line_items[0][price_data][product_data][name]", productName(r.Kind))
 	v.Set("line_items[0][quantity]", "1")
 	v.Set("client_reference_id", r.OrderID)
 	for _, prefix := range []string{"metadata", "payment_intent_data[metadata]"} {
@@ -184,6 +199,7 @@ type Expected struct {
 	Livemode     bool
 	UIOrigin     string    // the stored return origin
 	ExpiresAt    time.Time // the stored session expiry
+	Kind         string    // the collection's kind (cake or delivery)
 }
 
 // Dispatch is a validated stored request.
@@ -244,8 +260,14 @@ func CheckPayload(raw []byte, exp Expected, workerEnv string) (Dispatch, error) 
 		return Dispatch{}, errors.New("payments: stored request expiry does not match its collection")
 	}
 	want := SessionRequest{CollectionID: exp.CollectionID, OrderID: exp.OrderID, AmountMinor: exp.AmountMinor,
-		Environment: exp.Environment, UIOrigin: origin, ExpiresAt: time.Unix(sec, 0)}
+		Environment: exp.Environment, UIOrigin: origin, ExpiresAt: time.Unix(sec, 0), Kind: exp.Kind}
 	form, err := want.Form()
+	if err == nil && form != p.Request && exp.Kind == KindDelivery {
+		// A delivery request fixed by a build before the delivery line item
+		// (it named it like the cake's) is still that collection's request.
+		want.Kind = ""
+		form, err = want.Form()
+	}
 	if err != nil || form != p.Request {
 		return Dispatch{}, errors.New("payments: stored request does not match its collection")
 	}

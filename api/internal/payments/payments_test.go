@@ -437,3 +437,45 @@ func TestSessionDecodesIDOrExpandedIntent(t *testing.T) {
 		t.Fatalf("null form %+v %v", s.PaymentIntent, err)
 	}
 }
+
+// A delivery collection's line item reads "GK Cakes delivery" (0035); a
+// delivery request fixed by an older build (named like the cake's) is still
+// accepted for that collection, but a cake collection never accepts the
+// delivery name, and neither name can be swapped for anything else.
+func TestDeliveryLineItem(t *testing.T) {
+	cake := testRequest()
+	delivery := testRequest()
+	delivery.Kind = KindDelivery
+	cakeRaw, err := NewPayload(cake, testAccount)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliveryRaw, err := NewPayload(delivery, testAccount)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(deliveryRaw), "GK+Cakes+delivery") || strings.Contains(string(deliveryRaw), "GK+Cakes+order") ||
+		!strings.Contains(string(cakeRaw), "GK+Cakes+order") {
+		t.Fatalf("line items: cake %s delivery %s", cakeRaw, deliveryRaw)
+	}
+	exp := Expected{CollectionID: testCollection, OrderID: testOrder, AmountMinor: 8585, Environment: "test", Account: testAccount,
+		UIOrigin: "https://gk.example", ExpiresAt: time.Unix(1793827326, 0)}
+	deliveryExp := exp
+	deliveryExp.Kind = KindDelivery
+	for name, c := range map[string]struct {
+		raw []byte
+		exp Expected
+		ok  bool
+	}{
+		"cake":                    {cakeRaw, exp, true},
+		"delivery":                {deliveryRaw, deliveryExp, true},
+		"older delivery request":  {cakeRaw, deliveryExp, true},
+		"delivery name on a cake": {deliveryRaw, exp, false},
+		"other name": {[]byte(strings.Replace(string(deliveryRaw), "GK+Cakes+delivery", "Something+else", 1)),
+			deliveryExp, false},
+	} {
+		if _, err := CheckPayload(c.raw, c.exp, "test"); (err == nil) != c.ok {
+			t.Errorf("%s: %v, want ok %v", name, err, c.ok)
+		}
+	}
+}
