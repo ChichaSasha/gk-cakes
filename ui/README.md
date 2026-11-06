@@ -566,14 +566,35 @@ refuses them, 403).
   their profile) and, once decided, the outcome with what the customer sees.
   The API has no single-request read yet, so the page pages the four lists
   (`findClaim` in `src/lib/admin/claims.ts`); a request closed by account
-  deletion is in none of them and reads "Request not found". Deciding
-  (finding the order, the contact-email check, adding or declining) is the
-  next slice; until then a waiting request says so.
+  deletion is in none of them and reads "Request not found".
+- **Deciding** (`src/lib/admin/claimDecision.ts`). Older-order requests:
+  "Find the order" loads every website order in the chosen months (their
+  month ±1, or the last 3 months; at most 3 months, the order list's 93
+  days) and filters by the start of the order ID or the name on the order;
+  "Search for" fills their reference or surname only when pressed; the chef
+  chooses (no suggestion, no contact emails in the list). Once an order is
+  chosen, "Before adding: confirm it's theirs" (Creator answer 3, never on a
+  reference alone) shows that order's contact email (chef only) and a fresh
+  one-off code, the steps (the chef emails the address with the code and
+  without the request reference; the reply must quote the code and the
+  request reference), the email to copy, and a red line for upcoming orders.
+  Adding needs the tick "I emailed the order's contact address … and got a
+  reply …" and "How you confirmed" (stored as the internal note); the
+  confirmation states what adding does, including what a wrong person could
+  do to an upcoming order. Declining has an optional internal note (one
+  line, ≤500 code points, answer 5). Choosing another order clears the tick
+  and note. Future requests (from an order page or email): the order they
+  asked from, the same-order banner, no tick. Refusals in the sketch's words:
+  in another account, changed meanwhile ("Show the latest" reads it again),
+  that order can't be found any more, account disabled, paused (503) and an
+  answer lost; "Try again" resends with the same Idempotency-Key (a new one
+  when the decision, order or note changes). After saving: the result takes
+  focus, the left column is read only, and "Next waiting request".
 
 `src/lib/admin/claims.ts` holds the typed reads, `decideClaim` (strict JSON:
 `expected_version`, `decision`, `order_id` for approve only, optional
 `note`) and the sketch's wording. Not built from the sketch yet: the Today
-line (Today isn't built), deciding, the order page's "Customer account" card,
+line (Today isn't built), the order page's "Customer account" card,
 and the proposed API fields (single-request read, erased / account-deleted
 flags, newest-first decided lists, the chef-only "already in an account"
 flag of answer 8).
