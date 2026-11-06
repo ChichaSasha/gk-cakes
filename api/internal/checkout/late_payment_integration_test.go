@@ -184,6 +184,15 @@ func TestLatePaymentRequestedOfferAccepted(t *testing.T) {
 		v1.LatePayment.PaidMinor != 10000 || v1.LatePayment.Currency != "GBP" {
 		t.Fatalf("offer acceptance window and paid total %s", raw)
 	}
+	// Staff views of an open offer: the chef sees the paid total, technical
+	// support never sees money (K00).
+	if lp := string(h.staffJSON(t, chef, order)["late_payment"]); !strings.Contains(lp, `"paid_minor"`) {
+		t.Fatalf("chef late_payment without the paid total: %s", lp)
+	}
+	if lp := string(h.staffJSON(t, support, order)["late_payment"]); !strings.Contains(lp, `"offer"`) ||
+		strings.Contains(lp, "paid_minor") || strings.Contains(lp, "currency") {
+		t.Fatalf("technical support late_payment: %s", lp)
+	}
 	// A new offer withdraws the open one (rows are kept).
 	second, err := h.offer(order, "o2", v1.Version, checkout.OfferRequested, "", "")
 	if err != nil {
@@ -982,5 +991,33 @@ func TestLatePaymentOtherOfferSameDayReleasedRowAndDecline(t *testing.T) {
 	}
 	if h.allocationOn(t, dcl, "2026-11-14").State != "released" {
 		t.Fatal("the declined order kept its place")
+	}
+}
+
+// An acceptance never confirms an order that holds a place on another day
+// as well: only released rows may exist off the order's own day.
+func TestLatePaymentAcceptanceRefusedWithASecondHold(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d, v := h.lateAgreementOrder(t, f, pol, "two")
+	h.owner(t, "INSERT INTO business.handover_day (day) VALUES ('2026-11-21') ON CONFLICT DO NOTHING")
+	h.owner(t, `INSERT INTO business.capacity_allocation (id, order_ref, day, cake_quantity, classification, state)
+		VALUES ('9c1e4a52-7a51-4c0e-8f3c-1d2b3a4c5d6e'::uuid, $1::uuid, '2026-11-21', 1, 'standard', 'committed')`, order)
+	res, err := h.offer(order, "o1", v.Version, checkout.OfferRequested, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v1, _ := h.lateView(t, order, d)
+	if _, err := h.answer(order, d, "a1", v1.Version, res.ID, "accept"); err != nil {
+		t.Fatal(err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("drain:\n%s", reasons(errs))
+	}
+	v2, raw := h.lateView(t, order, d)
+	if v2.Lifecycle != "paid_awaiting_agreement" || v2.Agreed != nil || v2.LatePayment == nil ||
+		v2.LatePayment.Answer == nil || v2.LatePayment.Answer.State == "processing" {
+		t.Fatalf("accepted with a second hold %s", raw)
 	}
 }

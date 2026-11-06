@@ -1793,7 +1793,8 @@ Migration `0022_production_late_payment.sql`.
   silence never counts; `agreed_at` not before the payment, else 422) and
   is refused 409 `HONOUR_TOO_LATE` once the original handover is not after
   the receipt instant. It commits `confirmed` when the order still has its
-  original slot and committed holds (otherwise refused `holds_changed`); the
+  original slot and committed holds: its own day's place committed and any
+  row of another day released (since 0034; otherwise refused `holds_changed`); the
   production timer then follows from `paid_at` + 48 h. `full_return` cancels
   with `cancel_reason` `late_payment_returned` and a goal of 100% of the
   actual paid aggregate, never 50%, and reads like a cancellation (the

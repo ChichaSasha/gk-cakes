@@ -663,12 +663,13 @@ BEGIN
     PERFORM business.capacity_day_lock(GREATEST(v_f.handover_day, v_o.handover_day));
   END IF;
   -- Honour: the original slot is still the order's and its holds are the
-  -- committed ones (the place on its day; a released row of another day is
-  -- no hold).
+  -- committed ones: the place on its day committed, any row of another day
+  -- released (a released row holds nothing; anything else elsewhere would be
+  -- a second hold).
   IF v_o.slot_id::text IS DISTINCT FROM v_snapshot ->> 'slot_id'
      OR v_o.handover_day::text IS DISTINCT FROM v_snapshot ->> 'handover_day'
-     OR EXISTS (SELECT 1 FROM business.capacity_allocation a WHERE a.order_ref = v.order_id AND a.state <> 'committed'
-                  AND a.day = v_o.handover_day)
+     OR EXISTS (SELECT 1 FROM business.capacity_allocation a WHERE a.order_ref = v.order_id
+                  AND a.state <> CASE WHEN a.day = v_o.handover_day THEN 'committed' ELSE 'released' END)
      OR EXISTS (SELECT 1 FROM business.order_lot_reservation r WHERE r.order_id = v.order_id AND r.state <> 'sold') THEN
     v_reason := 'holds_changed';
   ELSIF v_f.kind = 'other' THEN
@@ -1039,7 +1040,12 @@ BEGIN
                   'appointment_history', business.order_staff_appointments(o.id, false),
                   'fulfillment', v -> 'fulfillment',
                   'fulfillment_history', business.order_staff_fulfillment(o.id, false),
-                  'late_payment', v -> 'late_payment', 'agreed', v -> 'agreed',
+                  -- No money for technical support: the refund amount shown to
+                  -- the customer is dropped.
+                  'late_payment', CASE WHEN pg_catalog.jsonb_typeof(v -> 'late_payment') = 'object'
+                                       THEN (v -> 'late_payment') - ARRAY['paid_minor', 'currency']
+                                       ELSE v -> 'late_payment' END,
+                  'agreed', v -> 'agreed',
                   'late_payment_offers', business.order_staff_late_payment_offers(o.id),
                   'audit', business.order_staff_audit(o.id));
   ELSE
