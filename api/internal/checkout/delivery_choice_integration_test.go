@@ -141,8 +141,8 @@ func reasonOf(b *choiceBlock) string {
 }
 
 // The chef's "GK can't deliver": a GK delivery order with a visibly
-// confirmed cake, never dispatched, chef only; versioned and idempotent (a
-// second decision answers the first); refused during a restore freeze
+// confirmed cake, never dispatched, chef only; versioned and idempotent
+// (another key on a decided order is a conflict); refused during a restore freeze
 // (replays answer) and while a delivery payment is in flight. It refunds
 // nothing, opens the choice, closes the unpaid quote and stops the dispatch;
 // its reason reaches only the chef.
@@ -220,9 +220,12 @@ func TestDeliveryNotPossibleRules(t *testing.T) {
 	if _, err := h.notPossible("np1", order, v.Version, "Another reason"); conflict(err) != "key_reused" {
 		t.Fatalf("key reused: %v", err)
 	}
-	// A second decision answers the first.
-	if again, err := h.notPossible("np2", order, v.Version+1, ""); err != nil || !again.Replayed || again.ID != dec.ID {
-		t.Fatalf("second decision: %+v %v", again, err)
+	// Another key on a decided order is a conflict (only the same key
+	// replays), at any version.
+	for _, version := range []int{v.Version + 1, v.Version} {
+		if _, err := h.notPossible("np2", order, version, ""); conflict(err) != "state_conflict" {
+			t.Fatalf("second decision at version %d: %v", version, err)
+		}
 	}
 	if n := h.count(t, "SELECT count(*) FROM business.delivery_not_possible WHERE order_id = $1::uuid", order); n != 1 {
 		t.Fatalf("%d decisions", n)
@@ -469,6 +472,12 @@ func TestDeliveryChoiceCollectionReturnsThePaidDelivery(t *testing.T) {
 	if v.Delivery.State != "paid" || *v.Delivery.Payable || v.Refund != nil || !v.DeliveryChoice.Open {
 		t.Fatalf("decided, nothing refunded: %s", raw)
 	}
+	// The decision records the paid delivery's floor (an obligation): no
+	// goal, nothing reserved.
+	if n := h.count(t, "SELECT count(*) FROM business.refund_floor WHERE collection_id = $1::uuid", delivery); n != 1 ||
+		h.count(t, "SELECT count(*) FROM business.refund_goal WHERE order_id = $1::uuid", order) != 0 {
+		t.Fatalf("floor %d at the decision", n)
+	}
 	if n := h.count(t, "SELECT count(*) FROM business.refund_operation WHERE order_id = $1::uuid", order); n != 0 {
 		t.Fatalf("%d refunds before the choice", n)
 	}
@@ -498,10 +507,35 @@ func TestDeliveryChoiceCollectionReturnsThePaidDelivery(t *testing.T) {
 		mode != "collection" || h.recoveryState(t, op.ID) != "committed" || h.orderSlot(t, order).Slot != slots[1] {
 		t.Fatalf("committed: %s %v", mode, err)
 	}
+	// The reserved delivery refund even goes back while the outcome is
+	// unprotected: nothing of it is visible or emailed yet (K11).
+	var refundJob string
+	if err := h.admin.QueryRow(h.ctx, `SELECT rj.job_id::text FROM business.refund_job rj
+		JOIN business.refund_operation ro ON ro.id = rj.refund_operation_id WHERE ro.collection_id = $1::uuid`, delivery).Scan(&refundJob); err != nil {
+		t.Fatal(err)
+	}
+	rjob := h.claimOnly(t, refundJob)
+	h.finish(t, rjob, h.handler(h.ctx, rjob))
+	if got := refundAmounts(t, h, delivery); len(got) != 1 || got[0] != 12000 {
+		t.Fatalf("delivery refund before securing %v", got)
+	}
 	if p, raw := h.choiceView(t, order, d); p.FulfillmentMode != "gk_delivery" || p.Slot.ID != f.slot || !p.Slot.StartsAt.Equal(at("12:30")) ||
 		p.DeliveryChoice.Chosen == nil || p.DeliveryChoice.Chosen.State != "processing" || p.Delivery.State != "paid" ||
-		p.PickupMoveUntil != nil {
+		p.PickupMoveUntil != nil || p.Refund != nil || p.DeliveryChoice.Chosen.DeliveryRefundMinor != nil ||
+		strings.Contains(raw, "delivery_refund_minor") {
 		t.Fatalf("committed but unsecured shown as %s", raw)
+	}
+	if c := compactJSON(t, h.staffJSON(t, chef, order)["delivery_choice"]); strings.Contains(c, "delivery_refund_minor") {
+		t.Fatalf("chef sees the unsecured refund %s", c)
+	}
+	if n := noticeCount(h.notices(t, order), "refund_returned"); n != 0 {
+		t.Fatalf("a refund email before the choice is secured (%d)", n)
+	}
+	rows, _ := h.staffList(t, chef, november)
+	for _, r := range rows {
+		if r["id"] == order && r["refund"] != nil {
+			t.Fatalf("the staff list shows the unsecured refund %v", r["refund"])
+		}
 	}
 	h.journal.Fail = nil
 	h.due(t)
@@ -750,8 +784,9 @@ func TestDeliveryChoiceRefusedAtTheCommit(t *testing.T) {
 		v2.Refund != nil {
 		t.Fatalf("refused: %s", raw)
 	}
-	if n := h.count(t, "SELECT count(*) FROM business.refund_floor WHERE collection_id = $1::uuid", delivery); n != 0 {
-		t.Fatalf("a floor for a refused choice (%d)", n)
+	if n := h.count(t, "SELECT count(*) FROM business.refund_operation WHERE collection_id = $1::uuid", delivery); n != 0 ||
+		h.count(t, "SELECT count(*) FROM business.refund_goal WHERE order_id = $1::uuid", order) != 0 {
+		t.Fatalf("a refund for a refused choice (%d)", n)
 	}
 	if again, err := h.choose(order, d, "c1", v.Version, checkout.ChoiceCollection, slots[2]); err != nil || !again.Replayed || again.ID != op.ID {
 		t.Fatalf("replay of the refused choice: %+v %v", again, err)
@@ -766,5 +801,164 @@ func TestDeliveryChoiceRefusedAtTheCommit(t *testing.T) {
 	if v3, raw := h.choiceView(t, order, d); v3.FulfillmentMode != "collection" || v3.Slot.ID != b.Times[2].ID ||
 		v3.DeliveryChoice.Chosen.State != "chosen" || v3.Refund == nil || v3.Refund.SucceededMinor != 12000 {
 		t.Fatalf("second choice: %s", raw)
+	}
+}
+
+// K05 / state 14: once the chef recorded that GK can't deliver, an ordinary
+// cancellation returns the paid delivery in full beside the cake's own
+// rate: after the deadline cake 50% (5000p) + delivery 100% (12000p), both
+// returned automatically; before it 100% + 100%. The preview shows the
+// amount, its allocations and nothing pending for the chef, and stays
+// current at the cancel; the notice explains the split.
+func TestDeliveryNotPossibleOrdinaryCancellation(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	late, ld, lcake, ldelivery := h.paidDeliveryOrder(t, f, pol, "cl")
+	early, ed, ecake, edelivery := h.paidDeliveryOrder(t, f, pol, "ce")
+	h.withRefunds()
+	h.withNotices(t)
+	for _, o := range []struct {
+		order string
+		d     []byte
+	}{{late, ld}, {early, ed}} {
+		v, _ := h.choiceView(t, o.order, o.d)
+		if _, err := h.notPossible("np-"+o.order[:8], o.order, v.Version, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []struct {
+		name             string
+		order            string
+		d                []byte
+		cake, delivery   string
+		now              time.Time
+		rate             int
+		amount, cakeBack int64
+		notice           []string
+	}{
+		{"after the deadline", late, ld, lcake, ldelivery, cancelDeadline, 50, 17000, 5000,
+			[]string{"Refund requested: £170: 50% of the £100 you paid for your cakes", "your delivery payment of £120 in full, because we could not deliver your order."}},
+		{"before the deadline", early, ed, ecake, edelivery, cancelDeadline.Add(-time.Hour), 100, 22000, 10000,
+			[]string{"Refund requested: £220, the full amount you paid."}},
+	} {
+		h.now = c.now
+		p := h.preview(t, c.order, c.d)
+		alloc := map[string]int64{}
+		for _, a := range p.Allocations {
+			alloc[a.CollectionID] = a.AmountMinor
+		}
+		if p.Rate != c.rate || p.PaidMinor != 22000 || p.AmountMinor != c.amount || alloc[c.cake] != c.cakeBack ||
+			alloc[c.delivery] != 12000 || p.DeliveryPending != 0 {
+			t.Fatalf("%s preview %+v", c.name, p)
+		}
+		v, _ := h.choiceView(t, c.order, c.d)
+		if _, err := h.cancel(c.order, c.d, "cancel", v.Version, p); err != nil {
+			t.Fatalf("%s cancel: %v", c.name, err)
+		}
+		h.due(t)
+		if errs := h.drain(t); len(errs) != 0 {
+			t.Fatalf("%s drain:\n%s", c.name, reasons(errs))
+		}
+		v2, raw := h.choiceView(t, c.order, c.d)
+		if v2.Lifecycle != "cancelled" || *v2.CancelReason != "customer_cancelled" || v2.Refund == nil ||
+			v2.Refund.TargetMinor != c.amount || v2.Refund.SucceededMinor != c.amount || v2.Refund.State != "returned" ||
+			v2.Refund.DeliveryPending != 0 || *v2.Cancellation.AmountMinor != c.amount || *v2.Cancellation.Rate != c.rate {
+			t.Fatalf("%s cancelled %s", c.name, raw)
+		}
+		if ck, dl := refundAmounts(t, h, c.cake), refundAmounts(t, h, c.delivery); len(ck) != 1 || ck[0] != c.cakeBack ||
+			len(dl) != 1 || dl[0] != 12000 {
+			t.Fatalf("%s refunds cake %v delivery %v", c.name, ck, dl)
+		}
+		var text string
+		for _, n := range h.notices(t, c.order) {
+			if n.Kind == "cancelled" {
+				text = h.request(t, n).Text
+			}
+		}
+		has(t, c.name+" notice", text, c.notice...)
+	}
+}
+
+// The cancelled notice's Q5 sentence follows what was paid and whether it
+// is returned already: nothing paid, being returned, returned.
+func TestDeliveryChoiceCancelledNoticeWording(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	order, _ := h.paidOrder(t, f, h.policy(t, "p1"))
+	render := func(patch, facts string) string {
+		t.Helper()
+		tx, err := h.db.MigratorConn(t).Begin(h.ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback(h.ctx)
+		if _, err := tx.Exec(h.ctx, "SET LOCAL ROLE gk_owner"); err != nil {
+			t.Fatal(err)
+		}
+		var text string
+		if err := tx.QueryRow(h.ctx, `SELECT r.body_text FROM business.orders o,
+			business.order_notice_render('cancelled', jsonb_populate_record(o, $2::jsonb), $3::json, 'https://gk.example') r
+			WHERE o.id = $1::uuid`, order, patch, facts).Scan(&text); err != nil {
+			t.Fatalf("render: %v", err)
+		}
+		return text
+	}
+	sorry := "We are sorry that we could not deliver your order. As you chose, it has been cancelled"
+	text := render(`{"payment_requirement": "none", "fulfillment_mode": "gk_delivery"}`,
+		`{"reason": "delivery_not_possible", "rate": 100, "paid_minor": 0, "refund_target_minor": 0}`)
+	has(t, "nothing paid", text, sorry+".", "There was no payment for this order, so there is nothing to refund.")
+	hasNot(t, "nothing paid", text, "everything you paid")
+	text = render(`{"fulfillment_mode": "gk_delivery"}`,
+		`{"reason": "delivery_not_possible", "rate": 100, "paid_minor": 22000, "refund_target_minor": 22000}`)
+	has(t, "being returned", text, sorry+" and everything you paid is being returned.", "Refund requested: £220, the full amount you paid.")
+	hasNot(t, "being returned", text, "everything you paid has been returned", "already been returned")
+	text = render(`{"fulfillment_mode": "gk_delivery"}`,
+		`{"reason": "delivery_not_possible", "rate": 100, "paid_minor": 22000, "refund_target_minor": 22000, "refund_returned": true}`)
+	has(t, "returned", text, sorry+" and everything you paid has been returned.", "It has already been returned to you.")
+	hasNot(t, "returned", text, "is being returned", "Refund requested")
+}
+
+// A commit that runs after its target time has started (here: the database
+// clock is past the order's day, as after a long restore freeze) refuses
+// slot_unavailable and leaves the order unchanged, although the target was
+// after the receipt instant.
+func TestDeliveryChoiceTargetStartedBeforeTheCommit(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	h.now = time.Date(2026, 10, 20, 10, 0, 0, 0, time.UTC)
+	pol := h.policy(t, "p1")
+	slots := h.slotsOn(t, "2026-10-31")
+	quote, d := h.guestQuote(t, "q-old", checkout.QuoteInput{Date: "2026-10-31", SlotID: slots[0],
+		FulfillmentMode: schedule.GKDelivery, Lines: []checkout.QuoteLine{{VariantID: f.v1001, Quantity: 1}}})
+	order := must[catalog.Result](t)(h.checkout("", d, "k-old", quote, pol)).ID
+	coll, session := h.started(t, order, d)
+	h.stripe.pay(session, h.now.Add(9*time.Minute))
+	h.deliver(t, "evt_paid_old", "checkout.session.completed", "checkout.session", session, coll, order)
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("cake payment: %v", errs)
+	}
+	v, raw := h.choiceView(t, order, d)
+	if v.Lifecycle != "confirmed" {
+		t.Fatalf("not confirmed: %s", raw)
+	}
+	if _, err := h.notPossible("np", order, v.Version, ""); err != nil {
+		t.Fatal(err)
+	}
+	v, _ = h.choiceView(t, order, d)
+	op, err := h.choose(order, d, "c1", v.Version, checkout.ChoiceCollection, slots[1])
+	if err != nil {
+		t.Fatalf("choice (target after the receipt): %v", err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("drain:\n%s", reasons(errs))
+	}
+	v2, raw := h.choiceView(t, order, d)
+	if c := v2.DeliveryChoice.Chosen; v2.FulfillmentMode != "gk_delivery" || v2.Slot.ID != slots[0] || v2.Version != v.Version+1 ||
+		c == nil || c.State != "refused" || c.RefusalReason == nil || *c.RefusalReason != "slot_unavailable" {
+		t.Fatalf("started target: %s", raw)
+	}
+	if got := h.recoveryState(t, op.ID); got != "secured" {
+		t.Fatalf("recovery %s", got)
 	}
 }

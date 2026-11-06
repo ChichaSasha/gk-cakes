@@ -512,7 +512,14 @@ func TestDeliveryFloorAndPolicyCombineInEitherOrder(t *testing.T) {
 			v, _ := h.cancelView(t, order, d)
 			h.now = cancelDeadline
 			p := h.preview(t, order, d)
-			if p.Rate != 50 || p.AmountMinor != 6000 {
+			// Since 0036 the preview's amount counts a floor already
+			// recorded (the 7000p the goal returns); before the floor it is
+			// the 50% policy amount.
+			want := int64(6000)
+			if floorFirst {
+				want = 7000
+			}
+			if p.Rate != 50 || p.AmountMinor != want {
 				t.Fatalf("preview %+v", p)
 			}
 			if _, err := h.cancel(order, d, "c", v.Version, p); err != nil {

@@ -22,10 +22,15 @@
 -- only the chef sees, never audited or shown to the customer, the order
 -- version, the chef and the receipt instant). Versioned (order version + 1),
 -- idempotent (K00 command receipt: the same key replays, also during a
--- restore freeze; a second decision on the same order answers the first as a
--- replay), refused during a restore freeze (GK503), audited
--- delivery.not_possible {decision_id, quote_id}. It refunds nothing by itself:
--- the customer's choice decides. From then on the delivery is never
+-- restore freeze; another key on a decided order is 409 state_conflict),
+-- refused during a restore freeze (GK503), audited delivery.not_possible
+-- {decision_id, quote_id}. It refunds nothing by itself: when the delivery
+-- was paid it records the delivery's 100% floor (business.refund_floor,
+-- reason gk_delivery_failure: an obligation, nothing is reserved until a goal
+-- exists), and the customer's choice decides. Any later goal (a time choice,
+-- the full refund, an ordinary cancellation: the preview shows it) returns
+-- the paid delivery in full beside the cake's own rate (K05 "GK-caused
+-- unperformed delivery raises its target to 100% delivery"; state 14). From then on the delivery is never
 -- dispatched (409 delivery_not_possible), and no quote, waiver or delivery
 -- payment is accepted (business.delivery_order_open): an unpaid quote is
 -- closed.
@@ -57,19 +62,20 @@
 --   slot_unavailable). The commit changes the fulfilment mode and the
 --   appointment; the day place stays (no capacity admission); the original
 --   handover, refund deadline and production anchor never move. A paid
---   delivery (the current quote's matched, succeeded collection) gets a 100%
---   floor (business.refund_floor, reason gk_delivery_failure, recorded by the
---   chef who recorded the decision) and the goal and reservation of 0022's
---   delivery-failure floor: it comes back in full. An unpaid quote is closed:
---   nothing is refunded.
+--   delivery (the current quote's matched, succeeded collection) has its
+--   100% floor (recorded with the chef's decision) and gets the goal and
+--   reservation of 0022's delivery-failure floor: it comes back in full. An
+--   unpaid quote is closed: nothing is refunded.
 --   full_refund: the existing terminal return (business.order_terminal_return)
 --   with cancel_reason delivery_not_possible and 100% of everything actually
 --   paid (cake and matched delivery; a stray delivery payment in full on top,
---   as 0035 defines), source customer. A paid delivery also gets its floor
---   first, so its share is reserved automatically (the chef already decided).
+--   as 0035 defines), source customer. A paid delivery's floor makes its
+--   share reserved automatically (the chef already decided).
 --   The cancelled notice (order_command_secured) states the reason.
 -- The commit re-checks the version, the open choice at the receipt, the paid
--- delivery and the target slot; otherwise it records a refusal
+-- delivery and the target slot (published, starting after the receipt and
+-- after the commit's own instant: a commit delayed by a restore freeze never
+-- sets a time that has started); otherwise it records a refusal
 -- (order_changed, not_open, slot_unavailable; version + 1 only) and the
 -- choice is open again.
 --
@@ -81,8 +87,11 @@
 -- (the day's published starts within shelf life; the API keeps those after
 -- its clock, and empties choices and times unless open), chosen {choice, reason, state processing | chosen | cancelled |
 -- refused, refusal_reason, requested_at, to, delivery_refund_minor} | null}.
--- While a time choice is committed but unsecured, the mode and appointment
--- read as before (order_visible_mode, order_visible_appointment). After a
+-- While a choice is not secured, chosen carries no delivery_refund_minor and
+-- the order shows no refund block and sends no refund email
+-- (order_refund_hidden; the secured command's trigger rechecks); while a
+-- time choice is committed but unsecured, the mode and appointment read as
+-- before (order_visible_mode, order_visible_appointment). After a
 -- secured time choice the delivery block reads cancelled_by_choice. Staff:
 -- the chef also gets the not-possible decision with its reason and the
 -- history of choices; technical support the same without money or reason;
@@ -287,10 +296,86 @@ AS $$
                   p_order.fulfillment_mode);
 $$;
 
+-- Owner-internal: whether order p_order's refund must stay invisible (K11:
+-- not shown, no email): a handover or no-show (0032) or a Q5 choice is not
+-- secured yet. The secured command's trigger rechecks the refund email.
+CREATE FUNCTION business.order_refund_hidden(p_order uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT business.order_handover_pending(p_order)
+      OR EXISTS (SELECT 1 FROM business.order_command c JOIN business.recovery_operation r ON r.id = c.id
+                 WHERE c.order_id = p_order AND c.command = 'delivery_choice' AND r.state <> 'secured');
+$$;
+
+-- Owner-internal: what recorded collection floors (business.refund_floor: a
+-- GK-caused unperformed delivery, 0022 and 0036) add to the policy target
+-- p_policy of order p_order: each floor beyond its collection's proportional
+-- policy share. A cancellation returns the policy target plus this: the
+-- delivery in full beside the rate on the cake (K05).
+CREATE FUNCTION business.cancellation_floor_topup(p_order uuid, p_policy bigint)
+RETURNS bigint
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT coalesce(sum(GREATEST(0, f.floor_minor - s.share_minor)), 0)::bigint
+  FROM business.refund_floor f
+  JOIN business.refund_shares(p_order, p_policy, false) s ON s.collection_id = f.collection_id
+  WHERE f.order_id = p_order;
+$$;
+
+-- Owner-internal: once the chef recorded that GK can't deliver order
+-- p_order, the 100% floor of its paid delivery (the current quote's matched
+-- succeeded collection; Q5 "returned in full whatever they choose", K05),
+-- recorded once by the chef who decided. A floor is an obligation, not a
+-- refund: nothing is reserved until a goal exists (the customer's choice or
+-- a cancellation). The caller holds the order and its collections. Returns
+-- the paid delivery's amount, or NULL when there is no decision or no paid
+-- delivery.
+CREATE FUNCTION business.delivery_not_possible_floor(p_order uuid, p_actor_kind text, p_account uuid)
+RETURNS bigint
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_np business.delivery_not_possible%ROWTYPE;
+  v_quote uuid;
+  v_coll uuid;
+  v_amount bigint;
+BEGIN
+  SELECT * INTO v_np FROM business.delivery_not_possible n WHERE n.order_id = p_order;
+  IF NOT FOUND THEN
+    RETURN NULL;
+  END IF;
+  v_quote := business.delivery_current_quote(p_order);
+  IF v_quote IS NOT NULL THEN
+    v_coll := business.delivery_paid_collection(v_quote);
+  END IF;
+  IF v_coll IS NULL THEN
+    RETURN NULL;
+  END IF;
+  SELECT pc.amount_minor INTO v_amount FROM business.payment_collection pc WHERE pc.id = v_coll;
+  IF NOT EXISTS (SELECT 1 FROM business.refund_floor f WHERE f.collection_id = v_coll) THEN
+    INSERT INTO business.refund_floor (id, order_id, collection_id, floor_minor, reason, recorded_by)
+    VALUES (pg_catalog.gen_random_uuid(), p_order, v_coll, v_amount, 'gk_delivery_failure', v_np.recorded_by);
+    PERFORM business.audit_record(p_actor_kind, p_account, 'refund.floor_recorded', 'order', p_order, NULL,
+                                  pg_catalog.json_build_object('collection_id', v_coll, 'floor_minor', v_amount,
+                                                               'decision_id', v_np.id));
+  END IF;
+  RETURN v_amount;
+END;
+$$;
+
 -- Owner-internal: a choice as the order page shows it. state processing
 -- (not secured), chosen (a time choice), cancelled (full refund) or refused
 -- (refusal_reason). delivery_refund_minor: the paid delivery returned in
--- full (only when it was paid).
+-- full (only when it was paid, and only once the choice is secured: K11).
 CREATE FUNCTION business.delivery_choice_json(c business.delivery_choice)
 RETURNS jsonb
 LANGUAGE sql
@@ -307,7 +392,9 @@ AS $$
            'to', CASE WHEN c.choice <> 'full_refund' THEN pg_catalog.jsonb_build_object(
                    'fulfillment_mode', c.choice, 'date', c.from_day, 'id', c.to_slot_id, 'starts_at', c.to_starts_at,
                    'ends_at', c.to_ends_at) END)
-         || CASE WHEN c.delivery_collection_id IS NOT NULL THEN pg_catalog.jsonb_build_object(
+         -- The refund is visible only once the choice is secured (K11).
+         || CASE WHEN c.delivery_collection_id IS NOT NULL AND r.state = 'secured'
+                      AND r.outcome ->> 'status' IN ('chosen', 'cancelled') THEN pg_catalog.jsonb_build_object(
               'delivery_refund_minor', (SELECT pc.amount_minor FROM business.payment_collection pc
                                         WHERE pc.id = c.delivery_collection_id))
             ELSE '{}'::jsonb END
@@ -443,12 +530,10 @@ BEGIN
   IF business.order_command_unresolved(p_order) THEN
     RAISE EXCEPTION 'state_conflict' USING ERRCODE = 'GK409';
   END IF;
-  -- One decision per order: a second one answers the first (nothing changes).
-  SELECT n.id INTO v_prior FROM business.delivery_not_possible n WHERE n.order_id = p_order;
-  IF FOUND THEN
-    PERFORM business.command_finish(v_account, 'order.delivery_not_possible', p_order::text, p_key, v_prior);
-    RETURN QUERY SELECT v_prior, true;
-    RETURN;
+  -- One decision per order: another key on a decided order is a conflict
+  -- (K00: only the same key replays).
+  IF EXISTS (SELECT 1 FROM business.delivery_not_possible n WHERE n.order_id = p_order) THEN
+    RAISE EXCEPTION 'state_conflict' USING ERRCODE = 'GK409';
   END IF;
   IF v_o.version <> p_expected_version THEN
     RAISE EXCEPTION 'stale_version' USING ERRCODE = 'GK409';
@@ -463,6 +548,9 @@ BEGIN
   v_quote := business.delivery_current_quote(p_order);
   INSERT INTO business.delivery_not_possible (id, order_id, quote_id, reason, order_version, recorded_by, recorded_at)
   VALUES (v_id, p_order, v_quote, p_reason, v_o.version, v_account, p_now);
+  -- A paid delivery's 100% floor (an obligation, not a refund: nothing is
+  -- reserved until a goal exists, so the customer's choice still decides).
+  PERFORM business.delivery_not_possible_floor(p_order, 'staff', v_account);
   UPDATE business.orders o SET version = o.version + 1, updated_at = pg_catalog.now() WHERE o.id = p_order;
   PERFORM business.audit_record('staff', v_account, 'delivery.not_possible', 'order', p_order, NULL,
                                 pg_catalog.json_build_object('decision_id', v_id, 'quote_id', v_quote));
@@ -635,7 +723,6 @@ AS $$
 DECLARE
   v_o business.orders%ROWTYPE;
   c business.delivery_choice%ROWTYPE;
-  v_np business.delivery_not_possible%ROWTYPE;
   v_paid uuid;
   v_amount bigint;
   v_reason text;
@@ -655,7 +742,10 @@ BEGIN
   ELSIF c.choice <> 'full_refund'
         AND (NOT EXISTS (SELECT 1 FROM business.schedule_slots_on(c.from_day) s
                          WHERE s.slot_id = c.to_slot_id AND s.starts_at = c.to_starts_at)
-             OR c.to_starts_at <= v.received_at OR NOT business.order_lots_last_until(v.order_id, c.to_ends_at)) THEN
+             -- A commit delayed (a restore freeze) never sets a time that has
+             -- already started.
+             OR c.to_starts_at <= v.received_at OR c.to_starts_at <= pg_catalog.now()
+             OR NOT business.order_lots_last_until(v.order_id, c.to_ends_at)) THEN
     v_reason := 'slot_unavailable';
   END IF;
   IF v_reason IS NOT NULL THEN
@@ -669,17 +759,8 @@ BEGIN
   IF c.delivery_collection_id IS NOT NULL THEN
     -- A paid delivery comes back in full whatever the customer chooses
     -- (Q5): the GK-caused unperformed delivery's 100% floor (K05; 0022),
-    -- recorded by the chef who decided that GK can't deliver.
-    SELECT * INTO v_np FROM business.delivery_not_possible n WHERE n.id = c.not_possible_id;
-    SELECT pc.amount_minor INTO v_amount FROM business.payment_collection pc WHERE pc.id = c.delivery_collection_id;
-    IF NOT EXISTS (SELECT 1 FROM business.refund_floor f WHERE f.collection_id = c.delivery_collection_id) THEN
-      INSERT INTO business.refund_floor (id, order_id, collection_id, floor_minor, reason, recorded_by)
-      VALUES (pg_catalog.gen_random_uuid(), v.order_id, c.delivery_collection_id, v_amount, 'gk_delivery_failure',
-              v_np.recorded_by);
-      PERFORM business.audit_record(v_actor, v.actor_account_id, 'refund.floor_recorded', 'order', v.order_id, NULL,
-                                    pg_catalog.json_build_object('collection_id', c.delivery_collection_id,
-                                                                 'floor_minor', v_amount, 'operation_id', v.id));
-    END IF;
+    -- recorded with the chef's decision (ensured here for safety).
+    v_amount := business.delivery_not_possible_floor(v.order_id, v_actor, v.actor_account_id);
   END IF;
 
   IF c.choice = 'full_refund' THEN
@@ -1093,8 +1174,9 @@ $$;
 
 -- As in 0035, plus delivery_choice (the Q5 choice, GK delivery orders and
 -- orders changed by a choice; see the header), the visible fulfilment mode
--- (the GK delivery a committed but unsecured time choice replaces) and a
--- delivery_choice full refund in the cancellation block.
+-- (the GK delivery a committed but unsecured time choice replaces), a
+-- delivery_choice full refund in the cancellation block, and no refund block
+-- while a choice is not secured (business.order_refund_hidden, K11).
 CREATE OR REPLACE FUNCTION business.order_view(p_order uuid)
 RETURNS json
 LANGUAGE sql
@@ -1185,7 +1267,7 @@ AS $$
                        ORDER BY pc.created_at DESC, pc.id DESC LIMIT 1),
            'delivery', business.order_delivery_view(o),
            'delivery_choice', business.order_delivery_choice_view(o),
-           'refund', CASE WHEN o.recovery_state <> 'cancellation_pending' AND NOT business.order_handover_pending(o.id)
+           'refund', CASE WHEN o.recovery_state <> 'cancellation_pending' AND NOT business.order_refund_hidden(o.id)
                           THEN business.order_refund_summary(o.id) END,
            'late_payment', business.order_late_payment_view(o),
            'agreed', business.order_late_payment_agreed(o.id),
@@ -1204,7 +1286,8 @@ AS $$
   WHERE o.id = p_order;
 $$;
 
--- As in 0035, with the visible fulfilment mode.
+-- As in 0035, with the visible fulfilment mode and no refund while a choice
+-- is not secured (business.order_refund_hidden).
 CREATE OR REPLACE FUNCTION business.order_staff_row(p_order business.orders, p_view text)
 RETURNS jsonb
 LANGUAGE sql
@@ -1242,7 +1325,7 @@ AS $$
                 'free_confirmed_at', CASE WHEN p_order.recovery_state IN ('secured', 'cancellation_pending')
                                           THEN p_order.free_confirmed_at END,
                 'refund', CASE WHEN p_order.recovery_state <> 'cancellation_pending'
-                                    AND NOT business.order_handover_pending(p_order.id)
+                                    AND NOT business.order_refund_hidden(p_order.id)
                                THEN business.order_refund_summary(p_order.id)::jsonb END)
             ELSE '{}'::jsonb END;
 $$;
@@ -1386,8 +1469,11 @@ END;
 $$;
 
 -- As in 0035, plus the cancelled notice's first sentence for reason
--- delivery_not_possible (the customer's Q5 full refund; wording for Creator
--- review). Every other notice renders exactly as before.
+-- delivery_not_possible (the customer's Q5 full refund; it follows what was
+-- paid and whether it is returned already), and, when the outcome states a
+-- delivery returned in full beside a 50% cake rate (delivery_full_minor),
+-- that refund line (wording for Creator review). Every other notice renders
+-- exactly as before.
 CREATE OR REPLACE FUNCTION business.order_notice_render(p_kind text, p_o business.orders, p_facts json, p_origin text,
                                              OUT subject text, OUT body_text text, OUT body_html text)
 LANGUAGE plpgsql
@@ -1478,7 +1564,11 @@ BEGIN
     v_text := v_text || CASE p_facts ->> 'reason'
       WHEN 'chef_cancelled' THEN 'We are sorry: the chef has had to cancel your order.'
       WHEN 'late_payment_returned' THEN 'Your order has been cancelled because a handover could not be agreed after your payment arrived.'
-      WHEN 'delivery_not_possible' THEN 'We are sorry that we could not deliver your order. As you chose, it has been cancelled and everything you paid is being returned.'
+      WHEN 'delivery_not_possible' THEN
+        'We are sorry that we could not deliver your order. As you chose, it has been cancelled'
+        || CASE WHEN coalesce((p_facts ->> 'paid_minor')::bigint, 0) = 0 THEN '.'
+                WHEN coalesce((p_facts ->> 'refund_returned')::boolean, false) THEN ' and everything you paid has been returned.'
+                ELSE ' and everything you paid is being returned.' END
       ELSE 'Your order has been cancelled as you asked.' END;
     v_returned := coalesce((p_facts ->> 'refund_returned')::boolean, false);
     v_text := v_text || CASE
@@ -1486,6 +1576,14 @@ BEGIN
       WHEN v_target = 0 THEN 'No refund is due for this order.'
       ELSE CASE WHEN v_returned THEN 'Refund: ' ELSE 'Refund requested: ' END || business.notice_money(v_target)
            || CASE WHEN v_rate = 100 THEN ', the full amount you paid.'
+                   -- After "GK can't deliver" (0036): the rate on the cakes and
+                   -- the delivery payment in full.
+                   WHEN coalesce((p_facts ->> 'delivery_full_minor')::bigint, 0) > 0 THEN
+                     ': ' || v_rate::text || '% of the '
+                     || business.notice_money((p_facts ->> 'paid_minor')::bigint - (p_facts ->> 'delivery_full_minor')::bigint)
+                     || ' you paid for your cakes, because the full-refund deadline had been reached, and your delivery payment of '
+                     || business.notice_money((p_facts ->> 'delivery_full_minor')::bigint)
+                     || ' in full, because we could not deliver your order.'
                    ELSE ', which is ' || v_rate::text || '% of the ' || business.notice_money((p_facts ->> 'paid_minor')::bigint)
                         || ' you paid, because the full-refund deadline had been reached.' END END;
     IF v_target > 0 THEN
@@ -1706,6 +1804,266 @@ END;
 $$;
 
 
+-- As in 0021, with the amount a cancellation returns including recorded
+-- delivery floors (business.cancellation_floor_topup), as the preview
+-- computes it, so a preview made after "GK can't deliver" stays current.
+CREATE OR REPLACE FUNCTION business.order_cancel_request(
+  p_owner uuid, p_guest_digest bytea, p_order uuid, p_key text, p_body_sha256 text, p_expected_version integer,
+  p_preview_id uuid, p_preview_hash text, p_env text, p_now timestamptz)
+RETURNS TABLE (result_id uuid, replayed boolean)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_o business.orders%ROWTYPE;
+  v_l record;
+  v_account uuid;
+  v_capability uuid;
+  v_prior uuid;
+  v_p business.cancellation_preview%ROWTYPE;
+  v_rate smallint;
+  v_paid bigint;
+  v_amount bigint;
+BEGIN
+  IF p_now IS NULL THEN
+    RAISE EXCEPTION 'proof_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  IF p_key IS NULL OR p_key !~ '^[\x21-\x7e]{1,128}$' OR p_body_sha256 IS NULL OR p_body_sha256 !~ '^[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'idempotency_key_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  IF p_expected_version IS NULL OR p_expected_version < 1 THEN
+    RAISE EXCEPTION 'expected_version_required' USING ERRCODE = 'GK422';
+  END IF;
+  IF p_preview_id IS NULL OR p_preview_hash IS NULL OR p_preview_hash !~ '^[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'preview_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  IF p_env IS NULL OR p_env !~ '^[a-z0-9][a-z0-9-]{0,31}$' THEN
+    RAISE EXCEPTION 'journal environment must be a lower-case path segment';
+  END IF;
+  SELECT * INTO v_l FROM business.order_customer_lock(p_owner, p_guest_digest, p_order, 'cancel') l;
+  v_o := v_l.o_order;
+  v_account := v_l.o_account;
+  v_capability := v_l.o_capability;
+  v_prior := business.order_cancel_admissible(v_o, v_account, v_capability, p_key, p_body_sha256, p_expected_version);
+  IF v_prior IS NOT NULL THEN
+    RETURN QUERY SELECT v_prior, true;
+    RETURN;
+  END IF;
+  -- The preview this actor saw, exactly.
+  SELECT * INTO v_p FROM business.cancellation_preview p
+  WHERE p.id = p_preview_id AND p.order_id = p_order
+    AND p.actor_account_id IS NOT DISTINCT FROM v_account AND p.guest_capability_id IS NOT DISTINCT FROM v_capability;
+  IF NOT FOUND OR v_p.body_sha256 <> p_preview_hash THEN
+    RAISE EXCEPTION 'preview_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  -- At the persisted receipt instant (K05): a boundary crossed since the
+  -- preview, an expired preview or another amount needs a new preview.
+  v_rate := business.cancellation_rate(v_o.full_refund_deadline_at, p_now, false);
+  v_paid := business.order_paid_minor(p_order);
+  v_amount := business.cancellation_amount(v_paid, v_rate);
+  v_amount := v_amount + CASE WHEN v_amount > 0 THEN business.cancellation_floor_topup(p_order, v_amount) ELSE 0 END;
+  IF p_now >= v_p.expires_at OR v_p.order_version <> v_o.version OR v_p.rate <> v_rate
+     OR v_p.amount_minor <> v_amount THEN
+    RAISE EXCEPTION 'preview_stale' USING ERRCODE = 'GK409';
+  END IF;
+  RETURN QUERY SELECT business.order_cancel_record(p_order, v_o.version,
+                        CASE WHEN v_account IS NULL THEN 'guest' ELSE 'customer' END, v_account, v_capability, p_key,
+                        p_body_sha256, p_now, p_env, 'customer_cancelled', v_rate, v_paid, v_amount, NULL, p_preview_id),
+                      false;
+END;
+$$;
+
+-- As in 0035, except that amount_minor (in the hash) also counts recorded
+-- delivery floors: after the chef recorded that GK can't deliver, a paid
+-- delivery comes back in full beside the cake's rate (K05 "GK-caused
+-- unperformed delivery raises its target to 100% delivery"; GK-017 r02b
+-- state 14). The allocations already include the floor.
+CREATE OR REPLACE FUNCTION business.order_cancellation_preview(p_owner uuid, p_guest_digest bytea, p_order uuid, p_now timestamptz)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_o business.orders%ROWTYPE;
+  v_l record;
+  v_account uuid;
+  v_capability uuid;
+  v_id uuid := pg_catalog.gen_random_uuid();
+  v_rate smallint;
+  v_paid bigint;
+  v_amount bigint;
+  v_alloc json;
+  v_body json;
+  v_hash text;
+  v_p business.cancellation_preview%ROWTYPE;
+  v_pending bigint;
+  v_stray bigint;
+BEGIN
+  IF p_now IS NULL THEN
+    RAISE EXCEPTION 'proof_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  SELECT * INTO v_l FROM business.order_customer_lock(p_owner, p_guest_digest, p_order, 'cancel') l;
+  v_o := v_l.o_order;
+  v_account := v_l.o_account;
+  v_capability := v_l.o_capability;
+  IF EXISTS (SELECT 1 FROM business.order_command c JOIN business.recovery_operation r ON r.id = c.id
+             WHERE c.order_id = p_order AND c.command = 'cancel'
+               AND NOT (r.state = 'secured' AND r.outcome ->> 'status' = 'refused'))
+     OR NOT business.cancellation_eligible(v_o.lifecycle) THEN
+    RAISE EXCEPTION 'cancellation_not_eligible' USING ERRCODE = 'GK409';
+  END IF;
+  IF v_o.recovery_state <> 'secured' THEN
+    RAISE EXCEPTION 'state_conflict' USING ERRCODE = 'GK409';
+  END IF;
+  v_rate := business.cancellation_rate(v_o.full_refund_deadline_at, p_now, false);
+  v_paid := business.order_paid_minor(p_order);
+  v_amount := business.cancellation_amount(v_paid, v_rate);
+  -- Allocated as the goal would be (combined with any recorded floor).
+  v_alloc := business.cancellation_allocations(p_order, business.refund_goal_compute(p_order, v_amount));
+  v_pending := business.refund_delivery_pending(p_order, business.refund_goal_compute(p_order, v_amount));
+  -- A stray delivery payment (0035) returned in full with this cancellation,
+  -- beside the policy amount (it is in the allocations); none without a goal.
+  v_stray := CASE WHEN v_amount > 0 THEN business.delivery_unmatched_minor(p_order) ELSE 0 END;
+  -- What the cancellation returns: the policy amount plus any recorded
+  -- delivery floor beyond its policy share (the goal is computed from the
+  -- policy amount above, which the floor raises).
+  v_amount := v_amount + CASE WHEN v_amount > 0 THEN business.cancellation_floor_topup(p_order, v_amount) ELSE 0 END;
+  -- An unexpired identical preview of this actor and version is reused.
+  SELECT * INTO v_p FROM business.cancellation_preview p
+  WHERE p.order_id = p_order AND p.order_version = v_o.version
+    AND p.actor_account_id IS NOT DISTINCT FROM v_account AND p.guest_capability_id IS NOT DISTINCT FROM v_capability
+    AND p.rate = v_rate AND p.paid_minor = v_paid AND p.amount_minor = v_amount
+    AND p.allocations::text = v_alloc::text AND p.full_refund_deadline_at = v_o.full_refund_deadline_at
+    AND p.computed_at <= p_now AND p_now < p.expires_at
+  ORDER BY p.computed_at DESC, p.id DESC LIMIT 1;
+  IF FOUND THEN
+    v_body := pg_catalog.json_build_object(
+      'preview_id', v_p.id, 'order_id', p_order, 'order_version', v_p.order_version, 'rate', v_p.rate,
+      'paid_minor', v_p.paid_minor, 'amount_minor', v_p.amount_minor, 'currency', 'GBP', 'allocations', v_p.allocations,
+      'full_refund_deadline_at', v_p.full_refund_deadline_at, 'computed_at', v_p.computed_at, 'expires_at', v_p.expires_at);
+    RETURN (v_body::jsonb || pg_catalog.jsonb_build_object('preview_hash', v_p.body_sha256,
+                                                           'delivery_pending_minor', v_pending,
+                                                           'unmatched_minor', v_stray))::json;
+  END IF;
+  v_body := pg_catalog.json_build_object(
+    'preview_id', v_id, 'order_id', p_order, 'order_version', v_o.version, 'rate', v_rate,
+    'paid_minor', v_paid, 'amount_minor', v_amount, 'currency', 'GBP', 'allocations', v_alloc,
+    'full_refund_deadline_at', v_o.full_refund_deadline_at,
+    'computed_at', p_now, 'expires_at', p_now + interval '10 minutes');
+  v_hash := pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(v_body::text, 'UTF8')), 'hex');
+  INSERT INTO business.cancellation_preview (id, order_id, order_version, actor_account_id, guest_capability_id, rate,
+                                             paid_minor, amount_minor, allocations, full_refund_deadline_at,
+                                             computed_at, expires_at, body_sha256)
+  VALUES (v_id, p_order, v_o.version, v_account, v_capability, v_rate, v_paid, v_amount, v_alloc,
+          v_o.full_refund_deadline_at, p_now, p_now + interval '10 minutes', v_hash);
+  RETURN (v_body::jsonb || pg_catalog.jsonb_build_object('preview_hash', v_hash, 'delivery_pending_minor', v_pending,
+                                                         'unmatched_minor', v_stray))::json;
+END;
+$$;
+
+-- As in 0035, plus: after the chef recorded that GK can't deliver, the paid
+-- delivery's 100% floor is ensured first (business.delivery_not_possible_floor),
+-- so the goal returns it in full beside the policy rate on the cake (K05;
+-- GK-017 r02b state 14). refund_target_minor then states the whole amount
+-- (policy + floor top-up) and delivery_full_minor the delivery returned in
+-- full; outcomes without a floor top-up are exactly as before.
+CREATE OR REPLACE FUNCTION business.order_terminal_return(p_order uuid, p_version integer, p_reason text, p_rate smallint,
+                                               p_source text, p_actor_kind text, p_account uuid, p_operation uuid,
+                                               p_at timestamptz)
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_o business.orders%ROWTYPE;
+  v_paid bigint;
+  v_policy bigint;
+  v_topup bigint;
+  v_target bigint;
+  v_floors bigint;
+  v_stray bigint;
+BEGIN
+  SELECT * INTO v_o FROM business.orders o WHERE o.id = p_order FOR UPDATE;
+  PERFORM business.delivery_not_possible_floor(p_order, CASE p_actor_kind WHEN 'guest' THEN 'system' ELSE p_actor_kind END,
+                                               p_account);
+  v_paid := business.order_paid_minor(p_order);
+  v_policy := business.cancellation_amount(v_paid, p_rate);
+  v_topup := CASE WHEN v_policy > 0 THEN business.cancellation_floor_topup(p_order, v_policy) ELSE 0 END;
+  v_target := v_policy + v_topup;
+  SELECT coalesce(sum(f.floor_minor), 0) INTO v_floors FROM business.refund_floor f WHERE f.order_id = p_order;
+  -- A stray delivery payment (0035) not returned yet: the goal returns it in
+  -- full beside the policy target, so the outcome states it.
+  v_stray := CASE WHEN v_policy > 0 THEN business.delivery_unmatched_minor(p_order) ELSE 0 END;
+  UPDATE business.orders o
+  SET lifecycle = 'cancelled', cancel_reason = p_reason, cancelled_at = p_at,
+      recovery_state = 'cancellation_pending', version = o.version + 1, updated_at = pg_catalog.now()
+  WHERE o.id = p_order;
+  IF v_policy > 0 THEN
+    -- The goal from the policy target: recorded floors raise it.
+    PERFORM business.refund_goal_apply(p_order, p_reason, p_source, p_rate, v_paid, v_policy, 'system', NULL);
+    PERFORM business.refund_reserve(p_order);
+  END IF;
+  IF EXISTS (SELECT 1 FROM business.capacity_allocation a WHERE a.order_ref = p_order AND a.day = v_o.handover_day) THEN
+    PERFORM business.capacity_release(p_order, v_o.handover_day);
+  END IF;
+  PERFORM business.audit_record(CASE p_actor_kind WHEN 'guest' THEN 'system' ELSE p_actor_kind END, p_account,
+                                'order.cancelled', 'order', p_order, NULL,
+                                CASE WHEN v_stray > 0
+                                     THEN pg_catalog.json_build_object('operation_id', p_operation, 'reason', p_reason,
+                                                                       'rate', p_rate, 'refund_target_minor', v_target,
+                                                                       'unmatched_minor', v_stray)
+                                     ELSE pg_catalog.json_build_object('operation_id', p_operation, 'reason', p_reason,
+                                                                       'rate', p_rate, 'refund_target_minor', v_target) END);
+  IF v_topup > 0 THEN
+    RETURN (pg_catalog.json_build_object(
+      'status', 'cancelled',
+      'evidence', pg_catalog.jsonb_build_object('order_version', p_version + 1, 'reason', p_reason, 'rate', p_rate,
+                                                'paid_minor', v_paid, 'refund_target_minor', v_target,
+                                                'delivery_full_minor', v_floors)
+                  || CASE WHEN v_stray > 0 THEN pg_catalog.jsonb_build_object('unmatched_minor', v_stray)
+                          ELSE '{}'::jsonb END))::text;
+  END IF;
+  IF v_stray > 0 THEN
+    RETURN pg_catalog.format(
+      '{"status":"cancelled","evidence":{"order_version":%s,"reason":"%s","rate":%s,"paid_minor":%s,"refund_target_minor":%s,'
+      '"unmatched_minor":%s}}',
+      p_version + 1, p_reason, p_rate, v_paid, v_target, v_stray);
+  END IF;
+  RETURN pg_catalog.format(
+    '{"status":"cancelled","evidence":{"order_version":%s,"reason":"%s","rate":%s,"paid_minor":%s,"refund_target_minor":%s}}',
+    p_version + 1, p_reason, p_rate, v_paid, v_target);
+END;
+$$;
+
+-- As in 0032, and nothing while a Q5 choice is not secured either
+-- (business.order_refund_hidden): the secured command's trigger rechecks.
+CREATE OR REPLACE FUNCTION business.order_notice_refund_check(p_order uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v json;
+BEGIN
+  IF p_order IS NULL OR NOT EXISTS (SELECT 1 FROM business.orders o
+                                    WHERE o.id = p_order AND o.recovery_state <> 'cancellation_pending')
+     OR business.order_refund_hidden(p_order) THEN
+    RETURN;
+  END IF;
+  v := business.order_refund_summary(p_order);
+  IF v ->> 'state' = 'returned' AND (v ->> 'target_minor')::bigint > 0 THEN
+    PERFORM business.order_notice_enqueue(p_order, 'refund_returned', v ->> 'goal_version',
+              business.notice_uuid('refund_returned:' || p_order::text || ':' || (v ->> 'goal_version')),
+              pg_catalog.json_build_object('target_minor', (v ->> 'target_minor')::bigint,
+                                           'goal_version', (v ->> 'goal_version')::integer));
+  END IF;
+END;
+$$;
+
 REVOKE ALL ON TABLE business.delivery_not_possible FROM PUBLIC;
 REVOKE ALL ON TABLE business.delivery_choice FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.delivery_choice_eligible(business.orders) FROM PUBLIC;
@@ -1713,6 +2071,9 @@ REVOKE ALL ON FUNCTION business.delivery_choice_opens_at(business.orders) FROM P
 REVOKE ALL ON FUNCTION business.delivery_choice_basis(business.orders, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.delivery_choice_times(business.orders) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.order_visible_mode(business.orders) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.order_refund_hidden(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.cancellation_floor_topup(uuid, bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION business.delivery_not_possible_floor(uuid, text, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.delivery_choice_json(business.delivery_choice) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.order_delivery_choice_view(business.orders) FROM PUBLIC;
 REVOKE ALL ON FUNCTION business.order_staff_delivery_choice(jsonb, uuid, text) FROM PUBLIC;
