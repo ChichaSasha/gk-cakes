@@ -68,3 +68,13 @@
 .eyebrow .ref{text-transform:none}
 #acct-err:empty{margin:0}
 @media (max-width:860px){.layout{grid-template-rows:auto 1fr;align-content:start}}
+.tag-future{display:inline-block;margin-left:6px;font:600 11px var(--mono);color:var(--warn);border:1px dashed var(--warn);border-radius:999px;padding:0 7px;vertical-align:1px}
+.future-note{display:flex;gap:6px;align-items:flex-start;color:#5a3700;background:var(--warn-bg);border-radius:10px;padding:6px 10px}
+.claims-table .mono,.claim-facts .mono{overflow-wrap:anywhere}
+#note-err:empty,#ev-err:empty{margin:0}
+.future-banner{margin-bottom:18px}
+/* r04b: on one column, the decision follows the main card (order / find), before the secondary cards */
+@media (max-width:1080px){.claim-grid{display:flex;flex-direction:column;gap:0}.claim-main{display:contents}.claim-side{order:2}.card-later{order:3}}
+.need-claims{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}.need-claims .need-dot{background:var(--accent)}
+.need-muted{opacity:.6}.need-muted .need-dot{background:#c9cdd3}
+.main>.design-note{margin:0 0 14px}

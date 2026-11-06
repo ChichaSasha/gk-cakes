@@ -1,5 +1,5 @@
 #!/bin/sh
-# GK-018 r04-claims screenshots (proposal, not approved). Serve the chef-operations folder first:
+# GK-018 r04b-claims screenshots (proposal, not approved). Serve the chef-operations folder first:
 #   python3 -m http.server 4196 --bind 127.0.0.1 --directory docs/design/sessions/chef-operations
 # shot.html frames poc/<page> at an exact width (headless Chrome's window is at least 500 px wide).
 # Usage: sh shoot.sh [state-filter] — desktop is laid out at 1440 px and saved at 1120 px; writes screenshots/<id>-<slug>-desktop.jpg and -mobile.jpg for states marked shot=1 in poc/states.js.
@@ -19,6 +19,6 @@ shot() { name=$1; src=$2; for dev in desktop:1440 mobile:390; do d=${dev%%:*}; w
   [ "$d" = desktop ] && sips --resampleWidth 1120 "screenshots/$name-$d.png" >/dev/null  # desktop laid out at 1440, saved at 1120 (as r03b2)
   sips -s format jpeg -s formatOptions 60 "screenshots/$name-$d.png" --out "screenshots/$name-$d.jpg" >/dev/null && rm "screenshots/$name-$d.png"
   echo "$name-$d ${w}x$h"; done; }
-node -e 'const S=require("./poc/states.js");console.log("S00 index.html Index");for(const [id,u,t,s] of S)if(s)console.log(id,u,t)' | while read -r id src title; do
+node -e 'const {STATES,withData}=require("./poc/states.js");console.log("S00 index.html Index");for(const [id,u,t,s] of STATES)if(s)console.log(id,withData(u),t)' | while read -r id src title; do
   slug=$(printf '%s' "$title" | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9]\{1,\}/-/g; s/^-//; s/-$//' | cut -c1-48 | sed 's/-$//')
   case "$id $slug" in *"$F"*) shot "$id-$slug" "$src";; esac; done
