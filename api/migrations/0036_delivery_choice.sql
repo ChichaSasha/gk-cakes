@@ -73,9 +73,9 @@
 --   share reserved automatically (the chef already decided).
 --   The cancelled notice (order_command_secured) states the reason.
 -- The commit re-checks the version, the open choice at the receipt, the paid
--- delivery and the target slot (published, starting after the receipt and
--- after the commit's own instant: a commit delayed by a restore freeze never
--- sets a time that has started); otherwise it records a refusal
+-- delivery and the target slot (published, starting after the receipt; like
+-- every order command it decides by the persisted receipt instant, also when
+-- a restore freeze delayed it); otherwise it records a refusal
 -- (order_changed, not_open, slot_unavailable; version + 1 only) and the
 -- choice is open again.
 --
@@ -96,6 +96,9 @@
 -- the chef also gets the not-possible decision with its reason and the
 -- history of choices; technical support the same without money or reason;
 -- fulfilment the state. Attention flag delivery_choice_open.
+--
+-- Account deletion (account_order_block): an unprotected choice reads
+-- order_change_in_progress, never refund_in_progress (K11).
 --
 -- Expand-only (K09): new tables, replaced CHECK constraints, new functions;
 -- replaced functions keep their signatures, results, security and grants.
@@ -742,9 +745,9 @@ BEGIN
   ELSIF c.choice <> 'full_refund'
         AND (NOT EXISTS (SELECT 1 FROM business.schedule_slots_on(c.from_day) s
                          WHERE s.slot_id = c.to_slot_id AND s.starts_at = c.to_starts_at)
-             -- A commit delayed (a restore freeze) never sets a time that has
-             -- already started.
-             OR c.to_starts_at <= v.received_at OR c.to_starts_at <= pg_catalog.now()
+             -- Decided by the persisted receipt instant (K00), as every order
+             -- command, also when a restore freeze delayed the commit.
+             OR c.to_starts_at <= v.received_at
              OR NOT business.order_lots_last_until(v.order_id, c.to_ends_at)) THEN
     v_reason := 'slot_unavailable';
   END IF;
@@ -2062,6 +2065,43 @@ BEGIN
                                            'goal_version', (v ->> 'goal_version')::integer));
   END IF;
 END;
+$$;
+
+-- As in 0035, plus: while a refund must stay invisible (an unsecured Q5
+-- choice, handover or no-show: business.order_refund_hidden, K11) the order
+-- reads order_change_in_progress, never refund_in_progress.
+CREATE OR REPLACE FUNCTION business.account_order_block(p_order business.orders)
+RETURNS text
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT CASE
+           WHEN business.order_visible_lifecycle(p_order) IN ('confirmation_pending', 'cancellation_pending')
+                OR business.order_refund_hidden(p_order.id)
+             THEN 'order_change_in_progress'
+           WHEN EXISTS (SELECT 1 FROM business.payment_collection pc
+                        WHERE pc.order_id = p_order.id
+                          AND (pc.state IN ('created', 'pending', 'unknown') OR pc.mismatch_reason IS NOT NULL)
+                          AND NOT business.delivery_collection_stuck(pc))
+             THEN 'payment_being_checked'
+           WHEN p_order.lifecycle = 'paid_awaiting_agreement' THEN 'paid_awaiting_agreement'
+           WHEN x.rs IS NOT NULL AND (x.rs ->> 'state' <> 'returned' OR (x.rs ->> 'in_progress_minor')::bigint > 0
+                                     OR coalesce((x.rs ->> 'delivery_pending_minor')::bigint, 0) > 0)
+             THEN 'refund_in_progress'
+           WHEN EXISTS (SELECT 1 FROM business.refund_observation b
+                        JOIN business.payment_collection pc ON pc.id = b.collection_id
+                        WHERE pc.order_id = p_order.id AND b.quarantined AND b.resolved_at IS NULL)
+             THEN 'refund_being_checked'
+           WHEN p_order.lifecycle = 'cancelled' AND x.rs IS NULL
+                AND EXISTS (SELECT 1 FROM business.payment_collection pc
+                            WHERE pc.order_id = p_order.id AND pc.state = 'succeeded')
+             THEN 'payment_recorded'
+           WHEN business.delivery_unmatched_minor(p_order.id) > 0
+             THEN 'payment_recorded'
+         END
+  FROM (SELECT business.order_refund_summary(p_order.id)::jsonb AS rs) x;
 $$;
 
 REVOKE ALL ON TABLE business.delivery_not_possible FROM PUBLIC;

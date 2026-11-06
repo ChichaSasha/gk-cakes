@@ -2782,8 +2782,11 @@ K11.
   refunds nothing: when the delivery was paid it records the delivery's 100%
   floor (`business.refund_floor`, reason `gk_delivery_failure`, recorded by
   the chef) as an obligation, but nothing is reserved until a goal exists,
-  so the customer's choice decides (a paid delivery is never returned until
-  then). Any later goal returns the paid delivery in full beside the cake's
+  so the customer's choice decides (a paid delivery is not returned until
+  then, except when the order already had a refund goal: anything that
+  re-applies that goal, for example a stray delivery payment arriving after
+  the decision (`refund_goal_apply` then `refund_reserve`), also reserves
+  the floored delivery early). Any later goal returns the paid delivery in full beside the cake's
   own rate: a time choice, the full refund, or an ordinary cancellation (K05
   "GK-caused unperformed delivery raises its target to 100% delivery";
   state 14 "returned in full whatever they choose"; see below). From then on the delivery is never dispatched (409
@@ -2830,10 +2833,11 @@ K11.
     delivery's floor makes its share reserved automatically instead of
     waiting for the chef's `delivery-refund` (the chef already decided).
   - The commit re-checks the version, the open choice at the receipt, the
-    quote and its paid collection and the target slot (still published,
-    starting after the receipt and after the commit's own instant, so a
-    commit delayed by a restore freeze never sets a time that has already
-    started); otherwise it records
+    quote and its paid collection and the target slot (still published and
+    starting after the receipt). Like every order command it decides by the
+    persisted receipt instant: a commit delayed by a restore freeze can
+    still set a time that has started by the time it commits, as an
+    accepted choice made before it started; otherwise it records
     a refusal (`order_changed`, `not_open`, `slot_unavailable`; version + 1
     only) and the choice is open again. Production (timer and manual) and the
     chef's refunds wait while a choice is unresolved (`order_terminal_pending`).
@@ -2888,6 +2892,9 @@ K11.
   reached, and your delivery payment of £120 in full, because we could not
   deliver your order." (wording for Creator review). The same applies to
   0022's interim delivery-failure floors.
+- **Account deletion.** While a refund must stay invisible (an unsecured
+  choice, handover or no-show) `account_order_block` answers
+  `order_change_in_progress`, never `refund_in_progress` (K11).
 - **Late money.** A delivery payment settled after the chef's decision or
   after a time choice never pays the delivery: `unmatched` with the new
   reason `delivery_not_possible` (a stray as 0035 defines: returned with a
@@ -2921,8 +2928,9 @@ K11.
   staff redaction; full refund with a paid delivery (22000p returned, one
   cancelled notice with the reason) and, by the signed-in owner, with an
   unpaid quote after pay-by (cake only); freeze deferral; a refusal at
-  the commit after a new schedule version, then the new version's time; a
-  target that started before a delayed commit; an ordinary cancellation
+  the commit after a new schedule version, then the new version's time;
+  account deletion reads `order_change_in_progress` while a choice is
+  unprotected; an ordinary cancellation
   after the decision, after the deadline (5000p + 12000p) and before it
   (10000p + 12000p), with preview, allocations and notice; the three
   renderings of the cancelled notice's Q5 sentence),

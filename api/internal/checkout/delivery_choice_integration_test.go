@@ -531,6 +531,11 @@ func TestDeliveryChoiceCollectionReturnsThePaidDelivery(t *testing.T) {
 	if n := noticeCount(h.notices(t, order), "refund_returned"); n != 0 {
 		t.Fatalf("a refund email before the choice is secured (%d)", n)
 	}
+	var block *string
+	if err := h.admin.QueryRow(h.ctx, "SELECT business.account_order_block(o) FROM business.orders o WHERE o.id = $1::uuid",
+		order).Scan(&block); err != nil || block == nil || *block != "order_change_in_progress" {
+		t.Fatalf("account deletion block while unsecured: %v %v", block, err)
+	}
 	rows, _ := h.staffList(t, chef, november)
 	for _, r := range rows {
 		if r["id"] == order && r["refund"] != nil {
@@ -917,48 +922,4 @@ func TestDeliveryChoiceCancelledNoticeWording(t *testing.T) {
 		`{"reason": "delivery_not_possible", "rate": 100, "paid_minor": 22000, "refund_target_minor": 22000, "refund_returned": true}`)
 	has(t, "returned", text, sorry+" and everything you paid has been returned.", "It has already been returned to you.")
 	hasNot(t, "returned", text, "is being returned", "Refund requested")
-}
-
-// A commit that runs after its target time has started (here: the database
-// clock is past the order's day, as after a long restore freeze) refuses
-// slot_unavailable and leaves the order unchanged, although the target was
-// after the receipt instant.
-func TestDeliveryChoiceTargetStartedBeforeTheCommit(t *testing.T) {
-	h := newPayHarness(t)
-	f := h.setup(t)
-	h.now = time.Date(2026, 10, 20, 10, 0, 0, 0, time.UTC)
-	pol := h.policy(t, "p1")
-	slots := h.slotsOn(t, "2026-10-31")
-	quote, d := h.guestQuote(t, "q-old", checkout.QuoteInput{Date: "2026-10-31", SlotID: slots[0],
-		FulfillmentMode: schedule.GKDelivery, Lines: []checkout.QuoteLine{{VariantID: f.v1001, Quantity: 1}}})
-	order := must[catalog.Result](t)(h.checkout("", d, "k-old", quote, pol)).ID
-	coll, session := h.started(t, order, d)
-	h.stripe.pay(session, h.now.Add(9*time.Minute))
-	h.deliver(t, "evt_paid_old", "checkout.session.completed", "checkout.session", session, coll, order)
-	if errs := h.drain(t); len(errs) != 0 {
-		t.Fatalf("cake payment: %v", errs)
-	}
-	v, raw := h.choiceView(t, order, d)
-	if v.Lifecycle != "confirmed" {
-		t.Fatalf("not confirmed: %s", raw)
-	}
-	if _, err := h.notPossible("np", order, v.Version, ""); err != nil {
-		t.Fatal(err)
-	}
-	v, _ = h.choiceView(t, order, d)
-	op, err := h.choose(order, d, "c1", v.Version, checkout.ChoiceCollection, slots[1])
-	if err != nil {
-		t.Fatalf("choice (target after the receipt): %v", err)
-	}
-	if errs := h.drain(t); len(errs) != 0 {
-		t.Fatalf("drain:\n%s", reasons(errs))
-	}
-	v2, raw := h.choiceView(t, order, d)
-	if c := v2.DeliveryChoice.Chosen; v2.FulfillmentMode != "gk_delivery" || v2.Slot.ID != slots[0] || v2.Version != v.Version+1 ||
-		c == nil || c.State != "refused" || c.RefusalReason == nil || *c.RefusalReason != "slot_unavailable" {
-		t.Fatalf("started target: %s", raw)
-	}
-	if got := h.recoveryState(t, op.ID); got != "secured" {
-		t.Fatalf("recovery %s", got)
-	}
 }
