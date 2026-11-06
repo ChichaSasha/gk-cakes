@@ -15,13 +15,16 @@ import {
 	dispatchBlock,
 	doneText,
 	historyLines,
+	keySlot,
 	latePaymentCard,
 	moneyFacts,
 	orderIdFrom,
+	pendingStep,
 	pollStep,
 	progressSteps,
 	reasonProblem,
 	refundFacts,
+	refundPartRows,
 	refusalOf,
 	sendStep,
 	settled,
@@ -857,5 +860,157 @@ describe('refusalOf', () => {
 			expect(refusalOf(e, 'ready')).toMatchObject({ retry: true, reload: false });
 		}
 		expect(refusalOf(err(401, 'UNAUTHENTICATED'), 'ready').signIn).toBe(true);
+	});
+});
+
+describe('review fixes (PR #66)', () => {
+	it('gives an edited problem reason a new key slot, and the same reason the same one', () => {
+		const o = ready();
+		expect(keySlot('delivery_exception', o, 'Customer late')).toBe(
+			keySlot('delivery_exception', o, '  Customer late ')
+		);
+		expect(keySlot('delivery_exception', o, 'Customer late')).not.toBe(
+			keySlot('delivery_exception', o, 'Customer didn’t arrive')
+		);
+		expect(keySlot('delivery_exception', { ...o, version: 8 }, 'Customer late')).not.toBe(
+			keySlot('delivery_exception', o, 'Customer late')
+		);
+		expect(keySlot('ready', o, 'ignored')).toBe('ready:7');
+	});
+
+	it('words KEY_REUSED plainly, keeping the form (no reload, a new key next time)', () => {
+		const r = refusalOf(err(409, 'KEY_REUSED'), 'delivery_exception');
+		expect(r.text).toMatch(/already sent once with different details/);
+		expect(r).toMatchObject({ reload: false, retry: false, stale: false });
+	});
+
+	it('words the no-show refund as the cumulative goal, and points to the ledger when done', () => {
+		expect(confirmText('no_show', ready(), 'chef')).toMatch(
+			/The refund owed becomes 50% of what they paid \(anything already refunded counts towards it\); it’s requested automatically and can’t be undone\.$/
+		);
+		const done = doneText('no_show', 'noshow');
+		expect(done).toMatch(/under Refund, as recorded/);
+		expect(done).not.toMatch(/50%|being returned/);
+	});
+
+	it('never shows a pending handover or no-show as finished', () => {
+		for (const pending of ['handover', 'no_show']) {
+			const s = detailStatus(
+				ready({ fulfillment: { state: 'awaiting_handover', at: null, pending } }),
+				'fulfillment'
+			);
+			expect(s.stage).toBe('pending');
+			expect(['ready', 'done']).not.toContain(s.stage);
+		}
+	});
+
+	it('finds a handover or no-show already pending when the page opens', () => {
+		const cmd = {
+			id: 'op9',
+			kind: 'no_show',
+			requested_by: 'staff',
+			received_at: 'x',
+			state: 'prepared',
+			outcome_status: null,
+			decision: null
+		};
+		expect(
+			pendingStep(
+				ready({
+					fulfillment: { state: 'awaiting_handover', at: null, pending: 'no_show' },
+					commands: [cmd]
+				})
+			)
+		).toEqual({ action: 'no_show', operation_id: 'op9' });
+		// Fulfilment has no command list: the outcome is read from the order.
+		expect(
+			pendingStep(
+				helper(
+					ready({ fulfillment: { state: 'awaiting_handover', at: null, pending: 'handover' } })
+				)
+			)
+		).toEqual({ action: 'handover', operation_id: '' });
+		expect(pendingStep(ready())).toBeNull();
+	});
+
+	it('reads an at-load pending handover through to done or refused', async () => {
+		const pending = helper(
+			ready({ fulfillment: { state: 'awaiting_handover', at: null, pending: 'handover' } })
+		);
+		const done = helper(
+			chef({ lifecycle: 'completed', fulfillment: { state: 'completed', at: 'x', pending: null } })
+		);
+		const p = pendingStep(pending)!;
+		const acc = { order_id: ID, operation_id: p.operation_id, state: '', poll_after_seconds: 3 };
+		const reads = [pending, done];
+		const r = await pollStep(async () => reads.shift() as StaffOrderDetail, acc, {
+			tries: 5,
+			wait: async () => {}
+		});
+		expect(r.outcome).toBe('done');
+		const back = await pollStep(async () => helper(ready()), acc, {
+			tries: 5,
+			wait: async () => {}
+		});
+		expect(back.outcome).toBe('refused');
+		const still = await pollStep(async () => pending, acc, { tries: 5, wait: async () => {} });
+		expect(still.outcome).toBe('pending');
+	});
+
+	it('lists the refund parts by payment with the server’s amounts (chef only)', () => {
+		const o = chef({
+			lifecycle: 'cancelled',
+			refund: {
+				state: 'partly_returned',
+				target_minor: 11000,
+				succeeded_minor: 5000,
+				in_progress_minor: 0,
+				delivery_pending_minor: 6000,
+				currency: 'GBP',
+				parts: [
+					{
+						kind: 'cake',
+						target_minor: 5000,
+						succeeded_minor: 5000,
+						in_progress_minor: 0,
+						pending_chef_minor: 0
+					},
+					{
+						kind: 'delivery',
+						target_minor: 6000,
+						succeeded_minor: 0,
+						in_progress_minor: 0,
+						pending_chef_minor: 6000
+					}
+				]
+			}
+		});
+		expect(
+			refundPartRows(o).map((r) => [r.label, ...r.facts.map((f) => `${f.label} ${f.value}`)])
+		).toEqual([
+			['Cake payment', 'Share owed £50', 'Refunded £50', 'Sent, not confirmed —'],
+			['Delivery payment', 'Share owed £60', 'Refunded —', 'Sent, not confirmed —', 'Your step £60']
+		]);
+		expect(
+			refundPartRows(
+				chef({ refund: { state: 'requested', target_minor: 9000, succeeded_minor: 0 } })
+			)
+		).toEqual([]);
+		expect(
+			refundPartRows(support({ lifecycle: 'cancelled', refund: { state: 'pending' } as never }))
+		).toEqual([]);
+	});
+
+	it('words a freeze neutrally and “can’t deliver” without naming who recorded it', () => {
+		expect(refusalOf(err(503, 'UNAVAILABLE'), 'ready').text).toBe(
+			'Order changes aren’t available right now. Try again shortly: repeating it is safe.'
+		);
+		const gk = ready({
+			fulfillment_mode: 'gk_delivery',
+			delivery: { state: 'paid' },
+			delivery_choice: { open: false, reason: 'not_possible', pending: false }
+		});
+		expect(refusalOf(err(409, 'DELIVERY_NOT_POSSIBLE'), 'dispatch').text).toBe(dispatchBlock(gk));
+		expect(dispatchBlock(gk)).not.toMatch(/^You /);
 	});
 });

@@ -30,6 +30,8 @@
 		doneText,
 		fulfillmentState,
 		historyLines,
+		keySlot,
+		pendingStep,
 		itemDetail,
 		latePaymentCard,
 		modeText,
@@ -41,11 +43,13 @@
 		reasonProblem,
 		REFUND_WORDS,
 		refundFacts,
+		refundPartRows,
 		refusalOf,
 		sendStep,
 		staffOrder,
 		stepLabel,
 		when,
+		type Accepted,
 		type StaffOrderDetail,
 		type StepAction
 	} from '../../../../lib/admin/order-detail';
@@ -75,8 +79,8 @@
 		poll_after_seconds: number;
 		action: StepAction;
 	} | null>(null);
-	// One key per action at a version: a retry of the same action reuses it
-	// (not shown, so a plain record).
+	// One key per request (action, version and a problem's exact reason): a
+	// retry of the same request reuses it (not shown, so a plain record).
 	const keys: Record<string, string> = {};
 	let mounted = true;
 	const isActive = () => mounted;
@@ -95,6 +99,7 @@
 	const history = $derived(order ? historyLines(order) : []);
 	const money = $derived(order && view === 'chef' ? moneyFacts(order) : []);
 	const refund = $derived(order && view === 'chef' ? refundFacts(order) : []);
+	const refundParts = $derived(order && view === 'chef' ? refundPartRows(order) : []);
 	const ended = $derived(
 		order ? ['cancelled', 'cancellation_pending'].includes(order.lifecycle) : false
 	);
@@ -165,7 +170,63 @@
 				return;
 			}
 		}
-		await load();
+		if (await load()) void watchPending();
+	}
+
+	const REFUSED =
+		'It wasn’t recorded: the order changed before it could be. The latest version is shown; check it and try again if it’s still right.';
+	const STILL = 'Still being recorded. This page shows it when it’s done.';
+
+	/** Shows a handover's or no-show's outcome from a poll (done, refused or still pending). */
+	function outcome(
+		r: Awaited<ReturnType<typeof pollStep>>,
+		a: StepAction,
+		accepted: Pick<Accepted, 'operation_id' | 'poll_after_seconds'>
+	) {
+		if (r.order) order = r.order;
+		now = new Date();
+		if (r.outcome === 'done' || r.outcome === 'noshow') {
+			stillPending = null;
+			stepStatus = doneText(a, r.outcome);
+		} else if (r.outcome === 'refused') {
+			stillPending = null;
+			stepStatus = '';
+			stepError = REFUSED;
+		} else {
+			stepStatus = STILL;
+			stillPending = { ...accepted, action: a };
+		}
+	}
+
+	/**
+	 * A handover or no-show already being recorded when the page opens (sent
+	 * from another device or before a reload): read the order a few times,
+	 * then offer Check again. Focus stays where it is; the status line speaks.
+	 */
+	async function watchPending() {
+		const o = order;
+		const p = o ? pendingStep(o) : null;
+		if (!o || !p || busy) return;
+		busy = p.action;
+		stepStatus =
+			p.action === 'handover'
+				? 'A handover is being recorded for this order. Checking for the result…'
+				: 'That the customer didn’t come is being recorded for this order. Checking for the result…';
+		const accepted = {
+			order_id: o.id,
+			operation_id: p.operation_id,
+			state: '',
+			poll_after_seconds: 3
+		};
+		try {
+			const r = await pollStep(read, accepted, { tries: 5, active: isActive });
+			if (!isActive()) return;
+			outcome(r, p.action, accepted);
+		} catch (e) {
+			await sessionEnded(e);
+		} finally {
+			busy = null;
+		}
 	}
 
 	onMount(() => {
@@ -216,8 +277,8 @@
 			void run(a);
 			return;
 		}
+		// A reason typed earlier (for example before a refusal) is kept.
 		asking = a;
-		reason = '';
 		reasonError = '';
 		void focusLater(() =>
 			document.getElementById(a === 'delivery_exception' ? 'problem-reason' : 'confirm-step')
@@ -249,7 +310,7 @@
 		stepError = '';
 		stillPending = null;
 		stepStatus = a === 'handover' ? 'Recording the handover…' : 'Recording…';
-		const slot = `${a}:${o.version}`;
+		const slot = keySlot(a, o, a === 'delivery_exception' ? reason : '');
 		const key = keys[slot] ?? commandKey(a, o, nonce());
 		keys[slot] = key;
 		try {
@@ -261,6 +322,7 @@
 				a === 'delivery_exception' ? reason : undefined
 			);
 			asking = null;
+			if (a === 'delivery_exception') reason = '';
 			if (answer.kind === 'done') {
 				await load(true);
 				stepStatus = doneText(a);
@@ -271,18 +333,7 @@
 				void focusLater(() => statusEl);
 				const r = await pollStep(read, answer.accepted, { active: isActive });
 				if (!isActive()) return;
-				if (r.order) order = r.order;
-				now = new Date();
-				if (r.outcome === 'done' || r.outcome === 'noshow') {
-					stepStatus = doneText(a, r.outcome);
-				} else if (r.outcome === 'refused') {
-					stepStatus = '';
-					stepError =
-						'It wasn’t recorded: the order changed before it could be. The latest version is shown; check it and try again if it’s still right.';
-				} else {
-					stepStatus = 'Still being recorded. This page shows it when it’s done.';
-					stillPending = { ...answer.accepted, action: a };
-				}
+				outcome(r, a, answer.accepted);
 			}
 			void focusLater(() => (stepError ? errorEl : statusEl));
 		} catch (e) {
@@ -323,19 +374,7 @@
 				{ order_id: orderId ?? '', operation_id: p.operation_id, state: '', poll_after_seconds: 1 },
 				{ tries: 1, active: isActive }
 			);
-			if (r.order) order = r.order;
-			now = new Date();
-			if (r.outcome === 'done' || r.outcome === 'noshow') {
-				stillPending = null;
-				stepStatus = doneText(p.action, r.outcome);
-			} else if (r.outcome === 'refused') {
-				stillPending = null;
-				stepStatus = '';
-				stepError =
-					'It wasn’t recorded: the order changed before it could be. The latest version is shown; check it and try again if it’s still right.';
-			} else {
-				stepStatus = 'Still being recorded. This page shows it when it’s done.';
-			}
+			outcome(r, p.action, p);
 		} catch (e) {
 			await sessionEnded(e);
 		} finally {
@@ -415,7 +454,10 @@
 					</p>
 				</div>
 				<span class="pill pill-{status.stage}" class:pill-released={status.released}
-					>{#if status.stage === 'ready' || status.stage === 'done'}<ChefIcon
+					>{#if status.stage === 'pending'}<ChefIcon
+							name="clock"
+							cls="pill-icon"
+						/>{:else if status.stage === 'ready' || status.stage === 'done'}<ChefIcon
 							name="check"
 							cls="pill-icon"
 						/>{/if}{status.text}</span
@@ -575,10 +617,14 @@
 								{#each steps.actions as a, i (a)}
 									{#if asking === a}
 										{#if a === 'delivery_exception'}
+											<!-- Escape from any control in the form closes it (keys bubble here);
+											     every control in it is itself keyboard-operable. -->
+											<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 											<form
 												class="confirm-row"
 												aria-label="Record a problem"
 												novalidate
+												onkeydown={onConfirmKey}
 												onsubmit={(e) => {
 													e.preventDefault();
 													void run(a);
@@ -591,7 +637,6 @@
 													autocomplete="off"
 													maxlength="500"
 													bind:value={reason}
-													onkeydown={onConfirmKey}
 													aria-invalid={reasonError ? 'true' : undefined}
 													aria-describedby={reasonError ? 'problem-error' : undefined}
 												/>
@@ -692,6 +737,24 @@
 										</div>
 									{/each}
 								</dl>
+								{#if refundParts.length}
+									<h3 class="sub-h">By payment</h3>
+									<ul class="parts">
+										{#each refundParts as part (part.label)}
+											<li>
+												<p class="strong">{part.label}</p>
+												<dl class="part-facts small">
+													{#each part.facts as f (f.label)}
+														<div>
+															<dt>{f.label}</dt>
+															<dd class={f.tone ? `${f.tone}-text` : ''}>{f.value}</dd>
+														</div>
+													{/each}
+												</dl>
+											</li>
+										{/each}
+									</ul>
+								{/if}
 								{#if o.refund?.in_progress_minor}
 									<p class="small muted">
 										Money sent but not confirmed still counts: if the provider later says it failed,

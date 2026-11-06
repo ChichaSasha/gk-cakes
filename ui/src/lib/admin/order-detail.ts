@@ -313,7 +313,8 @@ function asRow(o: StaffOrderDetail): StaffOrderRow {
 	} as StaffOrderRow;
 }
 
-export type DetailStage = Stage | 'out' | 'problem' | 'noshow';
+/** `pending`: a handover or no-show still being secured (K11): never shown as finished. */
+export type DetailStage = Stage | 'out' | 'problem' | 'noshow' | 'pending';
 
 /** The status pill: the list's words, plus the fulfilment states the list doesn't show. */
 export function detailStatus(
@@ -321,10 +322,11 @@ export function detailStatus(
 	view: StaffView
 ): { stage: DetailStage; text: string; released: boolean } {
 	const pending = o.fulfillment?.pending;
-	if (pending === 'handover')
-		return { stage: 'ready', text: 'Handover being recorded', released: false };
+	if (pending === 'handover') {
+		return { stage: 'pending', text: 'Handover being recorded', released: false };
+	}
 	if (pending === 'no_show') {
-		return { stage: 'ready', text: 'Not collected · being recorded', released: false };
+		return { stage: 'pending', text: 'Not collected · being recorded', released: false };
 	}
 	const fs = fulfillmentState(o);
 	if (o.lifecycle === 'ready' && fs === 'out_for_delivery') {
@@ -686,11 +688,14 @@ export interface Steps {
 
 const AWAITING = ['awaiting_handover', 'exception'];
 
+const NOT_POSSIBLE =
+	'GK can’t deliver this order (recorded), so it can’t go out. The customer chooses another way.';
+
 /** Whether a GK delivery may go out, as far as this view can tell (README "Fulfilment transitions"). */
 export function dispatchBlock(o: StaffOrderDetail): string {
 	const d = o.delivery;
 	if (o.delivery_choice?.reason === 'not_possible' || o.delivery_choice?.not_possible) {
-		return 'GK can’t deliver this order (recorded), so it can’t go out. The customer chooses another way.';
+		return NOT_POSSIBLE;
 	}
 	const f = o.delivery_failure;
 	if (f && f.cause === 'our_side') {
@@ -788,7 +793,7 @@ export function confirmText(a: StepAction, o: StaffOrderDetail, view: StaffView)
 		case 'handover':
 			return `Hand over ${orderLabel(o).toLowerCase()} to ${o.customer_full_name} · ${modeText(o.fulfillment_mode)}. ${who} This completes the order.`;
 		case 'no_show':
-			return `Record that ${o.customer_full_name} didn’t come for ${orderLabel(o).toLowerCase()} (their time started ${londonTime(o.slot.starts_at)}). ${who} This completes the order as not collected: 50% of what they paid is returned to them automatically (the no-show rule), and it can’t be undone.`;
+			return `Record that ${o.customer_full_name} didn’t come for ${orderLabel(o).toLowerCase()} (their time started ${londonTime(o.slot.starts_at)}). ${who} This completes the order as not collected. The refund owed becomes 50% of what they paid (anything already refunded counts towards it); it’s requested automatically and can’t be undone.`;
 		case 'delivery_exception':
 			return o.fulfillment_mode === 'gk_delivery'
 				? 'What went wrong with the delivery? It’s kept with the order. The order stays open: nothing is completed or refunded.'
@@ -822,7 +827,7 @@ export function doneText(a: StepAction, outcome: 'done' | 'noshow' = 'done'): st
 			return 'Handed over ✓ · the order is complete.';
 		case 'no_show':
 			return outcome === 'noshow'
-				? 'Recorded as not collected ✓ · the order is complete and 50% of what was paid is being returned.'
+				? 'Recorded as not collected ✓ · the order is complete. The refund owed and what has gone back so far are under Refund, as recorded.'
 				: 'Recorded ✓';
 	}
 }
@@ -849,6 +854,16 @@ export function reasonProblem(reason: string): string {
  */
 export function commandKey(a: StepAction, o: StaffOrderDetail, nonce: string): string {
 	return `chef-${a}-${o.id}-v${o.version}-${nonce}`;
+}
+
+/**
+ * What a stored key belongs to: the action, the version and, for a problem,
+ * the exact reason sent. A retry of the same request reuses its key; an
+ * edited reason is a new request with a new key (the API would refuse the
+ * old key with another body: KEY_REUSED).
+ */
+export function keySlot(a: StepAction, o: StaffOrderDetail, reason = ''): string {
+	return a === 'delivery_exception' ? `${a}:${o.version}:${reason.trim()}` : `${a}:${o.version}`;
 }
 
 export interface Accepted {
@@ -907,6 +922,20 @@ export function settled(
 	if (o.lifecycle === 'completed') return fulfillmentState(o) === 'no_show' ? 'noshow' : 'done';
 	if (cmd?.outcome_status === 'refused' || !cmd) return 'refused';
 	return 'pending';
+}
+
+/**
+ * A handover or no-show already being secured (for example sent from
+ * another device): the step and, where the view has the command list, its
+ * command, so the page can watch for the outcome.
+ */
+export function pendingStep(
+	o: StaffOrderDetail
+): { action: StepAction; operation_id: string } | null {
+	const p = o.fulfillment?.pending;
+	if (p !== 'handover' && p !== 'no_show') return null;
+	const cmd = [...(o.commands ?? [])].reverse().find((c) => c.kind === p && c.state !== 'secured');
+	return { action: p, operation_id: cmd?.id ?? '' };
 }
 
 /** Polls the order for a K11 step's outcome (every poll_after_seconds, at most `tries` reads). */
@@ -996,9 +1025,7 @@ export function refusalOf(e: unknown, a: StepAction): Refusal {
 		case 'DELIVERY_NOT_PAID':
 			return r('Delivery isn’t paid or waived yet, so the cake can’t go out for delivery.');
 		case 'DELIVERY_NOT_POSSIBLE':
-			return r(
-				'You recorded that GK can’t deliver this order, so it can’t go out. The customer chooses another way.'
-			);
+			return r(NOT_POSSIBLE);
 		case 'DELIVERY_FAILURE_OPEN':
 			return r(
 				'The delivery failed on our side and the customer hasn’t chosen what happens next, so it can’t go out again yet.'
@@ -1009,7 +1036,7 @@ export function refusalOf(e: unknown, a: StepAction): Refusal {
 			);
 		case 'UNAVAILABLE':
 			return r(
-				'Order changes are paused for a few minutes (maintenance). Nothing was changed. Try again shortly: repeating it is safe.',
+				'Order changes aren’t available right now. Try again shortly: repeating it is safe.',
 				{ reload: false, retry: true }
 			);
 		case 'FORBIDDEN':
@@ -1021,6 +1048,13 @@ export function refusalOf(e: unknown, a: StepAction): Refusal {
 			);
 		case 'NOT_FOUND':
 			return r('This order wasn’t found, or it isn’t one you can see any more.');
+		case 'KEY_REUSED':
+			// The page renews the key when what is sent changes, so this means an
+			// earlier try with other details may have been recorded: check first.
+			return r(
+				'This was already sent once with different details, so nothing new was recorded. Check the order (the Record shows what was saved), then send it again if it’s still needed.',
+				{ reload: false }
+			);
 		case 'INVALID_INPUT':
 			return r(
 				a === 'delivery_exception'
@@ -1140,6 +1174,42 @@ export function refundFacts(o: StaffOrderDetail): Fact[] {
 		});
 	}
 	return facts;
+}
+
+const PART_LABELS: Record<string, string> = {
+	cake: 'Cake payment',
+	delivery: 'Delivery payment',
+	stray: 'Unmatched delivery payment'
+};
+
+/**
+ * The refund ledger "By payment" (r03b2), one row per kind from the
+ * refund block's `parts` (0038), the server's amounts only. Chef only (the
+ * API sends parts to the chef alone); empty without parts.
+ */
+export function refundPartRows(o: StaffOrderDetail): { label: string; facts: Fact[] }[] {
+	const r = o.refund;
+	if (!r?.parts?.length) return [];
+	const m = (n: number) => formatMoney(n, r.currency ?? o.currency ?? 'GBP');
+	return r.parts.map((p) => {
+		const facts: Fact[] = [
+			{ label: 'Share owed', value: m(p.target_minor) },
+			{
+				label: 'Refunded',
+				value: p.succeeded_minor ? m(p.succeeded_minor) : '—',
+				tone: p.succeeded_minor ? 'ok' : ''
+			},
+			{
+				label: 'Sent, not confirmed',
+				value: p.in_progress_minor ? m(p.in_progress_minor) : '—',
+				tone: p.in_progress_minor ? 'info' : ''
+			}
+		];
+		if (p.pending_chef_minor) {
+			facts.push({ label: 'Your step', value: m(p.pending_chef_minor), tone: 'bad' });
+		}
+		return { label: PART_LABELS[p.kind] ?? p.kind, facts };
+	});
 }
 
 /** Who cancelled, in the sketch's words for each view. */

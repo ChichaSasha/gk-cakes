@@ -248,6 +248,44 @@
 	background: var(--info-bg);
 	color: var(--info);
 }
+/* Still being secured (K11): info colours and a clock, never the green tick. */
+.chef .order-page .pill-pending {
+	background: var(--info-bg);
+	color: var(--info);
+}
+.chef .order-page .sub-h {
+	margin: 18px 0 8px;
+	font-size: 14px;
+}
+.chef .order-page .parts {
+	display: grid;
+	gap: 8px;
+	margin: 0 0 10px;
+	padding: 0;
+	list-style: none;
+}
+.chef .order-page .parts li {
+	padding: 10px 12px;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	background: #fff;
+}
+.chef .order-page .parts p {
+	margin: 0 0 6px;
+}
+.chef .order-page .part-facts {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+	gap: 6px 12px;
+	margin: 0;
+}
+.chef .order-page .part-facts dt {
+	color: var(--muted);
+}
+.chef .order-page .part-facts dd {
+	margin: 0;
+	font-weight: 600;
+}
 .chef .order-page .pill-problem,
 .chef .order-page .pill-noshow {
 	background: var(--warn-bg);

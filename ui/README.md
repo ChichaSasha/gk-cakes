@@ -519,7 +519,9 @@ confirming, cancelling, a payment that arrived after the release, a refund
 needing attention or made outside GK Cakes), the paid-late card (chef: "your
 decision"; others: "Elina decides"), Cake, Handover, GK delivery, a Record of
 fulfilment steps and time changes, Progress, Money (chef) and the refund
-ledger (the server's amounts; technical support sees the refund state only).
+ledger (the server's amounts; technical support sees the refund state only),
+with "By payment" rows for the chef from the refund block's `parts` (share
+owed, refunded, sent and not confirmed, your step; read only).
 
 Steps, shown only when the API's tables allow them for this role (technical
 support looks only; "Customer didn't come…" is the chef's, collection and own
@@ -529,14 +531,19 @@ delivery, no "can't deliver" or open failed-delivery choice), a problem
 (`delivery_exception`, a one-line reason), Hand over / Delivered · hand over
 (two-step confirm, 202, then the order is read every `poll_after_seconds`
 until secured, refused or still pending with "Check again") and the no-show
-(confirm, 202, polled). Each sends the version shown and an Idempotency-Key
-`chef-<action>-<order>-v<version>-<nonce>`, reused when the same action is
+(confirm, 202, polled; the confirm says the refund owed becomes 50% of what
+was paid, earlier refunds counting towards it). A handover or no-show
+already being recorded when the page opens is read again a few times, then
+"Check again" is offered; its pill is the info colour with a clock, never
+the finished tick. Each sends the version shown and an Idempotency-Key
+`chef-<action>-<order>-v<version>-<nonce>`, reused when the same request is
 repeated at that version (a network failure, a freeze, a server error) and
-new after a reload. 409 `STALE_VERSION` reads the order again and shows "This
+new after a reload or when a problem's reason is edited (`KEY_REUSED` is
+worded plainly and the typed reason kept). 409 `STALE_VERSION` reads the order again and shows "This
 order changed while you were looking" (focused); other refusals are plain
 words (`refusalOf`). Focus moves to the step's status line (a live region) or
-error after each step; Escape closes a confirm step and returns focus to its
-button.
+error after each step; Escape (from any control in it) closes a confirm step
+or the problem form and returns focus to its button.
 
 Not on this page yet (next slices): cancelling and refunds, late-payment
 offers and decisions, delivery quotes and waivers, "can't deliver" and failed
