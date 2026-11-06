@@ -297,6 +297,56 @@ shows "Try again", never a crash, and a cake that is not active is a 404 with
   in the chef's catalogue screens (GK-018, not built yet). The shop needs no
   change.
 
+## Customer account (GK-029)
+
+Built from the Creator-approved GK-016 r02b sketch
+(`docs/design/sessions/discovery-account/gk-016-r02/`) on the account API
+(api/README "Customer accounts"). Private pages (`/account…`: `no-store`,
+`noindex`, `ssr = false`), in the shop frame with the sketch's account
+navigation (`src/lib/account/ui/AccountShell.svelte`, styles in
+`src/lib/account/account.css`). No analytics (K10).
+
+- **Client** (`src/lib/account/client.ts`): `GET /me`, `/me/orders` (every
+  page), `/me/order-claims`, `/me/profile`, and the profile, claim and
+  withdraw commands with an Idempotency-Key and only the documented fields.
+  `src/lib/account/session.ts` uses the browser's session token;
+  `src/lib/account/guard.ts` handles no session, an ended session (401: sign
+  out here, sign in again), a disabled or deleted account and signing out in
+  another tab.
+- **Account home** (`/account`): who is signed in; a staff-area card for staff
+  accounts; **Your orders** in the sketch's "Order list mapping"
+  (`src/lib/account/orders.ts`, worded as the order page): In progress, and
+  Past behind "Show past orders (n)" (`aria-expanded`); each row has the start
+  of the order ID, the cakes, date, time and handover, a chip (words and a
+  dot), the line, the server's total and one action (Continue to payment,
+  Try paying again, Confirm order or View order, all opening
+  `/orders/[id]`); an unknown lifecycle or payment state shows "Status not
+  available" and enables nothing. **Your requests**: requests to add older
+  orders with their state (`src/lib/account/claims.ts`; never the chef's note,
+  nothing about an order before approval). **Your favourites**: the device's
+  favourites (no account favourites API yet). A failed orders read shows
+  "Try again" (focus returns to the card) while the other cards still load.
+- **Profile & contact** (`/account/profile`, sketch states 43–46): **Your
+  details** — full name, phone and Instagram name, all optional, checked
+  before sending with the API's rules and the sketch's words
+  (`src/lib/account/profile.ts`: trimmed, an empty field clears it, a typed
+  `@` is dropped from an Instagram name); the PATCH carries only the changed
+  fields, the version the customer saw and one Idempotency-Key per save
+  (kept while that same save is retried). Error summary with links (focused,
+  `role="alert"`), errors tied to their inputs and updated as the customer
+  types; "Saved." in a polite status region (focused). A 409 STALE_VERSION
+  loads the latest details, keeps the customer's own changes that differ
+  (outlined, "Saved elsewhere: …" in the input's description) and says which
+  were kept. **Signing in** shows the session's email and "one account per
+  verified email address"; **Emails we send** has the r02b wording (no
+  marketing). The name hint about Google and the checkout prefill waits for
+  those features.
+- **Not built yet:** changing the sign-in email (needs GK-021 rules), adding
+  an older order, privacy and deleting the account (next slices); the
+  email-link claim belongs on the order page; the sign-in page changes of the
+  sketch (account on first use, Google) belong to GK-021; custom requests and
+  reorder wait for their APIs.
+
 ## Staff catalogue (GK-018 groundwork)
 
 `src/lib/admin/catalogue.ts` is a typed client for the chef's catalogue in the

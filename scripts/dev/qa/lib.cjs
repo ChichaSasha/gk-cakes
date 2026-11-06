@@ -53,19 +53,29 @@ async function sweep(page, paths, widths = WIDTHS) {
 }
 
 /**
- * Signs in on /sign-in with a password (staff accounts). The password comes
- * from STAFF_PW (read from the Keychain by the caller) and is never printed.
+ * Signs in on /sign-in with a password (test accounts) and waits for the
+ * return page. The password is passed in by the caller (read from the
+ * Keychain into the environment) and is never printed.
  */
-async function staffSignIn(page, email = 'gk-test-staff@gkcake.com') {
-	const password = process.env.STAFF_PW;
-	if (!password) throw new Error('STAFF_PW is not set');
-	await page.goto(`${BASE}/sign-in?next=/admin`, { waitUntil: 'networkidle0' });
+async function signIn(page, email, password, next = '/admin') {
+	if (!password) throw new Error(`no password for ${email}`);
+	await page.goto(`${BASE}/sign-in?next=${next}`, { waitUntil: 'networkidle0' });
 	const [toggle] = await page.$$('xpath///button[contains(., "Use a password instead")]');
 	if (toggle) await toggle.click();
 	await page.type('input[type=email]', email);
 	await page.type('input[type=password]', password);
 	await page.click('form button[type=submit]');
-	await page.waitForFunction(() => location.pathname === '/admin', { timeout: 20000 });
+	await page.waitForFunction((n) => location.pathname === n, { timeout: 20000 }, next);
+}
+
+/** The staging staff test user (password in STAFF_PW). */
+function staffSignIn(page, email = 'gk-test-staff@gkcake.com') {
+	return signIn(page, email, process.env.STAFF_PW, '/admin');
+}
+
+/** The staging customer test user (password in CUSTOMER_PW), back on /account. */
+function customerSignIn(page, email = 'gk-test-customer@gkcake.com') {
+	return signIn(page, email, process.env.CUSTOMER_PW, '/account');
 }
 
 /** Signs out from /admin (ends the provider session). */
@@ -78,4 +88,4 @@ async function staffSignOut(page) {
 	}
 }
 
-module.exports = { puppeteer, BASE, PROXY, WIDTHS, open, ctl, overflows, sweep, staffSignIn, staffSignOut };
+module.exports = { puppeteer, BASE, PROXY, WIDTHS, open, ctl, overflows, sweep, signIn, staffSignIn, customerSignIn, staffSignOut };
