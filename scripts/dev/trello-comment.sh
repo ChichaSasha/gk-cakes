@@ -19,7 +19,7 @@ printf '%s' "$CARD" | grep -Eq '^[0-9a-f]{24}$' || die "card ID must be 24 hex c
 TEXT="$(cat "$FILE")"
 [ "${#TEXT}" -le 16384 ] || die "Trello comments are at most 16384 characters (this one has ${#TEXT})"
 # Refuse text that looks like a credential (scripts/dev/credential_check.py).
-python3 "$(dirname "$0")/credential_check.py" "$FILE" || die "$FILE was not posted"
+python3 -B "$(dirname "$0")/credential_check.py" "$FILE" || die "$FILE was not posted"
 
 # The installed Scale-Flow trello CLI (AGENTS.md), not another "trello" on PATH.
 TRELLO=""

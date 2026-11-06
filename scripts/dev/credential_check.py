@@ -20,11 +20,13 @@ TOKEN_FORMATS = [
     ("Slack token", r"\bxox[abprs]-[\w-]{10,}"),
     ("JWT", r"\beyJ[\w-]{10,}\.eyJ[\w-]{10,}"),
     ("bearer token", r"(?i)\bbearer\s+(?!REDACTED\b)[\w.~+/=-]{12,}"),
-    ("basic credentials", r"\bBasic\s+(?!REDACTED\b)[A-Za-z0-9+/]{12,}={0,2}"),
+    ("basic credentials", r"\bBasic\s+(?!REDACTED\b)[A-Za-z0-9+/]{12,}={0,2}|(?i:\bauthorization\s*[:=]\s*basic\s+)(?!REDACTED\b)[A-Za-z0-9+/]{8,}"),
     ("password in a URL", r"(?i)\b[a-z][a-z0-9+.-]*://[^/\s:@]+:(?!REDACTED@)(?!\d{1,5}(?:/|$))[^\s@]+@"),
     ("key in a URL (DSN)", r"(?i)\bhttps?://[0-9a-f]{16,}@"),
 ]
-# NAME = value / NAME: value, where a part of NAME (split at _, - and
+# NAME = value / NAME: value (the value is only looked at, not consumed, so
+# a NAME=value inside another value, such as a URL query, is checked too),
+# where a part of NAME (split at _, - and
 # camelCase) is a secret word, or NAME ends in one run together
 # (access_token, clientSecret, STAFF_PW, DB_PASS, adminPassword,
 # STAFFPASSWORD, secret_key_base, Idempotency-Key ...). Quoted values are read
@@ -32,10 +34,10 @@ TOKEN_FORMATS = [
 # id" is prose), and prose "pass:" ("Tests pass: 42/42") does not count.
 SECRET_PARTS = {"key", "apikey", "token", "secret", "password", "passwd", "pwd", "pw", "pass",
                 "credential", "credentials", "cookie", "dsn", "auth"}
-RUN_TOGETHER = re.compile(r"(?i)(password|passwd|secret|token|apikey|credentials?)$")
+RUN_TOGETHER = re.compile(r"(?i)(password|passwd|secret|token|apikey|privatekey|credentials?)$")
 NAMED = re.compile(
     r"(?<![\w-])(?P<name>[A-Za-z0-9][\w-]*)[\"']?\s*[=:]\s*"
-    r"(?:\"(?P<dq>[^\"\n]*)\"|'(?P<sq>[^'\n]*)'|(?P<bare>[^\s\"']+))"
+    r"(?=\"(?P<dq>[^\"\n]*)\"|'(?P<sq>[^'\n]*)'|(?P<bare>[^\s\"']+))"
 )
 PASSWORD_LIKE = re.compile(r"(?i)(pass|pwd|pw|secret|credential)")
 
@@ -52,9 +54,9 @@ def findings(text):
         if not is_secret_name(name):
             continue
         value = m["dq"] if m["dq"] is not None else m["sq"] if m["sq"] is not None else m["bare"]
-        # "pass" after a word on the same line is prose ("Tests pass: 42/42").
+        # "Tests pass: 42/42" is prose, "DB pass: x" is not.
         line_before = text[text.rfind("\n", 0, m.start()) + 1:m.start()]
-        if name.lower() == "pass" and re.search(r"[A-Za-z]\s+$", line_before):
+        if name.lower() == "pass" and re.search(r"(?i)\b(tests?|checks?|all|both|they|it|reviews?)\s+$", line_before):
             continue
         normalised = re.sub(r"[-_\s]", "", name.lower())
         before = text[max(0, m.start() - 12):m.start()].lower()
@@ -110,6 +112,18 @@ def self_test():
         "dbpassword: hunter2hunter2",
         "pass=letmein1",
         "X-Auth-Token: abcdefgh12345678",
+        "https://api.example.com/v1/items?access_token=abcdefgh12345678",
+        'error: Get "https://api.trello.com/1/members/me?key=0123456789abcdef0123456789abcdef&token=REDACTED": dial tcp',
+        "curl 'https://x.example/api?api_key=abcdefgh12345678'",
+        "url: https://x.example/hook?token=abcdefgh12345678",
+        "env: DB_PASSWORD=hunter2hunter2",
+        "run: GK_STAFF_PASSWORD=hunter2hunter2 npm test",
+        "Note: password=hunter2hunter2",
+        "headers: X-Api-Key=abcdefgh12345678",
+        "a=b,password=hunter2hunter2",
+        "authorization: basic dXNlcjpwYXNzd29yZA==",
+        "DB pass: hunter2hunter2",
+        "privatekey: abcdefgh12345678abcd",
     ]
     allow = [
         "key=REDACTED and token=REDACTED",
