@@ -1035,9 +1035,11 @@ AS $$
             ELSE '{}'::jsonb END;
 $$;
 
--- As in 0034, plus delivery: the chef gets the block (without the payment
--- link) and delivery_history; technical support both without money, note or
--- distance source; fulfilment only the delivery state.
+-- As in 0034, plus, on gk_delivery orders only, delivery: the chef gets the
+-- block (without the payment link) and delivery_history; technical support
+-- both without money, note or distance source; fulfilment only the delivery
+-- state. Other orders keep exactly their 0034 keys (the chef's copy of the
+-- customer view carries delivery: null, as the customer's does).
 CREATE OR REPLACE FUNCTION business.order_staff_get(p_actor uuid, p_order uuid)
 RETURNS json
 LANGUAGE plpgsql
@@ -1077,9 +1079,10 @@ BEGIN
                      'appointment_history', business.order_staff_appointments(o.id, true),
                      'fulfillment_history', business.order_staff_fulfillment(o.id, true),
                      'late_payment_offers', business.order_staff_late_payment_offers(o.id),
-                     'delivery_history', CASE WHEN o.fulfillment_mode = 'gk_delivery'
-                                              THEN business.order_staff_delivery(o.id, true) END,
-                     'audit', business.order_staff_audit(o.id));
+                     'audit', business.order_staff_audit(o.id))
+                || CASE WHEN o.fulfillment_mode = 'gk_delivery'
+                        THEN pg_catalog.jsonb_build_object('delivery_history', business.order_staff_delivery(o.id, true))
+                        ELSE '{}'::jsonb END;
   ELSIF v_view = 'technical_support' THEN
     v_result := pg_catalog.jsonb_build_object(
                   'id', v -> 'id', 'version', v -> 'version', 'lifecycle', v -> 'lifecycle',
@@ -1120,20 +1123,19 @@ BEGIN
                                        ELSE v -> 'late_payment' END,
                   'agreed', v -> 'agreed',
                   'late_payment_offers', business.order_staff_late_payment_offers(o.id),
-                  -- Delivery without money (amounts, currency, payment link).
-                  'delivery', CASE WHEN pg_catalog.jsonb_typeof(v_delivery) = 'object' THEN
-                                (v_delivery - ARRAY['paid_minor', 'quote', 'payment'])
-                                || pg_catalog.jsonb_build_object(
-                                     'quote', CASE WHEN pg_catalog.jsonb_typeof(v_delivery -> 'quote') = 'object'
-                                                   THEN (v_delivery -> 'quote') - ARRAY['amount_minor', 'currency']
-                                                   ELSE v_delivery -> 'quote' END,
-                                     'payment', CASE WHEN pg_catalog.jsonb_typeof(v_delivery -> 'payment') = 'object'
-                                                     THEN (v_delivery -> 'payment') - ARRAY['amount_minor', 'currency', 'checkout_url']
-                                                     ELSE v_delivery -> 'payment' END)
-                              ELSE v_delivery END,
-                  'delivery_history', CASE WHEN o.fulfillment_mode = 'gk_delivery'
-                                           THEN business.order_staff_delivery(o.id, false) END,
-                  'audit', business.order_staff_audit(o.id));
+                  'audit', business.order_staff_audit(o.id))
+                || CASE WHEN pg_catalog.jsonb_typeof(v_delivery) = 'object' THEN pg_catalog.jsonb_build_object(
+                     -- Delivery without money (amounts, currency, payment link).
+                     'delivery', (v_delivery - ARRAY['paid_minor', 'quote', 'payment'])
+                                 || pg_catalog.jsonb_build_object(
+                                      'quote', CASE WHEN pg_catalog.jsonb_typeof(v_delivery -> 'quote') = 'object'
+                                                    THEN (v_delivery -> 'quote') - ARRAY['amount_minor', 'currency']
+                                                    ELSE v_delivery -> 'quote' END,
+                                      'payment', CASE WHEN pg_catalog.jsonb_typeof(v_delivery -> 'payment') = 'object'
+                                                      THEN (v_delivery -> 'payment') - ARRAY['amount_minor', 'currency', 'checkout_url']
+                                                      ELSE v_delivery -> 'payment' END),
+                     'delivery_history', business.order_staff_delivery(o.id, false))
+                   ELSE '{}'::jsonb END;
   ELSE
     v_result := pg_catalog.jsonb_build_object(
                   'id', v -> 'id', 'version', v -> 'version', 'lifecycle', v -> 'lifecycle',
@@ -1145,11 +1147,11 @@ BEGIN
                   'appointment_change', v -> 'appointment_change',
                   'appointment_history', business.order_staff_appointments(o.id, false),
                   'fulfillment', v -> 'fulfillment',
-                  'fulfillment_history', business.order_staff_fulfillment(o.id, true),
-                  -- Fulfilment: whether it may be dispatched, nothing else.
-                  'delivery', CASE WHEN pg_catalog.jsonb_typeof(v_delivery) = 'object'
-                                   THEN pg_catalog.jsonb_build_object('state', v_delivery -> 'state')
-                                   ELSE v_delivery END);
+                  'fulfillment_history', business.order_staff_fulfillment(o.id, true))
+                -- Fulfilment: whether a GK delivery may be dispatched, nothing else.
+                || CASE WHEN pg_catalog.jsonb_typeof(v_delivery) = 'object'
+                        THEN pg_catalog.jsonb_build_object('delivery', pg_catalog.jsonb_build_object('state', v_delivery -> 'state'))
+                        ELSE '{}'::jsonb END;
   END IF;
   PERFORM business.audit_record('staff', v_account, 'order.staff_viewed', 'order', o.id, NULL,
                                 pg_catalog.json_build_object('view', v_view));

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -144,6 +145,34 @@ func (h *payHarness) deliveryOutcome(t *testing.T, coll string) string {
 		return outcome + "/" + *reason
 	}
 	return outcome
+}
+
+// latePaid records the money of a cancelled collection's session arriving
+// after all, as a reconcile that read Stripe before the decision would
+// (real funds; migration 0017 records them as paid).
+func (h *payHarness) latePaid(t *testing.T, coll, session string) {
+	t.Helper()
+	h.stripe.pay(session, time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC))
+	h.holdProduction(t)
+	h.owner(t, "SELECT business.payment_schedule_reconcile($1::uuid, now())", coll)
+	h.workers++
+	worker := fmt.Sprintf("00000000-0000-4000-8000-%012d", h.workers)
+	var job string
+	var gen int64
+	if err := h.worker.QueryRow(h.ctx, `SELECT job_id::text, job_generation FROM business.job_claim($1::uuid, interval '60 seconds')`,
+		worker).Scan(&job, &gen); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	if err := h.worker.QueryRow(h.ctx, `SELECT collection_state FROM business.payment_reconcile_record(
+		$1::uuid, $2::uuid, $3, $4::uuid, 'paid', $5, 'complete', 'paid', $6, $7::json, $8, NULL)`,
+		job, worker, gen, coll, session, "pi_fake_"+session, `{"session_id":"`+session+`"}`,
+		time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)).Scan(&state); err != nil || state != "succeeded" {
+		t.Fatalf("late paid %s: %v", state, err)
+	}
+	if _, err := h.worker.Exec(h.ctx, "SELECT business.job_complete($1::uuid, $2::uuid, $3)", job, worker, gen); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // makeReady starts production (chef) and marks the order ready
@@ -511,11 +540,7 @@ func TestDeliveryPaymentFailureExpiryAndLateSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	version++
-	h.holdProduction(t)
-	success := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
-	if got := h.recordDirect(t, c1, s1, "paid", `{"session_id":"`+s1+`"}`, &success, nil); got != "succeeded" {
-		t.Fatalf("late success %s", got)
-	}
+	h.latePaid(t, c1, s1)
 	if got := h.deliveryOutcome(t, c1); got != "unmatched/quote_replaced" {
 		t.Fatalf("outcome %s", got)
 	}
@@ -563,6 +588,23 @@ func TestDeliveryPaymentFailureExpiryAndLateSuccess(t *testing.T) {
 	if audits := h.auditDetails(t, "delivery.payment_unmatched"); len(audits) != 1 || !strings.Contains(audits[0], "quote_replaced") {
 		t.Fatalf("audit %v", audits)
 	}
+	// The chef returns the stray payment with an agreed exception on that
+	// collection; once returned, the flag clears.
+	h.withRefunds()
+	v, _ = h.deliveryView(t, order, d)
+	if _, err := h.co.RecordRefund(h.ctx, chef, "stray", order, refund(v.Version, 12000, "Paid an old delivery quote",
+		alloc(c1, 12000))); err != nil {
+		t.Fatalf("exception refund: %v", err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("refund:\n%s", reasons(errs))
+	}
+	if ops := h.operations(t, c1); len(ops) != 1 || ops[0].State != "succeeded" {
+		t.Fatalf("stray refund %+v", ops)
+	}
+	if flags := string(h.staffJSON(t, chef, order)["attention"]); strings.Contains(flags, "delivery_payment_unmatched") {
+		t.Fatalf("attention after the return %s", flags)
+	}
 }
 
 // One quote paid twice (an expired session that succeeds after a second
@@ -585,9 +627,7 @@ func TestDeliveryDoublePaymentIsNotUsedTwice(t *testing.T) {
 	}
 	c2, s2 := h.deliveryStarted(t, order, d, "c2")
 	h.deliveryPaid(t, order, c2, s2, "evt_c2_paid")
-	h.holdProduction(t)
-	success := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
-	h.recordDirect(t, c1, s1, "paid", `{"session_id":"`+s1+`"}`, &success, nil)
+	h.latePaid(t, c1, s1)
 	if got := h.deliveryOutcome(t, c1); got != "unmatched/already_paid" {
 		t.Fatalf("second success %s", got)
 	}
