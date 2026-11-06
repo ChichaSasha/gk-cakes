@@ -15,7 +15,7 @@
 		onsignout,
 		children
 	}: {
-		active: 'orders' | 'favourites';
+		active: 'orders' | 'favourites' | 'profile';
 		title?: string;
 		sub?: string;
 		onsignout?: () => void;
@@ -35,6 +35,10 @@
 					>Orders &amp; requests</a
 				>
 				<a href={resolve('/(shop)/favourites')}>Favourites</a>
+				<a
+					href={resolve('/account/profile')}
+					aria-current={active === 'profile' ? 'page' : undefined}>Profile &amp; contact</a
+				>
 				{#if onsignout}
 					<button class="acc-nav-out" type="button" onclick={onsignout}>Sign out</button>
 				{/if}

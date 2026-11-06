@@ -16,7 +16,8 @@
 		let text = /^\d{4}-\d{2}-\d{2}$/.test(order.date) ? dateLabel(order.date) : order.date;
 		if (order.slot) text += ` · ${timeRange(order.slot.starts_at, order.slot.ends_at)}`;
 		if (item.requested) text += ' (requested, not confirmed)';
-		return `${text} · ${modeLabel(order.fulfillment_mode)}`;
+		const mode = modeLabel(order.fulfillment_mode);
+		return mode ? `${text} · ${mode}` : text;
 	});
 	const amount = $derived(
 		order.payment_requirement === 'none' && order.total_minor === 0

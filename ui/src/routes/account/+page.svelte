@@ -20,6 +20,7 @@
 	import { claimView } from '../../lib/account/claims';
 	import {
 		accountProblem,
+		accountUnusable,
 		endedSession,
 		leaveWhenSignedOut,
 		toSignIn
@@ -34,6 +35,9 @@
 	let email = $state<string>();
 	let account = $state<Me | null>(null);
 	let blocked = $state('');
+	// The account read failed for a reason that may pass (not disabled or deleted).
+	let meProblem = $state('');
+	let reloading = $state(false);
 	let orders = $state<AccountOrder[] | null>(null);
 	let ordersProblem = $state('');
 	let claims = $state<Claim[] | null>(null);
@@ -47,9 +51,9 @@
 
 	async function loadOrders() {
 		if (!api) return;
-		ordersProblem = '';
 		try {
 			orders = await myOrders(api);
+			ordersProblem = '';
 		} catch (e) {
 			if (await endedSession(e)) return;
 			orders = null;
@@ -59,9 +63,9 @@
 
 	async function loadClaims() {
 		if (!api) return;
-		claimsProblem = '';
 		try {
 			claims = await myClaims(api);
+			claimsProblem = '';
 		} catch (e) {
 			if (await endedSession(e)) return;
 			claims = null;
@@ -69,12 +73,51 @@
 		}
 	}
 
+	// The Try again button stays while it works ("Trying again…"); focus
+	// returns to the card when the orders arrive, or to the button.
 	async function retryOrders() {
 		retrying = true;
 		await loadOrders();
 		retrying = false;
 		await tick();
 		document.getElementById(orders ? 'orders-h' : 'orders-retry')?.focus();
+	}
+
+	let retryingClaims = $state(false);
+	async function retryClaims() {
+		retryingClaims = true;
+		await loadClaims();
+		retryingClaims = false;
+		await tick();
+		// No requests left to show: the card goes away, so focus the next card.
+		document
+			.getElementById(
+				claims ? (claims.length > 0 ? 'requests-h' : 'favourites-h') : 'requests-retry'
+			)
+			?.focus();
+	}
+
+	/** Reads the account, then its orders and requests. */
+	async function loadAccount(): Promise<void> {
+		if (!api) return;
+		try {
+			account = await readMe(api);
+			meProblem = '';
+		} catch (e) {
+			if (await endedSession(e)) return;
+			if (accountUnusable(e)) blocked = accountProblem(e, 'your account');
+			else meProblem = accountProblem(e, 'your account');
+			return;
+		}
+		await Promise.all([loadOrders(), loadClaims()]);
+	}
+
+	async function retryAccount() {
+		reloading = true;
+		await loadAccount();
+		reloading = false;
+		await tick();
+		document.querySelector<HTMLElement>(account ? 'h1' : '#account-retry')?.focus();
 	}
 
 	onMount(() => {
@@ -87,15 +130,8 @@
 				return;
 			}
 			email = await signedInEmail();
-			try {
-				account = await readMe(api);
-			} catch (e) {
-				if (!active || (await endedSession(e))) return;
-				blocked = accountProblem(e, 'your account');
-				return;
-			}
 			if (!active) return;
-			await Promise.all([loadOrders(), loadClaims()]);
+			await loadAccount();
 		})();
 		const unsubscribe = leaveWhenSignedOut(() => {
 			account = null;
@@ -135,7 +171,7 @@
 <AccountShell
 	active="orders"
 	sub={email ? `Signed in as ${email}` : undefined}
-	onsignout={account || blocked ? leave : undefined}
+	onsignout={account || blocked || meProblem ? leave : undefined}
 >
 	{#if signOutProblem}
 		<div class="notice error" role="alert"><div><p>{signOutProblem}</p></div></div>
@@ -144,6 +180,18 @@
 		<div class="acc-actions">
 			<a class="button" href="mailto:gk.cake.london@gmail.com">Contact us</a>
 			<button class="btn" type="button" onclick={leave}>Sign out</button>
+		</div>
+	{:else if meProblem}
+		<div class="notice error" role="alert"><div><p>{meProblem}</p></div></div>
+		<div class="acc-actions">
+			<button
+				class="btn"
+				id="account-retry"
+				type="button"
+				disabled={reloading}
+				aria-busy={reloading}
+				onclick={retryAccount}>{reloading ? 'Trying again…' : 'Try again'}</button
+			>
 		</div>
 	{:else if !account}
 		<p role="status" aria-busy="true">Loading your account…</p>
@@ -220,14 +268,21 @@
 
 		{#if claimsProblem || (claims && claims.length > 0)}
 			<section class="acc-card" id="requests" aria-labelledby="requests-h">
-				<h2 class="acc-h" id="requests-h">Your requests</h2>
+				<h2 class="acc-h" id="requests-h" tabindex="-1">Your requests</h2>
 				{#if claimsProblem}
 					<div class="notice error" role="alert"><div><p>{claimsProblem}</p></div></div>
 					<div class="acc-actions">
-						<button class="btn" type="button" onclick={() => void loadClaims()}>Try again</button>
+						<button
+							class="btn"
+							id="requests-retry"
+							type="button"
+							disabled={retryingClaims}
+							aria-busy={retryingClaims}
+							onclick={retryClaims}>{retryingClaims ? 'Trying again…' : 'Try again'}</button
+						>
 					</div>
 				{:else if claims}
-					{#each claims.map(claimView) as c (c.ref)}
+					{#each claims.map((c) => ({ id: c.id, ...claimView(c) })) as c (c.id)}
 						<article class="acc-req">
 							<p class="acc-ref">Request {c.ref}</p>
 							<h3>{c.title}</h3>
@@ -240,7 +295,7 @@
 		{/if}
 
 		<section class="acc-card" id="favourites" aria-labelledby="favourites-h">
-			<h2 class="acc-h" id="favourites-h">Your favourites</h2>
+			<h2 class="acc-h" id="favourites-h" tabindex="-1">Your favourites</h2>
 			{#if !favourites.loaded}
 				<p role="status">Loading…</p>
 			{:else if saved > 0}

@@ -12,6 +12,8 @@
 # passwords stay in the Keychain, e.g.
 #   STAFF_PW="$(security find-generic-password -a gk-test-staff@gkcake.com -s gk-supabase-test-staff -w)" \
 #     scripts/dev/qa/with-ui.sh -- node my-check.cjs
+# (the customer test user: CUSTOMER_PW from -a gk-test-customer@gkcake.com
+# -s gk-supabase-test-customer; lib.cjs customerSignIn).
 # Ports: GK_QA_UI_PORT (4192), GK_QA_PROXY_PORT (4191).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"

@@ -3,7 +3,7 @@
 // the built order page (ui/src/lib/checkout/order.ts) so the list and the
 // order page never disagree. Only the API's snapshot decides; an unknown
 // lifecycle or payment state enables nothing (K02).
-import { formatMoney } from '../checkout/format';
+import { formatMoney, modeLabel as checkoutModeLabel } from '../checkout/format';
 import type { AccountOrder } from './client';
 
 export type ChipTone = 'ok' | 'wait' | 'bad' | 'info' | 'done';
@@ -94,6 +94,7 @@ export function orderListItem(o: AccountOrder): OrderListItem {
 		refund ? { ...item, refund, group: refundOpen ? 'current' : item.group } : item;
 	const delivery = o.fulfillment_mode === 'gk_delivery';
 	const courier = o.fulfillment_mode === 'customer_courier';
+	const collection = o.fulfillment_mode === 'collection';
 
 	switch (o.lifecycle) {
 		case 'awaiting_payment': {
@@ -207,7 +208,9 @@ export function orderListItem(o: AccountOrder): OrderListItem {
 						? 'GK delivery confirmed by the chef.'
 						: courier
 							? 'Your courier collects.'
-							: 'Collect at St Katharine Docks.',
+							: collection
+								? 'Collect at St Katharine Docks.'
+								: 'Your order is confirmed.',
 					'current'
 				)
 			);
@@ -216,9 +219,9 @@ export function orderListItem(o: AccountOrder): OrderListItem {
 				view(
 					'ok',
 					'Being prepared',
-					delivery
-						? 'Your cake is being prepared.'
-						: 'Your cake is being prepared. The collection details will show here about 48 hours before.',
+					collection || courier
+						? 'Your cake is being prepared. The collection details will show here about 48 hours before.'
+						: 'Your cake is being prepared.',
 					'current'
 				)
 			);
@@ -226,12 +229,14 @@ export function orderListItem(o: AccountOrder): OrderListItem {
 			return withRefund(
 				view(
 					'ok',
-					delivery ? 'Ready for delivery' : 'Ready to collect',
+					delivery ? 'Ready for delivery' : collection || courier ? 'Ready to collect' : 'Ready',
 					delivery
 						? 'Your cake is ready for delivery.'
 						: courier
 							? 'Your cake is ready. Your courier collects it at your time.'
-							: 'Your cake is ready. Collect it at St Katharine Docks at your time.',
+							: collection
+								? 'Your cake is ready. Collect it at St Katharine Docks at your time.'
+								: 'Your cake is ready.',
 					'current'
 				)
 			);
@@ -239,7 +244,13 @@ export function orderListItem(o: AccountOrder): OrderListItem {
 			return withRefund(
 				view(
 					'done',
-					delivery ? 'Delivered' : courier ? 'Handed to your courier' : 'Collected',
+					delivery
+						? 'Delivered'
+						: courier
+							? 'Handed to your courier'
+							: collection
+								? 'Collected'
+								: 'Completed',
 					'Thank you for ordering with GK Cake London.',
 					'past'
 				)
@@ -301,14 +312,11 @@ export function orderName(o: AccountOrder): string {
 	return names.length > 0 ? names.join(', ') : 'Your order';
 }
 
-const MODE: Record<string, string> = {
-	collection: 'Collect',
-	customer_courier: 'Your courier',
-	gk_delivery: 'GK delivery'
-};
+const MODES = ['collection', 'customer_courier', 'gk_delivery'];
 
-export function modeLabel(mode: string): string {
-	return MODE[mode] ?? 'Handover to agree';
+/** The handover as the order page words it, or nothing for a mode this build doesn't know. */
+export function modeLabel(mode: string): string | undefined {
+	return MODES.includes(mode) ? checkoutModeLabel(mode) : undefined;
 }
 
 /**

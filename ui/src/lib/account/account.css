@@ -235,6 +235,108 @@
 	margin: 0;
 	overflow-wrap: anywhere;
 }
+/* Profile & contact form (sketch: .field, .field-error, .acc-errsum,
+   .acc-changed, .acc-kept, .notice.success). */
+.shop .acc-card .field {
+	display: grid;
+	gap: 10px;
+	margin: 0 0 22px;
+	font: 500 14px/1.4 var(--sans);
+}
+.shop .field > label {
+	display: block;
+	margin: 0;
+}
+.shop .field .quiet {
+	font-weight: 400;
+}
+/* Focus targets stay clear of the sticky shop header. */
+.shop .acc-main [tabindex='-1'],
+.shop .field > input {
+	scroll-margin-top: 104px;
+}
+/* The root layout's functional [role='alert'] colour stays off these notices. */
+.shop .acc-main .notice:not(.error) {
+	color: var(--ink);
+}
+.shop .field .small.quiet {
+	display: block;
+}
+.shop .field > input {
+	display: block;
+	width: 100%;
+	min-height: 54px;
+	padding: 14px 16px;
+	border: 0;
+	border-radius: var(--r-s);
+	background-color: #ffffffd1;
+	box-shadow:
+		inset 0 0 0 1px var(--line),
+		0 1px 2px #1414160a;
+	font: 400 16px/1.5 var(--sans);
+	color: var(--ink);
+	transition:
+		box-shadow 0.25s var(--ease),
+		background-color 0.25s;
+}
+.shop .field > input:hover {
+	background-color: #fff;
+	box-shadow:
+		inset 0 0 0 1px #4f535a,
+		0 1px 2px #1414160a;
+}
+.shop .field > input[aria-invalid='true'] {
+	box-shadow: inset 0 0 0 2px var(--error);
+}
+.shop .acc-card .field:has(+ .field-error:not([hidden])) {
+	margin-bottom: 0;
+}
+.shop .field-error {
+	margin: 6px 0 18px;
+	color: var(--error);
+	font-size: 13px;
+	font-weight: 500;
+}
+.shop .acc-changed {
+	outline: 2px solid #7a4a00;
+	outline-offset: 1px;
+}
+.shop .acc-card .acc-kept {
+	margin: -2px 0 12px;
+	color: #7a4a00;
+	font-weight: 500;
+}
+.shop .acc-errsum {
+	margin: 0 0 18px;
+	padding: 16px 18px;
+	border: 2px solid var(--error);
+	border-radius: var(--r-m);
+	background: #fff6f6;
+}
+.shop .acc-errsum h2 {
+	margin: 0 0 8px;
+	font: 600 16px/1.3 var(--sans);
+	color: var(--error);
+}
+.shop .acc-errsum ul {
+	margin: 0;
+	padding-left: 20px;
+}
+.shop .acc-errsum a {
+	color: var(--error);
+	font-weight: 600;
+}
+.shop .notice.success {
+	background: #f3fbf6e6;
+}
+.shop .notice.success::before {
+	background: var(--ok);
+}
+.shop .acc-dl small {
+	display: block;
+	color: var(--muted);
+	font-size: 12.5px;
+}
 @media (max-width: 1050px) {
 	.shop .acc-layout {
 		grid-template-columns: 1fr;

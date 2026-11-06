@@ -18,13 +18,28 @@ export function toSignIn(ended = false): Promise<void> {
  * Handles an API failure that means the session is over (401): signs out
  * here and goes to sign-in. Returns true when it did.
  */
+let ending: Promise<void> | undefined;
+
 export async function endedSession(e: unknown): Promise<boolean> {
 	if (e instanceof ApiError && e.signInRequired) {
-		await signOut();
-		await toSignIn(true);
+		// Several reads failing at once sign out and redirect only once.
+		ending ??= (async () => {
+			try {
+				await signOut();
+				await toSignIn(true);
+			} finally {
+				ending = undefined;
+			}
+		})();
+		await ending;
 		return true;
 	}
 	return false;
+}
+
+/** Whether a failed account read means the account itself can't be used (no point retrying). */
+export function accountUnusable(e: unknown): boolean {
+	return e instanceof ApiError && (e.code === 'ACCOUNT_DISABLED' || e.code === 'ACCOUNT_DELETED');
 }
 
 /** The words for an account read that failed (other than an ended session). */
