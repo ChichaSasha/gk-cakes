@@ -543,6 +543,26 @@ describe('banners', () => {
 	});
 });
 
+describe('delivery banners', () => {
+	it('words an unmatched delivery payment without promising an automatic return', () => {
+		const o = chef({
+			fulfillment_mode: 'gk_delivery',
+			attention: ['delivery_payment_unmatched'],
+			delivery: { state: 'quoted', unmatched_minor: 15000 }
+		});
+		const b = banners(o, 'chef', NOW).find((x) => x.key === 'unmatched');
+		expect(b?.text).toMatch(/^A delivery payment of £150 arrived/);
+		expect(b?.small[0]).toMatch(
+			/^Return it with a refund from this order .*, or a later cancellation or no-show usually returns it in full automatically\. When that cancellation or no-show owes nothing else \(for example a free cake\), it stays flagged here for you to return\.$/
+		);
+		expect(b?.small[0]).not.toMatch(/returns it in full automatically\. Returning/);
+		const s = banners({ ...o, delivery: { state: 'quoted' } }, 'technical_support', NOW).find(
+			(x) => x.key === 'unmatched'
+		);
+		expect(s?.text).not.toMatch(/£/);
+	});
+});
+
 describe('latePaymentCard', () => {
 	it('is the chef’s decision, and Elina’s for everyone else', () => {
 		const o = chef({
@@ -553,7 +573,7 @@ describe('latePaymentCard', () => {
 		const c = latePaymentCard(o, 'chef');
 		expect(c?.title).toBe('Paid late · your decision');
 		expect(c?.text.join(' ')).toMatch(/The £90 is received/);
-		expect(c?.note).toMatch(/next update/);
+		expect(c?.text.join(' ')).not.toMatch(/next update/);
 		expect(latePaymentCard(helper(o), 'fulfillment')?.title).toBe('Paid late · Elina decides');
 		expect(latePaymentCard(chef(), 'chef')).toBeNull();
 	});
