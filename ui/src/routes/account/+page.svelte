@@ -2,7 +2,9 @@
 	// Your account (approved GK-016 r02b sketch, account home): your orders
 	// (In progress, and Past behind "Show past orders"), your requests to add
 	// older orders (each opens its own page), favourites on this device and
-	// "Ordered before?" (Add an older order). Everything comes from the
+	// "Ordered before?" (Add an older order). Back from the confirmation link
+	// of a deletion (marker set, fresh sign-in), a notice leads on to the
+	// final step (/account/delete). Everything comes from the
 	// account API with this browser's session (K00); a failed orders read
 	// leaves the other cards working. No analytics run here (K10).
 	import { resolve } from '$app/paths';
@@ -27,7 +29,8 @@
 		toSignIn
 	} from '../../lib/account/guard';
 	import { groupOrders } from '../../lib/account/orders';
-	import { accountApi, signedInEmail } from '../../lib/account/session';
+	import { deletionMarked, freshSignIn } from '../../lib/account/privacy';
+	import { accountApi, sessionSignInAt, signedInEmail } from '../../lib/account/session';
 	import AccountShell from '../../lib/account/ui/AccountShell.svelte';
 	import OrderRow from '../../lib/account/ui/OrderRow.svelte';
 	import { favourites } from '../../lib/shop/favourites.svelte';
@@ -46,6 +49,8 @@
 	let showPast = $state(false);
 	let retrying = $state(false);
 	let signOutProblem = $state('');
+	/** Back from a deletion's confirmation link: offer the final step. */
+	let continueDeletion = $state(false);
 
 	const grouped = $derived(orders ? groupOrders(orders) : null);
 	const saved = $derived(favourites.state.ids.length);
@@ -131,8 +136,20 @@
 				return;
 			}
 			email = await signedInEmail();
+			const at = await sessionSignInAt();
 			if (!active) return;
+			let marked = false;
+			try {
+				marked = deletionMarked(window.localStorage, Date.now());
+			} catch {
+				// storage refused: no notice
+			}
 			await loadAccount();
+			if (active && account && marked && freshSignIn(at, Date.now())) {
+				continueDeletion = true;
+				await tick();
+				document.getElementById('acc-continue-delete')?.focus();
+			}
 		})();
 		const unsubscribe = leaveWhenSignedOut(() => {
 			account = null;
@@ -197,6 +214,16 @@
 	{:else if !account}
 		<p role="status" aria-busy="true">Loading your account…</p>
 	{:else}
+		{#if continueDeletion}
+			<div class="notice" id="acc-continue-delete" role="status" tabindex="-1">
+				<div>
+					<p>
+						<strong>You’ve signed in again.</strong>
+						<a href={resolve('/account/delete')}>Continue deleting your account →</a>
+					</p>
+				</div>
+			</div>
+		{/if}
 		{#if account.capabilities.length > 0}
 			<section class="acc-card" aria-labelledby="staff-h">
 				<div class="acc-cta">

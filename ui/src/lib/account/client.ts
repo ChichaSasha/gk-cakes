@@ -188,3 +188,67 @@ export async function withdrawClaim(
 		await cmd(api, key)
 	);
 }
+
+/** An order that stops the account being deleted now (money still to settle). */
+export interface DeletionBlock {
+	order_id: string;
+	reason:
+		| 'order_change_in_progress'
+		| 'payment_being_checked'
+		| 'paid_awaiting_agreement'
+		| 'refund_in_progress'
+		| 'refund_being_checked'
+		| 'payment_recorded'
+		| string;
+}
+
+/** A confirmed order still to come: it goes ahead after a deletion (warning, extra tick). */
+export interface DeletionUpcoming {
+	order_id: string;
+	/** The order's date (YYYY-MM-DD, London), or null when it has none. */
+	date: string | null;
+	lifecycle: 'confirmed' | 'in_production' | 'ready' | string;
+}
+
+/** What deleting the account would do now (kept by the API for 15 minutes). */
+export interface DeletionPreview {
+	preview_id: string;
+	preview_hash: string;
+	expires_at: string;
+	can_delete: boolean;
+	blocked: DeletionBlock[];
+	upcoming: DeletionUpcoming[];
+	linked_orders: number;
+	pending_claims: number;
+	staff_capabilities: string[];
+}
+
+export interface Deleted {
+	account_id: string;
+	deleted: boolean;
+	deleted_at: string;
+	orders_unlinked: number;
+	provider_deletion: 'pending' | string;
+}
+
+/** Asks what deleting the account would do now (no body; the current session). */
+export async function deletionPreview(api: AccountApi, key: string): Promise<DeletionPreview> {
+	return apiPost<DeletionPreview>('/api/v1/me/deletion-preview', {}, await cmd(api, key));
+}
+
+/**
+ * Deletes the account as the preview described. Needs a sign-in by email
+ * link (or Google) within the last 10 minutes; otherwise 401
+ * REAUTHENTICATION_REQUIRED. The same key and body read a deletion back.
+ */
+export async function deleteAccount(
+	api: AccountApi,
+	key: string,
+	preview: { preview_id: string; preview_hash: string }
+): Promise<Deleted> {
+	return apiPost<Deleted>(
+		'/api/v1/me/deletion',
+		{ preview_id: preview.preview_id, preview_hash: preview.preview_hash },
+		await cmd(api, key)
+	);
+}

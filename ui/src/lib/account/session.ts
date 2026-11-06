@@ -3,6 +3,7 @@
 import { PUBLIC_API_URL } from '$app/env/public';
 import { currentSession, signInConfigured } from '../auth';
 import type { AccountApi } from './client';
+import { signInAt } from './privacy';
 
 /**
  * The account API with this browser's session, or null when nobody is signed
@@ -22,4 +23,13 @@ export async function accountApi(): Promise<AccountApi | null> {
 export async function signedInEmail(): Promise<string | undefined> {
 	if (!signInConfigured) return undefined;
 	return (await currentSession())?.user?.email ?? undefined;
+}
+
+/**
+ * The session's latest email-link or Google sign-in instant (ms), or null:
+ * whether the deletion's fresh sign-in is likely done (the API decides).
+ */
+export async function sessionSignInAt(): Promise<number | null> {
+	if (!signInConfigured) return null;
+	return signInAt((await currentSession())?.access_token);
 }
