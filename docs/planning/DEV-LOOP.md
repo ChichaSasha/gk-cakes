@@ -50,12 +50,24 @@ While CI, auto-merge and the staging deployment run, start the next slice
   serves it on 4192 against the staging API through a read-only proxy on 4191
   and stops both afterwards. `scripts/dev/qa/lib.cjs` has `open`, `sweep`
   (widths and sideways scrolling), `ctl` (proxy delay, failure or fixed answer
-  per path) and staff sign-in. `scripts/dev/qa/smoke-shop.cjs` is a full shop
-  sweep.
-- Staff pages: read the test password from the Keychain into the command's
-  environment only:
-  `STAFF_PW="$(security find-generic-password -a gk-test-staff@gkcake.com -s gk-supabase-test-staff -w)" scripts/dev/qa/with-ui.sh -- node check.cjs`.
-- The same scripts check a deployed environment:
+  per path) and staff and customer sign-in. `scripts/dev/qa/smoke-shop.cjs`
+  is a full shop sweep; `scripts/dev/qa/smoke-account.cjs` sweeps the
+  signed-in account pages (read only; it skips the delete page, whose
+  opening asks the API for a deletion preview).
+- Staff and customer pages: read the test password from the Keychain into
+  the command's environment only:
+  `STAFF_PW="$(security find-generic-password -a gk-test-staff@gkcake.com -s gk-supabase-test-staff -w)" scripts/dev/qa/with-ui.sh -- node check.cjs`
+  (customer: `CUSTOMER_PW` from `-a gk-test-customer@gkcake.com -s gk-supabase-test-customer`).
+- The read-only proxy covers only API requests in local runs. Calls to the
+  sign-in provider go to it directly (password sign-in, sign out — global or
+  local — and email-link sends), and against a deployed site
+  (`GK_QA_BASE`) there is no proxy at all, so every write a script triggers
+  is real. The staging test accounts are shared: answer non-GET API requests
+  and provider calls such as global sign-out and email links inside the
+  browser (request interception), and never let account deletion, global
+  sign-out or email links through.
+- The same scripts check a deployed environment (Node from `ui/.nvmrc` on
+  `PATH`; puppeteer-core needs it):
   `GK_QA_BASE=https://staging.gkcake.com node scripts/dev/qa/smoke-shop.cjs`.
 
 ## 4. Pull request
