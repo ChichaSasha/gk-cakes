@@ -72,7 +72,9 @@ owner's behalf), **Tests** (what ran, with results) and, after review,
   creates a detached worktree of the PR head outside every clone (in
   `GK_SCRATCH`, default `$TMPDIR`) and reuses your installed dependencies when
   the lockfile is the same. Targets are a PR number, a commit ID or a branch of
-  origin; local branches are never used.
+  origin; local branches are never used. Use one name per reviewer (for
+  example `review-pr-52-api`); only a detached worktree without changes is ever
+  refreshed or removed.
 - Start a fresh reviewer (a new subagent or session, no author context) with a
   short prompt: "Use the gk-code-review skill. PR #n, head, base, worktree path,
   PR description file, round, boundaries, ports, focus". The skill holds the
@@ -86,17 +88,19 @@ owner's behalf), **Tests** (what ran, with results) and, after review,
   next slice. If code changes after a PASS, a focused review of that delta is
   required before merging (Creator decision GK-006: fixes get affected
   rechecks).
-- After REVISE: fix, rerun checks, then send the same or a new reviewer the
-  round's findings with your dispositions to verify.
+- Save each reviewer's final report to a file in your scratch folder. After
+  REVISE: fix, rerun checks, then give the next round that report file and your
+  disposition of each finding to verify.
 
 ## 6. Merge
 
 1. Post a short review record on the PR (rounds, verdicts, checks, merge head).
-2. `scripts/dev/merge-flow.sh <pr> <reviewed-sha> --wait`, with the commit ID
-   the reviewer saw (never a branch name). It refuses a head that is not the
-   reviewed code (it accepts a clean merge of a main commit whose tree equals
-   Git's own merge of the two), updates a branch that is behind main and checks
-   that again, marks the PR ready, enables native auto-merge bound to that head,
+2. `scripts/dev/merge-flow.sh <pr> <reviewed-sha> --wait`, with the full
+   commit ID the reviewer saw (never a branch name). It refuses a head that is
+   not the reviewed code (it accepts clean merges of main commits whose trees
+   equal Git's own merges), updates a branch that is behind main (again while
+   waiting, if main moves) and checks that again, marks the PR ready, enables
+   native auto-merge bound to that head,
    then posts `ai-review` = success on it, waits for the merge and the Staging
    run and prints its jobs. `--repost` re-posts the status when auto-merge
    stalls on a green PR; `--verify-only` checks a head against the reviewed

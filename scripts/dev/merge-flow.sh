@@ -7,10 +7,12 @@
 # <reviewed-sha> must be the commit ID the reviewer saw (7-40 hex
 # characters), never a branch or other ref name.
 # 1. Checks the PR is open against main and its head is the reviewed commit,
-#    or a clean merge of a main commit onto it whose tree is exactly what Git's
-#    own merge of the two produces (as `gh pr update-branch` makes). Anything
-#    else stops: the new code needs review.
-# 2. If the branch is BEHIND main, updates it and checks that again.
+#    or reaches it through clean merges of main commits whose trees are
+#    exactly what Git's own merges produce (as `gh pr update-branch` makes).
+#    Anything else stops: the new code needs review. Prefer the full SHA.
+# 2. If the branch is BEHIND main, updates it and checks that again (also
+#    while waiting, up to 3 times, re-binding auto-merge and the status to the
+#    new head).
 # 3. Marks the PR ready, enables native auto-merge (merge commit) bound to that
 #    exact head (expectedHeadOid), then posts the commit status
 #    "ai-review" = success on that head. Auto-merge first, status second.
@@ -56,27 +58,37 @@ case "$REVIEWED" in "$REVIEWED_IN"*) ;; *) die "'$REVIEWED_IN' resolves through 
 
 pr_field() { gh pr view "$PR" -R "$GK_REPO" --json "$1" -q ".$1"; }
 
-# Prints why HEAD is acceptable for the reviewed commit, or fails.
+# Prints why a head is acceptable for the reviewed commit, or fails. The head
+# may be the reviewed commit or reach it through first parents that are each a
+# clean merge of a main commit (one per `gh pr update-branch`): each merge's
+# tree must equal Git's own merge of its two parents, so no conflict
+# resolution or extra edit can hide in it.
 verify_head() {
-	local head="$1" parents second expected
-	if [ "$head" = "$REVIEWED" ]; then
-		note "head ${head:0:7} is the reviewed commit"
-		return 0
-	fi
+	local head="$1" cur parents second expected steps=0 merged=""
 	git -C "$MAIN" cat-file -e "$head^{commit}" 2>/dev/null || git -C "$MAIN" fetch -q origin "pull/$PR/head"
-	parents="$(git -C "$MAIN" rev-list --parents -n 1 "$head")"
-	# shellcheck disable=SC2086 # split the commit and its parents into $1..$n
-	set -- $parents
-	[ $# -eq 3 ] && [ "$2" = "$REVIEWED" ] || die "head ${head:0:7} is not the reviewed commit ${REVIEWED:0:7} or a merge onto it: review the new code first"
-	second="$3"
-	git -C "$MAIN" merge-base --is-ancestor "$second" "$ORIGIN_MAIN" || die "head ${head:0:7} merges ${second:0:7}, which is not on main"
-	# Git's own merge of the reviewed commit and that main commit must be clean
-	# and give exactly the head's tree: no conflict resolution, no extra edit.
-	expected="$(git -C "$MAIN" merge-tree --write-tree "$REVIEWED" "$second" 2>/dev/null | head -n 1)" ||
-		die "merging ${second:0:7} into the reviewed commit conflicts: review the resolution first"
-	[ "$expected" = "$(git -C "$MAIN" rev-parse "$head^{tree}")" ] ||
-		die "the merge in ${head:0:7} differs from a clean merge of main ${second:0:7}: review it first"
-	note "head ${head:0:7} = reviewed ${REVIEWED:0:7} + clean merge of main ${second:0:7}"
+	cur="$head"
+	while [ "$cur" != "$REVIEWED" ]; do
+		steps=$((steps + 1))
+		[ "$steps" -le 10 ] || die "head ${head:0:7}: more than 10 merges since the reviewed commit"
+		parents="$(git -C "$MAIN" rev-list --parents -n 1 "$cur")"
+		# shellcheck disable=SC2086 # split the commit and its parents into $1..$n
+		set -- $parents
+		[ $# -eq 3 ] || die "head ${head:0:7} is not the reviewed commit ${REVIEWED:0:7} or merges of main onto it: review the new code first"
+		second="$3"
+		git -C "$MAIN" merge-base --is-ancestor "$second" "$ORIGIN_MAIN" ||
+			die "${cur:0:7} merges ${second:0:7}, which is not on main: review the new code first"
+		expected="$(git -C "$MAIN" merge-tree --write-tree "$2" "$second" 2>/dev/null | head -n 1)" ||
+			die "${cur:0:7}: merging main ${second:0:7} conflicts: review the resolution first"
+		[ "$expected" = "$(git -C "$MAIN" rev-parse "$cur^{tree}")" ] ||
+			die "${cur:0:7} differs from a clean merge of main ${second:0:7}: review it first"
+		merged="${second:0:7} $merged"
+		cur="$2"
+	done
+	if [ -z "$merged" ]; then
+		note "head ${head:0:7} is the reviewed commit"
+	else
+		note "head ${head:0:7} = reviewed ${REVIEWED:0:7} + clean merges of main: ${merged% }"
+	fi
 }
 
 if [ "$VERIFY_ONLY" = 1 ]; then
@@ -84,76 +96,91 @@ if [ "$VERIFY_ONLY" = 1 ]; then
 	exit 0
 fi
 
+run() {
+	if [ "$DRY" = 1 ]; then note "would run: $*"; else "$@"; fi
+}
+
+# Updates a branch that is behind main and checks the new head.
+update_branch() {
+	local new=""
+	note "branch is behind main: updating"
+	gh pr update-branch "$PR" -R "$GK_REPO" >/dev/null
+	for _ in $(seq 1 30); do
+		new="$(pr_field headRefOid)"
+		[ "$new" != "$HEAD" ] && break
+		sleep 2
+	done
+	[ "$new" != "$HEAD" ] || die "the branch update did not produce a new head"
+	HEAD="$new"
+	git -C "$MAIN" fetch -q origin "+refs/heads/main:$ORIGIN_MAIN" "pull/$PR/head"
+	verify_head "$HEAD"
+}
+
+# Auto-merge bound to $HEAD (merge commit), then ai-review = success on $HEAD.
+land() {
+	local method
+	method="$(gh pr view "$PR" -R "$GK_REPO" --json autoMergeRequest -q '.autoMergeRequest.mergeMethod // empty')"
+	if [ -z "$method" ]; then
+		# shellcheck disable=SC2016 # GraphQL variables, not shell
+		run gh api graphql \
+			-f query='mutation($id:ID!,$oid:GitObjectID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:MERGE,expectedHeadOid:$oid}){pullRequest{number}}}' \
+			-f id="$(pr_field id)" -f oid="$HEAD" >/dev/null
+		[ "$DRY" = 1 ] || note "auto-merge enabled (merge commit) for head ${HEAD:0:7}"
+	elif [ "$method" != "MERGE" ]; then
+		die "auto-merge is enabled with $method; the delivery contract uses a merge commit: disable it in GitHub, then run this again"
+	else
+		note "auto-merge already enabled (merge commit)"
+	fi
+	if [ "$REPOST" = 1 ]; then
+		run gh api -X POST "repos/$GK_REPO/statuses/$HEAD" -f state=pending -f context=ai-review -f description="Re-posting the review status" >/dev/null
+		sleep 5
+	fi
+	run gh api -X POST "repos/$GK_REPO/statuses/$HEAD" -f state=success -f context=ai-review -f description="$DESC" >/dev/null
+	[ "$DRY" = 1 ] || note "ai-review = success on ${HEAD:0:7}"
+}
+
 STATE="$(pr_field state)"; BASE="$(pr_field baseRefName)"
 [ "$STATE" = "OPEN" ] || die "PR #$PR is $STATE"
 [ "$BASE" = "main" ] || die "PR #$PR targets $BASE, not main"
 HEAD="$(pr_field headRefOid)"
 verify_head "$HEAD"
 
-MERGE_STATE="$(pr_field mergeStateStatus)"
-case "$MERGE_STATE" in
+case "$(pr_field mergeStateStatus)" in
 	DIRTY) die "PR #$PR has conflicts with main: resolve them on the branch, then review that change" ;;
 	BEHIND)
 		if [ "$DRY" = 1 ]; then
 			note "would run: gh pr update-branch $PR, check the new head, then continue with that head"
 			exit 0
-		else
-			note "branch is behind main: updating"
-			gh pr update-branch "$PR" -R "$GK_REPO" >/dev/null
-			for _ in $(seq 1 30); do
-				NEW="$(pr_field headRefOid)"
-				[ "$NEW" != "$HEAD" ] && break
-				sleep 2
-			done
-			[ "$NEW" != "$HEAD" ] || die "the branch update did not produce a new head"
-			HEAD="$NEW"
-			git -C "$MAIN" fetch -q origin "+refs/heads/main:$ORIGIN_MAIN" "pull/$PR/head"
-			verify_head "$HEAD"
 		fi
+		update_branch
 		;;
 esac
-
-run() {
-	if [ "$DRY" = 1 ]; then note "would run: $*"; else "$@"; fi
-}
 
 if [ "$(pr_field isDraft)" = "true" ]; then
 	run gh pr ready "$PR" -R "$GK_REPO" >/dev/null
 	[ "$DRY" = 1 ] || note "marked ready for review"
 fi
-
-if [ -z "$(gh pr view "$PR" -R "$GK_REPO" --json autoMergeRequest -q '.autoMergeRequest.mergeMethod // empty')" ]; then
-	ID="$(pr_field id)"
-	# shellcheck disable=SC2016 # GraphQL variables, not shell
-	run gh api graphql \
-		-f query='mutation($id:ID!,$oid:GitObjectID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:MERGE,expectedHeadOid:$oid}){pullRequest{number}}}' \
-		-f id="$ID" -f oid="$HEAD" >/dev/null
-	[ "$DRY" = 1 ] || note "auto-merge enabled (merge commit) for head ${HEAD:0:7}"
-else
-	note "auto-merge already enabled"
-fi
-
-status() {
-	run gh api -X POST "repos/$GK_REPO/statuses/$HEAD" -f state="$1" -f context=ai-review -f description="$2" >/dev/null
-}
-if [ "$REPOST" = 1 ]; then
-	status pending "Re-posting the review status"
-	sleep 5
-fi
-status success "$DESC"
-[ "$DRY" = 1 ] || note "ai-review = success on ${HEAD:0:7}"
+land
 
 [ "$WAIT" = 1 ] && [ "$DRY" = 0 ] || exit 0
 
 note "waiting up to $WAIT_MINUTES minutes for the merge"
 deadline=$(( $(date +%s) + WAIT_MINUTES * 60 ))
 last_report=0
+updates=0
 while :; do
 	STATE="$(pr_field state)"
 	[ "$STATE" = "MERGED" ] && break
 	[ "$STATE" = "OPEN" ] || die "PR #$PR is $STATE"
 	failing="$(gh pr checks "$PR" -R "$GK_REPO" --json name,bucket -q '.[] | select(.bucket=="fail" or .bucket=="cancel") | .name' 2>/dev/null || true)"
 	[ -z "$failing" ] || die "failing checks on PR #$PR: $(echo "$failing" | tr '\n' ' ')"
+	if [ "$(pr_field mergeStateStatus)" = "BEHIND" ]; then
+		# Main moved again before the merge (branches must be up to date).
+		updates=$((updates + 1))
+		[ "$updates" -le 3 ] || die "main keeps moving: the branch was updated 3 times; run this again later"
+		update_branch
+		land
+	fi
 	now=$(date +%s)
 	[ "$now" -lt "$deadline" ] || die "not merged after $WAIT_MINUTES minutes (state $(pr_field mergeStateStatus)); try --repost if every check is green"
 	if [ $(( now - last_report )) -ge 300 ]; then

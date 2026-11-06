@@ -5,7 +5,8 @@
 #   scripts/dev/qa/with-ui.sh [--no-build] [--auth staging|none] -- <command...>
 #
 # The command gets GK_QA_BASE (the UI, http://127.0.0.1:4192), GK_QA_PROXY
-# (http://127.0.0.1:4191, with /__ctl test controls) and GK_PUPPETEER.
+# (http://127.0.0.1:4191, with /__ctl test controls), GK_QA_CTL_TOKEN (the
+# controls' random token; lib.cjs sends it) and GK_PUPPETEER.
 # --auth staging (default) uses the staging sign-in project (public URL and
 # publishable key, as in SETUP.md), so a test user can sign in; staff
 # passwords stay in the Keychain, e.g.
@@ -44,12 +45,14 @@ if [ "$BUILD" = 1 ] || [ ! -d "$ui/build" ]; then (cd "$ui" && npm run --silent 
 
 pids=""
 trap 'kill $pids 2>/dev/null || true' EXIT
+GK_QA_CTL_TOKEN="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+export GK_QA_CTL_TOKEN
 # The servers never see a test password meant for the browser script.
 PORT="$PROXY_PORT" env -u STAFF_PW node "$here/proxy.mjs" & pids="$pids $!"
 (cd "$ui" && exec env -u STAFF_PW PORT="$UI_PORT" ORIGIN="http://127.0.0.1:$UI_PORT" PUBLIC_API_URL="http://127.0.0.1:$PROXY_PORT" \
 	PUBLIC_AUTH_URL="$AUTH_URL" PUBLIC_AUTH_PUBLISHABLE_KEY="$AUTH_KEY" node build >/dev/null 2>&1) & pids="$pids $!"
 for _ in $(seq 1 75); do curl -fs -o /dev/null "http://127.0.0.1:$UI_PORT/" && break; sleep 0.2; done
-curl -fs -o /dev/null "http://127.0.0.1:$PROXY_PORT/__ctl?log=1" || die "the QA proxy did not start"
+curl -fs -o /dev/null -H "x-qa-ctl: $GK_QA_CTL_TOKEN" "http://127.0.0.1:$PROXY_PORT/__ctl?log=1" || die "the QA proxy did not start"
 curl -fs -o /dev/null "http://127.0.0.1:$UI_PORT/" || die "the UI did not start"
 
 export GK_QA_BASE="http://127.0.0.1:$UI_PORT" GK_QA_PROXY="http://127.0.0.1:$PROXY_PORT"

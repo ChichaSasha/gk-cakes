@@ -30,7 +30,8 @@ async function open({ width = 1440, height = 900 } = {}) {
 /** Sets a QA proxy rule, e.g. ctl({ path: '/api/v1/schedule', delay: 2500 }) or ctl({ reset: 1 }). */
 async function ctl(params) {
 	const q = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]));
-	await fetch(`${PROXY}/__ctl?${q}`);
+	const r = await fetch(`${PROXY}/__ctl?${q}`, { headers: { 'x-qa-ctl': process.env.GK_QA_CTL_TOKEN || '' } });
+	if (!r.ok) throw new Error(`QA proxy refused the control (${r.status})`);
 }
 
 /** True when the page scrolls sideways at the current width. */

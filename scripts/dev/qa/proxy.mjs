@@ -10,8 +10,9 @@
 // and a guest's X-Quote-Proof / X-Order-Capability secret are forwarded and
 // never logged. CORS: a loopback origin is echoed (the UI's server-side render
 // sends one, and SvelteKit checks CORS like a browser), a request without an
-// Origin gets '*', and any other site gets no CORS header. Test controls, refused when
-// sent from a non-loopback page:
+// Origin gets '*', and any other site gets no CORS header. Test controls
+// (GET only) need the header `x-qa-ctl: $GK_QA_CTL_TOKEN` when that variable is
+// set (with-ui.sh sets a random one) and are refused for any cross-site request:
 //   GET /__ctl?path=/api/v1/schedule&delay=2500   delay matching requests (ms)
 //   GET /__ctl?path=/api/v1/cakes&fail=2          answer the next 2 with 503
 //   GET /__ctl?path=/api/v1/schedule&body=<json>  answer with this JSON (200)
@@ -28,6 +29,7 @@ let log = [];
 const LOOPBACK = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/;
 const FORWARD = ['authorization', 'x-quote-proof', 'x-order-capability'];
 const PASS_BACK = ['content-type', 'cache-control', 'x-request-id', 'retry-after'];
+const CTL_TOKEN = process.env.GK_QA_CTL_TOKEN || '';
 
 function rule(pathname) {
 	let best;
@@ -46,7 +48,9 @@ http
 		}
 		const url = new URL(req.url, 'http://proxy');
 		if (url.pathname === '/__ctl') {
-			if (origin && !LOOPBACK.test(origin)) {
+			const site = req.headers['sec-fetch-site'];
+			const crossSite = (origin && !LOOPBACK.test(origin)) || (site && site !== 'same-origin' && site !== 'none');
+			if (req.method !== 'GET' || crossSite || (CTL_TOKEN && req.headers['x-qa-ctl'] !== CTL_TOKEN)) {
 				res.writeHead(403);
 				return res.end();
 			}
@@ -104,4 +108,6 @@ http
 			res.end();
 		}
 	})
-	.listen(PORT, '127.0.0.1', () => console.error(`QA proxy on http://127.0.0.1:${PORT} -> ${UPSTREAM} (GET only)`));
+	.listen(PORT, '127.0.0.1', () =>
+		console.error(`QA proxy on http://127.0.0.1:${PORT} -> ${UPSTREAM} (GET only${CTL_TOKEN ? '' : '; test controls without a token'})`)
+	);

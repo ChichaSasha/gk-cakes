@@ -69,7 +69,9 @@ against the [delivery contract](../../docs/planning/DELIVERY.md), Creator
 decision [GK-006](../../docs/creator/GK-006/README.md) and `AGENTS.md`: no
 script may weaken a gate (review, auto-merge on the reviewed head, release
 only by Sasha) or leak a credential, and each script must do safely what it
-claims. Try to make it accept what it should refuse. Otherwise:
+claims. Try to make it accept what it should refuse; for Git and GitHub
+scripts a scratch repository with a local bare `origin` and a fake `gh` on
+`PATH` lets you test every path without writing to GitHub. Otherwise:
 
 - **Requirements and design:** the ticket's acceptance criteria and the approved
   sketch's layout, copy and accessibility patterns. Deviations must be small,
@@ -105,9 +107,9 @@ claims. Try to make it accept what it should refuse. Otherwise:
 - **Nit:** wording, style or optional polish.
 
 **PASS** means no blocker or major finding. Otherwise **REVISE**. In round 2 and
-later, verify each earlier finding's fix in code and, where it matters, in the
-browser; check the delta for regressions; do not reopen accepted, listed
-deviations.
+later the author gives you the previous report and their dispositions: verify
+each earlier finding's fix in code and, where it matters, in the browser;
+check the delta for regressions; do not reopen accepted, listed deviations.
 
 ## Final message
 

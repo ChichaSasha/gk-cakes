@@ -5,7 +5,9 @@
 #   scripts/dev/review-worktree.sh <name> <pr-number|ref|sha> [--node-modules-from <worktree>]
 #   scripts/dev/review-worktree.sh --remove <name>
 #
-# Prints the worktree path on stdout. <name> is a plain label (e.g. review-pr-52).
+# Prints the worktree path on stdout. <name> is a plain label: use one per
+# reviewer (e.g. review-pr-52, review-pr-52-api). Only a detached worktree with
+# no changes or untracked files is ever refreshed or removed.
 # The target is a PR number (its current head), a commit ID, or a branch of
 # origin (`main`, `origin/main` and `sasha-chycha/x` all mean the remote
 # branch, freshly fetched; local branches are never used). GK_SCRATCH (default
@@ -24,11 +26,19 @@ usage() { usage_of "$0"; }
 MAIN="$(main_clone)"
 ROOT="$(scratch_root)"
 
+# Only a detached worktree without changes is ever moved or removed, so
+# another reviewer's or author's work is never touched.
+own_review_worktree() {
+	git -C "$1" symbolic-ref -q HEAD >/dev/null && die "$1 is on a branch, not a review worktree: leaving it alone"
+	[ -z "$(git -C "$1" status --porcelain)" ] || die "$1 has changes or untracked files: leaving it alone"
+}
+
 if [ "$1" = "--remove" ]; then
 	check_label "$2"
 	path="$ROOT/$2"
 	[ -e "$path/.git" ] || die "no worktree at $path"
-	git -C "$MAIN" worktree remove --force "$path"
+	own_review_worktree "$path"
+	git -C "$MAIN" worktree remove "$path" || die "git refused to remove $path"
 	note "removed $path"
 	exit 0
 fi
@@ -51,6 +61,7 @@ if printf '%s' "$target" | grep -Eq '^[0-9]+$'; then
 	git -C "$MAIN" fetch -q origin "pull/$target/head"
 elif printf '%s' "$target" | grep -Eq '^[0-9a-f]{7,40}$' && git -C "$MAIN" cat-file -e "$target^{commit}" 2>/dev/null; then
 	sha="$(git -C "$MAIN" rev-parse "$target^{commit}")"
+	case "$sha" in "$target"*) ;; *) die "'$target' resolves through a ref name; give the commit ID" ;; esac
 else
 	branch="${target#origin/}"
 	git -C "$MAIN" fetch -q origin "+refs/heads/$branch:refs/remotes/origin/$branch" || die "origin has no branch '$branch'"
@@ -58,9 +69,7 @@ else
 fi
 
 if [ -e "$path/.git" ]; then
-	if [ -n "$(git -C "$path" status --porcelain --untracked-files=no)" ]; then
-		die "$path has changes to tracked files; remove it first"
-	fi
+	own_review_worktree "$path"
 	old="$(git -C "$path" rev-parse HEAD)"
 	git -C "$path" checkout -q --detach "$sha"
 	note "refreshed $path at ${sha:0:7}"
