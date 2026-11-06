@@ -541,6 +541,8 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.schedule_move_slots(uuid, bytea, uuid, timestamp with time zone)",
 		"business.schedule_public_days(date, date, timestamp with time zone, integer)",
 		"business.schedule_public_slots(date, text, timestamp with time zone, integer)",
+		// Read gaps (0039): the chef's schedule choices for one order.
+		"business.schedule_staff_choices(uuid, uuid, date, timestamp with time zone)",
 		"business.schedule_staff_days(uuid, date, date, timestamp with time zone)",
 		"business.schedule_staff_version(uuid, uuid)",
 		"business.schedule_version_create(uuid, text, text, integer, integer, date, json, date[])",

@@ -288,9 +288,10 @@ func TestStaffOrderViewsAreRedactedByRole(t *testing.T) {
 		t.Fatalf("support detail %v", sv)
 	}
 	fv := h.staffGet(t, fulfilment, paid)
-	wantFulfil = []string{"appointment_change", "appointment_history", "cancel_reason", "cancelled_at", "customer_full_name", "date",
-		"fulfillment", "fulfillment_history", "fulfillment_mode", "id", "items", "lifecycle", "placed_at", "production", "raw_lifecycle",
-		"slot", "version"}
+	wantFulfil = []string{"appointment_change", "appointment_history", "cancel_reason", "cancelled_at", "confirmed_at",
+		"customer_full_name", "date", "dispatched_at", "fulfillment", "fulfillment_history", "fulfillment_mode", "handed_over_at", "id",
+		"items", "lifecycle", "placed_at", "production", "production_started_at", "raw_lifecycle", "ready_at", "slot", "updated_at",
+		"version"} // lifecycle times and updated_at since 0039
 	if !slices.Equal(keys(fv), wantFulfil) || fv["version"] != v["version"] {
 		t.Fatalf("fulfillment detail %v", fv)
 	}

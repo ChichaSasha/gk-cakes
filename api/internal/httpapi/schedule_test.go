@@ -23,6 +23,9 @@ type fakeSchedule struct {
 	moveSubject string
 	moveDigest  []byte
 	moveErr     error
+	// StaffChoices: what it was asked, and an error to answer with.
+	choicesSubject, choicesOrder, choicesDay string
+	choicesErr                               error
 }
 
 func (f *fakeSchedule) Availability(_ context.Context, _, _ time.Time, q int) (schedule.Availability, error) {
@@ -58,6 +61,14 @@ func (f *fakeSchedule) StaffDays(context.Context, string, time.Time, time.Time) 
 }
 func (f *fakeSchedule) StaffLots(context.Context, string, bool) ([]schedule.Lot, error) {
 	return []schedule.Lot{}, nil
+}
+func (f *fakeSchedule) StaffChoices(_ context.Context, subject, orderID string, day time.Time) (schedule.StaffChoices, error) {
+	f.choicesSubject, f.choicesOrder, f.choicesDay = subject, orderID, day.Format(time.DateOnly)
+	if f.choicesErr != nil {
+		return schedule.StaffChoices{}, f.choicesErr
+	}
+	return schedule.StaffChoices{OrderID: orderID, Date: f.choicesDay, Purpose: schedule.PurposeAppointmentChange,
+		DayStatus: "open", Slots: []schedule.StaffSlot{}}, nil
 }
 func (f *fakeSchedule) PublishVersion(context.Context, string, string, schedule.VersionInput) (catalog.Result, error) {
 	f.calls++
@@ -215,5 +226,46 @@ func TestPickupMoveChoicesQuery(t *testing.T) {
 	}
 	if rec := serve(&fakeSchedule{moveErr: catalog.ErrNotFound}, base, "", guest); rec.Code != 404 {
 		t.Fatalf("not the caller's order: %d", rec.Code)
+	}
+}
+
+// GET /admin/schedule/choices (0039): the chef only; date and order_id
+// required and nothing else; an unknown order is 404.
+func TestStaffScheduleChoicesQuery(t *testing.T) {
+	id := catalogIdentity()
+	id.actors["fulfillment"] = identity.Actor{AccountID: "acc-ful", Subject: "sub-ful", Capabilities: []string{identity.Fulfillment}}
+	const order = "aaaaaaaa-1111-4111-8111-11111111111b"
+	base := "/api/v1/admin/schedule/choices?date=2026-11-21&order_id=" + order
+	sch := &fakeSchedule{}
+	rec := serveSchedule(t, sch, id, http.MethodGet, base, "chef", "", "")
+	if rec.Code != 200 || sch.choicesSubject != "sub-chef" || sch.choicesOrder != order || sch.choicesDay != "2026-11-21" ||
+		!strings.Contains(rec.Body.String(), `"purpose":"appointment_change"`) || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("chef choices: %d %s %+v", rec.Code, rec.Body.String(), sch)
+	}
+	for name, c := range map[string]struct {
+		path   string
+		auth   string
+		status int
+	}{
+		"fulfilment":     {base, "fulfillment", 403},
+		"support":        {base, "support", 403},
+		"customer":       {base, secretToken, 403},
+		"anonymous":      {base, "", 401},
+		"no date":        {"/api/v1/admin/schedule/choices?order_id=" + order, "chef", 422},
+		"bad date":       {"/api/v1/admin/schedule/choices?date=21-11-2026&order_id=" + order, "chef", 422},
+		"no order":       {"/api/v1/admin/schedule/choices?date=2026-11-21", "chef", 422},
+		"bad order":      {"/api/v1/admin/schedule/choices?date=2026-11-21&order_id=x", "chef", 422},
+		"extra purpose":  {base + "&purpose=new_purchase", "chef", 422},
+		"extra quantity": {base + "&quantity=2", "chef", 422},
+	} {
+		if rec := serveSchedule(t, &fakeSchedule{}, id, http.MethodGet, c.path, c.auth, "", ""); rec.Code != c.status {
+			t.Errorf("%s: %d %s, want %d", name, rec.Code, rec.Body.String(), c.status)
+		}
+	}
+	if rec := serveSchedule(t, &fakeSchedule{choicesErr: catalog.ErrNotFound}, id, http.MethodGet, base, "chef", "", ""); rec.Code != 404 {
+		t.Fatalf("unknown order: %d", rec.Code)
+	}
+	if rec := serveSchedule(t, &fakeSchedule{}, nil, http.MethodGet, base, "chef", "", ""); rec.Code != 404 {
+		t.Fatalf("without identity: %d", rec.Code)
 	}
 }

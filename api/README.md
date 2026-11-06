@@ -2279,6 +2279,10 @@ provider is still unavailable, then needs another decision).
   detail, 404s, range limits), `staff_orders_test.go`; `internal/httpapi`
   `TestStaffOrderRoutes`.
 
+Since 0039 the detail also has lifecycle times, the original handover,
+`free_delivery_code`, `updated_at` and staff actors (see [Read
+gaps](#read-gaps-gk-030--gk-031-migration-0039)).
+
 Not yet: text search; staff screens (UI); per-order scopes for fulfillment
 beyond "ever confirmed"; delivery addresses (no delivery checkout yet).
 
@@ -3751,6 +3755,146 @@ Decisions taken (small and reversible, for review):
 Not yet: actions for staff views (staff routes check roles); an `actions`
 field on `GET /me/orders` rows (only `attention`); a restore freeze is not
 reflected in `actions` (the routes answer 503, retryable).
+
+## Read gaps (GK-030 / GK-031, migration 0039)
+
+Migration `0039_read_gaps.sql` (expand only), store
+`internal/schedule/schedule.go` (`StaffChoices`), route
+`internal/httpapi/schedule.go`. Gaps the customer order page (GK-030) and
+the chef order page (GK-031) found on the Creator-approved GK-017 r02b
+designs. Every field is additive and no existing field changes its meaning
+(K09); the staff views keep their redaction (K00, K09); nothing appears
+before it is secured (K11).
+
+| Route (served with or without `CHECKOUT_ENABLED`) | Who | Input / answer |
+| --- | --- | --- |
+| `GET /api/v1/admin/schedule/choices?date=YYYY-MM-DD&order_id=…` | chef (403 for others) | both required, nothing else (422); 200 `{schedule_version, as_of, timezone, order_id, date, purpose, fulfillment_mode, day_status, current_slot {date, id, starts_at, ends_at}, capacity, slots [{id, starts_at, ends_at, availability, reason_code, allocation}]}`; 404 unknown order |
+
+- **Lifecycle times** (`GET /orders/{id}` and so the chef's staff detail;
+  null until then):
+  - `confirmed_at`: the receipt instant of the paid or free confirmation
+    (equal to `paid_at` / `free_confirmed_at`) or of the late payment's
+    honour (K04 Q2: a payment awaiting agreement is not confirmed;
+    `paid_at` keeps the payment), once that command is secured with outcome
+    `confirmed` (K11; `confirmation_pending` shows none).
+  - `production_started_at`: the production transition's effective instant
+    (manual: its receipt; timer: paid or free confirmation + 48 h).
+    Operational, visible once committed, as `in_production` is (0022).
+  - `ready_at`: the ready step's receipt.
+  - `dispatched_at`: the latest dispatch's receipt (GK delivery; a
+    re-dispatch after a failed delivery replaces it).
+  - `handed_over_at`: the handover's receipt, once its K11 command is
+    secured (a committed but unsecured handover shows none, as the
+    `fulfillment` block shows `pending`).
+  - `delivery_paid_at`: the provider success instant of the collection
+    that paid the current delivery quote, exactly when the delivery block
+    shows `paid_minor`.
+
+  Example, a collection order handed over: `"confirmed_at":
+  "2026-11-05T10:09:00+00:00", "production_started_at":
+  "2026-11-06T09:00:00+00:00", "ready_at": "2026-11-14T10:00:00+00:00",
+  "dispatched_at": null, "handed_over_at": "2026-11-14T12:40:00+00:00",
+  "delivery_paid_at": null`. A timeline can say "Being prepared since …".
+- **Staff detail.** Technical support gets the six times (no amount);
+  fulfilment the first five (no payment time). The chef and technical
+  support add `original_handover_at` (the immutable placement anchor of
+  `full_refund_deadline_at` and the delivery pay-by; `date`/`slot` are the
+  current appointment), `free_delivery_code` (`true` when the order's code
+  application is a consumed free-delivery code, the waiver's own rule; never
+  the code) and `updated_at`; fulfilment adds `updated_at` only.
+  `updated_at` is when the order row last changed (the database's commit
+  clock, not a business instant; `version` is still what commands expect).
+  Example (chef): `"original_handover_at": "2026-11-14T12:30:00+00:00",
+  "free_delivery_code": false, "updated_at": "2026-11-14T12:40:01.2+00:00"`.
+- **Staff actors** (chef and technical support): `production.actor_account_id`
+  (the staff account of a manual start; null for the timer) and
+  `fulfillment_history[].actor_account_id` (every step's recorded account,
+  also the chef's `delivery_failed`). Account IDs only, no names; nothing new
+  is stored. Fulfilment gets no actors (K00 grants it no view of other
+  staff); the staff list rows are unchanged.
+- **Fulfilment's dispatch.** Its `delivery_failure` block adds
+  `redelivery_time_set` when the order page's block has it (after a secured
+  redelivery choice): `false` until the chef sets the new time (a dispatch
+  answers 409 `REDELIVERY_TIME_NOT_SET`), then `true`. No money.
+- **Staff schedule choices.** The published starts of one London day for one
+  order, judged at the API's clock as the chef's appointment change (0031)
+  would judge them, or, for a `paid_awaiting_agreement` order, as an offer of
+  another date (0034, `late_payment_slot_fits`): `purpose`
+  `appointment_change` | `late_payment_offer`. `day_status`: `pending` (an
+  order command is unresolved: K11, wait; checked first because the stored
+  state may not be visible yet), `not_eligible` (lifecycle, not secured, a
+  GK delivery on its way, an open failed-delivery choice), `closed` (no
+  published start that day), `open`. Each start: `available`, or
+  `unavailable` with `reason_code` `current_slot` (the change answers
+  unchanged; an offer of it is kind `requested`), `past` (starts at or
+  before now), `shelf_life` (a ready cake expires before it ends), `day_full`
+  (an offer on another day whose standard places cannot take the order; a
+  customer acceptance never creates `chef_extra`) or the day status.
+  `allocation` on another day for an order holding a day place: `standard`,
+  or `chef_extra` (appointment change only: the chef's decision admits it
+  beyond the limit, recorded with the feasibility note); null on the order's
+  own day. `capacity {standard_limit, committed_standard (other orders),
+  order_cakes}` when the day is open, differs from the order's and the order
+  holds a day place, else null. Example, a confirmed order on Saturday
+  14 November asking for the 21st, whose day already has 7 committed
+  standard cakes: `"purpose": "appointment_change", "day_status": "open",
+  "capacity": {"standard_limit": 7, "committed_standard": 7, "order_cakes":
+  1}, "slots": [{"id": "…", "starts_at": "2026-11-21T12:30:00Z", "ends_at":
+  "2026-11-21T13:30:00Z", "availability": "available", "reason_code": null,
+  "allocation": "chef_extra"}, …]`. Reads only: the limit and counts are
+  read without the day lock or a new `handover_day` row and nothing is held;
+  the commands still re-check everything under their locks, and a restore
+  freeze is not reflected (the commands answer 503). The public
+  `GET /schedule?purpose=new_purchase` stays the online booking view (lead
+  time, day capacity, horizon).
+- **Database.** New owner-internal helpers (`order_lifecycle_times`,
+  `order_free_delivery_code`, `order_staff_times`, `order_staff_extras`,
+  `order_staff_production`, `order_staff_fulfillment_events`); one new
+  `gk_api` function, `schedule_staff_choices`; replaced with unchanged
+  signatures, results, security and grants: `order_view` (the times as its
+  last keys; the delivery block is read once), `order_staff_get`,
+  `order_staff_delivery_failure`. The `gk_worker` allowlist is unchanged.
+- **Clock audit.** No 0039 function reads the database clock: the choices
+  compare the API's instant (`p_now`), the times are recorded instants.
+  Simulated in a scratch copy with the database `now()` at 2027-06-01
+  (PostgreSQL 17 under libfaketime, the fake Stripe's clock shifted, the
+  same fixture-only database-clock validations relaxed as for 0038): the
+  0039 tests and the neighbouring staff-view, appointment, late-payment,
+  fulfilment, no-show, failed-delivery, actions and refund-part tests and
+  the schedule and route tests passed.
+- **Tests:** `internal/checkout/read_gaps_integration_test.go` (times
+  absent before a secured confirmation and handover, present once visible,
+  equal on the chef's detail; support and fulfilment keys and redaction;
+  actors; an honoured late payment; delivery payment, dispatch and
+  re-dispatch times; `free_delivery_code`; fulfilment's
+  `redelivery_time_set` against the dispatch refusal; choices for an
+  appointment change agreeing with the route (past start, chef_extra
+  commit, pending, closed, not eligible, no day row, chef only, 404),
+  shelf life, and a late-payment offer agreeing with the offer route),
+  `staff_orders_integration_test.go` (fulfilment's keys),
+  `internal/httpapi` `TestStaffScheduleChoicesQuery`, and the exact
+  `gk_api` allowlist in `internal/notifications`.
+
+Decisions taken (small and reversible, for review):
+
+- **`confirmed_at` is the confirmation, not the payment**: for a late
+  payment it is the honour's receipt, so "confirmed" never precedes the
+  chef's agreement.
+- **Production, ready and dispatch times show once committed** (operational
+  steps, like the lifecycle they move); only the handover (K11) waits for
+  its outcome.
+- **Flat keys** on the order view (as `paid_at`), not a nested timeline.
+- **`free_delivery_code` and `original_handover_at` for technical support
+  too** (no amounts; support already sees the deadline the anchor derives
+  and the delivery state); not for fulfilment.
+- **`pending` before `not_eligible`** in the choices, and one `purpose` per
+  order by its lifecycle (the two commands never apply to the same order).
+
+Not yet: the delivery address (K00/K09 privacy review pending; the
+Creator's r02b Q6 needs a contract check before any address is shown);
+fulfilment-visible actors (K00 does not grant it); a `no_show_at` time (the
+`fulfillment` block's `at` and state cover it); staff actions in the staff
+detail.
 
 ## Not yet verified
 
