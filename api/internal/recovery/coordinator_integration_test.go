@@ -129,7 +129,7 @@ func ownerConn(t *testing.T, db *dbtest.DB) *pgx.Conn {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	db := dbtest.New(t)
+	db := dbtest.NewMigrated(t, "")
 	h := &harness{t: t, owner: ownerConn(t, db), admin: db.AdminConn(t), journal: recovery.NewMemoryJournal(),
 		provider: newProvider(), now: time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)}
 	sealer, err := recovery.NewSealer("k1:" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)))
@@ -531,7 +531,7 @@ func TestRecordedOutcomeCannotChange(t *testing.T) {
 // operation (no lease) end secured with one send.
 func TestConcurrentDispatchOfOneOperationSendsOnce(t *testing.T) {
 	ctx := context.Background()
-	db := dbtest.New(t)
+	db := dbtest.NewMigrated(t, "")
 	h := newHarness(t)
 	conns := []*pgx.Conn{ownerConn(t, db), ownerConn(t, db)}
 	op := h.dispatchOp(33)
@@ -569,7 +569,7 @@ func TestConcurrentDispatchOfOneOperationSendsOnce(t *testing.T) {
 // as existing, never as busy.
 func TestConcurrentReserveOfTheSameNewOperationIsExisting(t *testing.T) {
 	ctx := context.Background()
-	db := dbtest.New(t)
+	db := dbtest.NewMigrated(t, "")
 	a, b := ownerConn(t, db), ownerConn(t, db)
 	const reserve = "SELECT result FROM business.recovery_reserve($1::uuid, 'dispatch', $2::uuid, 0, repeat('a', 64), 'recovery/test/op/x', '2026-11-04T00:00:00Z')"
 	id, agg := uuidAt(40), uuidAt(41)
@@ -630,7 +630,7 @@ func TestMismatchingOutcomeCopyStopsTheResume(t *testing.T) {
 // operation at the same prior version (schema r1.5), behind the stale check.
 func TestOneOperationPerAggregateVersion(t *testing.T) {
 	ctx := context.Background()
-	conn := ownerConn(t, dbtest.New(t))
+	conn := ownerConn(t, dbtest.NewMigrated(t, ""))
 	const insert = `INSERT INTO business.recovery_operation
 		(id, kind, aggregate_id, prior_version, payload_hash, envelope_key, replay_until)
 		VALUES ($1::uuid, 'dispatch', $2::uuid, 0, repeat('a', 64), $3, now())`
@@ -749,7 +749,7 @@ func TestRecordedOutcomeIsVerifiedOnRead(t *testing.T) {
 
 func TestSQLStoreRefusesATransaction(t *testing.T) {
 	ctx := context.Background()
-	conn := ownerConn(t, dbtest.New(t))
+	conn := ownerConn(t, dbtest.NewMigrated(t, ""))
 	tx, err := conn.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -886,7 +886,7 @@ func TestPrimaryLossReplaysFromIndependentJournal(t *testing.T) {
 	}
 
 	// Primary loss: a new, empty database; the journal survives.
-	restored := ownerConn(t, dbtest.New(t))
+	restored := ownerConn(t, dbtest.NewMigrated(t, ""))
 	store := mustStore(t, restored)
 	h.now = h.now.Add(2 * time.Hour)
 	pending, err := h.coord.Pending(ctx)
@@ -930,7 +930,7 @@ func TestResumeNeverExtendsTheReplayWindow(t *testing.T) {
 	if _, err := h.coord.Dispatch(ctx, h.store(), op, h.effect(op, &lose)); err == nil {
 		t.Fatal("expected the unknown outcome")
 	}
-	restored := mustStore(t, ownerConn(t, dbtest.New(t)))
+	restored := mustStore(t, ownerConn(t, dbtest.NewMigrated(t, "")))
 	later := op
 	later.ReplayUntil = op.ReplayUntil.Add(6 * time.Hour)
 	if _, err := h.coord.Dispatch(ctx, restored, later, h.effect(later, nil)); err == nil || !strings.Contains(err.Error(), "does not match") {
@@ -946,7 +946,7 @@ func TestResumeNeverExtendsTheReplayWindow(t *testing.T) {
 // business table).
 func TestRuntimeRolesCannotUseRecoveryInternals(t *testing.T) {
 	ctx := context.Background()
-	db := dbtest.New(t)
+	db := dbtest.NewMigrated(t, "")
 	ownerConn(t, db)
 	reads := []string{"SELECT * FROM business.recovery_operation", "SELECT * FROM business.recovery_freeze"}
 	calls := []string{

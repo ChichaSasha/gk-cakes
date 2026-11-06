@@ -35,6 +35,25 @@ export GK_TEST_DATABASE_URL='postgres://postgres:gk_disposable@127.0.0.1:55432/p
 
 `-p 1` keeps packages from creating cluster-wide roles concurrently.
 
+**Speed.** `dbtest.NewMigrated(t, target)` gives a test a database with the
+migrations applied up to `target` (all when `""`). Each test binary migrates a
+template database once per target and copies it for every test (`CREATE DATABASE
+... TEMPLATE`), instead of migrating each time. Use `dbtest.New` and the `migrate`
+package only for tests about migrating itself: ordering, backfills, upgrades.
+A binary keeps its templates (`gk_tpl_<unix time>_<target>_<random>`, not
+connectable) until a later run drops those older than two hours. To clear them
+by hand, only while no integration run uses this cluster (a running binary
+copies from its templates):
+
+```sh
+docker exec gk-pg psql -U postgres -qAt -c "SELECT format('ALTER DATABASE %I IS_TEMPLATE false; DROP DATABASE %I;', datname, datname) FROM pg_database WHERE datname LIKE 'gk\_tpl\_%'" | docker exec -i gk-pg psql -U postgres -q
+```
+
+In CI the `api-postgres` check gates parallel shards, each with its own
+PostgreSQL: every package except `internal/checkout`, and three shards of the
+checkout tests. Run one shard locally the same way:
+`../.github/scripts/integration-shard.sh rest` or `../.github/scripts/integration-shard.sh checkout 1 3`.
+
 ## Configuration
 
 Every process validates its environment at start and exits with status 2 on any

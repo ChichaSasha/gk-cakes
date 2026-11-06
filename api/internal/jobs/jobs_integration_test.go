@@ -16,8 +16,6 @@ import (
 	"github.com/ChichaSasha/gk-cakes/api/internal/database"
 	"github.com/ChichaSasha/gk-cakes/api/internal/dbtest"
 	"github.com/ChichaSasha/gk-cakes/api/internal/jobs"
-	"github.com/ChichaSasha/gk-cakes/api/internal/migrate"
-	"github.com/ChichaSasha/gk-cakes/api/migrations"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -31,12 +29,8 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	ctx := context.Background()
-	db := dbtest.New(t)
+	db := dbtest.NewMigrated(t, "")
 	owner := db.MigratorConn(t)
-	if _, err := migrate.Run(ctx, owner, migrations.FS); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
 	return &fixture{db: db, owner: owner, admin: db.AdminConn(t), pool: workerPool(t, db)}
 }
 
