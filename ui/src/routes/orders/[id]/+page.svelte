@@ -46,6 +46,9 @@
 		lateOutcomeSince,
 		recoveryProblemFor,
 		startDeliveryPayment,
+		withPaymentCheck,
+		PAYMENT_CHECK_UNREADABLE,
+		type PaymentCheck,
 		withRecovery,
 		type ChoiceKind
 	} from '../../../lib/checkout/recovery';
@@ -84,8 +87,12 @@
 	 * itself (not an error): kept until the next action or a successful read.
 	 */
 	let actionNote = $state('');
-	/** This page asked for a delivery payment and is still checking its result. */
-	let checkingPayment = $state(false);
+	/**
+	 * A payment this page asked for (202) whose result the order hasn't shown
+	 * yet (no payment page in time, or the order can't be read): until the
+	 * next successful read, "do not pay again", no pay action, polled.
+	 */
+	let checkingPayment = $state<PaymentCheck | null>(null);
 	/** A failed read of the order (cleared by the next successful read). */
 	let loadProblem = $state('');
 	/**
@@ -129,7 +136,11 @@
 	function fullView(o: Order): OrderView {
 		return withRecovery(orderView(o, { returned, cancelledMinor }), o);
 	}
-	const view = $derived(order ? withOrderProblem(fullView(order), handoff?.next) : null);
+	const view = $derived(
+		order
+			? withOrderProblem(withPaymentCheck(fullView(order), checkingPayment), handoff?.next)
+			: null
+	);
 	/** The open delivery choice this viewer can make (states 14, 15 pay-by passed, 19). */
 	const card = $derived(order && who ? choiceCard(order, who) : undefined);
 	const delivery = $derived(order ? deliveryRows(order) : []);
@@ -233,7 +244,7 @@
 			loadProblem = '';
 			// The order now says where the delivery payment is (the checking
 			// view polls by itself).
-			checkingPayment = false;
+			checkingPayment = null;
 		} catch (e) {
 			if (!active) return;
 			if (e instanceof ApiError && (e.status === 404 || e.status === 401)) {
@@ -365,6 +376,9 @@
 					window.location.assign(url);
 					return;
 				}
+				// Asked for, but no payment page yet (or the order couldn't be
+				// read): keep checking; never "nothing was charged".
+				checkingPayment = 'cake';
 			} else if (view.action === 'pay_delivery') {
 				busyText = 'Opening secure payment…';
 				const url = await startDeliveryPayment(recoveryApi, keys, order, who);
@@ -374,7 +388,7 @@
 				}
 				// Asked for, but no payment page yet (or the order couldn't be
 				// read): keep checking; never "nothing has changed".
-				checkingPayment = true;
+				checkingPayment = 'delivery';
 			} else if (view.action === 'confirm_free') {
 				busyText = 'Confirming your order…';
 				await api.confirmFree(
@@ -397,9 +411,10 @@
 		busy = false;
 		busyText = '';
 		await refresh();
-		// A refused or unfinished delivery payment: the order read again (for
-		// example a new quote) is shown with the reason; the heading takes focus.
-		if (action === 'pay_delivery' && (actionProblem || checkingPayment)) {
+		// A refused or unfinished payment: the order read again (for example a
+		// new quote) or the checking status is shown; the heading takes focus.
+		const paying = action === 'pay_delivery' || action === 'start_payment';
+		if (paying && (actionProblem || checkingPayment)) {
 			await focusAfter('status-h');
 		}
 	}
@@ -456,17 +471,14 @@
 				{#if actionProblem}
 					<p class="co-errors" role="alert">{actionProblem}</p>
 				{/if}
-				{#if loadProblem}
+				{#if loadProblem && !checkingPayment}
 					<p class="co-errors" role="alert">{loadProblem}</p>
 				{/if}
 				{#if actionNote}
 					<p class="notice" role="status">{actionNote}</p>
 				{/if}
 				{#if checkingPayment && loadProblem}
-					<p class="notice" role="status">
-						We’re checking your delivery payment. Please don’t pay again: this page updates by
-						itself.
-					</p>
+					<p class="notice" role="status">{PAYMENT_CHECK_UNREADABLE}</p>
 				{/if}
 				{#if view.action !== 'none' || pollStopped}
 					<div class="order-actions">

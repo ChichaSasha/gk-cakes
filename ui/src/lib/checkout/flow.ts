@@ -404,7 +404,17 @@ export async function startPaymentFromOrder(
 	const until = now() + (deps.paymentWaitMs ?? 45_000);
 	await sleep(Math.max(1, started.poll_after_seconds) * 1000);
 	for (let attempt = 0; ; attempt++) {
-		const o = await api.order(order.id, who);
+		let o: Order;
+		try {
+			o = await api.order(order.id, who);
+		} catch {
+			// The payment was asked for (202): a failed read is not a refusal and
+			// never "nothing was charged". Keep reading until the wait ends; the
+			// order page then keeps checking.
+			if (now() >= until) return undefined;
+			await sleep(Math.min(nextPollDelay(attempt, 1), 5000));
+			continue;
+		}
 		if (o.lifecycle === 'awaiting_payment' && isPaymentPageUrl(o.payment?.checkout_url)) {
 			return o.payment?.checkout_url ?? undefined;
 		}

@@ -708,6 +708,43 @@ export function deliveryNote(order: Order): string | undefined {
 		: 'Delivery was a request until the chef confirmed it.';
 }
 
+// ---------------------------------------------------------------- a payment this page asked for
+
+/** Which payment this page asked for and is still checking (its result not read yet). */
+export type PaymentCheck = 'cake' | 'delivery';
+
+/**
+ * The status while this page checks a payment it asked for and the order
+ * can't be read yet (the view still shows the order as it was before): the
+ * "do not pay again" wording, polled, and no pay action, so a second payment
+ * is never offered and no message says nothing was charged.
+ */
+export function withPaymentCheck(view: OrderView, check: PaymentCheck | null): OrderView {
+	if (!check) return view;
+	return {
+		...view,
+		tone: 'info',
+		title:
+			check === 'delivery'
+				? 'Still checking delivery payment; do not pay again'
+				: 'Still checking payment; do not pay again',
+		lines: [
+			'Please don’t pay again. We’ll update this page when we know the result.',
+			...(check === 'delivery' ? ['Your cake order is confirmed and isn’t affected.'] : [])
+		],
+		action: 'none',
+		actionLabel: undefined,
+		checkoutUrl: undefined,
+		answer: undefined,
+		poll: true,
+		doNotPayAgain: true
+	};
+}
+
+/** Shown instead of the general read error while a payment is being checked. */
+export const PAYMENT_CHECK_UNREADABLE =
+	'We can’t read your order just now, so we can’t show the payment’s result yet. Please don’t pay again: this page keeps trying by itself.';
+
 // ---------------------------------------------------------------- this page's own commands
 
 /** What the order showed before this page answered the chef's offer. */

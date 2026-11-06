@@ -17,6 +17,7 @@ import {
 	sendChoice,
 	shortMoment,
 	startDeliveryPayment,
+	withPaymentCheck,
 	withRecovery
 } from './recovery';
 import type {
@@ -1058,5 +1059,33 @@ describe('commands', () => {
 		);
 		expect(recoveryProblemFor(e(404, 'NOT_FOUND'), 'choice').next).toBe('none');
 		expect(recoveryProblemFor(new ApiError(0, {}), 'choice').next).toBe('retry');
+	});
+});
+
+describe('a payment this page asked for, while the order can’t be read (r2 minor)', () => {
+	it('delivery: do not pay again, no pay button, polled (over the old quote view)', () => {
+		const before = view(gk());
+		expect(before.action).toBe('pay_delivery');
+		const v = withPaymentCheck(before, 'delivery');
+		expect(v.title).toBe('Still checking delivery payment; do not pay again');
+		expect(v.lines).toEqual([
+			'Please don’t pay again. We’ll update this page when we know the result.',
+			'Your cake order is confirmed and isn’t affected.'
+		]);
+		expect(v.action).toBe('none');
+		expect(v.actionLabel).toBeUndefined();
+		expect(v.poll).toBe(true);
+		expect(v.doNotPayAgain).toBe(true);
+		expect(v.lines.join(' ')).not.toContain('Nothing was charged');
+	});
+
+	it('cake: the same, over “waiting for payment”; nothing changes without a check', () => {
+		const waiting = orderView(order({ lifecycle: 'awaiting_payment', paid_at: null }));
+		expect(waiting.action).toBe('start_payment');
+		const v = withPaymentCheck(waiting, 'cake');
+		expect(v.title).toBe('Still checking payment; do not pay again');
+		expect(v.action).toBe('none');
+		expect(v.doNotPayAgain).toBe(true);
+		expect(withPaymentCheck(waiting, null)).toBe(waiting);
 	});
 });
