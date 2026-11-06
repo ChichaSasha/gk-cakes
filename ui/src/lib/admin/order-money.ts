@@ -355,7 +355,12 @@ export interface RefundChoice {
 
 /** The chef's agreed partial refund (README "Agreed exception"). */
 export function refundChoice(o: StaffOrderDetail, view: StaffView): RefundChoice {
-	const sources = view === 'chef' ? refundSources(o) : [];
+	// A payment whose last refund failed definitively waits for the manager
+	// decision (reserve again or a verified transfer), not another refund.
+	const sources =
+		view === 'chef'
+			? refundSources(o).filter((s) => latestOperation(o, s.id)?.state !== 'failed')
+			: [];
 	const limitMinor = sources.reduce((n, s) => n + s.roomMinor, 0);
 	const none = (note = ''): RefundChoice => ({ can: false, note, sources, limitMinor });
 	if (view !== 'chef' || !REFUNDABLE.includes(o.lifecycle) || !sources.length) return none();
@@ -878,6 +883,15 @@ export const OUTCOME_LABEL: Record<PayoutOutcome, string> = {
 	failed: 'The transfer failed…',
 	unknown: 'Result unknown',
 	withdrawn: 'Withdraw (nothing was paid)…'
+};
+
+/** The outcome form's submit button (distinct from the button that opened it). */
+export const OUTCOME_SUBMIT: Record<PayoutOutcome, string> = {
+	submitted: 'Record that it’s sent',
+	succeeded: 'Record that it arrived',
+	failed: 'Record that it failed',
+	unknown: 'Record that the result is unknown',
+	withdrawn: 'Withdraw the reservation'
 };
 
 /** Whether an outcome needs an evidence reference (and success also the transfer and amount). */

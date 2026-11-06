@@ -343,6 +343,10 @@ describe('refunds', () => {
 		expect(
 			refundChoice(order({ collections: [coll({ refunded_minor: 9000 })] }), 'chef')
 		).toMatchObject({ can: false, note: '' });
+		// The last refund failed definitively: the manager decision, not another refund.
+		expect(
+			refundChoice(order({ refund_operations: [op({ state: 'failed' })] }), 'chef')
+		).toMatchObject({ can: false, sources: [] });
 		const busy = refundChoice(order({ refund_operations: [op({ state: 'unknown' })] }), 'chef');
 		expect(busy.can).toBe(false);
 		expect(busy.note).toMatch(/on its way/);

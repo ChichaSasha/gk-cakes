@@ -16,6 +16,7 @@
 		moneyRefusal,
 		noteProblem,
 		OUTCOME_LABEL,
+		OUTCOME_SUBMIT,
 		outcomeNeeds,
 		parseAmount,
 		PAYOUT_STATE,
@@ -793,9 +794,7 @@
 									: 'btn-primary'}"
 								type="submit"
 								disabled={busy}
-								>{acting === 'payout_outcome'
-									? 'Recording…'
-									: OUTCOME_LABEL[opened].replace('…', '')}</button
+								>{acting === 'payout_outcome' ? 'Recording…' : OUTCOME_SUBMIT[opened]}</button
 							>
 							<button
 								class="btn btn-quiet"
