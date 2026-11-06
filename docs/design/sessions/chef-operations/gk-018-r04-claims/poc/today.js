@@ -1,4 +1,4 @@
-// GK-018 r04c-claims — Today, fragment (proposal, not approved): only the new "Needs you" line for requests to add
+// GK-018 r04d-claims — Today, fragment (proposal, not approved): only the new "Needs you" line for requests to add
 // orders. The rest of Today is the approved r03b2 page (../../gk-018-r03/poc/index.html), not redrawn here.
 'use strict';
 (function(){

@@ -1,5 +1,5 @@
 #!/bin/sh
-# GK-018 r04c-claims screenshots (proposal, not approved). Serve the chef-operations folder first:
+# GK-018 r04d-claims screenshots (proposal, not approved). Serve the chef-operations folder first:
 #   python3 -m http.server 4196 --bind 127.0.0.1 --directory docs/design/sessions/chef-operations
 # shot.html frames poc/<page> at an exact width (headless Chrome's window is at least 500 px wide).
 # Usage: sh shoot.sh [state-filter] — desktop is laid out at 1440 px and saved at 1120 px; writes screenshots/<id>-<slug>-desktop.jpg and -mobile.jpg for states marked shot=1 in poc/states.js.

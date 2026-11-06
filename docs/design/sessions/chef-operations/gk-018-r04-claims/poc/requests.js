@@ -1,4 +1,4 @@
-// GK-018 r04c-claims — "Requests to add orders": the chef's queue (proposal, not approved).
+// GK-018 r04d-claims — "Requests to add orders": the chef's queue (proposal, not approved).
 // Live call it stands for: GET /api/v1/admin/order-claims?state=pending|approved|declined|withdrawn[&cursor][&limit]
 // (pending by default, oldest first, at most 50 a page, next_cursor when there are more).
 'use strict';

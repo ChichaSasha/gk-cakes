@@ -1,15 +1,19 @@
-# GK-018 r04c-claims — chef side of adding orders to customer accounts
+# GK-018 r04d-claims — chef side of adding orders to customer accounts
 
-Status: **r04c — Proposal — not approved.** r04 (a338fd2) was drafted on 2026-11-06 while the Creator (Sasha) was
+Status: **r04d — Proposal — not approved.** r04 (a338fd2) was drafted on 2026-11-06 while the Creator (Sasha) was
 away. The planning master pushed it as **draft PR #59**.
 
 - **Round 1.** A fresh independent design reviewer (gk-plan-review) returned **REVISE** on a338fd2 (3 major, 10
   minor, nits). r04b (b085103) addressed every finding; see [Review round 1 changes](#review-round-1-changes).
 - **Round 2.** A fresh reviewer returned **REVISE** on b085103: all round-1 findings resolved; one new major (adding
-  a guest website order on the strength of its reference alone), 2 minors and 3 nits. r04c, in the same folder,
-  addresses them; see [Review round 2 changes](#review-round-2-changes).
+  a guest website order on the strength of its reference alone), 2 minors and 3 nits. r04c (39e5093) addressed
+  them; see [Review round 2 changes](#review-round-2-changes).
+- **Round 3.** A fresh reviewer returned **REVISE** on 39e5093: all round-2 findings resolved; one new major (the
+  wrong-approval warning left out that the wrong person could act on an upcoming order), one minor (the copyable
+  evidence message contained the request reference) and a nit. r04d, in the same folder, addresses them; see
+  [Review round 3 changes](#review-round-3-changes).
 
-r04c still needs a fresh re-review and the Creator's exact-version approval. No implementation ticket may treat it
+r04d still needs a fresh re-review and the Creator's exact-version approval. No implementation ticket may treat it
 as approved.
 
 Example data only: every name, phone number, Instagram name and ID is made up. The prototype saves, sends and
@@ -33,24 +37,24 @@ I didn't verify these myself: this run has no Trello access. `../gk-018-r03/sess
 approved", from before that approval.
 
 Customers can ask to add an older order on staging (GK-029, from the Creator-approved GK-016 r02b sketch), so the
-chef needs a way to answer. r04c designs that chef side in r03b2's visual language: unchanged tokens (GK-015 r12),
+chef needs a way to answer. r04d designs that chef side in r03b2's visual language: unchanged tokens (GK-015 r12),
 Geist fonts, sidebar, cards, chips and wording style, in the "GK Cake London" workspace. `../gk-018-r01/`,
 `../gk-018-r02/` and `../gk-018-r03/` are unchanged.
 
 ## Execution check
 
 ```text
-Role/task: GK-018 r04c-claims / design worker (round 2 revision of a bounded proposal sketch; Creator asleep)
+Role/task: GK-018 r04d-claims / design worker (round 3 revision of a bounded proposal sketch; Creator asleep)
 Model requested/effort: the routing row that applies is "Payment/refund, authorisation or capacity-race
        decisions": gpt-6-astra, high or xhigh, fresh worker with the relevant shared contracts. (The r04/r04b
        record used the bounded-feature row, gpt-5.6-sol/high; round 2 showed the evidence step is an
        authorisation decision.) The brief named no model
 Model observed/effort: claude-opus-5-5 (host-reported: llmplatform/claude-opus-5-5) / effort not exposed
 Model evidence/status: host system environment / mismatch with the authorisation row; not a fresh worker
-History: continued author session (r04, r04b, r04c); no subagents. Findings read from pr59-round1.md, pr59-round2.md
+History: continued author session (r04 to r04d); no subagents. Findings read from pr59-round1/2/3.md
 Inputs: sufficient for a proposal sketch; not sufficient for implementation (open questions, API follow-ups)
 Input revision: origin/main f0f2b5a; chef frame from origin/sasha-chycha/chef-ui-2 a559e5d (unmerged, see Gaps)
-Independence: not-applicable (author). Rounds 1 and 2 were independent reviews; a fresh re-review of r04c is pending
+Independence: not-applicable (author). Rounds 1–3 were independent reviews; a fresh re-review of r04d is pending
 Writes: only docs/design/sessions/chef-operations/gk-018-r04-claims/ on sasha-chycha/gk-018-r04-claims-design
 Tools: local files, git (read and local commit), headless Chrome, python3 http.server on 127.0.0.1:4196.
        No push, PR edit, GitHub comment, Trello, Glean, Slack, Jira, Grafana or Snoocode GitHub tools
@@ -61,8 +65,13 @@ linking an order to an account, so it is an authorisation decision. Under `execu
 "the master chooses an available suitable alternative and records the reason". So this record makes no claim to
 settle the decision:
 
-- The evidence step and the two routes (reference + contact-email confirmation now, or waiting for the order-page
-  button) are drafted as **options with a recommendation** in questions 3 and 6, for the Creator, with the
+- The evidence step and the routes are drafted as **options with a recommendation** in questions 3 and 6. Round 3
+  changed the recommended evidence method and widened the risk statement; both are still drafts. The routes:
+  - reference + confirmation through the order's contact email now (with a chef-initiated, code-based email in
+    r04d);
+  - waiting for the order-page button.
+
+  They're for the Creator, for the Creator, with the
   master's routing check.
 - Acceptance needs the master to confirm the model choice for this decision, or to route it to a qualified worker
   or reviewer, plus an independent re-review.
@@ -76,14 +85,14 @@ may link an order to an account):
   rule (option B, a website choice, new API fields) is put to the Creator or the master as a question.
 - **Track record.** The same host model authored the GK-016 r02b and GK-018 r03b2 sketches, which passed
   independent review and Creator approval. That is evidence for this role, not proof.
-- **Independent check.** Rounds 1 and 2 were independent, and a re-review of r04c is still required.
+- **Independent check.** Rounds 1–3 were independent, and a re-review of r04d is still required.
 
 Neither gpt-5.6-sol nor gpt-6-astra was selectable in this host session. The mismatch is recorded, not hidden.
 
 Readback:
 
 - **Outcome.** A chef queue of requests to add orders, a decision page for older-order requests (today, with a
-  contact-email confirmation step for website orders) and order-page requests (future, labelled), and a proposal
+  confirmation step through the order's contact email for website orders) and order-page requests (future, labelled), and a proposal
   for the chef adding an order herself.
 - **Rules (K00).** Nothing is linked automatically: not by email, payer, address, name or Instagram. Only the
   chef approves. A waiting request reveals no order details to the customer, and a decline is generic. Approving
@@ -100,7 +109,8 @@ Readback:
 
 | Input | Hash |
 | --- | --- |
-| Review findings `pr59-round1.md` (round 1, REVISE on a338fd2) / `pr59-round2.md` (round 2, REVISE on b085103) | 8bba039551095f32 / 2fd838b963aef899 |
+| Review findings `pr59-round1.md` (round 1, REVISE on a338fd2) / `pr59-round2.md` (round 2, REVISE on b085103) / `pr59-round3.md` (round 3, REVISE on 39e5093) | 8bba039551095f32 / 2fd838b963aef899 / f337cb0c8151ff6d |
+| api/README.md owner routes, read for round 3: cancellation preview/cancel "the owner (bearer)" (lines 1718–1723) and its refund reservation per payment collection, dispatched to Stripe (1726–1757); late-payment answer (1866); same-day pickup move (1084, 2292) | in the README hash above |
 | ui/src/lib/guest.ts (guest capability: this tab's sessionStorage only, gone when the tab closes) | 11f61ce0ae207e2c |
 | AGENTS.md | d357f39d8b39ec72 |
 | skills/gk-feature/SKILL.md / references/design-sessions.md | b5a68cb7c520cf1f / 915e72b29842e6b4 |
@@ -141,7 +151,18 @@ The r04 screenshots are in a338fd2's tree; r04b replaced them.
 | poc/states.js / index.js / claims.css | 4f39b7262d61a792 / eb62173b5dd2edae / 6e4990e546d35ebe |
 | check.html / shoot.sh | 48ed3c3d79e96a73 / 2cea12e93050d91b |
 
-The r04b screenshots are in b085103's tree; r04c replaces them (all re-shot, below).
+The r04b screenshots are in b085103's tree; r04c replaced them.
+
+### Previous outputs: r04c at 39e5093 (SHA-256, first 16 hex)
+
+| File | Hash |
+| --- | --- |
+| session.md | 12b73a07e3daa106 |
+| poc/core.js / requests.js / request.js / order.js / today.js | eb5000c9fa7da13e / fa5efe932cfd9ca1 / 8a38a83f6d67080c / c3923bef9d5f5134 / 022af8d0906e9972 |
+| poc/states.js / index.js / claims.css | 40f0ae122ac31170 / 0c39a11fa0df2293 / 0fe676b7d379b2fb |
+| check.html / shoot.sh | 7343e7148db5a042 / 0cf15d4fa49ada9f |
+
+The r04c screenshots are in 39e5093's tree; r04d replaces them (all re-shot, below).
 
 ## Review round 1 changes
 
@@ -180,16 +201,26 @@ The r04b screenshots are in b085103's tree; r04c replaces them (all re-shot, bel
 | **Nit:** Today "Oldest 3 days" | "Oldest waiting 3 days (Priya Shah)". |
 | **Nit:** S21 placeholder "confirmed by phone" although Tom has no phone | The placeholder now comes from the order: "e.g. Email from tom.b@example.com on 6 Nov quoting request 9a3f2c71". |
 
-**For the PR #59 description** (the master edits it; I don't). r04c, still not approved:
+## Review round 3 changes
+
+| Finding | Change in r04d |
+| --- | --- |
+| **Major:** the wrong-approval warning left out that the wrong person can act on the order | I checked `api/README.md` first. "The owner (bearer)" may:<br>- preview and cancel the order (`/orders/{id}/cancellation-preview`, `/cancel`, lines 1718–1723);<br>- move its pickup time on the same day (`/orders/{id}/pickup`, 2292; "same-day move choices", 1084);<br>- answer a late-payment offer (`/late-payment/answer`, 1866).<br>A cancellation's refund is reserved against the order's own payment collections and dispatched to the payment provider, Stripe (1726–1757). **For an order still upcoming** (not handed over or cancelled), the red confirmation line now says they can also **cancel it** (any refund goes back against the order's own payment through the payment provider, not to them), **move its pickup time** that day, or answer a late-payment question if there is one, and that the real buyer, having lost guest access, couldn't step in. For a handed-over or cancelled order it says "so they can't change it". The evidence card and the decision column add, for upcoming orders, "whoever it's added to can cancel it or move its pickup time. Take extra care, or wait for the order-page route (question 3)". New state S48 (upcoming order a41c09e7). Question 3 lists the same risks and gives upcoming orders their own advice. Option A's warning mentions it. |
+| **Minor:** the evidence message contained the request reference, and could be sent to the order's address | The evidence method is reversed, on its merits (question 3 explains):<br>1. The chef emails the order's contact address herself, from `gk.cake.london@gmail.com`, with a one-off code she makes up (example `4487`) and **without** the request reference.<br>2. She waits for a reply **from that address** quoting the code and the request reference, which only the account holder can read.<br>3. If nobody replies, the reply lacks either, or the buyer says it wasn't them: don't add it.<br>The copyable email goes to the order's address, never contains the reference, and says why ("the real buyer could reply with it and confirm someone else's request"). It also tells the real buyer someone asked. The card explains why the requester isn't asked to email from the address (a sender address can be forged, and email warnings catch only some of it). The tick now reads "I emailed the order's contact address (…) and got a reply from it quoting my code and their request reference", and the placeholder reads "Emailed … with code 4487; reply quoted 4487 and 9a3f2c71". Option A's reply and steps follow the same method. |
+| **Nit:** no r04c output hashes | Added (above), next to r04 and r04b. |
+
+**For the PR #59 description** (the master edits it; I don't). r04d, still not approved:
 
 - Default example data = older-order requests, which is all customers can send today, including guest website
   orders sent through "Add an older order".
 - Order-page and order-email requests are shown only as labelled Future states.
-- **Adding a website order from a reference needs a contact-email confirmation step**:
-  - the order's contact email is shown to the chef only;
-  - the customer emails from it, quoting their request reference;
-  - the chef must tick "I confirmed…" and say how;
-  - a wrong-person warning shows what a wrong approval does.
+- **Adding a website order from a reference needs a confirmation through the order's contact email**:
+  - the chef emails that address (shown to her only) with a one-off code and without the request reference;
+  - a reply from it must quote the code and the request reference from the account;
+  - the chef must tick "I emailed … and got a reply …" and say how.
+- **A wrong-person warning shows what a wrong approval does.** The wrong person sees the order with its contact
+  email. For an upcoming order they can also cancel it (any refund goes back against the order's own payment), move
+  its pickup time or answer a late-payment question, while the buyer has lost guest access. There's no undo.
 
   The alternative, waiting for the order-page button, is put to the Creator (questions 3 and 6).
 - Approving revokes guest access, which today is only the order page in the tab that placed the order, if still
@@ -211,7 +242,7 @@ Open http://127.0.0.1:4196/gk-018-r04-claims/poc/index.html (the states index).
 
 | File | What it is |
 | --- | --- |
-| `poc/index.html`, `index.js`, `states.js` | States index: S01–S47, grouped, with a separate "Future" group. `states.js` is the single list, also used by `shoot.sh` and `check.html` |
+| `poc/index.html`, `index.js`, `states.js` | States index: S01–S48, grouped, with a separate "Future" group. `states.js` is the single list, also used by `shoot.sh` and `check.html` |
 | `poc/requests.html`, `requests.js` | Screen 1, **Requests to add orders**: tabs, table (cards on mobile), loading, error, empty and paging states |
 | `poc/request.html`, `request.js` | Screen 2, **decide a request**: older-order requests (today, with the contact-email evidence step) and order-page requests (future), confirm (wrong-person warning; tick and "how you confirmed" for path c), decline, busy, results, refusals, closed |
 | `poc/order.html`, `order.js` | Screen 3: the order page's **Customer account** card. Option A (recommended, needs GK-016 wording) and option B (needs a GK-016 change) |
@@ -275,11 +306,14 @@ from their profile", then **Find the order**:
   Leave it waiting.
 - **Before adding: confirm it's theirs** (once an order is chosen):
   - The reference isn't secret and the profile isn't proof.
-  - The order's **contact email** is shown, chef only, with the request reference.
-  - Ask them to email `gk.cake.london@gmail.com` from that address, quoting the request reference. That shows
-    control of the order's address and of this account.
-  - If they can't use that address, don't add it.
-  - There's a copyable message. The search list never shows contact emails.
+  - The order's **contact email** is shown, chef only, with an example one-off code.
+  - **The chef emails that address** with the code and without the request reference.
+  - She waits for a reply from that address quoting the code and the request reference, which is only in the
+    account. If either is missing, or the buyer says it wasn't them, she doesn't add it.
+  - For upcoming orders there's a red line: whoever it's added to can cancel it or move its pickup time.
+  - The email to copy goes to the order's address, never contains the reference, and says why. The card explains
+    why the requester isn't asked to email from the address (forgeable sender).
+  - The search list never shows contact emails.
 
 **Order-page request (Future).** A Future banner, "The order they asked from" (summary and link), the same-order
 banner when two requests name it, then what they sent and who.
@@ -292,10 +326,13 @@ banner when two requests name it, then what they sent and who.
 - their request shows "Added to your account";
 - if it's already in their account it's just marked added;
 - in red: if this is the wrong person, they see the order in their account, including the name and contact email
-  on it and the handover details; the real buyer's guest access stops; and there's no undo.
+  on it and the handover details. **For an upcoming order** they can also cancel it (any refund goes back against
+  the order's own payment through the payment provider, not to them), move its pickup time that day, or answer a
+  late-payment question if there is one, and the real buyer, having lost guest access, couldn't step in. There's
+  no undo. For a handed-over or cancelled order: "so they can't change it".
 
-For a path c request, the chef must tick "I confirmed from the order's contact email (…) that this customer placed
-it" and fill "How you confirmed (required)" (stored as the internal note). On the future path the note is optional
+For a path c request, the chef must tick "I emailed the order's contact address (…) and got a reply from it quoting
+my code and their request reference" and fill "How you confirmed (required)" (stored as the internal note). On the future path the note is optional
 and no tick is needed.
 
 **Decline.** The confirmation says:
@@ -328,9 +365,9 @@ can't see any account identifier, and looking an account up by email is account 
 order page gets a **Customer account** card, tagged "proposal · not approved":
 
 - **A, recommended, but needs GK-016 wording:**
-  - The chef asks the customer to send the order's reference through "Add an older order" **and** to email her
-    from the order's address quoting the request reference. She confirms (the evidence step), then adds it from
-    the request. There's a copyable reply: "Prototype: nothing is copied or sent".
+  - The chef asks the customer to send the order's reference through "Add an older order". She then emails the
+    order's address with a code, and adds it from the request once a reply from that address quotes the code and
+    the request reference (the evidence step). There's a copyable reply: "Prototype: nothing is copied or sent".
   - A warning states the prerequisite: today's form is written for Instagram, email or in-person orders, with
     "Order reference from the chef (e.g. IG-0613)" and no website choice. Question 6 must be settled first.
   - Until then, the reply explains the workaround ("Email, phone or in person", plus the "Order reference" from
@@ -369,9 +406,10 @@ today).
 | S17 Instagram, no match | Find the order (May–Jul 2026): none; guidance with the decline trade-off | Decline; go back | S14 / S01 | `GET /admin/orders?from&to` (all pages, empty) |
 | S18 Guest website order | Their reference is a full order ID; orders Sep–Nov listed | Search for … | S19/S20 | `GET /admin/orders` (all pages) |
 | S19 Two matches | "8b2" finds 8b2a1f03 and 8b20d4e6 | choose one | S20 | browser filter |
-| S20 Chosen + evidence step | "Chosen: … · contact email tom.b@example.com"; "Before adding: confirm it's theirs" (contact email, chef only; request reference; steps; message to copy) | Add order 8b20d4e6…; Decline; Show a message you can copy | S21 | `GET /admin/orders` row incl. chef-only `contact_email` |
-| S21 Confirm add | Consequences true today; red wrong-person line; required tick and "How you confirmed" | Yes, add…; Not yet | alert + focus if missing; busy → S22 | — |
-| S47 Confirm add, filled in | Tick ticked; "Email from tom.b@example.com on 6 Nov quoting request 9a3f2c71" | Yes, add… | busy → S22 | `decision: approve, order_id, note` |
+| S20 Chosen + evidence step | "Chosen: … · contact email tom.b@example.com"; "Before adding: confirm it's theirs" (contact email, chef only; example code 4487; you email the address, the reply quotes the code and reference; email to copy without the reference) | Add order 8b20d4e6…; Decline; Show the email to the order's address | S21 | `GET /admin/orders` row incl. chef-only `contact_email` |
+| S21 Confirm add (handed over) | Consequences true today; red wrong-person line ("so they can't change it"); required tick and "How you confirmed" | Yes, add…; Not yet | alert + focus if missing; busy → S22 | — |
+| S47 Confirm add, filled in | Tick ticked; "Emailed tom.b@example.com 6 Nov with code 4487; reply quoted 4487 and 9a3f2c71" | Yes, add… | busy → S22 | `decision: approve, order_id, note` |
+| S48 Confirm add (upcoming) | a41c09e7 (paid, Sun 15 Nov). The red line adds: they could cancel it (refund back against the order's own payment), move its pickup time or answer a late-payment question; the buyer couldn't step in. The evidence card and decision column warn too | Yes, add…; Not yet | busy → result | — |
 | S22 Added | "The order you added" + result | Next waiting request | — | `decision: approve, order_id` → 200 |
 | S23 In another account | Refusal (Daniel Okafor, a41c09e7) | Choose another order; Decline | — | 409 `ORDER_OWNED` |
 | S24 In another account (choose another) | Refusal | Choose another order; Decline | S19 / S14 | 409 `ORDER_OWNED` |
@@ -448,8 +486,9 @@ key is made when the decision, the chosen order or the note changes.
 - **One column order:** main card, then the decision, then the secondary cards.
 - **Partial pages.** The order page and Today are fragments; the rest stays r03b2.
 - **"Leave it waiting"** is a real option with no API call.
-- **Evidence before adding a website order from a reference** (round 2): the contact-email confirmation step, a
-  required tick and "how you confirmed", and the wrong-person warning. It's drafted as the recommended option, not
+- **Evidence before adding a website order from a reference** (rounds 2–3): the chef-initiated, code-based email to
+  the order's contact address; a required tick and "how you confirmed"; and the wrong-person warning, which says
+  what the wrong person could do to an upcoming order. It's drafted as the recommended option, not
   settled (questions 3 and 6; execution check).
 - **Contact email only for the chosen order.** It's not listed for every order in the search, which limits
   exposure and avoids inviting email matching.
@@ -477,9 +516,14 @@ key is made when the decision, the chosen order or the note changes.
   tab that placed the order, gone when it closes, so approving today revokes that page's access only, if still
   open.
 - **The contact-email check is manual and imperfect.** The address may be mistyped, shared or no longer the
-  buyer's. The workspace doesn't store the account's email, so the check rests on the customer quoting their
-  request reference from that address. It's recorded only as free text in `decision_note` (structured evidence
-  reference proposed).
+  buyer's. The workspace doesn't store the account's email. The check rests on a reply from that address quoting
+  the chef's code (proving someone reads that mailbox) and the request reference (only visible in the account).
+  It's recorded only as free text in `decision_note` (structured evidence reference proposed).
+- **Sender addresses can be forged**, and email providers' warnings catch only some of it. That's why the chef
+  emails the address herself with a code, rather than trusting an email "from" it. A forger who can't read that
+  mailbox can't quote the code. The code must not be reused, and must never be sent to the requester.
+- **The buyer gets an unexpected email** when someone else asked. That's intended (they can say it wasn't them),
+  but the wording must not reveal anything about the requester; the draft email doesn't.
 - **Personal data in URLs.** The prototype still accepts `?q=`/`?note=` for review states; the live page must not.
 - **No single-request read.** Deep links and "Show the latest" depend on it (proposed).
 - **No erased / account-deleted flag** in staff rows (proposed). Today an erased request shows empty fields
@@ -506,21 +550,40 @@ key is made when the decision, the chosen order or the note changes.
    is a display choice only; minimising the data needs an API change.
 3. **How should guest website orders get into accounts, and with what evidence?** This is an authorisation
    decision; see the execution check.
-   - **(i) Now, by reference + contact-email confirmation** (r04c's design). The customer sends the order reference
-     through "Add an older order" and emails the chef from the order's contact address, quoting their request
-     reference. The chef ticks "I confirmed…" and says how.
+   - **(i) Now, by reference + confirmation through the order's contact email** (r04d's design). The customer sends
+     the order reference through "Add an older order". The chef emails the order's contact address with a one-off
+     code, and adds the order once a reply from that address quotes the code and the request reference from the
+     account. She ticks "I emailed … and got a reply …" and says how.
      - *For:* it works today, and it's the only route while order emails and the order-page button don't exist.
-     - *Against:* it's manual work for the chef and the customer; the address can be mistyped, shared or stale; the
-       evidence is free text; and a wrong approval shows the order (with its contact email) to the wrong person,
-       with no undo.
+     - *Against:*
+       - manual work for the chef and the customer;
+       - the address can be mistyped, shared or stale;
+       - the evidence is free text;
+       - a wrong approval shows the order (with its contact email) to the wrong person, with no undo;
+       - **for an upcoming order**, the wrong person could also cancel it (the refund goes back against the order's
+         own payment, not to them), move its pickup time or answer a late-payment question, and the real buyer,
+         who has lost guest access, couldn't step in.
+     - *Which email method?* Two methods were considered:
+       - **(a)** The requester emails the chef from the order's address, quoting the request reference (r04c).
+       - **(b)** The chef emails the order's address with a code, and the reply must quote the code and the
+         reference (r04d).
+
+       I recommend **(b)** on the merits:
+       - A sender address can be forged, and provider warnings are partial; with (b) only someone who reads the
+         mailbox can quote the code.
+       - With (b) the reference still has to come from the account, so a real buyer who isn't the requester can't
+         confirm someone else's request (the email never contains the reference).
+       - (b) also tells the real buyer someone asked.
+       - The cost is about the same: one email each way.
    - **(ii) Wait for the order-page "Add this order to my account" button (path a).** The request itself proves
      guest access.
      - *For:* stronger, automatic evidence and no chef work.
      - *Against:* until order emails exist it only works in the tab that placed the order, while still open.
        Customers who closed that tab can't use it, so they'd be told to contact the chef.
 
-   **Recommended: (i) with the required confirmation**, never on a reference alone. Switch to (ii) as the main
-   route once it exists. Then, for the chef's own adds: **A** (via such a request) rather than B (a
+   **Recommended: (i) with method (b) and the required confirmation**, never on a reference alone. **For upcoming
+   orders**, take extra care. If there's any doubt, prefer waiting for (ii) or asking the customer to contact you
+   after the handover. Switch to (ii) as the main route once it exists. Then, for the chef's own adds: **A** (via such a request) rather than B (a
    customer-visible account ID, a bigger GK-016 change). A means changing live customer wording (question 6 is a
    prerequisite). Looking an account up by email is not proposed.
 4. **Instagram and offline requests before older orders exist: decline now, or leave them waiting?** Recommended:
@@ -533,7 +596,7 @@ key is made when the decision, the chosen order or the note changes.
    stores it for either decision, it's never shown to the customer, and it's erased if the account is deleted.
 6. **Prerequisite of A and of route (i): add "On this website (as a guest)" to the customer form** with the order
    reference, reword the title and hint for website orders, and tell the customer about the confirmation email
-   ("We'll ask you to email us from the address you used for the order")? The API already accepts that channel on
+   ("We'll email the address you used for the order; reply with the code in it and your request reference")? The API already accepts that channel on
    path c. Recommended: yes, as a small GK-016 amendment, if question 3 picks (i). If it picks (ii), keep the form
    for Instagram and offline orders and point guest website orders to "contact us" until the button exists.
 7. **Two accounts asking for the same order** (future path)? Recommended: no automatic rule. The chef decides one;
@@ -549,30 +612,25 @@ The API follow-ups (a single-request read, the erased / account-deleted flag, ne
 in-an-account yes/no, an evidence reference on claim approval) are for the planning master to schedule, not
 Creator questions.
 
-## Checks run (r04c, 2026-11-06)
+## Checks run (r04d, 2026-11-06)
 
 - `node --check` passes on every `poc/*.js` (core, requests, request, order, today, index, states).
-- **Rendering.** Headless Chrome (`--dump-dom` with console logging) rendered the 47 states plus the index as the
-  chef, fulfilment and technical support: 144 page loads. Every load had exactly one `h1`, no duplicate IDs and no
+- **Rendering.** Headless Chrome (`--dump-dom` with console logging) rendered the 48 states plus the index as the
+  chef, fulfilment and technical support: 147 page loads. Every load had exactly one `h1`, no duplicate IDs and no
   script or console errors.
-- **`check.html`** (same-origin iframe, chef, data=today unless named), 102 checks, all PASS. They cover every r04b
-  check plus these new ones (round 2):
-  - **Evidence step.** It shows the order's contact email and the request reference, and appears when an order is
-    chosen. Contact emails are never listed in search results.
-  - **Wrong approval.** The confirmation says what a wrong approval does (wrong person sees the order and its
-    contact email; no undo).
-  - **Required confirmation.** Adding without the contact-email tick is refused, with an alert, `aria-invalid` and
-    focus on the tick, and nothing is sent. "How you confirmed" is required, with focus on the note.
-  - **Future path.** No tick (guest access is shown), and the wrong-person line is kept.
-  - **Guest access wording.** "Tab that placed it, if it's still open".
-  - **URLs.** No search term, note or tick is written to the URL.
-  - **Nits.** S33's header chip says "account deleted since"; Today reads "Oldest waiting 3 days".
-  - **Overflow.** All 47 states have no horizontal overflow at 390 px. A first run found the S21/S47 confirmation
-    overflowing, because the email inside the tick label couldn't wrap; fixed by wrapping the label text.
-- **Screenshots.** `shoot.sh` with headless Chrome took 35 states (desktop + mobile, 70 JPEGs), all re-shot because
-  the review bar reads r04c on every page. Looked at: S20 (desktop), S21 (desktop), S47 (mobile), S33 (desktop),
-  S34 (desktop) and S45 (mobile). One fix after looking: S33's eyebrow and decision card still said "Added to their
-  account" only. Re-shot.
+- **`check.html`** (same-origin iframe, chef, data=today unless named), 107 checks, all PASS. They cover every r04c
+  check plus these new ones (round 3):
+  - **Evidence email.** The email to the order's address contains the code and **not** the request reference, and
+    the card says never to include it.
+  - **Handed-over order.** No cancel/move warning; the confirmation says "handed over, so they can't change it".
+  - **Upcoming order (a41c09e7).** The evidence card and decision column warn that the order could be cancelled or
+    its pickup moved. The confirmation's wrong-person line names cancel, move pickup time, the late-payment answer,
+    where a refund goes ("not to them"), and that the buyer couldn't step in.
+  - **Required confirmation.** Its error now names the code and reference.
+  - **Overflow.** All 48 states have no horizontal overflow at 390 px.
+- **Screenshots.** `shoot.sh` with headless Chrome took 36 states (desktop + mobile, 72 JPEGs), all re-shot because
+  the review bar reads r04d on every page. Looked at: S48 (desktop) and S47 (mobile). Both read correctly, with no
+  fixes needed.
 - `python3 scripts/check_planning_kit.py` passes (run before the commit).
 
 ## Screenshots (`screenshots/`)
@@ -581,7 +639,7 @@ Creator questions.
 
 - S00 index;
 - S01–S07, S09, S42 (queue), S45 (Today);
-- S46, S17, S19, S20, S21, S47, S22, S14, S15 (older-order requests);
+- S46, S17, S19, S20, S21, S47, S48, S22, S14, S15 (older-order requests);
 - S23, S25, S28–S30, S44 (refusals and closed);
 - S32, S33 (decided);
 - S34–S36, S38, S41 (chef add);
@@ -591,7 +649,7 @@ The other states are reachable from the index.
 
 ## Not done
 
-- No Creator review or approval; the re-review of r04c is pending.
+- No Creator review or approval; the re-review of r04d is pending.
 - PR #59 (draft, pushed by the master) isn't edited by me; suggested description text is above.
 - No Trello change.
 - No customer-side changes (questions 3, 4, 6, 10 would be GK-016 amendments).

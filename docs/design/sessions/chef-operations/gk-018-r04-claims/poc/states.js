@@ -1,4 +1,4 @@
-// GK-018 r04c-claims — the list of prototype states (used by index.html, ../check.html and ../shoot.sh). Proposal, not approved.
+// GK-018 r04d-claims — the list of prototype states (used by index.html, ../check.html and ../shoot.sh). Proposal, not approved.
 // [id, page and query, title, shot?]. "Future" states need GK-016's order-page request and order emails (GK-031) first.
 // Pages without data= open with today's example data (index, check and shoot add data=today).
 var P='&q=8b20d4e6&pick=8b20d4e6';
@@ -22,9 +22,9 @@ var STATES=[
  ['S17','request.html?id=1d5e88b0','Instagram request · no matching order in the system yet',1],
  ['S18','request.html?id=9a3f2c71','Guest website order sent as an older order · orders in their months',0],
  ['S19','request.html?id=9a3f2c71&q=8b2','Find the order · two matches for “8b2”',1],
- ['S20','request.html?id=9a3f2c71'+P,'Order chosen · “Before adding: confirm it’s theirs” (contact email, chef only)',1],
+ ['S20','request.html?id=9a3f2c71'+P,'Order chosen · “Before adding: confirm it’s theirs” (you email the order’s address with a code)',1],
  ['S21','request.html?id=9a3f2c71'+P+'&step=approve','Older order · confirm: wrong-person warning, “I confirmed” tick, how you confirmed',1],
- ['S47','request.html?id=9a3f2c71'+P+'&step=approve&confirmed=1&note=Email%20from%20tom.b%40example.com%20on%206%20Nov%20quoting%20request%209a3f2c71','Older order · confirm, filled in',1],
+ ['S47','request.html?id=9a3f2c71'+P+'&step=approve&confirmed=1&note=Emailed%20tom.b%40example.com%206%20Nov%20with%20code%204487%3B%20reply%20quoted%204487%20and%209a3f2c71','Older order · confirm, filled in',1],
  ['S22','request.html?id=9a3f2c71'+P+'&step=done&decision=approve','Older order · added',1],
  ['S23','request.html?id=5c1e7a02&q=a41c09e7&pick=a41c09e7&step=done&decision=approve&answer=order_owned','Refused · already in another account',1],
  ['S24','request.html?id=9a3f2c71'+P+'&step=done&decision=approve&answer=order_owned','Refused · already in another account (choose another)',0],
@@ -49,7 +49,8 @@ var STATES=[
  ['S43','request.html?id=9a3f2c71'+P+'&step=done&decision=approve&answer=stale_closed','Refused · changed meanwhile (the customer deleted their account)',0],
  ['S44','request.html?id=9a3f2c71&latest=closed','Closed · the customer deleted their account (needs proposed read)',1],
  ['S45','today.html','Today fragment · the new “Needs you” line',1],
- ['S46','request.html?id=5c1e7a02','Guest website order (upcoming) · reference looks like an order’s',1]];
+ ['S46','request.html?id=5c1e7a02','Guest website order (upcoming) · reference looks like an order’s',1],
+ ['S48','request.html?id=5c1e7a02&q=a41c09e7&pick=a41c09e7&step=approve','Upcoming order · confirm: the wrong person could cancel it or move its pickup',1]];
 // Add data=today to pages that don't name their data mode (the mode is kept per tab).
 function withData(u){return /data=/.test(u)?u:u+(u.indexOf('?')>=0?'&':'?')+'data=today'}
 if(typeof module!=='undefined')module.exports={STATES:STATES,withData:withData};
