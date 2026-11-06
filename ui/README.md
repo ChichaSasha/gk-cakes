@@ -326,10 +326,26 @@ navigation (`src/lib/account/ui/AccountShell.svelte`, styles in
   nothing about an order before approval). **Your favourites**: the device's
   favourites (no account favourites API yet). A failed orders read shows
   "Try again" (focus returns to the card) while the other cards still load.
-- **Not built yet:** profile, adding an older order, privacy and deleting the
-  account (next slices); the email-link claim belongs on the order page; the
-  sign-in page changes of the sketch (account on first use, Google) belong to
-  GK-021; custom requests and reorder wait for their APIs.
+- **Profile & contact** (`/account/profile`, sketch states 43–46): **Your
+  details** — full name, phone and Instagram name, all optional, checked
+  before sending with the API's rules and the sketch's words
+  (`src/lib/account/profile.ts`: trimmed, an empty field clears it, a typed
+  `@` is dropped from an Instagram name); the PATCH carries only the changed
+  fields, the version the customer saw and one Idempotency-Key per save
+  (kept while that same save is retried). Error summary with links (focused,
+  `role="alert"`), errors tied to their inputs and updated as the customer
+  types; "Saved." in a polite status region (focused). A 409 STALE_VERSION
+  loads the latest details, keeps the customer's own changes that differ
+  (outlined, "Saved elsewhere: …" in the input's description) and says which
+  were kept. **Signing in** shows the session's email and "one account per
+  verified email address"; **Emails we send** has the r02b wording (no
+  marketing). The name hint about Google and the checkout prefill waits for
+  those features.
+- **Not built yet:** changing the sign-in email (needs GK-021 rules), adding
+  an older order, privacy and deleting the account (next slices); the
+  email-link claim belongs on the order page; the sign-in page changes of the
+  sketch (account on first use, Google) belong to GK-021; custom requests and
+  reorder wait for their APIs.
 
 ## Staff catalogue (GK-018 groundwork)
 
