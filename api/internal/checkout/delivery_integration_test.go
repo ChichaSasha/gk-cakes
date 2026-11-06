@@ -339,12 +339,28 @@ func TestDeliveryQuoteRules(t *testing.T) {
 	if v, raw := h.deliveryView(t, order, d); v.Delivery.State != "quoted" || !*v.Delivery.Payable {
 		t.Fatalf("a second before pay-by: %s", raw)
 	}
+	// Fulfilment's state follows the API's clock too (whatever the real
+	// date), and the pay-by it is decided from is never shown.
+	fulfilmentState := func() string {
+		t.Helper()
+		del, raw := staffDelivery(t, h.staffJSON(t, fulfilment, order))
+		if len(del) != 1 {
+			t.Fatalf("fulfilment delivery %s", raw)
+		}
+		return string(del["state"])
+	}
+	if got := fulfilmentState(); got != `"quoted"` {
+		t.Fatalf("fulfilment a second before pay-by: %s", got)
+	}
 	h.now = deliveryPayBy
 	if _, err := h.quoteDelivery("q4", order, version+2, 16000); conflict(err) != "delivery_pay_by_passed" {
 		t.Fatalf("quote at pay-by: %v", err)
 	}
 	if v, raw := h.deliveryView(t, order, d); v.Delivery.State != "pay_by_passed" || *v.Delivery.Payable {
 		t.Fatalf("at pay-by: %s", raw)
+	}
+	if got := fulfilmentState(); got != `"pay_by_passed"` {
+		t.Fatalf("fulfilment at pay-by: %s", got)
 	}
 	if _, err := h.payDelivery(order, d, "late", version+2, q2.ID); conflict(err) != "delivery_pay_by_passed" {
 		t.Fatalf("payment at pay-by: %v", err)

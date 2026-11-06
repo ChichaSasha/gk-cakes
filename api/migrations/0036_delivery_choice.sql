@@ -1338,7 +1338,9 @@ $$;
 -- technical support the same without money or reason, fulfilment the state)
 -- on orders whose customer view has the block, and the delivery block and
 -- history also after a choice changed the order away from GK delivery.
--- Other orders keep exactly their 0035 keys.
+-- Fulfilment's delivery block also carries the quote's pay_by for the API,
+-- which applies its clock to the state and removes it (0035 used the
+-- database clock there). Other orders keep exactly their 0035 keys.
 CREATE OR REPLACE FUNCTION business.order_staff_get(p_actor uuid, p_order uuid)
 RETURNS json
 LANGUAGE plpgsql
@@ -1457,8 +1459,15 @@ BEGIN
                   'fulfillment', v -> 'fulfillment',
                   'fulfillment_history', business.order_staff_fulfillment(o.id, true))
                 -- Fulfilment: whether a GK delivery may be dispatched, nothing else.
+                -- pay_by is internal: the API decides quoted / pay_by_passed at its
+                -- own clock from it and removes it (withDeliveryClock), so the
+                -- state never follows the database's real clock.
                 || CASE WHEN pg_catalog.jsonb_typeof(v_delivery) = 'object'
-                        THEN pg_catalog.jsonb_build_object('delivery', pg_catalog.jsonb_build_object('state', v_delivery -> 'state'))
+                        THEN pg_catalog.jsonb_build_object('delivery',
+                               pg_catalog.jsonb_build_object('state', v_delivery -> 'state')
+                               || CASE WHEN pg_catalog.jsonb_typeof(v_delivery -> 'quote') = 'object'
+                                       THEN pg_catalog.jsonb_build_object('pay_by', v_delivery -> 'quote' -> 'pay_by')
+                                       ELSE '{}'::jsonb END)
                         ELSE '{}'::jsonb END
                 || CASE WHEN pg_catalog.jsonb_typeof(v -> 'delivery_choice') = 'object'
                         THEN pg_catalog.jsonb_build_object('delivery_choice',

@@ -172,9 +172,10 @@ func (s *Store) StartDeliveryPayment(ctx context.Context, id, subject string, di
 
 // withDeliveryClock applies the store's clock to an order representation's
 // delivery block (the database used its own): state quoted or
-// pay_by_passed (now at or after quote.pay_by), and payable only before
-// pay_by. Blocks without a quote pay-by (awaiting a quote, the fulfilment
-// view) are returned as they are.
+// pay_by_passed (now at or after the pay-by), and payable only before
+// pay_by. The pay-by is the quote's or, in the fulfilment view (which shows
+// no quote), the block's internal pay_by, which is always removed here.
+// Blocks without a pay-by (awaiting a quote) are returned as they are.
 func (s *Store) withDeliveryClock(raw []byte) []byte {
 	if !bytes.Contains(raw, []byte(`"pay_by"`)) {
 		return raw
@@ -187,25 +188,37 @@ func (s *Store) withDeliveryClock(raw []byte) []byte {
 	if json.Unmarshal(top["delivery"], &block) != nil || block == nil {
 		return raw
 	}
-	var quote struct {
-		PayBy *time.Time `json:"pay_by"`
+	var payBy *time.Time
+	if internal, ok := block["pay_by"]; ok {
+		// Fulfilment's internal pay-by: used for the state, never shown.
+		delete(block, "pay_by")
+		if json.Unmarshal(internal, &payBy) != nil {
+			payBy = nil
+		}
+	} else {
+		var quote struct {
+			PayBy *time.Time `json:"pay_by"`
+		}
+		if json.Unmarshal(block["quote"], &quote) != nil || quote.PayBy == nil {
+			return raw
+		}
+		payBy = quote.PayBy
 	}
 	var state string
 	var payable bool
-	if json.Unmarshal(block["quote"], &quote) != nil || quote.PayBy == nil || json.Unmarshal(block["state"], &state) != nil {
-		return raw
-	}
-	passed := !s.now().Before(*quote.PayBy)
-	if state == "quoted" || state == "pay_by_passed" {
-		state = "quoted"
-		if passed {
-			state = "pay_by_passed"
+	if payBy != nil && json.Unmarshal(block["state"], &state) == nil {
+		passed := !s.now().Before(*payBy)
+		if state == "quoted" || state == "pay_by_passed" {
+			state = "quoted"
+			if passed {
+				state = "pay_by_passed"
+			}
+			block["state"], _ = json.Marshal(state)
 		}
-		block["state"], _ = json.Marshal(state)
-	}
-	if _, ok := block["payable"]; ok {
-		_ = json.Unmarshal(block["payable"], &payable)
-		block["payable"], _ = json.Marshal(payable && !passed)
+		if _, ok := block["payable"]; ok {
+			_ = json.Unmarshal(block["payable"], &payable)
+			block["payable"], _ = json.Marshal(payable && !passed)
+		}
 	}
 	var err error
 	if top["delivery"], err = json.Marshal(block); err != nil {

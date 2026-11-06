@@ -2599,8 +2599,10 @@ deadline 48 h before handover, then the same choice").
   session is open, unexpired, not asked to expire and the order still takes
   payments. `payable` (the "Pay for delivery" button) and the
   `quoted`/`pay_by_passed` split are computed by the API at its own clock
-  (as `late_payment.offer.acceptable`); the database uses its clock where no
-  API applies one (the fulfilment view). The cake's `payment` block now
+  (as `late_payment.offer.acceptable`); since 0036 also in the fulfilment
+  view (the database adds the quote's `pay_by` to fulfilment's block for the
+  API, which decides the state from it and removes it), so no read follows
+  the database's real clock. The cake's `payment` block now
   reads cake collections only (also the chef's list `payment_state`). The
   address is not in the order view and stays out of the block.
 - **Staff views** (gk_delivery orders only; other orders keep their keys):
@@ -2611,7 +2613,8 @@ deadline 48 h before handover, then the same choice").
   payments [{collection_id, state, outcome, reason}]`); technical support
   both without amounts (also `unmatched_minor`), currency, payment link,
   note or distance source (K00 no money; K09 necessary support only);
-  fulfilment `delivery: {state}` only. New attention flags
+  fulfilment `delivery: {state}` only (the state at the API's clock since
+  0036). New attention flags
   `delivery_payment_unmatched` (an unmatched delivery payment not yet fully
   returned; it also blocks account deletion as `payment_recorded`: money
   unsettled) and `delivery_payment_stuck` (above).
@@ -2892,6 +2895,17 @@ K11.
   reached, and your delivery payment of £120 in full, because we could not
   deliver your order." (wording for Creator review). The same applies to
   0022's interim delivery-failure floors.
+- **Fulfilment's delivery state** follows the API's clock (this migration
+  replaces `order_staff_get`): its block carries the quote's `pay_by`
+  internally, `withDeliveryClock` decides `quoted` / `pay_by_passed` from it
+  and always removes it, so fulfilment still sees only `{state}` (fixes a
+  0035 test that depended on the real date). Clock audit of 0035/0036:
+  every remaining database-clock read compares with values that are also
+  real-clock based (a collection's `created_at` for "stuck", the Checkout
+  Session expiry fixed from the database clock for the payment link) or is
+  corrected by the API (`pay_by_passed`, the Q5 `open`/`reason` through
+  `opens_at`); the attention flag `delivery_choice_open` uses the database
+  clock and no test asserts it against a fixture date.
 - **Account deletion.** While a refund must stay invisible (an unsecured
   choice, handover or no-show) `account_order_block` answers
   `order_change_in_progress`, never `refund_in_progress` (K11).
