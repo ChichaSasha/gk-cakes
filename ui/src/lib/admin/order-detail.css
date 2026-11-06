@@ -1,153 +1,123 @@
 /* The chef's order page (GK-018 r03b2 admin.css: banners, detail grid,
-   facts, progress, confirm rows, ledger), scoped to .chef like chef.css. */
-.chef .back {
-	display: inline-flex;
-	gap: 6px;
-	align-items: center;
-	margin-bottom: 14px;
-	color: var(--muted);
-	font-weight: 500;
-	text-decoration: none;
-}
-.chef .banner-icon {
-	flex: none;
-	width: 22px;
-	height: 22px;
-	margin-top: 1px;
-	fill: none;
-	stroke: currentColor;
-	stroke-width: 1.8;
-}
-.chef .banner-info {
-	background: var(--info-bg);
-	color: #22355e;
-}
-.chef .banner-warn {
+   facts, progress, confirm rows, ledger), scoped to .chef like chef.css.
+   Shared classes chef.css already has (back, banner-icon/info, card-h,
+   role-note, chips, btn-small) come from there. Every rule here is scoped
+   to .order-page: a route's CSS stays loaded after leaving it, and facts
+   and mono differ from chef.css's, so neither the order of the two files
+   nor a visit to this page changes the other chef pages. */
+.chef .order-page .banner-warn {
 	background: var(--warn-bg);
 	color: #5a3700;
 }
-.chef .banner:focus {
+.chef .order-page .banner:focus {
 	outline: 3px solid var(--focus);
 	outline-offset: 2px;
 }
-.chef .banner > div {
+.chef .order-page .banner > div {
 	min-width: 0;
 }
-.chef .page-head .sub {
+.chef .order-page .page-head .sub {
 	margin: 6px 0 0;
 }
-.chef .card-h {
-	display: flex;
-	gap: 8px;
-	align-items: center;
-	margin: 0 0 12px;
-	font-size: 16px;
-	font-weight: 600;
-}
-.chef .card-row {
+.chef .order-page .card-row {
 	display: flex;
 	flex-wrap: wrap;
 	justify-content: space-between;
 	align-items: baseline;
 	gap: 4px 12px;
 }
-.chef .card p {
+.chef .order-page .card p {
 	margin: 0 0 8px;
 }
-.chef .card p:last-child {
+.chef .order-page .card p:last-child {
 	margin-bottom: 0;
 }
-.chef .card-alert {
+.chef .order-page .card-alert {
 	border-color: #efd3a6;
 	background: #fffaf1;
 }
-.chef .empty-card h1 {
+.chef .order-page .empty-card h1 {
 	margin-bottom: 8px;
 }
-.chef .detail-grid {
+.chef .order-page .detail-grid {
 	display: grid;
 	grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
 	gap: 18px;
 	align-items: start;
 }
-.chef .detail-grid > * {
+.chef .order-page .detail-grid > * {
 	min-width: 0;
 }
-.chef .items {
+.chef .order-page .items {
 	display: grid;
 	gap: 10px;
 	margin: 0 0 10px;
 	padding: 0;
 	list-style: none;
 }
-.chef .items p {
+.chef .order-page .items p {
 	margin: 0;
 }
-.chef .facts {
+.chef .order-page .facts {
 	display: grid;
 	gap: 8px;
 	margin: 0 0 8px;
 }
-.chef .facts div {
+.chef .order-page .facts div {
 	display: flex;
 	justify-content: space-between;
 	gap: 16px;
 	padding-bottom: 8px;
 	border-bottom: 1px dashed var(--line);
 }
-.chef .facts div:last-child {
+.chef .order-page .facts div:last-child {
 	border-bottom: 0;
 }
-.chef .facts dt {
+.chef .order-page .facts dt {
 	flex: none;
 	color: var(--muted);
 }
-.chef .facts dd {
+.chef .order-page .facts dd {
 	min-width: 0;
+	max-width: none;
 	margin: 0;
 	font-weight: 500;
 	text-align: right;
 }
-.chef .mono {
+.chef .order-page .mono {
 	font: 13px var(--mono);
 }
-.chef .wrap {
+.chef .order-page .wrap {
 	overflow-wrap: anywhere;
 }
-.chef .ok-text {
+.chef .order-page .ok-text {
 	color: var(--ok);
 }
-.chef .warn-text {
-	color: var(--warn);
-}
-.chef .info-text {
-	color: var(--info);
-}
-.chef .record {
+.chef .order-page .record {
 	display: grid;
 	gap: 6px;
 	margin: 0;
 	padding: 0;
 	list-style: none;
 }
-.chef .record li {
+.chef .order-page .record li {
 	display: grid;
 	grid-template-columns: 130px minmax(0, 1fr);
 	gap: 10px;
 }
-.chef .progress {
+.chef .order-page .progress {
 	margin: 0;
 	padding: 0;
 	list-style: none;
 }
-.chef .progress li {
+.chef .order-page .progress li {
 	position: relative;
 	display: grid;
 	grid-template-columns: 18px minmax(0, 1fr);
 	gap: 10px;
 	padding-bottom: 14px;
 }
-.chef .progress li:not(:last-child)::before {
+.chef .order-page .progress li:not(:last-child)::before {
 	content: '';
 	position: absolute;
 	top: 18px;
@@ -156,13 +126,13 @@
 	width: 2px;
 	background: var(--line);
 }
-.chef .progress li.done:not(:last-child)::before {
+.chef .order-page .progress li.done:not(:last-child)::before {
 	background: var(--accent);
 }
-.chef .progress p {
+.chef .order-page .progress p {
 	margin: 0;
 }
-.chef .p-dot {
+.chef .order-page .p-dot {
 	width: 18px;
 	height: 18px;
 	margin-top: 2px;
@@ -170,39 +140,34 @@
 	border-radius: 50%;
 	background: #fff;
 }
-.chef .progress li.done .p-dot {
+.chef .order-page .progress li.done .p-dot {
 	border-color: var(--accent);
 	background: var(--accent);
 }
-.chef .actions {
+.chef .order-page .actions {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 8px;
 	margin-top: 14px;
 }
-.chef .actions.stack {
+.chef .order-page .actions.stack {
 	flex-direction: column;
 }
-.chef .actions.stack > .btn {
+.chef .order-page .actions.stack > .btn {
 	width: 100%;
 }
-.chef .btn-small {
-	min-height: 34px;
-	padding: 5px 13px;
-	font-size: 13px;
-}
-.chef .btn-danger {
+.chef .order-page .btn-danger {
 	border-color: var(--bad);
 	background: var(--bad);
 	color: #fff;
 }
-.chef .btn-quiet {
+.chef .order-page .btn-quiet {
 	border-color: transparent;
 	background: transparent;
 	text-decoration: underline;
 	text-underline-offset: 3px;
 }
-.chef .confirm-row {
+.chef .order-page .confirm-row {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 8px;
@@ -212,16 +177,16 @@
 	border-radius: 14px;
 	background: #fff;
 }
-.chef .confirm-row > p,
-.chef .confirm-row > .field,
-.chef .confirm-row > .text-input {
+.chef .order-page .confirm-row > p,
+.chef .order-page .confirm-row > .field,
+.chef .order-page .confirm-row > .text-input {
 	flex-basis: 100%;
 	margin: 0;
 }
-.chef .confirm-row .btn {
+.chef .order-page .confirm-row .btn {
 	white-space: normal;
 }
-.chef .text-input {
+.chef .order-page .text-input {
 	width: 100%;
 	min-width: 0;
 	min-height: 40px;
@@ -232,112 +197,85 @@
 	color: var(--ink);
 	font: 14px var(--sans);
 }
-.chef .text-input[aria-invalid='true'] {
+.chef .order-page .text-input[aria-invalid='true'] {
 	border-color: var(--bad);
 }
-.chef .role-note {
-	margin: 10px 0 0;
-	padding: 8px 12px;
-	border-radius: 12px;
-	background: var(--info-bg);
-	color: var(--info);
-	font-size: 13px;
-}
-.chef .step-status {
+.chef .order-page .step-status {
 	margin: 10px 0 0;
 	outline: none;
 }
-.chef .step-status:empty {
+.chef .order-page .step-status:empty {
 	margin: 0;
 }
-.chef .step-status:focus-visible,
-.chef .step-error:focus-visible {
+.chef .order-page .step-status:focus-visible,
+.chef .order-page .step-error:focus-visible {
 	outline: 3px solid var(--focus);
 	outline-offset: 2px;
 }
-.chef .step-error {
+.chef .order-page .step-error {
 	margin: 10px 0 0;
 	padding: 8px 12px;
 	border-radius: 12px;
 	background: var(--bad-bg);
 }
-.chef .chip-s {
-	display: inline-block;
-	padding: 1px 9px;
-	border-radius: 999px;
-	font-size: 12px;
-	font-weight: 600;
-}
-.chef .chip-ok {
-	background: var(--ok-bg);
-	color: var(--ok);
-}
-.chef .chip-warn {
-	background: var(--warn-bg);
-	color: var(--warn);
-}
-.chef .chip-bad {
+.chef .order-page .chip-bad {
 	background: var(--bad-bg);
 	color: var(--bad);
 }
-.chef .chip-info {
-	background: var(--info-bg);
-	color: var(--info);
-}
-.chef .ledger {
+.chef .order-page .ledger {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 8px;
 	margin: 10px 0;
 }
-.chef .ledger div {
+.chef .order-page .ledger div {
 	padding: 10px 12px;
 	border: 1px solid var(--line);
 	border-radius: 12px;
 	background: #fff;
 }
-.chef .ledger dt {
+.chef .order-page .ledger dt {
 	color: var(--muted);
 	font-size: 12.5px;
 }
-.chef .ledger dd {
+.chef .order-page .ledger dd {
 	margin: 2px 0 0;
 	font-size: 20px;
 	font-weight: 600;
 	letter-spacing: -0.01em;
 }
-.chef .pill-out {
+.chef .order-page .pill-out {
 	background: var(--info-bg);
 	color: var(--info);
 }
-.chef .pill-problem,
-.chef .pill-noshow {
+.chef .order-page .pill-problem,
+.chef .order-page .pill-noshow {
 	background: var(--warn-bg);
 	color: var(--warn);
 }
 @media (max-width: 1080px) {
-	.chef .detail-grid {
+	.chef .order-page .detail-grid {
 		grid-template-columns: minmax(0, 1fr);
 	}
 }
 @media (max-width: 520px) {
-	.chef .facts div {
+	.chef .order-page .facts div {
 		flex-direction: column;
 		gap: 2px;
 	}
-	.chef .facts dd {
+	.chef .order-page .facts dd {
 		text-align: left;
 	}
-	.chef .record li {
+	.chef .order-page .record li {
 		grid-template-columns: minmax(0, 1fr);
 		gap: 0;
 	}
-	.chef .ledger {
+	.chef .order-page .ledger {
 		grid-template-columns: minmax(0, 1fr);
 	}
 }
 @media (forced-colors: active) {
-	.chef .progress li.done .p-dot {
+	.chef .order-page .progress li.done .p-dot {
 		background: CanvasText;
 	}
 }

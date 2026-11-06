@@ -545,6 +545,43 @@ The API gives no allergens, cake image, emails sent, payment-link deadlines,
 staff names or delivery address yet, so those parts of the sketch are left
 out.
 
+## Chef workspace: Account requests (GK-018 r04d-claims)
+
+Built from the Creator-approved GK-018 r04d-claims sketch (draft PR #59, head
+`c372c9c`; approved "as suggested" on the GK-018 card on 2026-11-06) in the
+same workspace frame. Chef only: the sidebar shows **Account requests** with
+the waiting count (the first waiting page, "50+" when there are more; there
+is no count route) to the chef only, and other roles see a role note (the API
+refuses them, 403).
+
+- `/admin/requests` — "Requests to add orders": customers' requests from
+  "Add an older order" (and, later, from an order page or order email,
+  tagged **Future**) in tabs Waiting, Added, Couldn't add and Withdrawn
+  (`?tab=`, the only thing in the URL), oldest received first, 50 at a time
+  with "Show the next requests" (focus moves to the first new row). Each row:
+  received and the request's short reference; the profile's name, Instagram
+  and phone, labelled as the customer's own typing, not proof (Creator answer
+  2); how they ordered, their reference, roughly when and "Looks like a
+  website order reference" (a format hint, never a match); their note;
+  waiting time, amber from 3 days as a visual cue only (answer 9); decided
+  rows add the outcome, when, by you / another chef account and the internal
+  note. A banner says only website orders can be added for now (answer 4).
+- `/admin/requests/[id]` — one request: what they sent, who's asking (from
+  their profile) and, once decided, the outcome with what the customer sees.
+  The API has no single-request read yet, so the page pages the four lists
+  (`findClaim` in `src/lib/admin/claims.ts`); a request closed by account
+  deletion is in none of them and reads "Request not found". Deciding
+  (finding the order, the contact-email check, adding or declining) is the
+  next slice; until then a waiting request says so.
+
+`src/lib/admin/claims.ts` holds the typed reads, `decideClaim` (strict JSON:
+`expected_version`, `decision`, `order_id` for approve only, optional
+`note`) and the sketch's wording. Not built from the sketch yet: the Today
+line (Today isn't built), deciding, the order page's "Customer account" card,
+and the proposed API fields (single-request read, erased / account-deleted
+flags, newest-first decided lists, the chef-only "already in an account"
+flag of answer 8).
+
 ## Dependency audit
 
 `npm audit` reports low/moderate advisories in development tooling only

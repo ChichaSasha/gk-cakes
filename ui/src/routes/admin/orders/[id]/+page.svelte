@@ -360,373 +360,380 @@
 </svelte:head>
 
 <ChefShell active="orders" {view} onsignout={leave}>
-	<a class="back" href={resolve('/admin/orders')}><ChefIcon name="back" /> Orders</a>
-	{#if problem}
-		<div class="banner banner-bad" role="alert"><p>{problem}</p></div>
-	{:else if phase === 'loading' && !order}
-		<p class="muted" role="status">Loading the order…</p>
-	{:else if phase === 'missing'}
-		<div class="card empty-card">
-			<h1>Order not found</h1>
-			<p>This order doesn’t exist, or it isn’t one your role can see.</p>
-			<a class="btn" href={resolve('/admin/orders')}>Back to orders</a>
-		</div>
-	{:else if phase === 'error'}
-		<div class="banner banner-bad" role="alert">
-			<div>
-				<p>The order could not be loaded right now.</p>
-				<button class="btn" type="button" onclick={() => void start()}>Try again</button>
+	<div class="order-page">
+		<a class="back" href={resolve('/admin/orders')}><ChefIcon name="back" /> Orders</a>
+		{#if problem}
+			<div class="banner banner-bad" role="alert"><p>{problem}</p></div>
+		{:else if phase === 'loading' && !order}
+			<p class="muted" role="status">Loading the order…</p>
+		{:else if phase === 'missing'}
+			<div class="card empty-card">
+				<h1>Order not found</h1>
+				<p>This order doesn’t exist, or it isn’t one your role can see.</p>
+				<a class="btn" href={resolve('/admin/orders')}>Back to orders</a>
 			</div>
-		</div>
-	{:else if order && view && status}
-		{@const o = order}
-		{@const v = view}
-		{#if stale}
-			<div class="banner banner-warn" role="alert" tabindex="-1" bind:this={staleEl}>
-				<ChefIcon name="alert" cls="banner-icon" />
+		{:else if phase === 'error'}
+			<div class="banner banner-bad" role="alert">
 				<div>
-					<p>
-						<strong>This order changed while you were looking.</strong> The latest version is shown below.
-						Review it before you act.
+					<p>The order could not be loaded right now.</p>
+					<button class="btn" type="button" onclick={() => void start()}>Try again</button>
+				</div>
+			</div>
+		{:else if order && view && status}
+			{@const o = order}
+			{@const v = view}
+			{#if stale}
+				<div class="banner banner-warn" role="alert" tabindex="-1" bind:this={staleEl}>
+					<ChefIcon name="alert" cls="banner-icon" />
+					<div>
+						<p>
+							<strong>This order changed while you were looking.</strong> The latest version is shown
+							below. Review it before you act.
+						</p>
+					</div>
+				</div>
+			{/if}
+			{#each notices as b (b.key)}
+				<div class="banner banner-{b.tone}">
+					<ChefIcon name={b.tone === 'info' ? 'clock' : 'alert'} cls="banner-icon" />
+					<div>
+						<p><strong>{b.title}</strong> {b.text}</p>
+						{#each b.small as line (line)}<p class="small">{line}</p>{/each}
+					</div>
+				</div>
+			{/each}
+
+			<header class="page-head">
+				<div>
+					<p class="eyebrow">{orderLabel(o)} · placed {when(o.placed_at)}</p>
+					<h1>{cakeTitle(o)}</h1>
+					<p class="muted sub">
+						{o.customer_full_name} · {dayLabel(o.date)}, {timeRange(
+							o.slot.starts_at,
+							o.slot.ends_at
+						)}
 					</p>
 				</div>
-			</div>
-		{/if}
-		{#each notices as b (b.key)}
-			<div class="banner banner-{b.tone}">
-				<ChefIcon name={b.tone === 'info' ? 'clock' : 'alert'} cls="banner-icon" />
-				<div>
-					<p><strong>{b.title}</strong> {b.text}</p>
-					{#each b.small as line (line)}<p class="small">{line}</p>{/each}
-				</div>
-			</div>
-		{/each}
+				<span class="pill pill-{status.stage}" class:pill-released={status.released}
+					>{#if status.stage === 'ready' || status.stage === 'done'}<ChefIcon
+							name="check"
+							cls="pill-icon"
+						/>{/if}{status.text}</span
+				>
+			</header>
 
-		<header class="page-head">
-			<div>
-				<p class="eyebrow">{orderLabel(o)} · placed {when(o.placed_at)}</p>
-				<h1>{cakeTitle(o)}</h1>
-				<p class="muted sub">
-					{o.customer_full_name} · {dayLabel(o.date)}, {timeRange(o.slot.starts_at, o.slot.ends_at)}
-				</p>
-			</div>
-			<span class="pill pill-{status.stage}" class:pill-released={status.released}
-				>{#if status.stage === 'ready' || status.stage === 'done'}<ChefIcon
-						name="check"
-						cls="pill-icon"
-					/>{/if}{status.text}</span
-			>
-		</header>
-
-		{#if late}
-			<section class="card card-alert" aria-labelledby="late-h">
-				<h2 id="late-h" class="card-h"><ChefIcon name="alert" />{late.title}</h2>
-				{#each late.text as line, i (i)}<p class={i ? 'small muted' : ''}>{line}</p>{/each}
-				{#if late.note}<p class="role-note">{late.note}</p>{/if}
-			</section>
-		{/if}
-
-		<div class="detail-grid">
-			<div class="detail-main">
-				<section class="card" aria-labelledby="cake-h">
-					<h2 id="cake-h" class="card-h">Cake</h2>
-					<ul class="items">
-						{#each o.items ?? [] as item (item.line_no)}
-							<li>
-								<p class="strong">{item.cake_name}</p>
-								<p class="muted small">{itemDetail(item)}</p>
-							</li>
-						{:else}
-							<li class="muted small">No cakes on this order.</li>
-						{/each}
-					</ul>
-					<p class="muted small">Allergens and the recipe aren’t shown on the order page yet.</p>
+			{#if late}
+				<section class="card card-alert" aria-labelledby="late-h">
+					<h2 id="late-h" class="card-h"><ChefIcon name="alert" />{late.title}</h2>
+					{#each late.text as line, i (i)}<p class={i ? 'small muted' : ''}>{line}</p>{/each}
+					{#if late.note}<p class="role-note">{late.note}</p>{/if}
 				</section>
+			{/if}
 
-				<section class="card" aria-labelledby="hand-h">
-					<h2 id="hand-h" class="card-h">Handover</h2>
-					<dl class="facts">
-						<div>
-							<dt>Date</dt>
-							<dd>{dayLabel(o.date)}</dd>
-						</div>
-						<div>
-							<dt>Time</dt>
-							<dd>{timeRange(o.slot.starts_at, o.slot.ends_at)} · London time</dd>
-						</div>
-						<div>
-							<dt>How</dt>
-							<dd>{modeText(o.fulfillment_mode)}</dd>
-						</div>
-						<div>
-							<dt>Customer</dt>
-							<dd>{o.customer_full_name}</dd>
-						</div>
-						{#if o.contact_email}<div>
-								<dt>Email</dt>
-								<dd class="wrap">{o.contact_email}</dd>
-							</div>{/if}
-						<div>
-							<dt>Order ID</dt>
-							<dd class="mono wrap">{o.id}</dd>
-						</div>
-					</dl>
-					{#if o.appointment_change?.state === 'processing'}
-						<p class="small info-text">
-							Changing to {dayLabel(o.appointment_change.to.date)}, {timeRange(
-								o.appointment_change.to.starts_at,
-								o.appointment_change.to.ends_at
-							)} · being confirmed.
-						</p>
-					{/if}
-				</section>
+			<div class="detail-grid">
+				<div class="detail-main">
+					<section class="card" aria-labelledby="cake-h">
+						<h2 id="cake-h" class="card-h">Cake</h2>
+						<ul class="items">
+							{#each o.items ?? [] as item (item.line_no)}
+								<li>
+									<p class="strong">{item.cake_name}</p>
+									<p class="muted small">{itemDetail(item)}</p>
+								</li>
+							{:else}
+								<li class="muted small">No cakes on this order.</li>
+							{/each}
+						</ul>
+						<p class="muted small">Allergens and the recipe aren’t shown on the order page yet.</p>
+					</section>
 
-				{#if o.delivery || o.fulfillment_mode === 'gk_delivery'}
-					<section class="card" aria-labelledby="del-h">
-						<h2 id="del-h" class="card-h"><ChefIcon name="truck" />GK delivery</h2>
+					<section class="card" aria-labelledby="hand-h">
+						<h2 id="hand-h" class="card-h">Handover</h2>
 						<dl class="facts">
 							<div>
-								<dt>Delivery</dt>
-								<dd>{deliveryText(o) || 'Not recorded yet'}</dd>
+								<dt>Date</dt>
+								<dd>{dayLabel(o.date)}</dd>
+							</div>
+							<div>
+								<dt>Time</dt>
+								<dd>{timeRange(o.slot.starts_at, o.slot.ends_at)} · London time</dd>
+							</div>
+							<div>
+								<dt>How</dt>
+								<dd>{modeText(o.fulfillment_mode)}</dd>
+							</div>
+							<div>
+								<dt>Customer</dt>
+								<dd>{o.customer_full_name}</dd>
+							</div>
+							{#if o.contact_email}<div>
+									<dt>Email</dt>
+									<dd class="wrap">{o.contact_email}</dd>
+								</div>{/if}
+							<div>
+								<dt>Order ID</dt>
+								<dd class="mono wrap">{o.id}</dd>
 							</div>
 						</dl>
-						{#if fulfillmentState(o) === 'out_for_delivery' && o.lifecycle === 'ready'}
-							<p>
-								<strong
-									>Out for delivery{o.fulfillment?.at
-										? ` since ${when(o.fulfillment.at)}`
-										: ''}.</strong
-								>
-							</p>
-							<p class="small muted">
-								GK is responsible until the cake is handed to the customer. A failed delivery is a
-								problem to resolve, never “completed”.
-							</p>
-						{/if}
-						{#if o.delivery_choice?.open}
-							<p class="small">
-								The customer can now choose another way to get the cake: collection, their own
-								courier or a full refund.
-							</p>
-						{:else if o.delivery_choice?.reason === 'not_possible' || o.delivery_choice?.not_possible}
-							<p class="small">
-								GK can’t deliver this order (recorded). The customer chooses another way.
-							</p>
-						{/if}
-						{#if o.delivery_failure}
-							<p class="small">
-								{o.delivery_failure.cause === 'nobody_available'
-									? 'Nobody was available to take the delivery'
-									: 'The delivery failed on our side'}
-								({when(o.delivery_failure.at)}).{o.delivery_failure.open
-									? ' The customer is choosing what happens next.'
-									: ''}
-							</p>
-						{/if}
-						{#if v === 'chef'}
-							<p class="small muted">
-								Quotes, waivers and recording a delivery that can’t happen or failed aren’t on this
-								page yet.
+						{#if o.appointment_change?.state === 'processing'}
+							<p class="small info-text">
+								Changing to {dayLabel(o.appointment_change.to.date)}, {timeRange(
+									o.appointment_change.to.starts_at,
+									o.appointment_change.to.ends_at
+								)} · being confirmed.
 							</p>
 						{/if}
 					</section>
-				{/if}
 
-				{#if history.length}
-					<section class="card" aria-labelledby="rec-h">
-						<h2 id="rec-h" class="card-h">Record</h2>
-						<ol class="record">
-							{#each history as line, i (i)}
-								<li><span class="muted small">{when(line.at)}</span> <span>{line.text}</span></li>
+					{#if o.delivery || o.fulfillment_mode === 'gk_delivery'}
+						<section class="card" aria-labelledby="del-h">
+							<h2 id="del-h" class="card-h"><ChefIcon name="truck" />GK delivery</h2>
+							<dl class="facts">
+								<div>
+									<dt>Delivery</dt>
+									<dd>{deliveryText(o) || 'Not recorded yet'}</dd>
+								</div>
+							</dl>
+							{#if fulfillmentState(o) === 'out_for_delivery' && o.lifecycle === 'ready'}
+								<p>
+									<strong
+										>Out for delivery{o.fulfillment?.at
+											? ` since ${when(o.fulfillment.at)}`
+											: ''}.</strong
+									>
+								</p>
+								<p class="small muted">
+									GK is responsible until the cake is handed to the customer. A failed delivery is a
+									problem to resolve, never “completed”.
+								</p>
+							{/if}
+							{#if o.delivery_choice?.open}
+								<p class="small">
+									The customer can now choose another way to get the cake: collection, their own
+									courier or a full refund.
+								</p>
+							{:else if o.delivery_choice?.reason === 'not_possible' || o.delivery_choice?.not_possible}
+								<p class="small">
+									GK can’t deliver this order (recorded). The customer chooses another way.
+								</p>
+							{/if}
+							{#if o.delivery_failure}
+								<p class="small">
+									{o.delivery_failure.cause === 'nobody_available'
+										? 'Nobody was available to take the delivery'
+										: 'The delivery failed on our side'}
+									({when(o.delivery_failure.at)}).{o.delivery_failure.open
+										? ' The customer is choosing what happens next.'
+										: ''}
+								</p>
+							{/if}
+							{#if v === 'chef'}
+								<p class="small muted">
+									Quotes, waivers and recording a delivery that can’t happen or failed aren’t on
+									this page yet.
+								</p>
+							{/if}
+						</section>
+					{/if}
+
+					{#if history.length}
+						<section class="card" aria-labelledby="rec-h">
+							<h2 id="rec-h" class="card-h">Record</h2>
+							<ol class="record">
+								{#each history as line, i (i)}
+									<li><span class="muted small">{when(line.at)}</span> <span>{line.text}</span></li>
+								{/each}
+							</ol>
+						</section>
+					{/if}
+				</div>
+
+				<div class="detail-side">
+					<section class="card" aria-labelledby="prog-h">
+						<h2 id="prog-h" class="card-h">Progress</h2>
+						<ol class="progress">
+							{#each progress as s, i (i)}
+								<li class:done={s.done}>
+									<span class="p-dot" aria-hidden="true"></span>
+									<div>
+										<p>{s.label}<span class="sr-only">{s.done ? ' (done)' : ''}</span></p>
+										<p class="muted small">
+											{s.at
+												? `${s.done ? '' : 'Scheduled '}${when(s.at)}`
+												: s.done
+													? ''
+													: 'Not yet'}{s.note ? `${s.at || !s.done ? ' · ' : ''}${s.note}` : ''}
+										</p>
+									</div>
+								</li>
 							{/each}
 						</ol>
-					</section>
-				{/if}
-			</div>
-
-			<div class="detail-side">
-				<section class="card" aria-labelledby="prog-h">
-					<h2 id="prog-h" class="card-h">Progress</h2>
-					<ol class="progress">
-						{#each progress as s, i (i)}
-							<li class:done={s.done}>
-								<span class="p-dot" aria-hidden="true"></span>
-								<div>
-									<p>{s.label}<span class="sr-only">{s.done ? ' (done)' : ''}</span></p>
-									<p class="muted small">
-										{s.at
-											? `${s.done ? '' : 'Scheduled '}${when(s.at)}`
-											: s.done
-												? ''
-												: 'Not yet'}{s.note ? `${s.at || !s.done ? ' · ' : ''}${s.note}` : ''}
-									</p>
-								</div>
-							</li>
-						{/each}
-					</ol>
-					{#if v === 'technical_support'}
-						<p class="role-note">Technical support can look but not change orders.</p>
-					{:else if steps.actions.length}
-						<div class="actions stack">
-							{#each steps.actions as a, i (a)}
-								{#if asking === a}
-									{#if a === 'delivery_exception'}
-										<form
-											class="confirm-row"
-											aria-label="Record a problem"
-											novalidate
-											onsubmit={(e) => {
-												e.preventDefault();
-												void run(a);
-											}}
-										>
-											<label class="field" for="problem-reason">{confirmText(a, o, v)}</label>
-											<input
-												id="problem-reason"
-												class="text-input"
-												autocomplete="off"
-												maxlength="500"
-												bind:value={reason}
-												onkeydown={onConfirmKey}
-												aria-invalid={reasonError ? 'true' : undefined}
-												aria-describedby={reasonError ? 'problem-error' : undefined}
-											/>
-											{#if reasonError}<p id="problem-error" class="small bad-text">
-													{reasonError}
-												</p>{/if}
-											<button class="btn btn-primary" type="submit" disabled={busy !== null}
-												>{busy === a ? 'Recording…' : confirmLabel(a)}</button
+						{#if v === 'technical_support'}
+							<p class="role-note">Technical support can look but not change orders.</p>
+						{:else if steps.actions.length}
+							<div class="actions stack">
+								{#each steps.actions as a, i (a)}
+									{#if asking === a}
+										{#if a === 'delivery_exception'}
+											<form
+												class="confirm-row"
+												aria-label="Record a problem"
+												novalidate
+												onsubmit={(e) => {
+													e.preventDefault();
+													void run(a);
+												}}
 											>
-											<button class="btn btn-quiet" type="button" onclick={notYet}>Not now</button>
-										</form>
+												<label class="field" for="problem-reason">{confirmText(a, o, v)}</label>
+												<input
+													id="problem-reason"
+													class="text-input"
+													autocomplete="off"
+													maxlength="500"
+													bind:value={reason}
+													onkeydown={onConfirmKey}
+													aria-invalid={reasonError ? 'true' : undefined}
+													aria-describedby={reasonError ? 'problem-error' : undefined}
+												/>
+												{#if reasonError}<p id="problem-error" class="small bad-text">
+														{reasonError}
+													</p>{/if}
+												<button class="btn btn-primary" type="submit" disabled={busy !== null}
+													>{busy === a ? 'Recording…' : confirmLabel(a)}</button
+												>
+												<button class="btn btn-quiet" type="button" onclick={notYet}>Not now</button
+												>
+											</form>
+										{:else}
+											<div
+												class="confirm-row"
+												role="group"
+												aria-label={a === 'handover' ? 'Confirm handover' : 'Confirm not collected'}
+											>
+												<p class="small"><strong>{confirmText(a, o, v)}</strong></p>
+												<button
+													id="confirm-step"
+													class="btn {a === 'no_show' ? 'btn-danger' : 'btn-primary'}"
+													type="button"
+													disabled={busy !== null}
+													onkeydown={onConfirmKey}
+													onclick={() => void run(a)}
+													>{busy === a ? 'Recording…' : confirmLabel(a)}</button
+												>
+												<button
+													class="btn btn-quiet"
+													type="button"
+													onkeydown={onConfirmKey}
+													onclick={notYet}>Not yet</button
+												>
+											</div>
+										{/if}
 									{:else}
-										<div
-											class="confirm-row"
-											role="group"
-											aria-label={a === 'handover' ? 'Confirm handover' : 'Confirm not collected'}
+										<button
+											id="step-{a}"
+											class="btn {i === 0 || a === 'handover'
+												? 'btn-primary'
+												: a === 'delivery_exception'
+													? 'btn-quiet'
+													: ''}"
+											type="button"
+											disabled={busy !== null || (asking !== null && asking !== a)}
+											onclick={() => choose(a)}
+											>{busy === a && !asksFirst(a) ? 'Recording…' : stepLabel(a, o)}</button
 										>
-											<p class="small"><strong>{confirmText(a, o, v)}</strong></p>
-											<button
-												id="confirm-step"
-												class="btn {a === 'no_show' ? 'btn-danger' : 'btn-primary'}"
-												type="button"
-												disabled={busy !== null}
-												onkeydown={onConfirmKey}
-												onclick={() => void run(a)}
-												>{busy === a ? 'Recording…' : confirmLabel(a)}</button
-											>
-											<button
-												class="btn btn-quiet"
-												type="button"
-												onkeydown={onConfirmKey}
-												onclick={notYet}>Not yet</button
-											>
-										</div>
 									{/if}
-								{:else}
-									<button
-										id="step-{a}"
-										class="btn {i === 0 || a === 'handover'
-											? 'btn-primary'
-											: a === 'delivery_exception'
-												? 'btn-quiet'
-												: ''}"
-										type="button"
-										disabled={busy !== null || (asking !== null && asking !== a)}
-										onclick={() => choose(a)}
-										>{busy === a && !asksFirst(a) ? 'Recording…' : stepLabel(a, o)}</button
+								{/each}
+							</div>
+						{/if}
+						{#if steps.note && v !== 'technical_support'}<p class="role-note">{steps.note}</p>{/if}
+						<p class="small step-status" role="status" tabindex="-1" bind:this={statusEl}>
+							{stepStatus}
+						</p>
+						{#if stillPending}
+							<button
+								class="btn btn-small"
+								type="button"
+								disabled={busy !== null}
+								onclick={() => void checkAgain()}>Check again</button
+							>
+						{/if}
+						<div role="alert" class="step-error-wrap">
+							{#if stepError}<p class="small bad-text step-error" tabindex="-1" bind:this={errorEl}>
+									{stepError}
+								</p>{/if}
+						</div>
+					</section>
+
+					{#if ended || o.refund}
+						<section class="card" aria-labelledby="ref-h">
+							<div class="card-row">
+								<h2 id="ref-h" class="card-h">
+									{o.lifecycle === 'cancellation_pending'
+										? 'Cancelling'
+										: status.released
+											? status.text
+											: o.refund && !ended
+												? 'Refund'
+												: 'Cancelled'}
+								</h2>
+								{#if o.refund?.state && REFUND_WORDS[o.refund.state]}
+									<span class="chip-s chip-{REFUND_WORDS[o.refund.state][1]}"
+										>{REFUND_WORDS[o.refund.state][0]}</span
 									>
 								{/if}
-							{/each}
-						</div>
-					{/if}
-					{#if steps.note && v !== 'technical_support'}<p class="role-note">{steps.note}</p>{/if}
-					<p class="small step-status" role="status" tabindex="-1" bind:this={statusEl}>
-						{stepStatus}
-					</p>
-					{#if stillPending}
-						<button
-							class="btn btn-small"
-							type="button"
-							disabled={busy !== null}
-							onclick={() => void checkAgain()}>Check again</button
-						>
-					{/if}
-					<div role="alert" class="step-error-wrap">
-						{#if stepError}<p class="small bad-text step-error" tabindex="-1" bind:this={errorEl}>
-								{stepError}
-							</p>{/if}
-					</div>
-				</section>
-
-				{#if ended || o.refund}
-					<section class="card" aria-labelledby="ref-h">
-						<div class="card-row">
-							<h2 id="ref-h" class="card-h">
-								{o.lifecycle === 'cancellation_pending'
-									? 'Cancelling'
-									: status.released
-										? status.text
-										: o.refund && !ended
-											? 'Refund'
-											: 'Cancelled'}
-							</h2>
-							{#if o.refund?.state && REFUND_WORDS[o.refund.state]}
-								<span class="chip-s chip-{REFUND_WORDS[o.refund.state][1]}"
-									>{REFUND_WORDS[o.refund.state][0]}</span
-								>
+							</div>
+							{#if o.lifecycle === 'cancelled'}<p class="small">{cancelledText(o, v)}</p>{/if}
+							{#if refund.length}
+								<dl class="ledger">
+									{#each refund as f (f.label)}
+										<div>
+											<dt>{f.label}</dt>
+											<dd class={f.tone ? `${f.tone}-text` : ''}>{f.value}</dd>
+										</div>
+									{/each}
+								</dl>
+								{#if o.refund?.in_progress_minor}
+									<p class="small muted">
+										Money sent but not confirmed still counts: if the provider later says it failed,
+										it becomes owed again. We never send a second refund while one may still
+										succeed.
+									</p>
+								{/if}
 							{/if}
-						</div>
-						{#if o.lifecycle === 'cancelled'}<p class="small">{cancelledText(o, v)}</p>{/if}
-						{#if refund.length}
-							<dl class="ledger">
-								{#each refund as f (f.label)}
+							{#if v === 'chef'}
+								<p class="role-note">Sending refunds from this page comes in a later update.</p>
+							{/if}
+						</section>
+					{/if}
+
+					{#if money.length && !ended}
+						<section class="card" aria-labelledby="money-h">
+							<h2 id="money-h" class="card-h">Money</h2>
+							<dl class="facts">
+								{#each money as f (f.label)}
 									<div>
 										<dt>{f.label}</dt>
-										<dd class={f.tone ? `${f.tone}-text` : ''}>{f.value}</dd>
+										<dd class={f.tone ? `${f.tone}-text` : 'strong'}>{f.value}</dd>
 									</div>
 								{/each}
 							</dl>
-							{#if o.refund?.in_progress_minor}
-								<p class="small muted">
-									Money sent but not confirmed still counts: if the provider later says it failed,
-									it becomes owed again. We never send a second refund while one may still succeed.
+							{#if o.lifecycle === 'awaiting_payment'}
+								<p class="role-note">
+									Nothing can be cancelled or refunded until the payment result is known.
 								</p>
+							{:else if o.lifecycle === 'confirmation_pending'}
+								<p class="role-note">Cancelling is available once the order is confirmed.</p>
 							{/if}
-						{/if}
-						{#if v === 'chef'}
-							<p class="role-note">Sending refunds from this page comes in a later update.</p>
-						{/if}
-					</section>
-				{/if}
-
-				{#if money.length && !ended}
-					<section class="card" aria-labelledby="money-h">
-						<h2 id="money-h" class="card-h">Money</h2>
-						<dl class="facts">
-							{#each money as f (f.label)}
-								<div>
-									<dt>{f.label}</dt>
-									<dd class={f.tone ? `${f.tone}-text` : 'strong'}>{f.value}</dd>
-								</div>
-							{/each}
-						</dl>
-						{#if o.lifecycle === 'awaiting_payment'}
-							<p class="role-note">
-								Nothing can be cancelled or refunded until the payment result is known.
-							</p>
-						{:else if o.lifecycle === 'confirmation_pending'}
-							<p class="role-note">Cancelling is available once the order is confirmed.</p>
-						{/if}
-					</section>
-				{/if}
+						</section>
+					{/if}
+				</div>
 			</div>
-		</div>
-		{#if v === 'chef'}
-			<p class="muted small foot">
-				Not on this page yet: cancelling and refunds, late-payment decisions, delivery quotes and
-				problems, and moving the time or date.
-			</p>
+			{#if v === 'chef'}
+				<p class="muted small foot">
+					Not on this page yet: cancelling and refunds, late-payment decisions, delivery quotes and
+					problems, and moving the time or date.
+				</p>
+			{/if}
 		{/if}
-	{/if}
+	</div>
 </ChefShell>
