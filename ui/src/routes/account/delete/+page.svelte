@@ -88,6 +88,14 @@
 	let signOutProblem = $state('');
 
 	const upcoming = $derived(preview?.upcoming ?? []);
+	// The note after another account's session took over this browser; on the
+	// review steps it also asks to review before deleting.
+	const swapLine = $derived(
+		`You’re now signed in${email ? ` as ${email}` : ''}.` +
+			(step === 'review' || step === 'warn'
+				? ' Please review what happens before deleting this account.'
+				: '')
+	);
 
 	function local(): Storage | null {
 		try {
@@ -429,14 +437,7 @@
 {#snippet swapNotice()}
 	{#if swapNote}
 		<div class="notice" id="del-swap" role="alert" tabindex="-1">
-			<div>
-				<p>
-					You’re now signed in{email
-						? ` as ${email}`
-						: ''}.{#if step === 'review' || step === 'warn'}{' '}Please review what happens before
-						deleting this account.{/if}
-				</p>
-			</div>
+			<div><p>{swapLine}</p></div>
 		</div>
 	{/if}
 {/snippet}
