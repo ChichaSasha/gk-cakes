@@ -2,7 +2,9 @@
 	// The account pages' frame (approved GK-016 r02b sketch): the shop frame,
 	// the page title with who is signed in, and the account navigation (a
 	// labelled nav with aria-current; a horizontal row on narrow screens).
-	// Only pages that exist are linked.
+	// Only pages that exist are linked. A request page ('request') marks "Add
+	// an older order" as the sketch does, as the current section
+	// (aria-current="true"), since that link leads to the form, not this page.
 	import '../account.css';
 	import { resolve } from '$app/paths';
 	import type { Snippet } from 'svelte';
@@ -15,7 +17,7 @@
 		onsignout,
 		children
 	}: {
-		active: 'orders' | 'favourites' | 'profile';
+		active: 'orders' | 'favourites' | 'older' | 'request' | 'profile';
 		title?: string;
 		sub?: string;
 		onsignout?: () => void;
@@ -35,6 +37,11 @@
 					>Orders &amp; requests</a
 				>
 				<a href={resolve('/(shop)/favourites')}>Favourites</a>
+				<a
+					href={resolve('/account/older')}
+					aria-current={active === 'older' ? 'page' : active === 'request' ? 'true' : undefined}
+					>Add an older order</a
+				>
 				<a
 					href={resolve('/account/profile')}
 					aria-current={active === 'profile' ? 'page' : undefined}>Profile &amp; contact</a
