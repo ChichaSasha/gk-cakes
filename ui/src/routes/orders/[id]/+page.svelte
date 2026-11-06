@@ -195,7 +195,7 @@
 		void load();
 	}
 
-	async function openCancel() {
+	function openCancel() {
 		actionProblem = '';
 		cancelOpen = true;
 	}
@@ -363,7 +363,7 @@
 					{/if}
 					{#if canCancel}
 						<div class="oc-actions">
-							<button type="button" id="preview-cancel" onclick={() => void openCancel()}
+							<button type="button" id="preview-cancel" onclick={openCancel}
 								>Preview cancellation</button
 							>
 						</div>

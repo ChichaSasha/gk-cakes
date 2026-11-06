@@ -117,9 +117,12 @@
 				status = 'That’s already your time.';
 			} else {
 				awaiting = true;
-				status = target ? `Moving your time to ${target.label}…` : 'Moving your time…';
+				status = `${target ? `Moving your time to ${target.label}…` : 'Moving your time…'} This page updates by itself.`;
 				open = false;
 				view = null;
+				// The list and its button are gone: the status takes focus.
+				await tick();
+				document.getElementById('move-status')?.focus();
 			}
 			onchanged();
 		} catch (e) {
@@ -135,13 +138,13 @@
 	}
 </script>
 
-{#if moving}
+{#if moving && !awaiting}
 	<p class="notice" role="status">
 		Moving your time to {timeRange(moving.to.starts_at, moving.to.ends_at)} on {shortDate(
 			moving.to.date
 		)}… This page updates by itself.
 	</p>
-{:else}
+{:else if !moving}
 	<p class="small">{view?.intro ?? moveIntro(order.pickup_move_until)}</p>
 	<div class="oc-actions">
 		<button
@@ -191,4 +194,4 @@
 {#if problem}
 	<p class="co-errors" role="alert">{problem}</p>
 {/if}
-<p class="oc-status" role="status">{status}</p>
+<p class="oc-status oc-focus" id="move-status" role="status" tabindex="-1">{status}</p>
