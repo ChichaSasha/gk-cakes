@@ -31,7 +31,8 @@ export function changeInProgress(order: Order): boolean {
 		order.cancellation?.state === 'processing' ||
 		order.appointment_change?.state === 'processing' ||
 		Boolean(order.fulfillment?.pending) ||
-		order.delivery_choice?.pending === true
+		order.delivery_choice?.pending === true ||
+		order.delivery_failure?.pending === true
 	);
 }
 
@@ -53,8 +54,8 @@ export function mayCancel(order: Order, who: Who | null | undefined): boolean {
  * Whether a GK delivery problem gives the customer their own choice (the Q5
  * choice when GK can't deliver or the delivery quote's pay-by passed, or a
  * failed delivery): that choice can return everything paid, so the standard
- * cancellation (100% / 50%) is not offered here. Those choices (states 14
- * and 19) are not built on this page yet: the customer contacts the chef.
+ * cancellation (100% / 50%) is not offered here; the page shows the choice
+ * itself (states 14 and 19, recovery.ts).
  */
 export function deliveryProblemOpen(order: Order): boolean {
 	return order.delivery_choice?.open === true || order.delivery_failure?.open === true;
@@ -667,7 +668,11 @@ export function cancelBaseline(order: Order): ChangeBaseline {
 }
 
 /** Whether a command requested at requestedAt is newer than the baseline's. */
-function newer(requestedAt: string | null | undefined, order: Order, b: ChangeBaseline): boolean {
+export function newer(
+	requestedAt: string | null | undefined,
+	order: Order,
+	b: ChangeBaseline
+): boolean {
 	return Boolean(requestedAt) && requestedAt !== b.requestedAt && order.version > b.version;
 }
 

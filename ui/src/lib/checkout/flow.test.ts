@@ -645,4 +645,62 @@ describe('startPaymentFromOrder', () => {
 		expect(url).toBe(STRIPE);
 		expect(calls[0].args.slice(0, 2)).toEqual([ORDER, 3]);
 	});
+
+	it('a failed read after the 202 keeps checking (never a refusal), then the page', async () => {
+		let reads = 0;
+		const page = order({
+			version: 3,
+			payment: {
+				id: 'p2',
+				state: 'pending',
+				amount_minor: 9000,
+				currency: 'GBP',
+				requested_at: 'x',
+				checkout_url: STRIPE,
+				expires_at: 'x'
+			}
+		});
+		const api = fakeApi(
+			{
+				startPayment: async () => ({
+					order_id: ORDER,
+					state: 'payment_pending',
+					poll_after_seconds: 1
+				}),
+				order: async () => {
+					if (++reads < 3) throw new ApiError(0, {});
+					return page;
+				}
+			},
+			[]
+		);
+		const who = { kind: 'guest' as const, secret: 'P'.repeat(43) };
+		await expect(
+			startPaymentFromOrder(api, counterKeys(), order({ version: 3 }), who, { sleep: noSleep })
+		).resolves.toBe(STRIPE);
+	});
+
+	it('reads failing for the whole wait: undefined (the page keeps checking), not an error', async () => {
+		let t = 0;
+		const api = fakeApi(
+			{
+				startPayment: async () => ({
+					order_id: ORDER,
+					state: 'payment_pending',
+					poll_after_seconds: 1
+				}),
+				order: async () => {
+					throw new ApiError(0, {});
+				}
+			},
+			[]
+		);
+		const who = { kind: 'guest' as const, secret: 'P'.repeat(43) };
+		await expect(
+			startPaymentFromOrder(api, counterKeys(), order({ version: 3 }), who, {
+				sleep: async () => void (t += 10_000),
+				now: () => t
+			})
+		).resolves.toBeUndefined();
+	});
 });

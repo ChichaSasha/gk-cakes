@@ -13,7 +13,19 @@ export type OrderAction =
 	| 'start_payment' // ask the API for a secure payment page
 	| 'open_payment' // go to the open payment page (checkoutUrl)
 	| 'confirm_free' // confirm a £0 order
+	| 'pay_delivery' // pay the GK delivery quote (GK-030 slice 2, state 15)
 	| 'new_order'; // this order can no longer be paid or confirmed: start a new one
+
+/** The answer buttons to a chef's offer after a late payment (state 10). */
+export interface AnswerView {
+	offerId: string;
+	/** Absent once the offer can no longer be accepted (declining has no limit). */
+	acceptLabel?: string;
+	declineLabel: string;
+	/** The amount a decline returns (the API's paid_minor), shown while it is secured. */
+	declineMinor?: number;
+	note: string;
+}
 
 export interface OrderView {
 	tone: 'info' | 'success' | 'warning' | 'error';
@@ -42,6 +54,14 @@ export interface OrderView {
 	 * is open; none otherwise (nothing paid, cancelled or handed over).
 	 */
 	refundTerms: 'none' | 'standard' | 'agreement';
+	/** A chef's offer to answer (state 10). */
+	answer?: AnswerView;
+	/** A "What happens next" list (state 10, waiting). */
+	next?: { title: string; items: string[] };
+	/** Show a "Contact the chef" link in the status card. */
+	contactChef?: boolean;
+	/** Show the refund tracker (a refund on an order that isn't cancelled). */
+	refundTracker?: boolean;
 }
 
 /** Whether url is Stripe's hosted Checkout page (the only place we send customers to pay). */

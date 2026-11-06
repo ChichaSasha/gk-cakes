@@ -5,7 +5,9 @@
 	// (?payment=returned) only changes the wording to "still checking"; the
 	// API's order snapshot alone says whether anything was paid or confirmed.
 	// GK-030: cancellation with the API's preview, refund progress and the
-	// same-day time change (GK-017 r02b states 12, 13 and 18).
+	// same-day time change (GK-017 r02b states 12, 13 and 18); slice 2: the
+	// late-payment answer (state 10), the delivery quote and its payment
+	// (15), "we can't deliver" (14) and a failed delivery's choice (19).
 	import '../../../lib/checkout/checkout.css';
 	import '../../../lib/checkout/changes.css';
 	import { onMount, tick } from 'svelte';
@@ -13,7 +15,13 @@
 	import { page } from '$app/state';
 	import { ApiError } from '../../../lib/api';
 	import { orderCapability, takeOrderProblem } from '../../../lib/guest';
-	import { accountToken, api, changesApi, checkoutConfigured } from '../../../lib/checkout/client';
+	import {
+		accountToken,
+		api,
+		changesApi,
+		checkoutConfigured,
+		recoveryApi
+	} from '../../../lib/checkout/client';
 	import {
 		cancelBaseline,
 		cancelOutcomeSince,
@@ -28,6 +36,22 @@
 	import CancelPanel from '../../../lib/checkout/ui/CancelPanel.svelte';
 	import ChangeTime from '../../../lib/checkout/ui/ChangeTime.svelte';
 	import RefundProgress from '../../../lib/checkout/ui/RefundProgress.svelte';
+	import DeliveryChoice from '../../../lib/checkout/ui/DeliveryChoice.svelte';
+	import LateAnswer from '../../../lib/checkout/ui/LateAnswer.svelte';
+	import {
+		choiceCard,
+		choiceOutcomeSince,
+		deliveryNote,
+		deliveryRows,
+		lateOutcomeSince,
+		recoveryProblemFor,
+		startDeliveryPayment,
+		withPaymentCheck,
+		PAYMENT_CHECK_UNREADABLE,
+		type PaymentCheck,
+		withRecovery,
+		type ChoiceKind
+	} from '../../../lib/checkout/recovery';
 	import { ActionKeys, startPaymentFromOrder, type Who } from '../../../lib/checkout/flow';
 	import {
 		dateLabel,
@@ -47,6 +71,7 @@
 		withOrderProblem
 	} from '../../../lib/checkout/order';
 	import type { Order } from '../../../lib/checkout/types';
+	import type { OrderView } from '../../../lib/checkout/order';
 
 	const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 	const orderId = page.params.id ?? '';
@@ -57,6 +82,17 @@
 	let unavailable = $state('');
 	/** A refusal of this page's own action (kept until the next action). */
 	let actionProblem = $state('');
+	/**
+	 * An outcome of this page's own action that the order doesn't show by
+	 * itself (not an error): kept until the next action or a successful read.
+	 */
+	let actionNote = $state('');
+	/**
+	 * A payment this page asked for (202) whose result the order hasn't shown
+	 * yet (no payment page in time, or the order can't be read): until the
+	 * next successful read, "do not pay again", no pay action, polled.
+	 */
+	let checkingPayment = $state<PaymentCheck | null>(null);
 	/** A failed read of the order (cleared by the next successful read). */
 	let loadProblem = $state('');
 	/**
@@ -82,6 +118,12 @@
 	let cancelOpenedAt: ChangeBaseline | null = null;
 	/** The time-change section waits for this page's own move's outcome. */
 	let awaitingMove = $state(false);
+	/**
+	 * This page's own late-payment answer or delivery choice, while the page
+	 * waits for its outcome: the order as it was before it was sent (only a
+	 * newer outcome counts).
+	 */
+	let sent = $state<{ kind: 'late' | ChoiceKind; baseline: ChangeBaseline } | null>(null);
 	const REFUSED =
 		'We couldn’t cancel your order because it changed while we were cancelling it. It hasn’t been cancelled: you can try again.';
 	let timer: ReturnType<typeof setTimeout> | undefined;
@@ -91,9 +133,17 @@
 
 	// A dead end (lead time missed, price expired) offers a new order
 	// instead of paying or confirming this one.
+	function fullView(o: Order): OrderView {
+		return withRecovery(orderView(o, { returned, cancelledMinor }), o);
+	}
 	const view = $derived(
-		order ? withOrderProblem(orderView(order, { returned, cancelledMinor }), handoff?.next) : null
+		order
+			? withOrderProblem(withPaymentCheck(fullView(order), checkingPayment), handoff?.next)
+			: null
 	);
+	/** The open delivery choice this viewer can make (states 14, 15 pay-by passed, 19). */
+	const card = $derived(order && who ? choiceCard(order, who) : undefined);
+	const delivery = $derived(order ? deliveryRows(order) : []);
 	const canCancel = $derived(order ? mayCancel(order, who) : false);
 	const cancelContact = $derived(order ? cancelViaChef(order, who) : false);
 	const change = $derived(order ? timeChange(order, who) : 'none');
@@ -115,6 +165,27 @@
 			actionProblem = '';
 		}
 	});
+
+	// The outcome of this page's own answer or choice: the status heading
+	// takes focus once it says what happened; a refused choice focuses the
+	// reason above the reopened options.
+	$effect(() => {
+		if (!sent || !order) return;
+		const { kind, baseline } = sent;
+		const outcome =
+			kind === 'late'
+				? lateOutcomeSince(order, baseline)
+				: choiceOutcomeSince(order, kind, baseline);
+		if (!outcome) return;
+		sent = null;
+		// A lapse is said once, by the order's own line (state 10, waiting).
+		void focusAfter(outcome === 'refused' && kind !== 'late' ? 'choice-refused' : 'status-h');
+	});
+
+	async function focusAfter(id: string) {
+		await tick();
+		(document.getElementById(id) ?? document.getElementById('status-h'))?.focus();
+	}
 
 	onMount(() => {
 		void start();
@@ -171,6 +242,9 @@
 			if (!active) return;
 			order = o;
 			loadProblem = '';
+			// The order now says where the delivery payment is (the checking
+			// view polls by itself).
+			checkingPayment = null;
 		} catch (e) {
 			if (!active) return;
 			if (e instanceof ApiError && (e.status === 404 || e.status === 401)) {
@@ -188,8 +262,15 @@
 	function schedule() {
 		clearTimeout(timer);
 		if (!active || !order) return;
-		const v = orderView(order, { returned, cancelledMinor });
-		if (!v.poll && !changePoll(order) && !cancelSent && !awaitingMove) {
+		const v = fullView(order);
+		if (
+			!v.poll &&
+			!changePoll(order) &&
+			!cancelSent &&
+			!awaitingMove &&
+			!sent &&
+			!checkingPayment
+		) {
 			attempt = 0;
 			pollStarted = 0;
 			return;
@@ -244,6 +325,29 @@
 		document.getElementById('status-h')?.focus();
 	}
 
+	/** This page's answer or choice was accepted (202): read the order until its outcome. */
+	async function commandSent(kind: 'late' | ChoiceKind, baseline: ChangeBaseline) {
+		actionProblem = '';
+		handoff = null;
+		sent = { kind, baseline };
+		await refresh();
+		// The answer buttons or the choice are gone: the status heading says what happens.
+		await focusAfter('status-h');
+	}
+
+	/**
+	 * A refused answer (nothing changed). outcome: the order itself says what
+	 * happened (an offer that lapsed): no error, and a status note only when
+	 * the order read again doesn't say it.
+	 */
+	async function commandRefused(message: string, reload: boolean, outcome = false) {
+		actionNote = '';
+		actionProblem = outcome ? '' : message;
+		if (reload) await refresh();
+		if (outcome && !view?.lines.includes(message)) actionNote = message;
+		await focusAfter('status-h');
+	}
+
 	async function act() {
 		if (!order || !view || !who || busy) return;
 		if (view.action === 'new_order') {
@@ -254,6 +358,7 @@
 			return;
 		}
 		actionProblem = '';
+		actionNote = '';
 		handoff = null;
 		if (view.action === 'open_payment' && isPaymentPageUrl(view.checkoutUrl)) {
 			busy = true;
@@ -262,6 +367,7 @@
 			return;
 		}
 		busy = true;
+		const action = view.action;
 		try {
 			if (view.action === 'start_payment') {
 				busyText = 'Opening secure payment…';
@@ -270,6 +376,19 @@
 					window.location.assign(url);
 					return;
 				}
+				// Asked for, but no payment page yet (or the order couldn't be
+				// read): keep checking; never "nothing was charged".
+				checkingPayment = 'cake';
+			} else if (view.action === 'pay_delivery') {
+				busyText = 'Opening secure payment…';
+				const url = await startDeliveryPayment(recoveryApi, keys, order, who);
+				if (url) {
+					window.location.assign(url);
+					return;
+				}
+				// Asked for, but no payment page yet (or the order couldn't be
+				// read): keep checking; never "nothing has changed".
+				checkingPayment = 'delivery';
 			} else if (view.action === 'confirm_free') {
 				busyText = 'Confirming your order…';
 				await api.confirmFree(
@@ -280,14 +399,24 @@
 				);
 			}
 		} catch (e) {
-			const problem = orderProblemFor(e);
-			// A dead end stays shown and swaps the action for a new order.
-			if (problem.next === 'new_order') handoff = problem;
-			else actionProblem = problem.message;
+			if (view.action === 'pay_delivery') {
+				actionProblem = recoveryProblemFor(e, 'delivery_payment').message;
+			} else {
+				const problem = orderProblemFor(e);
+				// A dead end stays shown and swaps the action for a new order.
+				if (problem.next === 'new_order') handoff = problem;
+				else actionProblem = problem.message;
+			}
 		}
 		busy = false;
 		busyText = '';
-		void refresh();
+		await refresh();
+		// A refused or unfinished payment: the order read again (for example a
+		// new quote) or the checking status is shown; the heading takes focus.
+		const paying = action === 'pay_delivery' || action === 'start_payment';
+		if (paying && (actionProblem || checkingPayment)) {
+			await focusAfter('status-h');
+		}
 	}
 </script>
 
@@ -319,6 +448,22 @@
 					<div class="oc-actions">
 						<a class="text-link" href="mailto:gk.cake.london@gmail.com">Contact us</a>
 					</div>
+				{:else if view.refundTracker && order.refund}
+					<RefundProgress refund={order.refund} currency={order.currency} />
+				{/if}
+				{#if view.answer && who && !sent}
+					<LateAnswer
+						{order}
+						{who}
+						api={recoveryApi}
+						{keys}
+						answer={view.answer}
+						onsent={(b, a) => {
+							if (a === 'decline') cancelledMinor = view?.answer?.declineMinor;
+							void commandSent('late', b);
+						}}
+						onproblem={(m, r, o) => void commandRefused(m, r, o)}
+					/>
 				{/if}
 				{#if handoff}
 					<p class="co-errors" role="alert">{handoff.message}</p>
@@ -326,8 +471,14 @@
 				{#if actionProblem}
 					<p class="co-errors" role="alert">{actionProblem}</p>
 				{/if}
-				{#if loadProblem}
+				{#if loadProblem && !checkingPayment}
 					<p class="co-errors" role="alert">{loadProblem}</p>
+				{/if}
+				{#if actionNote}
+					<p class="notice" role="status">{actionNote}</p>
+				{/if}
+				{#if checkingPayment && loadProblem}
+					<p class="notice" role="status">{PAYMENT_CHECK_UNREADABLE}</p>
 				{/if}
 				{#if view.action !== 'none' || pollStopped}
 					<div class="order-actions">
@@ -348,6 +499,11 @@
 						{/if}
 					</div>
 				{/if}
+				{#if view.contactChef}
+					<div class="oc-actions">
+						<a class="text-link" href="mailto:gk.cake.london@gmail.com">Contact the chef</a>
+					</div>
+				{/if}
 				{#if pollStopped}
 					<p class="small" role="status">
 						We’re still waiting for a result.{view.doNotPayAgain ? ' Please don’t pay again.' : ''}
@@ -357,6 +513,27 @@
 					<p class="small">This page updates by itself.</p>
 				{/if}
 			</section>
+
+			{#if view.next}
+				<section class="co-card" aria-labelledby="next-h">
+					<h2 class="co-h" id="next-h">{view.next.title}</h2>
+					<ol class="oc-next">
+						{#each view.next.items as item (item)}<li>{item}</li>{/each}
+					</ol>
+				</section>
+			{/if}
+
+			{#if card && who && !sent}
+				<DeliveryChoice
+					{order}
+					{who}
+					api={recoveryApi}
+					{keys}
+					{card}
+					onsent={(k, b) => void commandSent(k, b)}
+					onrefresh={() => void refresh()}
+				/>
+			{/if}
 
 			{#if cancelOpen && who}
 				<CancelPanel
@@ -368,7 +545,7 @@
 					onclose={(p) => void closeCancel(p)}
 					oncancelled={(amount) => void cancelled(amount)}
 				/>
-			{:else if who && (change !== 'none' || canCancel || cancelContact)}
+			{:else if who && !card && (change !== 'none' || canCancel || cancelContact)}
 				<section class="co-card" aria-labelledby="change-h">
 					{#if change === 'move' || change === 'moving'}
 						<h2 class="co-h" id="change-h">Change your time</h2>
@@ -378,11 +555,22 @@
 							api={changesApi}
 							{keys}
 							onchanged={() => void refresh()}
-							onwaiting={(w) => (awaitingMove = w)}
+							onwaiting={(w) => {
+								awaitingMove = w;
+								// No longer waiting (an outcome, or the control was removed):
+								// the next read is planned again without this reason.
+								if (!w) schedule();
+							}}
 						/>
 					{:else}
 						<h2 class="co-h" id="change-h">Change or cancel</h2>
-						{#if change === 'contact_chef'}
+						{#if change === 'contact_chef' && cancelContact}
+							<p>
+								To change the delivery time or cancel this order, please <a
+									href="mailto:gk.cake.london@gmail.com">contact the chef</a
+								>: a GK delivery time can only change with the chef’s agreement.
+							</p>
+						{:else if change === 'contact_chef'}
 							<p>
 								Need a different delivery time? Please <a href="mailto:gk.cake.london@gmail.com"
 									>contact the chef</a
@@ -390,7 +578,7 @@
 							</p>
 						{/if}
 					{/if}
-					{#if cancelContact}
+					{#if cancelContact && change !== 'contact_chef'}
 						<p>
 							To cancel this order, please <a href="mailto:gk.cake.london@gmail.com"
 								>contact the chef</a
@@ -470,16 +658,15 @@
 					</div>
 				{/if}
 				<div class="totals total">
-					<span>{order.paid_at ? (deliveryPaid(order) ? 'Paid for cakes' : 'Paid') : 'Total'}</span
+					<span>{order.paid_at ? (delivery.length > 0 ? 'Paid for cakes' : 'Paid') : 'Total'}</span
 					><span>{formatMoney(order.total_minor, order.currency)}</span>
 				</div>
-				{#if deliveryPaid(order) && order.delivery?.paid_minor}
+				{#each delivery as row (row.label)}
 					<div class="totals">
-						<span>GK delivery · paid separately</span><span
-							>{formatMoney(order.delivery.paid_minor, order.currency)}</span
-						>
+						<span>{row.label}</span><span>{row.amount}</span>
 					</div>
-				{/if}
+				{/each}
+				{#if deliveryNote(order)}<p class="small">{deliveryNote(order)}</p>{/if}
 				{#if refundSummary}
 					<div class="totals">
 						<span>Refund due</span><span>{refundSummary.due}</span>

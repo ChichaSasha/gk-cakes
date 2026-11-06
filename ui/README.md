@@ -206,9 +206,10 @@ it with read, pay, cancel and move_pickup; the API checks it again).
 
 - **Cancel**: "Preview cancellation" on a confirmed, in-production or ready
   order (never after a GK delivery was sent out, never while another change
-  is processed; while a GK delivery choice is open, `delivery_choice.open` or
-  `delivery_failure.open`, it says "To cancel this order, please contact the
-  chef" instead, as those choices can return everything) opens "Cancel your
+  is processed; never while a GK delivery choice is open, as those choices
+  can return everything: the Q5 choice offers its own full refund and a
+  failed delivery says "To change the delivery time or cancel this order,
+  please contact the chef") opens "Cancel your
   order?" with
   `POST /orders/{id}/cancellation-preview`: the preview's `amount_minor`
   exactly (never computed here), the side of the deadline from its `rate`,
@@ -240,10 +241,41 @@ it with read, pay, cancel and move_pickup; the API checks it again).
   through. GK delivery orders have no time control ("please contact the
   chef").
 
+**Problem states after payment (GK-030 slice 2)** follow GK-017 r02b states
+10, 14, 15 and 19 (`src/lib/checkout/recovery.ts`, `ui/LateAnswer.svelte`,
+`ui/DeliveryChoice.svelte`). What can be chosen is the API's (`open`,
+`choices`, `times`, `payable`, `acceptable`, each at its clock); money is the
+API's pence only (never summed here: the Q5 full refund reads "everything
+paid"); a result is shown only once the API reports it secured; this page's
+own answer or choice counts only when newer than the order it was sent from.
+
+- **Paid late** (`late_payment`): waiting (requested date, everything back:
+  `paid_minor`, "What happens next"); the chef's offer, `requested` ("Yes,
+  confirm this date") or `other` ("Accept Sat 24 October, 13:00–14:00", only
+  an offer), and "No, refund everything · £90"
+  (`POST /orders/{id}/late-payment/answer`); accept only while `acceptable`;
+  answer pending, lapsed or refused; "You agreed to …" from `agreed`.
+- **Delivery quote** (`delivery`): amount and "Please pay by … (48 hours
+  before your delivery)"; "Pay for delivery · £120"
+  (`POST /orders/{id}/delivery-payment`, then the order is read until its
+  verified Stripe Checkout URL); "Still checking delivery payment; do not pay
+  again" with the same open payment page; a stray payment (`unmatched_minor`).
+- **We can't deliver / pay-by passed** (`delivery_choice`): Collect it · free,
+  Send your own courier (every listed time that day) or Full refund ·
+  everything paid, no deadline (`POST /orders/{id}/delivery-choice`);
+  confirming, refused (open again, reason above the options, focused) and the
+  collection or courier result with the delivery refund once secured.
+- **Failed delivery** (`delivery_failure`): our side, "Deliver it again" or
+  "Collect it today · delivery refunded" (times still ahead today; redelivery
+  alone when none is left; `POST /orders/{id}/delivery-failure-choice`) and
+  both results; nobody available: 50% of the cake (`cake_refund_minor`) and
+  the delivery kept (`delivery_kept_minor`), with the refund tracker.
+
 **Not built here:** the discovery pages and real basket (GK-016), the GK
-delivery request and quote flow, and the other GK-017 r02b problem states
-(approved 2026-11-05; only states 12, 13 and 18 are built, above): those are
-shown plainly with the messages above.
+delivery request flow, the two-lane order timeline of state 19, and the other
+GK-017 r02b problem states (approved 2026-11-05; states 10, 12–15, 18 and the
+delivery failures of 19 are built, above): those are shown plainly with the
+messages above.
 Confirmation emails are not sent yet, so the pages do not promise one.
 
 No browser test runner is configured yet; one is added when a runner is approved
