@@ -154,7 +154,12 @@ describe('mayCancel', () => {
 				guest
 			)
 		).toBe(false);
-		expect(mayCancel(order({ delivery_choice: { open: true, pending: true } }), guest)).toBe(false);
+		expect(
+			mayCancel(
+				order({ delivery_choice: { open: true, reason: 'not_possible', pending: true } }),
+				guest
+			)
+		).toBe(false);
 		expect(changeInProgress(order({ appointment_change: processing }))).toBe(true);
 		expect(changePoll(order({ appointment_change: processing }))).toBe(true);
 		expect(changePoll(order())).toBe(false);
@@ -475,7 +480,7 @@ describe('cancelledStory', () => {
 				cancelled({
 					cancel_reason: 'delivery_not_possible',
 					fulfillment_mode: 'gk_delivery',
-					delivery: { state: 'paid', paid_minor: 12000 }
+					delivery: { state: 'paid', quote: null, paid_minor: 12000 }
 				})
 			)?.why
 		).toBe(
@@ -665,30 +670,55 @@ describe('a GK delivery problem with its own choice (M3)', () => {
 	const gk = (over: Partial<Order> = {}) => order({ fulfillment_mode: 'gk_delivery', ...over });
 
 	it('no standard cancellation while the can’t-deliver choice is open; contact the chef instead', () => {
-		const open = gk({ delivery_choice: { open: true, pending: false } });
+		const open = gk({ delivery_choice: { open: true, reason: 'not_possible', pending: false } });
 		expect(deliveryProblemOpen(open)).toBe(true);
 		expect(mayCancel(open, guest)).toBe(false);
 		expect(cancelViaChef(open, guest)).toBe(true);
 		expect(timeChange(open, guest)).toBe('contact_chef');
-		const closed = gk({ delivery_choice: { open: false, pending: false } });
+		const closed = gk({ delivery_choice: { open: false, reason: null, pending: false } });
 		expect(mayCancel(closed, guest)).toBe(true);
 		expect(cancelViaChef(closed, guest)).toBe(false);
 	});
 
 	it('the same for an open failed-delivery choice (when the API sends it)', () => {
-		const failed = gk({ lifecycle: 'ready', delivery_failure: { open: true } });
+		const failed = gk({
+			lifecycle: 'ready',
+			delivery_failure: {
+				cause: 'our_side',
+				at: '2026-10-22T10:40:00Z',
+				state: 'recorded',
+				open: true,
+				pending: false
+			}
+		});
 		expect(mayCancel(failed, owner)).toBe(false);
 		expect(cancelViaChef(failed, owner)).toBe(true);
-		expect(mayCancel(gk({ delivery_failure: { open: false } }), owner)).toBe(true);
+		expect(
+			mayCancel(
+				gk({
+					delivery_failure: {
+						cause: 'our_side',
+						at: '2026-10-22T10:40:00Z',
+						state: 'recorded',
+						open: false,
+						pending: false
+					}
+				}),
+				owner
+			)
+		).toBe(true);
 	});
 
 	it('never for a viewer without access, a closed order or while a change is processed', () => {
-		const open = { delivery_choice: { open: true, pending: false } };
+		const open = { delivery_choice: { open: true, reason: 'not_possible', pending: false } };
 		expect(cancelViaChef(gk(open), null)).toBe(false);
 		expect(cancelViaChef(gk({ ...open, lifecycle: 'cancelled' }), guest)).toBe(false);
-		expect(cancelViaChef(gk({ delivery_choice: { open: true, pending: true } }), guest)).toBe(
-			false
-		);
+		expect(
+			cancelViaChef(
+				gk({ delivery_choice: { open: true, reason: 'not_possible', pending: true } }),
+				guest
+			)
+		).toBe(false);
 	});
 });
 

@@ -296,10 +296,142 @@ export interface Order {
 	/** Collection and own courier: the current start minus 6 hours (K06). */
 	pickup_move_until?: string | null;
 	fulfillment?: Fulfillment | null;
-	/** GK delivery only (0035); only the fields this page reads. */
-	delivery?: { state: string; paid_minor?: number } | null;
-	/** GK delivery only (0036): a protected change of the order is unresolved. */
-	delivery_choice?: { open: boolean; pending: boolean } | null;
-	/** A failed GK delivery's choice (PR #62), when the API sends it. */
-	delivery_failure?: { open: boolean } | null;
+	/** GK delivery only (0035). */
+	delivery?: Delivery | null;
+	/** GK delivery only, or an order a choice changed (0036). */
+	delivery_choice?: DeliveryChoice | null;
+	/** The latest failed GK delivery (0037), null when none. */
+	delivery_failure?: DeliveryFailure | null;
+	/** paid_awaiting_agreement orders only (0034). */
+	late_payment?: LatePayment | null;
+	/** An acceptance on the order page, once secured (0034). */
+	agreed?: Agreed | null;
+}
+
+// ---------------------------------------------------------------- GK-030 slice 2 (0034–0037)
+
+/** A chef's offer after a late payment (business.late_payment_offer_json, 0034). */
+export interface LatePaymentOffer {
+	id: string;
+	/** requested: the original appointment; other: another date or time. */
+	kind: 'requested' | 'other' | string;
+	date: string;
+	slot_id: string;
+	start: string;
+	end: string;
+	offered_at: string;
+	accept_until: string;
+	/** Computed by the API at its clock (offered and now before accept_until). */
+	acceptable?: boolean;
+}
+
+/** GET /orders/{id} late_payment (0034), on a paid_awaiting_agreement order. */
+export interface LatePayment {
+	state: 'waiting' | 'offered' | 'processing' | string;
+	offer: LatePaymentOffer | null;
+	/** The latest offer's answer while it has not resolved the order. */
+	answer: {
+		offer_id: string;
+		answer: 'accept' | 'decline' | string;
+		received_at: string;
+		state: 'processing' | 'lapsed' | 'refused' | string;
+		reason: string | null;
+	} | null;
+	/** The actual paid aggregate a decline returns in full (server-computed). */
+	paid_minor: number;
+	currency: string;
+}
+
+/** What the customer agreed on the order page, once secured (0034). */
+export interface Agreed {
+	at: string;
+	kind: 'requested' | 'other' | string;
+	date: string;
+	start: string;
+	end: string;
+	offer_id: string;
+}
+
+/** GET /orders/{id} delivery (0035): the GK delivery quote and its payment. */
+export interface Delivery {
+	/** awaiting_quote, quoted, payment_checking, paid, waived, pay_by_passed, cancelled_by_choice. */
+	state: string;
+	quote: {
+		id: string;
+		amount_minor: number;
+		currency: string;
+		quoted_at: string;
+		pay_by: string;
+	} | null;
+	/** "Pay for delivery" (computed by the API at its clock). */
+	payable?: boolean;
+	paid_minor?: number;
+	waived?: { at: string };
+	/** A stray delivery payment held and not returned yet. */
+	unmatched_minor?: number;
+	payment?: Payment | null;
+}
+
+/** A start of the handover day the customer can choose (0036, 0037). */
+export interface ChoiceTime {
+	id: string;
+	starts_at: string;
+	ends_at: string;
+}
+
+/** The handover a time choice moves the order to. */
+export interface ChoiceTarget {
+	fulfillment_mode: FulfillmentMode | string;
+	date: string;
+	id: string;
+	starts_at: string;
+	ends_at: string;
+}
+
+/** GET /orders/{id} delivery_choice (0036): the Q5 choice. */
+export interface DeliveryChoice {
+	open: boolean;
+	reason: 'not_possible' | 'pay_by_passed' | string | null;
+	opens_at?: string | null;
+	pending: boolean;
+	choices?: string[];
+	times?: ChoiceTime[];
+	chosen?: {
+		choice: 'collection' | 'customer_courier' | 'full_refund' | string;
+		reason?: string | null;
+		state: 'processing' | 'chosen' | 'cancelled' | 'refused' | string;
+		refusal_reason: string | null;
+		requested_at: string;
+		to: ChoiceTarget | null;
+		/** Only when the delivery was paid, and only once the choice is secured. */
+		delivery_refund_minor?: number;
+	} | null;
+}
+
+/** GET /orders/{id} delivery_failure (0037): the latest failed GK delivery. */
+export interface DeliveryFailure {
+	cause: 'our_side' | 'nobody_available' | string;
+	at: string;
+	/** our_side: recorded; nobody_available: processing, no_show or refused. */
+	state: string;
+	open: boolean;
+	pending: boolean;
+	choices?: string[];
+	times?: ChoiceTime[];
+	/** The paid delivery at stake (null when waived). */
+	delivery_paid_minor?: number | null;
+	chosen?: {
+		choice: 'redelivery' | 'collection' | string;
+		state: 'processing' | 'chosen' | 'refused' | string;
+		refusal_reason: string | null;
+		requested_at: string;
+		to: ChoiceTarget | null;
+		/** Collection with a paid delivery, only once secured. */
+		delivery_refund_minor?: number;
+	} | null;
+	redelivery_time_set?: boolean;
+	/** nobody_available, once secured: the no-show's 50% of the cake. */
+	cake_refund_minor?: number;
+	/** nobody_available, once secured: the delivery payment kept (0 when waived). */
+	delivery_kept_minor?: number;
 }
