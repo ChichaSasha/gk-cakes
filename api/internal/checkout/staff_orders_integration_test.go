@@ -213,7 +213,7 @@ func TestStaffOrderViewsAreRedactedByRole(t *testing.T) {
 	}
 
 	// The detail. The chef's holds every customer field with its value,
-	// except the payment link.
+	// except the payment link and the customer's own actions.
 	for _, o := range []struct {
 		id   string
 		d    []byte
@@ -229,6 +229,13 @@ func TestStaffOrderViewsAreRedactedByRole(t *testing.T) {
 		}
 		v := h.staffGet(t, chef, o.id)
 		for k, want := range customer {
+			if k == "actions" {
+				// What this customer may do (0038): the caller's, not the order's.
+				if _, ok := v[k]; ok {
+					t.Errorf("chef detail has the customer's actions")
+				}
+				continue
+			}
 			got, _ := json.Marshal(v[k])
 			w, _ := json.Marshal(want)
 			if k == "payment" {

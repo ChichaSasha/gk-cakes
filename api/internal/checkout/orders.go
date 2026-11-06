@@ -131,14 +131,20 @@ func (s *Store) GetOrder(ctx context.Context, id, subject string, digest []byte)
 	if subject != "" {
 		owner, digest = &subject, nil
 	}
-	var raw []byte
-	if err := s.DB.QueryRow(ctx, `SELECT business.order_get($1::uuid, $2::uuid, $3)`, id, owner, digest).Scan(&raw); err != nil {
+	// One statement: the view and the caller's action facts share a snapshot.
+	var raw, facts []byte
+	if err := s.DB.QueryRow(ctx, `SELECT business.order_get($1::uuid, $2::uuid, $3),
+		business.order_customer_actions($1::uuid, $2::uuid, $3)`, id, owner, digest).Scan(&raw, &facts); err != nil {
 		return nil, gatewayError("order", err)
 	}
-	if raw == nil {
+	if raw == nil || facts == nil {
 		return nil, catalog.ErrNotFound
 	}
-	return Order(s.withDeliveryFailureClock(s.withDeliveryChoiceClock(s.withDeliveryClock(s.withAcceptable(raw))))), nil
+	out, err := s.withActions(s.atClock(raw), facts)
+	if err != nil {
+		return nil, gatewayError("order", err)
+	}
+	return Order(out), nil
 }
 
 // Policy is a customer policy version.
