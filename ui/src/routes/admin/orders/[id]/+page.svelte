@@ -440,9 +440,7 @@
 							<li class="muted small">No cakes on this order.</li>
 						{/each}
 					</ul>
-					<p class="muted small">
-						Allergens and the recipe aren’t shown on the order yet: check the recipe card.
-					</p>
+					<p class="muted small">Allergens and the recipe aren’t shown on the order page yet.</p>
 				</section>
 
 				<section class="card" aria-labelledby="hand-h">
