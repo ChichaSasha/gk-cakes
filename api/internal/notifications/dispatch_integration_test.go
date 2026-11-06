@@ -889,9 +889,10 @@ func TestRuntimeRolesUseOnlyTheNotificationGateway(t *testing.T) {
 		"business.refund_resolve_committed(uuid, uuid, bigint, uuid, json, text)",
 		"business.refund_resolve_lookup(uuid, uuid, bigint, uuid, text, uuid, integer, text, text, timestamp with time zone)",
 		"business.refund_resolve_secured(uuid, uuid, bigint, uuid)",
-		// GK-016 r02b inactivity retention (0033): due steps and notices.
-		"business.account_retention_due(timestamp with time zone, integer)",
-		"business.account_retention_notice_record(uuid, text, timestamp with time zone, timestamp with time zone)"}, worker...)
+		// GK-016 r02b inactivity retention (0033): due steps only; recording
+		// a notice is owner-only until the email step records it with its
+		// notification intent.
+		"business.account_retention_due(timestamp with time zone, integer)"}, worker...)
 	slices.Sort(want)
 	if !slices.Equal(got, want) {
 		t.Errorf("gk_worker can execute %v, want exactly %v", got, want)

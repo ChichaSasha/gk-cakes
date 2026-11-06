@@ -85,6 +85,49 @@ func TestMigratePreviousSchemaToLatest(t *testing.T) {
 	}
 }
 
+// GK-016 r02b: 0033 backfills last_active_at for accounts that existed
+// before it, so their 24 inactive months (K09) start at the migration.
+func TestCustomerAccountsBackfillLastActive(t *testing.T) {
+	ctx := context.Background()
+	conn := dbtest.New(t).MigratorConn(t)
+	if _, err := migrate.RunTo(ctx, conn, migrations.FS, "0032_fulfillment"); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var id string
+	if _, err := tx.Exec(ctx, "SET LOCAL ROLE gk_owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.QueryRow(ctx, `SELECT business.account_ensure(gen_random_uuid(), false)::text`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, "UPDATE business.account SET created_at = now() - interval '3 years' WHERE id = $1::uuid", id); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if applied, err := migrate.Run(ctx, conn, migrations.FS); err != nil || len(applied) == 0 || applied[0] != "0033_customer_accounts" {
+		t.Fatalf("apply 0033: %v %v", applied, err)
+	}
+	tx, err = conn.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, "SET LOCAL ROLE gk_owner"); err != nil {
+		t.Fatal(err)
+	}
+	var backfilled bool
+	if err := tx.QueryRow(ctx, `SELECT last_active_at IS NOT NULL AND last_active_at > created_at + interval '2 years'
+		FROM business.account WHERE id = $1::uuid`, id).Scan(&backfilled); err != nil || !backfilled {
+		t.Fatalf("last_active_at not backfilled to the migration instant: %v", err)
+	}
+}
+
 func TestConcurrentMigrationsSerialize(t *testing.T) {
 	ctx := context.Background()
 	db := dbtest.New(t)

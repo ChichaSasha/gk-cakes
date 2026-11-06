@@ -54,11 +54,13 @@
 --    code_application) refuses attaching anything to a deleted account, so
 --    a checkout racing a deletion (any API build) cannot link its order to
 --    the deleted account.
--- 6. Inactivity (K09): account_retention_due lists, for the worker, accounts
---    due a warning (24 London months after the last activity: sign-in or a
---    new order), a reminder (7 days before deletion) or deletion (30 days
---    after the warning was recorded, never before it); notices are recorded
---    per activity anchor so a returning customer starts a new cycle. The
+-- 6. Inactivity (K09, BO-GK-005.retention_orders_accounts): account_retention_due
+--    lists, for the worker, accounts due a warning (24 London months after
+--    the last activity: sign-in or a new order), a reminder (7 days before
+--    deletion) or deletion (30 days after the warning was recorded and 7
+--    days after the reminder, never before either); notices are recorded
+--    per activity anchor so a returning customer starts a new cycle.
+--    Recording a notice is owner-only until the email step exists; the
 --    emails and the deletion run are later steps.
 --
 -- Lock order (K00, extended): the actor's account, then the claimant/owner
@@ -80,12 +82,17 @@ ALTER TABLE business.account
   ADD COLUMN profile_instagram  text NULL CHECK (profile_instagram IS NULL OR profile_instagram ~ '^[A-Za-z0-9._]{1,30}$'),
   ADD COLUMN profile_version    integer NOT NULL DEFAULT 1 CHECK (profile_version >= 1),
   ADD COLUMN profile_updated_at timestamptz NULL,
-  -- NULL reads as created_at (accounts created before this migration).
+  -- Existing accounts are backfilled below; NULL (an account created by
+  -- the previous API revision during the deploy) reads as created_at.
   ADD COLUMN last_active_at     timestamptz NULL,
   ADD COLUMN deleted_at         timestamptz NULL,
   ADD CONSTRAINT account_deleted_disabled CHECK (deleted_at IS NULL OR disabled_at IS NOT NULL),
   ADD CONSTRAINT account_deleted_anonymous CHECK (deleted_at IS NULL OR (profile_full_name IS NULL AND profile_phone IS NULL
                                                                         AND profile_instagram IS NULL));
+
+-- Data only: an existing account's last sign-in is unknown, so its 24
+-- inactive months start at this migration, never earlier (K09).
+UPDATE business.account SET last_active_at = pg_catalog.now() WHERE last_active_at IS NULL;
 
 -- A request to add an older order to the account (K00 claims).
 CREATE TABLE business.order_claim (
@@ -130,7 +137,8 @@ CREATE TABLE business.order_claim (
 );
 
 CREATE INDEX order_claim_account_idx ON business.order_claim (account_id, created_at DESC);
-CREATE INDEX order_claim_queue_idx ON business.order_claim (state, created_at, id);
+-- The chef's queue pages by (received_at, id) within a state.
+CREATE INDEX order_claim_queue_idx ON business.order_claim (state, received_at, id);
 -- One pending email-link claim per account and order.
 CREATE UNIQUE INDEX order_claim_link_pending_idx ON business.order_claim (account_id, capability_order_id)
   WHERE state = 'pending' AND path = 'email_link';
@@ -946,8 +954,15 @@ $$;
 -- ----------------------------------------------------------------- deletion
 
 -- Owner-internal: why an order's money is not settled (deletion blocks), or
--- NULL. Creator 2026-11-05: blocked while money is unsettled (a payment
--- being checked, paid awaiting a date, a refund in progress).
+-- NULL. Creator 2026-11-05 (answer 2): blocked only while money is
+-- unsettled (a payment being checked, paid awaiting a date, a refund in
+-- progress). Of the staff attention flags (order_attention_flags) only the
+-- money ones block: refund_needs_attention is a refund block that is not
+-- returned (refund_in_progress), payment_unknown and payment_mismatch are
+-- collections being checked (payment_being_checked), paid_awaiting_agreement
+-- has its own reason and refund_quarantine is refund_being_checked. Other
+-- flags (notice_not_sent: an order email was not queued) are staff work,
+-- not money, and never block.
 CREATE FUNCTION business.account_order_block(p_order business.orders)
 RETURNS text
 LANGUAGE sql
@@ -966,7 +981,10 @@ AS $$
            WHEN x.rs IS NOT NULL AND (x.rs ->> 'state' <> 'returned' OR (x.rs ->> 'in_progress_minor')::bigint > 0
                                      OR coalesce((x.rs ->> 'delivery_pending_minor')::bigint, 0) > 0)
              THEN 'refund_in_progress'
-           WHEN pg_catalog.cardinality(business.order_attention_flags(p_order)) > 0 THEN 'needs_attention'
+           WHEN EXISTS (SELECT 1 FROM business.refund_observation b
+                        JOIN business.payment_collection pc ON pc.id = b.collection_id
+                        WHERE pc.order_id = p_order.id AND b.quarantined AND b.resolved_at IS NULL)
+             THEN 'refund_being_checked'
            WHEN p_order.lifecycle = 'cancelled' AND x.rs IS NULL
                 AND EXISTS (SELECT 1 FROM business.payment_collection pc
                             WHERE pc.order_id = p_order.id AND pc.state = 'succeeded')
@@ -1105,7 +1123,7 @@ BEGIN
     RAISE EXCEPTION 'deletion_preview_invalid' USING ERRCODE = 'GK422';
   END IF;
   IF p_now >= pv.expires_at THEN
-    RAISE EXCEPTION 'preview_stale' USING ERRCODE = 'GK409';
+    RAISE EXCEPTION 'deletion_preview_stale' USING ERRCODE = 'GK409';
   END IF;
   PERFORM 1 FROM business.order_claim c WHERE c.account_id = a.id ORDER BY c.id FOR UPDATE;
   PERFORM 1 FROM business.orders o WHERE o.owner_account_id = a.id ORDER BY o.id FOR UPDATE;
@@ -1114,7 +1132,7 @@ BEGIN
     RAISE EXCEPTION 'account_deletion_blocked' USING ERRCODE = 'GK409';
   END IF;
   IF pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(v_facts::text, 'UTF8')), 'hex') <> pv.facts_sha256 THEN
-    RAISE EXCEPTION 'preview_stale' USING ERRCODE = 'GK409';
+    RAISE EXCEPTION 'deletion_preview_stale' USING ERRCODE = 'GK409';
   END IF;
 
   -- Orders: unlinked (their details keep their own retention, K09), their
@@ -1173,7 +1191,10 @@ AS $$ SELECT ((p_at AT TIME ZONE 'Europe/London') + p_by) AT TIME ZONE 'Europe/L
 -- Owner-internal: the account's retention step at p_now: the next notice
 -- due ('warning', 'reminder' or 'deletion'), its activity anchor and the
 -- deletion instant, or no row. Deleted, disabled and staff accounts are
--- never due; deletion is not due while an order's money is unsettled.
+-- never due; deletion is not due while an order's money is unsettled. The
+-- reminder comes 7 days before deletion: a reminder recorded later than
+-- that (a worker outage) moves deletion to 7 London days after it, never
+-- earlier than the warning's 30 days.
 CREATE FUNCTION business.account_retention_step(p_account business.account, p_now timestamptz)
 RETURNS TABLE (notice text, activity_anchor timestamptz, deletion_due_at timestamptz)
 LANGUAGE sql
@@ -1187,7 +1208,8 @@ AS $$
                              '-infinity'::timestamptz)) AS at
   ), state AS (
     SELECT n.at, business.account_london_shift(n.at, interval '24 months') AS warn_at,
-           w.deletion_due_at AS due, w.recorded_at AS warned_at, r.recorded_at AS reminded_at
+           w.deletion_due_at AS due, w.recorded_at AS warned_at, r.recorded_at AS reminded_at,
+           GREATEST(w.deletion_due_at, business.account_london_shift(r.recorded_at, interval '7 days')) AS delete_at
     FROM anchor n
     LEFT JOIN business.account_retention_notice w
       ON w.account_id = p_account.id AND w.kind = 'warning' AND w.activity_anchor = n.at
@@ -1197,14 +1219,15 @@ AS $$
   SELECT CASE WHEN s.warned_at IS NULL THEN 'warning' WHEN s.reminded_at IS NULL THEN 'reminder' ELSE 'deletion' END,
          s.at,
          CASE WHEN s.warned_at IS NULL THEN business.account_london_shift(GREATEST(s.warn_at, p_now), interval '30 days')
-              ELSE s.due END
+              WHEN s.reminded_at IS NULL THEN GREATEST(s.due, business.account_london_shift(p_now, interval '7 days'))
+              ELSE s.delete_at END
   FROM state s
   WHERE p_account.deleted_at IS NULL AND p_account.disabled_at IS NULL
     AND NOT EXISTS (SELECT 1 FROM business.staff_capability c WHERE c.account_id = p_account.id AND c.revoked_at IS NULL)
     AND ((s.warned_at IS NULL AND p_now >= s.warn_at)
          OR (s.warned_at IS NOT NULL AND s.reminded_at IS NULL
              AND p_now >= business.account_london_shift(s.due, interval '-7 days'))
-         OR (s.reminded_at IS NOT NULL AND p_now >= s.due
+         OR (s.reminded_at IS NOT NULL AND p_now >= s.delete_at
              AND NOT EXISTS (SELECT 1 FROM business.orders o
                              WHERE o.owner_account_id = p_account.id AND business.account_order_block(o) IS NOT NULL)));
 $$;
@@ -1231,10 +1254,13 @@ BEGIN
 END;
 $$;
 
--- Worker: record that a warning or reminder for p_anchor was sent (or
--- handed to the email step); false when it is no longer due (the customer
--- came back, or it was recorded already). A warning fixes the deletion
--- instant at 30 London days after it is recorded.
+-- Owner only for now: record that a warning or reminder for p_anchor was
+-- sent; false when it is no longer due (the customer came back, or it was
+-- recorded already). A warning fixes the deletion instant at 30 London days
+-- after it is recorded; a reminder records max(that, 7 London days after
+-- it). No runtime role may call it: a warning starts the deletion clock, so
+-- it must be recorded with its email (notification intent) in one
+-- lease-fenced worker transaction, which the email step will add.
 CREATE FUNCTION business.account_retention_notice_record(p_account uuid, p_kind text, p_anchor timestamptz,
                                                          p_now timestamptz)
 RETURNS boolean
@@ -1320,4 +1346,5 @@ GRANT EXECUTE ON FUNCTION business.order_owner_assign(uuid, text, text, uuid, in
 GRANT EXECUTE ON FUNCTION business.account_deletion_preview_create(uuid, timestamptz) TO gk_api;
 GRANT EXECUTE ON FUNCTION business.account_delete(uuid, text, text, uuid, text, timestamptz, timestamptz) TO gk_api;
 GRANT EXECUTE ON FUNCTION business.account_retention_due(timestamptz, integer) TO gk_worker;
-GRANT EXECUTE ON FUNCTION business.account_retention_notice_record(uuid, text, timestamptz, timestamptz) TO gk_worker;
+-- account_retention_notice_record: no grant (owner only) until the email
+-- step records the notice with its notification intent.

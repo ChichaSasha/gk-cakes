@@ -2335,6 +2335,22 @@ Migration `0033_customer_accounts.sql` (expand only), store
 whenever identity is configured (not behind `CHECKOUT_ENABLED`). No analytics
 run on these routes (K10); every answer is private `no-store`.
 
+Owner input (recorded hashes): the inactivity rule (24 months without a
+sign-in or new order, then a warning and deletion 30 days later) implements
+`BO-GK-005.retention_orders_accounts`, decision revision
+`fd2391c57cbab22f7ec7038d7c0b48404f311fbbe92e72320f1d937ad91f944a`
+(`docs/creator/GK-005/decisions.json` sha256
+`d6593cfc91948c3294e22fcf112226b4df2838d241abb016a5597c4c88ff6542`), source
+comment `chat:GK-005:2026-10-05:order-account-access` original UTF-8 sha256
+`bde812be81d82a8ad58b50dfb249a025b423f40bbe8702475d1f5c0998c259bf`
+(`source-comments.json` sha256
+`a27945eb42272189c1b9c8c6083c2a92620fa18ebcb8cce2713b329edd543be7`), owner
+data contract `docs/design/owner-data-contract.md` sha256
+`e71792978a198263aeae6e28ae1520acc4598e1f699235e14aa049664f593a21`. Its
+order-details retention (2 years after fulfilment or cancellation) and the
+GK-037 open points (financial rules, legal holds, provider deletion, backup
+expiry) are not implemented here.
+
 | Route | Who | Input / answer |
 | --- | --- | --- |
 | `GET /api/v1/me/orders[?cursor&limit]` | signed-in customer | 200 `{orders, next_cursor?}`; newest placed first, `limit` 1–50 (default 20) |
@@ -2361,14 +2377,19 @@ get 403 `ACCOUNT_DISABLED`, deleted ones 403 `ACCOUNT_DELETED`.
   sign-in activity (`account.last_active_at`) at most once an hour for the
   inactivity rule. Any authenticated request counts as activity, a
   conservative reading of K09 "since login": an account in use is never
-  warned. The token's sign-in instant is read from Supabase's `amr` claim:
+  warned. The migration sets `last_active_at` to its own instant for every
+  existing account (the real last sign-in is unknown, so the 24 months start
+  then, never earlier); an account created by the previous API revision
+  during the deploy reads `created_at` until its first request. The token's sign-in instant is read from Supabase's `amr` claim:
   the latest `timestamp` of an `otp`, `magiclink` or `oauth` entry (email
   link or Google, answer 3), which survives refreshes. `password` (staff
   only), `recovery`, `invite`, `email_change` and `token_refresh` never
   count, and `iat` is renewed by every refresh, so it is never used. Without
   such an entry deletion asks for a fresh sign-in. SETUP.md records the
   Creator's provider settings this relies on (Secure password change on,
-  manual identity linking off).
+  Secure email change on, manual identity linking off): otherwise a stolen
+  session could change the email, receive a magic link and get a fresh
+  `amr` instant to delete the account.
 - **My orders (K02).** Rows are built from `order_view`, the renderer of
   `GET /orders/{id}`, so the list and the order page agree: `id`, `version`,
   visible `lifecycle`, `cancel_reason`, `cancelled_at`,
@@ -2394,8 +2415,9 @@ get 403 `ACCOUNT_DISABLED`, deleted ones 403 `ACCOUNT_DELETED`.
   browser (`X-Order-Capability`, the same secret as the order page); a
   missing, malformed, revoked or foreign capability is a plain 404; an order
   already in this account is 409 `ALREADY_IN_ACCOUNT`; one pending link
-  claim per order (409 `CLAIM_PENDING`); at most 5 pending claims per account
-  (409 `CLAIM_LIMIT`). The customer sees what they sent and the state;
+  claim per account and order (409 `CLAIM_PENDING`; another account may ask
+  for the same order and the chef decides); at most 5 pending claims per
+  account (409 `CLAIM_LIMIT`). The customer sees what they sent and the state;
   `order_id` only once approved; never the chef's note; a decline reveals
   nothing ("contact us" is the UI's). The guest link keeps working while a
   claim waits and after a decline.
@@ -2417,17 +2439,24 @@ get 403 `ACCOUNT_DISABLED`, deleted ones 403 `ACCOUNT_DELETED`.
   `order_change_in_progress` (a confirmation or cancellation not secured),
   `payment_being_checked` (a collection created, pending, unknown or
   mismatched), `paid_awaiting_agreement`, `refund_in_progress` (refund not
-  fully returned, or a delivery share still pending), `needs_attention` (any
-  staff attention flag), `payment_recorded` (cancelled with a payment and no
-  refund goal). A confirmed, in-production or ready order is listed in
+  fully returned, or a delivery share still pending; this includes the
+  staff flag `refund_needs_attention`), `refund_being_checked` (an
+  unresolved quarantined provider refund), `payment_recorded` (cancelled
+  with a payment and no refund goal). Of the staff attention flags only the
+  money ones block (`payment_unknown` and `payment_mismatch` are
+  `payment_being_checked`); `notice_not_sent` (an order email was not
+  queued) is staff work, not money, and blocks neither deletion nor the
+  inactivity deletion (Creator answer 2: blocked only while money is
+  unsettled). A confirmed, in-production or ready order is listed in
   `upcoming` (the warning and extra tick are the UI's) and does not block.
   An account with an active staff capability is refused (409
   `STAFF_ACCOUNT`, `can_delete` false): the operator revokes the grants with
   gk-identity-admin first, then the person may delete it as a customer.
   The preview stores the facts (order IDs and reasons only) and their hash
   for 15 minutes; deletion recomputes them after locking the account, its
-  claims and its orders: changed is 409 `PREVIEW_STALE`, expired too, another
-  hash or another account's preview 422. The fresh sign-in (answer 3) is the
+  claims and its orders: changed is 409 `DELETION_PREVIEW_STALE` (not the
+  cancellation's refund-amount `PREVIEW_STALE`), expired too, another hash or
+  another account's preview 422. The fresh sign-in (answer 3) is the
   token's `amr` instant within 10 minutes before the receipt (and not in the
   future beyond a minute); otherwise 401 `REAUTHENTICATION_REQUIRED` with
   `WWW-Authenticate: Bearer error="insufficient_user_authentication",
@@ -2445,7 +2474,15 @@ get 403 `ACCOUNT_DISABLED`, deleted ones 403 `ACCOUNT_DELETED`.
   restore freeze and although the account is deleted: the deletion route
   accepts a deleted account for that); a new key is 403 `ACCOUNT_DELETED`.
   Previews expired more than a day ago are removed (100 at a time) whenever
-  a new preview is made.
+  a new preview is made (by any account). Staff accounts are refused, never
+  changed: deletion does not revoke staff grants.
+- **What survives a deletion (K00).** The pseudonymous link between the
+  account ID and its orders stays: the immutable `order_owner_event` history
+  (`linked` and `unlinked` events, with the chef's evidence erased),
+  `order_claim` rows (the account and the order IDs, with every free-text
+  field erased), and the audit (account and order IDs, counts and claim
+  IDs, no personal data). The account row keeps no profile data (its ID,
+  provider subject, state and timestamps).
 - **Concurrency.** The account's own commands and its deletion lock it `FOR
   NO KEY UPDATE`, so order commands that hold an order and write rows that
   merely reference the account (KEY SHARE) never deadlock with a deletion
@@ -2464,32 +2501,43 @@ get 403 `ACCOUNT_DISABLED`, deleted ones 403 `ACCOUNT_DELETED`.
   and every API call answers 403 `ACCOUNT_DELETED` (the UI should say the
   account was deleted and the address becomes free once the provider
   deletion is done).
-- **Inactivity (K09, answer 9).** For the worker (`gk_worker` only):
-  `account_retention_due(now, limit)` lists `warning` (24 London calendar
-  months after the last activity: sign-in or a new order on the account;
-  month-end clamp), `reminder` (7 days before deletion) and `deletion` (30
-  London days after the warning was recorded, never before; not while an
-  order's money is unsettled); `account_retention_notice_record(account,
-  kind, anchor, now)` records a warning or reminder for that activity
-  anchor (false when no longer due: the customer came back, or recorded
-  already) and audits the kind. Staff, disabled and deleted accounts are
-  never due.
+- **Inactivity (K09, answer 9; BO-GK-005.retention_orders_accounts).** For
+  the worker (`gk_worker` only): `account_retention_due(now, limit)` lists
+  `warning` (24 London calendar months after the last activity: sign-in or
+  a new order on the account; month-end clamp), `reminder` (7 days before
+  deletion) and `deletion` (30 London days after the warning was recorded
+  and 7 London days after the reminder was recorded, never before either:
+  a late reminder moves deletion later instead of making it due at once;
+  not while an order's money is unsettled). Staff, disabled and deleted
+  accounts are never due. `account_retention_notice_record(account, kind,
+  anchor, now)` records a warning or reminder for that activity anchor
+  (false when no longer due: the customer came back, or recorded already)
+  and audits the kind; it is **owner only, granted to no runtime role**:
+  a warning starts the 30-day deletion clock, so it must not be recordable
+  without its email. Follow-up (with the inactivity emails): a lease-fenced
+  worker function that records the notice and its notification intent in
+  one transaction.
 - **Lock order** (K00, extended): the actor's account, the claimant/owner
   account, claim rows, orders by UUID, then history and audit.
 - **Tests:** `internal/checkout/accounts_integration_test.go` (my orders
   isolation and paging against `GET /orders/{id}`, profile validation,
   versions, replay and audit, claims path c and a, chef approve/decline/no
   leak/limits/withdraw, chef direct add, freeze),
-  `accounts_deletion_integration_test.go` (blocked reasons, warning, staff
-  refused, fresh sign-in, preview binding, expiry and cleanup, effects,
-  replay without a fresh sign-in and during a freeze, retention steps; two
+  `accounts_deletion_integration_test.go` (blocked reasons, only money
+  blocks: `notice_not_sent` on an upcoming and a completed order does not,
+  an unsecured change, a quarantined refund and a recorded payment do;
+  warning, staff refused, fresh sign-in, preview binding, expiry and
+  cleanup, effects, replay without a fresh sign-in and during a freeze,
+  retention steps, a late reminder delays deletion, no runtime role records
+  a notice; two
   connections: a checkout racing an open deletion is refused and never
   linked, an order command holding the order does not deadlock with a
   deletion),
   `internal/identity` (`amr` methods, activity, deleted state), `internal/httpapi`
   `TestMyOrdersRoute`, `TestProfileRoute`, `TestClaimRoutes`,
-  `TestDeletionRoutes`, and the exact `gk_api`/`gk_worker` allowlists in
-  `internal/notifications`.
+  `TestDeletionRoutes`, the exact `gk_api`/`gk_worker` allowlists in
+  `internal/notifications`, and the `last_active_at` backfill in
+  `internal/migrate`.
 
 Not yet (next steps):
 
@@ -2515,8 +2563,10 @@ Not yet (next steps):
   from a point before a deletion would bring the account, its profile and
   its order links back. K09 requires restore/recovery replay to carry
   tombstones: until GK-034/GK-035 re-apply tombstones after a restore (and
-  the restore check proves it), a restore must be followed by re-running
-  the recorded deletions by hand. Not implemented here.
+  the restore check proves it), export `account_tombstone` and
+  `account_provider_deletion` from the live database before a restore, then
+  re-run those deletions by hand on the restored database (and re-request
+  any provider deletion not completed). Not implemented here.
 - **Provider deletion and sessions.** Removing the Supabase user, and
   signing out everywhere (GK-021), are outside the API.
 - **Favourites and requests** (`/me/favourites`, `/me/custom-requests`) and

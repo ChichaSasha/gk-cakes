@@ -477,7 +477,7 @@ var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "
 	"transition_not_allowed": true,
 	// Customer accounts (0033).
 	"account_deletion_blocked": true, "claim_limit": true, "claim_pending": true, "already_yours": true,
-	"order_owned": true, "account_unavailable": true, "staff_account": true}
+	"order_owned": true, "account_unavailable": true, "staff_account": true, "deletion_preview_stale": true}
 
 // conflictAliases name engine refusals in the customer's terms.
 var conflictAliases = map[string]string{"day_full": "slot_unavailable", "stock_unavailable": "item_unavailable"}
