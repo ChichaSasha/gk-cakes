@@ -70,27 +70,35 @@ export function staffClaims(api: StaffApi, state: ClaimState, cursor?: string): 
 	});
 }
 
-/** Most pages one search for a single request follows, per state. */
+/** Most pages one search for a single request follows, per state (500 requests). */
 export const MAX_CLAIM_PAGES = 10;
+
+export type FoundClaim =
+	| { claim: StaffClaim }
+	/** In none of the four lists (closed when its customer deleted their account, or never existed). */
+	| { claim: null; capped: false }
+	/** A list was longer than the search reads: the request may be past it. */
+	| { claim: null; capped: true };
 
 /**
  * Finds one request by ID. The API has no single-request read yet (proposed
- * in the sketch), so this pages the four lists, waiting first. A request
- * closed when its customer deleted their account is in no list: null.
+ * in the sketch), so this pages the four lists, waiting first.
  */
-export async function findClaim(api: StaffApi, id: string): Promise<StaffClaim | null> {
-	if (!UUID.test(id)) return null;
+export async function findClaim(api: StaffApi, id: string): Promise<FoundClaim> {
+	if (!UUID.test(id)) return { claim: null, capped: false };
+	let capped = false;
 	for (const [state] of CLAIM_TABS) {
 		let cursor: string | undefined;
 		for (let i = 0; i < MAX_CLAIM_PAGES; i++) {
 			const page = await staffClaims(api, state, cursor);
 			const found = page.claims.find((c) => c.id === id);
-			if (found) return found;
+			if (found) return { claim: found };
 			if (!page.next_cursor) break;
 			cursor = page.next_cursor;
+			if (i === MAX_CLAIM_PAGES - 1) capped = true;
 		}
 	}
-	return null;
+	return { claim: null, capped };
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

@@ -85,7 +85,7 @@ describe('staff claim reads', () => {
 			if (state === 'approved') return { body: { claims: [target] } };
 			return { body: { claims: [] } };
 		});
-		expect(await findClaim(api, ID(7))).toEqual(target);
+		expect(await findClaim(api, ID(7))).toEqual({ claim: target });
 		expect(calls.map((c) => c.url)).toEqual([
 			'/api/v1/admin/order-claims?state=pending&limit=50',
 			'/api/v1/admin/order-claims?state=approved&limit=50',
@@ -95,10 +95,20 @@ describe('staff claim reads', () => {
 
 	it('returns null for a request in no list (closed by account deletion) or a non-ID', async () => {
 		const { api, calls } = fakeApi(() => ({ body: { claims: [] } }));
-		expect(await findClaim(api, ID(8))).toBeNull();
+		expect(await findClaim(api, ID(8))).toEqual({ claim: null, capped: false });
 		expect(calls).toHaveLength(4);
-		expect(await findClaim(api, '../orders')).toBeNull();
+		expect(await findClaim(api, '../orders')).toEqual({ claim: null, capped: false });
 		expect(calls).toHaveLength(4);
+	});
+
+	it('says when a list was longer than the search reads', async () => {
+		const { api, calls } = fakeApi((url) =>
+			url.searchParams.get('state') === 'approved'
+				? { body: { claims: [claim({ id: ID(5) })], next_cursor: 'more' } }
+				: { body: { claims: [] } }
+		);
+		expect(await findClaim(api, ID(8))).toEqual({ claim: null, capped: true });
+		expect(calls.filter((c) => c.url.includes('state=approved'))).toHaveLength(10);
 	});
 });
 

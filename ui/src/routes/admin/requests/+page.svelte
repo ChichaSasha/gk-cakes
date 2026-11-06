@@ -21,6 +21,7 @@
 		isFuturePath,
 		looksLikeOrderRef,
 		monthLabel,
+		sameOrderRequests,
 		shortRef,
 		STATE_CHEF,
 		staffClaims,
@@ -138,6 +139,7 @@
 	});
 
 	onMount(() => {
+		if (tab === 'pending') claimsWaiting.expect();
 		(async () => {
 			api = signInConfigured ? await staffApi() : null;
 			if (!mounted) return;
@@ -209,8 +211,8 @@
 				<p>
 					<strong>Only website orders can be added for now.</strong> Instagram, email, phone and in-person
 					orders aren’t in the system yet: recording older orders by hand comes later. Customers also
-					send guest website orders through “Add an older order”, with the order’s reference; those you
-					can find and add.
+					send guest website orders through “Add an older order”, with the order’s reference; finding
+					and adding them comes in the next update.
 				</p>
 			</div>
 		</div>
@@ -221,8 +223,9 @@
 					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- tabHref resolve()s the route -->
 					<a class="filter-chip tab" href={tabHref(s)} aria-current={s === tab ? 'page' : undefined}
 						>{label}{#if s === 'pending' && claimsWaiting.label && claimsWaiting.label !== '0'}<span
-								class="tab-count">{claimsWaiting.label}</span
-							>{/if}</a
+								class="tab-count"
+								aria-hidden="true">{claimsWaiting.label}</span
+							><span class="sr-only"> ({claimsWaiting.label} waiting)</span>{/if}</a
 					>
 				{/each}
 			</nav>
@@ -327,8 +330,10 @@
 													class="chip-s chip-{daysWaiting(c.created_at, now) >= WAITING_AMBER_DAYS
 														? 'warn'
 														: 'info'}">{waitText(c.created_at, now)}</span
-												>{:else}<span class="chip-s chip-{outcome[1]}">{outcome[0]}</span><span
-													class="block small muted"
+												>{#if sameOrderRequests(c, claims).length}<span
+														class="block small warn-text">Another request asks for this order</span
+													>{/if}{:else}<span class="chip-s chip-{outcome[1]}">{outcome[0]}</span
+												><span class="block small muted"
 													>{c.decided_at ? when(c.decided_at) : ''}{c.state === 'withdrawn'
 														? ''
 														: ` · by ${decidedBy(c, me)}`}</span

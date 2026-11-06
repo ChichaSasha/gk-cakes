@@ -555,6 +555,7 @@
 }
 @media (forced-colors: active) {
 	.chef .filter-chip[aria-pressed='true'],
+	.chef .filter-chip.tab[aria-current],
 	.chef .sidebar a[aria-current] {
 		outline: 3px solid Highlight;
 	}
@@ -843,6 +844,10 @@
 	}
 }
 @media (max-width: 860px) {
+	.chef .claims-table .chip-s,
+	.chef .claims-table .how-chip {
+		white-space: normal;
+	}
 	.chef .claims-table tbody th {
 		display: grid;
 		grid-template-columns: 96px minmax(0, 1fr);

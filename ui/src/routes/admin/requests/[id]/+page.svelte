@@ -43,7 +43,7 @@
 	let me = $state<string | null>(null);
 	let view = $state<StaffView | null>(null);
 	let claim = $state<StaffClaim | null>(null);
-	let phase = $state<'loading' | 'ready' | 'missing' | 'error'>('loading');
+	let phase = $state<'loading' | 'ready' | 'missing' | 'capped' | 'error'>('loading');
 	let problem = $state('');
 	let mounted = true;
 	const now = new Date();
@@ -74,10 +74,11 @@
 				}
 			}
 			if (view !== 'chef') return;
-			const found = await findClaim(api, page.params.id ?? '');
-			if (!mounted) return;
-			claim = found;
-			phase = found ? 'ready' : 'missing';
+			const id = page.params.id ?? '';
+			const found = await findClaim(api, id);
+			if (!mounted || id !== (page.params.id ?? '')) return;
+			claim = found.claim;
+			phase = found.claim ? 'ready' : found.capped ? 'capped' : 'missing';
 		} catch (e) {
 			if (!mounted) return;
 			if (e instanceof ApiError && e.signInRequired) {
@@ -101,6 +102,7 @@
 				await goto(resolve('/sign-in?next=/admin'), { replaceState: true });
 				return;
 			}
+			loadedId = page.params.id ?? '';
 			await load();
 		})();
 		const unsubscribe = leaveOnSignOut(() => {
@@ -111,6 +113,17 @@
 			mounted = false;
 			unsubscribe();
 		};
+	});
+
+	// Another request in the same page (later: "Next waiting request") loads it.
+	let loadedId: string | null = null;
+	$effect(() => {
+		const id = page.params.id ?? '';
+		if (api && loadedId !== null && id !== loadedId) {
+			loadedId = id;
+			claim = null;
+			void load();
+		}
 	});
 
 	async function leave() {
@@ -163,6 +176,15 @@
 				</p>
 				<button class="btn btn-small" type="button" onclick={() => void load()}>Try again</button>
 			</div>
+		</div>
+	{:else if phase === 'capped'}
+		<div class="card empty">
+			<h1>Request not found in the lists</h1>
+			<p>
+				It may be further down a long list than this page reads. Open it from the list of requests
+				instead.
+			</p>
+			<a class="btn" href={resolve('/admin/requests')}>Back to requests</a>
 		</div>
 	{:else if phase === 'missing' || !claim}
 		<div class="card empty">
