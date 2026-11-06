@@ -1,0 +1,319 @@
+/* The chef's order page (GK-018 r03b2 admin.css: banners, detail grid,
+   facts, progress, confirm rows, ledger), scoped to .chef like chef.css.
+   Shared classes chef.css already has (back, banner-icon/info, card-h,
+   role-note, chips, btn-small) come from there. Every rule here is scoped
+   to .order-page: a route's CSS stays loaded after leaving it, and facts
+   and mono differ from chef.css's, so neither the order of the two files
+   nor a visit to this page changes the other chef pages. */
+.chef .order-page .banner-warn {
+	background: var(--warn-bg);
+	color: #5a3700;
+}
+.chef .order-page .banner:focus {
+	outline: 3px solid var(--focus);
+	outline-offset: 2px;
+}
+.chef .order-page .banner > div {
+	min-width: 0;
+}
+.chef .order-page .page-head .sub {
+	margin: 6px 0 0;
+}
+.chef .order-page .card-row {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 4px 12px;
+}
+.chef .order-page .card p {
+	margin: 0 0 8px;
+}
+.chef .order-page .card p:last-child {
+	margin-bottom: 0;
+}
+.chef .order-page .card-alert {
+	border-color: #efd3a6;
+	background: #fffaf1;
+}
+.chef .order-page .empty-card h1 {
+	margin-bottom: 8px;
+}
+.chef .order-page .detail-grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+	gap: 18px;
+	align-items: start;
+}
+.chef .order-page .detail-grid > * {
+	min-width: 0;
+}
+.chef .order-page .items {
+	display: grid;
+	gap: 10px;
+	margin: 0 0 10px;
+	padding: 0;
+	list-style: none;
+}
+.chef .order-page .items p {
+	margin: 0;
+}
+.chef .order-page .facts {
+	display: grid;
+	gap: 8px;
+	margin: 0 0 8px;
+}
+.chef .order-page .facts div {
+	display: flex;
+	justify-content: space-between;
+	gap: 16px;
+	padding-bottom: 8px;
+	border-bottom: 1px dashed var(--line);
+}
+.chef .order-page .facts div:last-child {
+	border-bottom: 0;
+}
+.chef .order-page .facts dt {
+	flex: none;
+	color: var(--muted);
+}
+.chef .order-page .facts dd {
+	min-width: 0;
+	max-width: none;
+	margin: 0;
+	font-weight: 500;
+	text-align: right;
+}
+.chef .order-page .mono {
+	font: 13px var(--mono);
+}
+.chef .order-page .wrap {
+	overflow-wrap: anywhere;
+}
+.chef .order-page .ok-text {
+	color: var(--ok);
+}
+.chef .order-page .record {
+	display: grid;
+	gap: 6px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.chef .order-page .record li {
+	display: grid;
+	grid-template-columns: 130px minmax(0, 1fr);
+	gap: 10px;
+}
+.chef .order-page .progress {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.chef .order-page .progress li {
+	position: relative;
+	display: grid;
+	grid-template-columns: 18px minmax(0, 1fr);
+	gap: 10px;
+	padding-bottom: 14px;
+}
+.chef .order-page .progress li:not(:last-child)::before {
+	content: '';
+	position: absolute;
+	top: 18px;
+	bottom: 0;
+	left: 8px;
+	width: 2px;
+	background: var(--line);
+}
+.chef .order-page .progress li.done:not(:last-child)::before {
+	background: var(--accent);
+}
+.chef .order-page .progress p {
+	margin: 0;
+}
+.chef .order-page .p-dot {
+	width: 18px;
+	height: 18px;
+	margin-top: 2px;
+	border: 2px solid #c9cdd3;
+	border-radius: 50%;
+	background: #fff;
+}
+.chef .order-page .progress li.done .p-dot {
+	border-color: var(--accent);
+	background: var(--accent);
+}
+.chef .order-page .actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 14px;
+}
+.chef .order-page .actions.stack {
+	flex-direction: column;
+}
+.chef .order-page .actions.stack > .btn {
+	width: 100%;
+}
+.chef .order-page .btn-danger {
+	border-color: var(--bad);
+	background: var(--bad);
+	color: #fff;
+}
+.chef .order-page .btn-quiet {
+	border-color: transparent;
+	background: transparent;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+.chef .order-page .confirm-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	padding: 12px;
+	border: 1px solid var(--line);
+	border-radius: 14px;
+	background: #fff;
+}
+.chef .order-page .confirm-row > p,
+.chef .order-page .confirm-row > .field,
+.chef .order-page .confirm-row > .text-input {
+	flex-basis: 100%;
+	margin: 0;
+}
+.chef .order-page .confirm-row .btn {
+	white-space: normal;
+}
+.chef .order-page .text-input {
+	width: 100%;
+	min-width: 0;
+	min-height: 40px;
+	padding: 8px 10px;
+	border: 1px solid #8a9099;
+	border-radius: 12px;
+	background: #fff;
+	color: var(--ink);
+	font: 14px var(--sans);
+}
+.chef .order-page .text-input[aria-invalid='true'] {
+	border-color: var(--bad);
+}
+.chef .order-page .step-status {
+	margin: 10px 0 0;
+	outline: none;
+}
+.chef .order-page .step-status:empty {
+	margin: 0;
+}
+.chef .order-page .step-status:focus-visible,
+.chef .order-page .step-error:focus-visible {
+	outline: 3px solid var(--focus);
+	outline-offset: 2px;
+}
+.chef .order-page .step-error {
+	margin: 10px 0 0;
+	padding: 8px 12px;
+	border-radius: 12px;
+	background: var(--bad-bg);
+}
+.chef .order-page .chip-bad {
+	background: var(--bad-bg);
+	color: var(--bad);
+}
+.chef .order-page .ledger {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 8px;
+	margin: 10px 0;
+}
+.chef .order-page .ledger div {
+	padding: 10px 12px;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	background: #fff;
+}
+.chef .order-page .ledger dt {
+	color: var(--muted);
+	font-size: 12.5px;
+}
+.chef .order-page .ledger dd {
+	margin: 2px 0 0;
+	font-size: 20px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+}
+.chef .order-page .pill-out {
+	background: var(--info-bg);
+	color: var(--info);
+}
+/* Still being secured (K11): info colours and a clock, never the green tick. */
+.chef .order-page .pill-pending {
+	background: var(--info-bg);
+	color: var(--info);
+}
+.chef .order-page .sub-h {
+	margin: 18px 0 8px;
+	font-size: 14px;
+}
+.chef .order-page .parts {
+	display: grid;
+	gap: 8px;
+	margin: 0 0 10px;
+	padding: 0;
+	list-style: none;
+}
+.chef .order-page .parts li {
+	padding: 10px 12px;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	background: #fff;
+}
+.chef .order-page .parts p {
+	margin: 0 0 6px;
+}
+.chef .order-page .part-facts {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+	gap: 6px 12px;
+	margin: 0;
+}
+.chef .order-page .part-facts dt {
+	color: var(--muted);
+}
+.chef .order-page .part-facts dd {
+	margin: 0;
+	font-weight: 600;
+}
+.chef .order-page .pill-problem,
+.chef .order-page .pill-noshow {
+	background: var(--warn-bg);
+	color: var(--warn);
+}
+@media (max-width: 1080px) {
+	.chef .order-page .detail-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+@media (max-width: 520px) {
+	.chef .order-page .facts div {
+		flex-direction: column;
+		gap: 2px;
+	}
+	.chef .order-page .facts dd {
+		text-align: left;
+	}
+	.chef .order-page .record li {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0;
+	}
+	.chef .order-page .ledger {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+@media (forced-colors: active) {
+	.chef .order-page .progress li.done .p-dot {
+		background: CanvasText;
+	}
+}

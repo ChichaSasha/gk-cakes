@@ -14,6 +14,8 @@
 		| 'info'
 		| 'alert'
 		| 'clock'
+		| 'back'
+		| 'truck'
 		| 'check';
 </script>
 
@@ -56,6 +58,14 @@
 		<circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
 	{:else if name === 'search'}
 		<circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" />
+	{:else if name === 'back'}
+		<path d="M19 12H5m5-5-5 5 5 5" />
+	{:else if name === 'truck'}
+		<path d="M3 6h11v10H3zM14 10h4l3 3v3h-7z" /><circle cx="7" cy="17" r="2" /><circle
+			cx="17"
+			cy="17"
+			r="2"
+		/>
 	{:else}
 		<path d="m5 12 4 4 10-10" />
 	{/if}
