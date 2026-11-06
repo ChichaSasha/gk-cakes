@@ -170,7 +170,9 @@ export type Lifecycle =
 	| 'in_production'
 	| 'ready'
 	| 'completed'
-	| 'cancelled';
+	| 'cancelled'
+	// A cancellation is being secured (K11): no cancel_reason or refund yet.
+	| 'cancellation_pending';
 
 /**
  * The order's refund (full-return core, GK-025 A3c2, business.order_get):
@@ -183,6 +185,85 @@ export interface Refund {
 	in_progress_minor?: number;
 	currency?: string;
 	requested_at?: string;
+	/** The goal's reason, e.g. customer_cancelled, chef_cancelled, delivery_not_possible. */
+	reason?: string;
+	policy_rate?: number | null;
+	/**
+	 * A GK delivery's share the chef sends separately (K05: delivery refunds
+	 * are the chef's), not yet reserved. Its own line on the order page.
+	 */
+	delivery_pending_minor?: number;
+}
+
+/**
+ * The latest cancellation command (K05, 0021): processing until secured,
+ * then cancelled (with the rate and amount) or refused.
+ */
+export interface Cancellation {
+	state: 'processing' | 'cancelled' | 'refused' | string;
+	reason: string | null;
+	rate: number | null;
+	amount_minor: number | null;
+	/** A stray delivery payment returned in full beside amount_minor (0035). */
+	unmatched_minor?: number;
+	requested_by: 'customer' | 'chef' | string;
+	requested_at: string;
+}
+
+/**
+ * POST /orders/{id}/cancellation-preview (K05): the database's amount at
+ * its clock. The page shows amount_minor as it is and never computes it.
+ */
+export interface CancellationPreview {
+	preview_id: string;
+	order_id: string;
+	order_version: number;
+	rate: number;
+	paid_minor: number;
+	amount_minor: number;
+	currency: string;
+	allocations: { collection_id: string; amount_minor: number }[];
+	full_refund_deadline_at: string;
+	computed_at: string;
+	expires_at: string;
+	preview_hash: string;
+	/** The chef's separate delivery share of amount_minor (not automatic). */
+	delivery_pending_minor: number;
+	/** A stray delivery payment returned in full beside amount_minor. */
+	unmatched_minor: number;
+}
+
+/** The latest pickup move or chef appointment change (0031). */
+export interface AppointmentChange {
+	kind: 'pickup_move' | 'appointment_change' | string;
+	state: 'processing' | 'moved' | 'refused' | string;
+	reason: string | null;
+	requested_by: 'customer' | 'chef' | string;
+	requested_at: string;
+	to: { date: string; id: string; starts_at: string; ends_at: string };
+}
+
+/** Fulfilment (0032): awaiting_handover, out_for_delivery, completed, exception, no_show. */
+export interface Fulfillment {
+	state: string | null;
+	at: string | null;
+	pending: 'handover' | 'no_show' | string | null;
+}
+
+/** GET /schedule?purpose=pickup_move&order_id=… (0031): the same-day move choices. */
+export interface MoveChoices {
+	schedule_version: number | null;
+	as_of: string;
+	timezone: string;
+	date: string;
+	fulfillment_mode: FulfillmentMode;
+	/** open, too_late, pending, closed or not_eligible. */
+	day_status: string;
+	purpose: 'pickup_move';
+	order_id: string;
+	current_slot: { id: string; starts_at: string; ends_at: string };
+	move_until: string | null;
+	slots: Slot[];
 }
 
 export interface Order {
@@ -210,4 +291,15 @@ export interface Order {
 	payment: Payment | null;
 	items: OrderItem[] | null;
 	refund?: Refund | null;
+	cancellation?: Cancellation | null;
+	appointment_change?: AppointmentChange | null;
+	/** Collection and own courier: the current start minus 6 hours (K06). */
+	pickup_move_until?: string | null;
+	fulfillment?: Fulfillment | null;
+	/** GK delivery only (0035); only the fields this page reads. */
+	delivery?: { state: string; paid_minor?: number } | null;
+	/** GK delivery only (0036): a protected change of the order is unresolved. */
+	delivery_choice?: { open: boolean; pending: boolean } | null;
+	/** A failed GK delivery's choice (PR #62), when the API sends it. */
+	delivery_failure?: { open: boolean } | null;
 }

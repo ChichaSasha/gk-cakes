@@ -3,6 +3,7 @@
 // (?payment=returned) never claims success by itself, a timer is never
 // proof that money failed, and a refund is "returned" only when the API
 // says so.
+import { cancelledStory } from './changes';
 import { formatMoney } from './format';
 import type { Next } from './messages';
 import type { Order } from './types';
@@ -56,8 +57,15 @@ export function isPaymentPageUrl(url: string | null | undefined): url is string 
 
 const DO_NOT_PAY = 'Please don’t pay again. We’ll update this page when we know the result.';
 
-/** The view of an order; returned is true after coming back from the payment page. */
-export function orderView(order: Order, opts: { returned?: boolean } = {}): OrderView {
+/**
+ * The view of an order; returned is true after coming back from the payment
+ * page; cancelledMinor is the amount of the preview this page just confirmed
+ * (shown while the cancellation is being secured).
+ */
+export function orderView(
+	order: Order,
+	opts: { returned?: boolean; cancelledMinor?: number } = {}
+): OrderView {
 	const refund = refundLine(order);
 	const base: Base = {
 		refund,
@@ -126,6 +134,21 @@ export function orderView(order: Order, opts: { returned?: boolean } = {}): Orde
 				poll: true,
 				doNotPayAgain: order.payment_requirement !== 'none'
 			};
+		case 'cancellation_pending':
+			return {
+				...base,
+				tone: 'info',
+				title: 'Cancelling your order',
+				lines: [
+					'We’re cancelling your order. This usually takes a few seconds.',
+					...(Number.isSafeInteger(opts.cancelledMinor) && (opts.cancelledMinor as number) > 0
+						? [
+								`Refund of ${formatMoney(opts.cancelledMinor as number, order.currency)} requested. We’ll update this page as it progresses.`
+							]
+						: [])
+				],
+				poll: true
+			};
 		case 'cancelled':
 			return cancelled(order, base);
 		case 'awaiting_payment':
@@ -158,6 +181,24 @@ function cancelled(order: Order, base: Base): OrderView {
 			lines: ['This order was cancelled, but we’re still checking a payment for it.', DO_NOT_PAY],
 			poll: true,
 			doNotPayAgain: true
+		};
+	}
+	// A cancellation by the customer or the chef, or a full return (state 13).
+	const story = cancelledStory(order);
+	if (story) {
+		const r = order.refund;
+		const partly = r?.state === 'partly_returned';
+		const delivery = (r?.delivery_pending_minor ?? 0) > 0;
+		const lines = partly
+			? [base.refund, delivery ? 'The chef sends the delivery part separately.' : undefined]
+			: [story.why, base.refund];
+		return {
+			...base,
+			refund: undefined,
+			tone:
+				r?.state === 'returned' ? 'success' : r?.state === 'needs_attention' ? 'warning' : 'info',
+			title: story.title,
+			lines: lines.filter((l): l is string => Boolean(l))
 		};
 	}
 	const lines: string[] = [];
@@ -356,7 +397,7 @@ export function refundLine(order: Order): string | undefined {
 				? `${done} of ${target} returned so far; the rest is still pending.`
 				: 'Part of your refund has been returned; the rest is still pending.';
 		case 'returned':
-			return `Refund${done ? ` of ${done}` : ''} returned to your payment method.`;
+			return `Refund${done ? ` of ${done}` : ''} returned to your payment method. Your bank may take a few days to show it.`;
 		case 'needs_attention':
 			return `Your refund${of} needs a check by our team before we can send it. We’ll contact you if we need anything.`;
 		default:

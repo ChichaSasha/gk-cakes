@@ -11,7 +11,9 @@ import type {
 	Availability,
 	Cake,
 	CakePage,
+	CancellationPreview,
 	Choices,
+	MoveChoices,
 	Order,
 	Policy,
 	Quote,
@@ -68,6 +70,55 @@ export const api: CheckoutApi = {
 		apiPost<Accepted>(
 			`/api/v1/orders/${encodeURIComponent(id)}/free-confirmation`,
 			{ expected_version: version },
+			{ ...opts(who, 'X-Order-Capability'), idempotencyKey: key }
+		)
+};
+
+/** The order page's change commands (GK-030): cancellation and the same-day pickup move. */
+export interface OrderChangesApi {
+	cancellationPreview(id: string, key: string, who: Who): Promise<CancellationPreview>;
+	cancel(
+		id: string,
+		body: { expected_version: number; preview_id: string; preview_hash: string },
+		key: string,
+		who: Who
+	): Promise<Accepted>;
+	moveChoices(id: string, who: Who): Promise<MoveChoices>;
+	movePickup(
+		id: string,
+		body: { target_slot_id: string; expected_version: number },
+		key: string,
+		who: Who
+	): Promise<Accepted | { order_id: string; state: 'unchanged' }>;
+}
+
+export const changesApi: OrderChangesApi = {
+	// A read-like POST (no body other than {}); the key header is ignored by the API.
+	cancellationPreview: (id, key, who) =>
+		apiPost<CancellationPreview>(
+			`/api/v1/orders/${encodeURIComponent(id)}/cancellation-preview`,
+			{},
+			{ ...opts(who, 'X-Order-Capability'), idempotencyKey: key }
+		),
+	cancel: (id, body, key, who) =>
+		apiPost<Accepted>(
+			`/api/v1/orders/${encodeURIComponent(id)}/cancel`,
+			{
+				expected_version: body.expected_version,
+				preview_id: body.preview_id,
+				preview_hash: body.preview_hash
+			},
+			{ ...opts(who, 'X-Order-Capability'), idempotencyKey: key }
+		),
+	moveChoices: (id, who) =>
+		apiGet<MoveChoices>('/api/v1/schedule', {
+			...opts(who, 'X-Order-Capability'),
+			query: { purpose: 'pickup_move', order_id: id }
+		}),
+	movePickup: (id, body, key, who) =>
+		apiPost<Accepted | { order_id: string; state: 'unchanged' }>(
+			`/api/v1/orders/${encodeURIComponent(id)}/pickup`,
+			{ target_slot_id: body.target_slot_id, expected_version: body.expected_version },
 			{ ...opts(who, 'X-Order-Capability'), idempotencyKey: key }
 		)
 };

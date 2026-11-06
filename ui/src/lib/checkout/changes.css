@@ -1,0 +1,331 @@
+/* Order changes (GK-030 slice 1): the cancellation panel, refund tracker and
+   time list from the Creator-approved GK-017 r02b sketch (poc/styles.css,
+   r02 section), scoped under .co-page with the checkout's variables. */
+
+/* Radio list of start–end times (r02 item "visible start–end times") */
+.co-page .oc-times {
+	margin: 0;
+	padding: 0;
+	border: 0;
+	min-width: 0;
+}
+.co-page .oc-times legend {
+	padding: 0;
+	margin: 0 0 10px;
+	font-size: 13px;
+	font-weight: 500;
+}
+.co-page .oc-times:focus-visible {
+	outline: 3px solid var(--focus);
+	outline-offset: 6px;
+	border-radius: 12px;
+}
+.oc-time-options {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+	gap: 10px;
+}
+.oc-time {
+	position: relative;
+	cursor: pointer;
+	min-width: 0;
+}
+.co-page .oc-time input {
+	position: absolute;
+	opacity: 0;
+	width: 1px;
+	height: 1px;
+	min-height: 0;
+	margin: 0;
+}
+.oc-time > span {
+	display: grid;
+	gap: 3px;
+	min-height: 64px;
+	padding: 12px 36px 12px 14px;
+	border-radius: 16px;
+	background: #fff;
+	border: 1px solid #767b7d;
+}
+.oc-time strong {
+	font: 600 16px/1.2 var(--mono);
+	letter-spacing: -0.01em;
+	white-space: nowrap;
+}
+.oc-time small {
+	font-size: 12px;
+	line-height: 1.35;
+	color: var(--muted);
+}
+.oc-time > span::after {
+	content: '';
+	position: absolute;
+	top: 13px;
+	right: 13px;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	border: 1.5px solid #767b7d;
+	box-sizing: border-box;
+}
+.oc-time:hover:not(.is-off) > span {
+	border-color: var(--ink);
+}
+.oc-time input:checked + span {
+	border: 2px solid var(--ink);
+	padding: 11px 35px 11px 13px;
+}
+.oc-time input:checked + span::after {
+	border: 0;
+	background: var(--ink)
+		url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m6 12 4 4 8-8' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+		center/12px no-repeat;
+}
+.oc-time input:focus-visible + span {
+	outline: 3px solid var(--focus);
+	outline-offset: 3px;
+}
+.oc-time.is-off {
+	cursor: not-allowed;
+}
+.oc-time.is-off > span {
+	background: #f1f2f3;
+	border-style: dashed;
+}
+.oc-time.is-gone strong {
+	text-decoration: line-through;
+	color: var(--muted);
+}
+.oc-time.is-off small {
+	color: var(--ink);
+}
+.oc-time.is-current small {
+	color: var(--ink);
+	font-weight: 600;
+}
+
+.oc-move-panel {
+	margin: 18px 0 0;
+}
+.oc-move-panel .small {
+	margin: 12px 0 0;
+}
+
+/* Problem banner inside a card (the boundary alert) */
+.oc-problem {
+	margin: 0 0 16px;
+	padding: 20px 22px;
+	border-radius: 24px;
+	background: #fff;
+	border: 2px solid #9a5b00;
+	box-shadow: var(--sh-1);
+}
+.oc-problem h3 {
+	margin: 0 0 8px;
+	font: 600 19px/1.25 var(--sans);
+	letter-spacing: -0.015em;
+}
+.oc-problem p {
+	margin: 0 0 6px;
+	font-size: 14.5px;
+	line-height: 1.55;
+}
+.oc-problem p:last-child {
+	margin: 0;
+}
+
+/* Cancellation panel */
+.oc-refund-box {
+	padding: 18px 20px;
+	border-radius: 20px;
+	background: #fff;
+	box-shadow: inset 0 0 0 1px #14141617;
+	font-size: 14px;
+	line-height: 1.5;
+}
+.oc-refund-box p {
+	margin: 0 0 6px;
+}
+.oc-refund-box p:last-child {
+	margin: 0;
+}
+.oc-amount {
+	font: 500 22px/1.25 var(--sans);
+	letter-spacing: -0.02em;
+}
+.oc-amount strong {
+	font-weight: 700;
+}
+.oc-example {
+	margin: 14px 0 0;
+	padding: 14px 16px;
+	border-radius: 16px;
+	border: 1px dashed var(--line);
+	font-size: 13.5px;
+}
+.oc-example p {
+	margin: 0;
+}
+.oc-split {
+	margin: 14px 0 0;
+	padding: 0;
+	list-style: none;
+	font-size: 13.5px;
+}
+.oc-split li {
+	display: flex;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 8px 0;
+	border-top: 1px solid #14141617;
+}
+.oc-split small {
+	display: block;
+	font-size: 12px;
+	color: var(--muted);
+}
+.oc-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 12px;
+	margin: 18px 0 0;
+}
+.oc-actions .co-pay {
+	width: auto;
+	margin: 0;
+}
+.co-page .oc-focus:focus-visible {
+	outline: 3px solid var(--focus);
+	outline-offset: 4px;
+	border-radius: 8px;
+}
+.co-page .oc-status {
+	margin: 12px 0 0;
+	font-size: 13.5px;
+}
+.co-page .oc-status:empty {
+	display: none;
+}
+
+/* Refund tracker: three steps, ticked when done, filled when current */
+.oc-track {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 8px;
+	margin: 20px 0 0;
+	padding: 0;
+	list-style: none;
+	counter-reset: t;
+}
+.oc-track li {
+	position: relative;
+	padding: 30px 0 0;
+	font-size: 12.5px;
+	line-height: 1.35;
+	color: var(--muted);
+	counter-increment: t;
+}
+.oc-track li::before {
+	content: counter(t);
+	position: absolute;
+	top: 0;
+	left: 0;
+	display: grid;
+	place-items: center;
+	width: 22px;
+	height: 22px;
+	border-radius: 50%;
+	border: 1.5px solid #767b7d;
+	background: #fff;
+	font: 600 11px/1 var(--mono);
+	color: var(--muted);
+}
+.oc-track li::after {
+	content: '';
+	position: absolute;
+	top: 11px;
+	left: 28px;
+	right: 6px;
+	height: 1.5px;
+	background: var(--line);
+}
+.oc-track li:last-child::after {
+	display: none;
+}
+.oc-track li.done {
+	color: var(--ink);
+}
+.oc-track li.done::before {
+	content: '✓';
+	background: var(--ok);
+	border-color: var(--ok);
+	color: #fff;
+}
+.oc-track li.done::after {
+	background: var(--ok);
+}
+.oc-track li.current {
+	color: var(--ink);
+	font-weight: 600;
+}
+.oc-track li.current::before {
+	background: var(--ink);
+	border-color: var(--ink);
+	color: #fff;
+}
+
+@media (forced-colors: active) {
+	.oc-time > span {
+		border: 1px solid CanvasText;
+	}
+	.oc-time input:checked + span {
+		border: 3px solid Highlight;
+	}
+	.oc-track li::before {
+		border: 1px solid CanvasText;
+	}
+	.oc-track li.done::before,
+	.oc-track li.current::before {
+		border: 3px solid Highlight;
+	}
+}
+@media (max-width: 760px) {
+	.oc-time-options {
+		grid-template-columns: 1fr 1fr;
+	}
+	.oc-time strong {
+		font-size: 15px;
+	}
+	.oc-time > span {
+		padding-right: 30px;
+	}
+	.oc-time input:checked + span {
+		padding-right: 29px;
+	}
+	.oc-time > span::after {
+		right: 10px;
+	}
+	.oc-track {
+		grid-template-columns: 1fr;
+		gap: 12px;
+	}
+	.oc-track li {
+		padding: 2px 0 0 32px;
+		min-height: 22px;
+	}
+	.oc-track li::after {
+		display: none;
+	}
+	.oc-actions > * {
+		width: 100%;
+	}
+	.oc-actions .co-pay {
+		width: 100%;
+	}
+}
+@media (max-width: 380px) {
+	.oc-time-options {
+		grid-template-columns: 1fr;
+	}
+}
