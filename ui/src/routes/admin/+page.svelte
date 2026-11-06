@@ -114,6 +114,7 @@
 				</tbody>
 			</table>
 		{/if}
+		<p><a href={resolve('/admin/orders')}>Orders</a> (chef workspace, read only)</p>
 		{#if me.capabilities.includes('chef') || me.capabilities.includes('technical_support')}
 			<p><a href={resolve('/admin/catalogue')}>Catalogue</a> (read only)</p>
 		{/if}
