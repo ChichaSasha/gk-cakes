@@ -280,8 +280,8 @@ order view refinements (`src/lib/checkout/timeline.ts`,
 
 - **Timeline** ("Order timeline", after the status and any choice card, before
   Change or cancel): two lanes side by side, Money and Your cake (one column
-  under 760 px), each step ticked (done), ringed (now), a problem or still to
-  come, with the state also spoken (" · done", " · now", " · problem",
+  under 760 px), each step ticked (done), ringed (now: at most one per lane,
+  the first still in progress), a problem or still to come, with the state also spoken (" · done", " · now", " · problem",
   " · not yet"); not a live region, no tab stops. Shown for confirmed, in
   production, ready and completed orders, except while the delivery quote or
   the Q5 choice is open (states 14 and 15 keep their own screens). Money: paid

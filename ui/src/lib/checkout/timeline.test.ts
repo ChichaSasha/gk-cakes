@@ -308,7 +308,8 @@ describe('orderTimeline: the refund follows the API refund state only', () => {
 		);
 		expect(steps).toEqual([
 			'Refund of £45 requested |  | current',
-			'Refund of £120 requested | A delivery payment that couldn’t be used · returned in full | current',
+			// Requested beside the cake part, the lane's one current step.
+			'Refund of £120 requested | A delivery payment that couldn’t be used · returned in full | done',
 			'Return to your payment method |  | upcoming'
 		]);
 	});
@@ -323,7 +324,7 @@ describe('orderTimeline: the refund follows the API refund state only', () => {
 		);
 		expect(steps).toEqual([
 			'Refund of £105 requested | Automatically · 50% for a cake that wasn’t collected | current',
-			'Delivery refund · £60 | Sent separately by the chef · waiting for the chef | current',
+			'Delivery refund · £60 | Sent separately by the chef · waiting for the chef | upcoming',
 			'Return to your payment method |  | upcoming'
 		]);
 	});
@@ -628,6 +629,33 @@ describe('orderTimeline: the full-refund window after its deadline (review findi
 			expect(window(o, NOW)).toBe(
 				'Full refund ended 11:00 on Sat 17 October | 100% if we cancel | done'
 			);
+		}
+	});
+});
+
+describe('orderTimeline: one current step per lane (review round 2)', () => {
+	it('a cake part in progress and a delivery part waiting for the chef: only the first is now', () => {
+		const t = lanes(
+			order({
+				lifecycle: 'completed',
+				fulfillment: { state: 'no_show', at: null, pending: null },
+				refund: refund({
+					target_minor: 10500,
+					delivery_pending_minor: 6000,
+					parts: [
+						part('cake'),
+						part('delivery', { target_minor: 6000, in_progress_minor: 0, pending_chef_minor: 6000 })
+					]
+				})
+			})
+		);
+		expect(t.money.slice(1)).toEqual([
+			'Refund of £45 requested | Automatically · 50% for a cake that wasn’t collected | current',
+			'Delivery refund of £60 requested | Sent separately by the chef · waiting for the chef | upcoming',
+			'Return to your payment method |  | upcoming'
+		]);
+		for (const lane of [t.money, t.cake]) {
+			expect(lane.filter((x) => x.endsWith('| current')).length).toBeLessThanOrEqual(1);
 		}
 	});
 });

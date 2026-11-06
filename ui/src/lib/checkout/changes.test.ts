@@ -901,6 +901,24 @@ describe('the API’s actions for this caller (0038)', () => {
 			)
 		).toBe(false);
 		expect(cancelViaChef(order({ actions: [] }), null)).toBe(false);
+		// A GK delivery already on its way (still ready; the API sends []):
+		// nothing to cancel through the chef either (review round 2).
+		for (const state of ['out_for_delivery', 'exception']) {
+			const sent = order({
+				fulfillment_mode: 'gk_delivery',
+				lifecycle: 'ready',
+				fulfillment: { state, at: 'x', pending: null },
+				actions: []
+			});
+			expect(cancelViaChef(sent, owner)).toBe(false);
+			expect(cancelViaChef({ ...sent, actions: undefined }, owner)).toBe(false);
+		}
+		expect(
+			cancelViaChef(
+				order({ fulfillment_mode: 'gk_delivery', lifecycle: 'ready', actions: [] }),
+				owner
+			)
+		).toBe(true);
 		expect(MOVE_FIXED_CANCEL).toBe(
 			'This order’s time can’t be changed online. To change the time or cancel this order, please contact the chef.'
 		);

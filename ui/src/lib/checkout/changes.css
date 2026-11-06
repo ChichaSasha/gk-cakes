@@ -257,6 +257,7 @@
 	color: var(--ink);
 }
 .oc-track li.done::before {
+	content: '✓';
 	content: '✓' / '';
 	background: var(--ok);
 	border-color: var(--ok);
@@ -432,6 +433,7 @@
 }
 .co-page .oc-steps li.done::before {
 	/* Decorative: the state is spoken by the step's own text (" · done"). */
+	content: '✓';
 	content: '✓' / '';
 	border: 0;
 	background: var(--ok);

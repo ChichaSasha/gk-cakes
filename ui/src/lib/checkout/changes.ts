@@ -80,7 +80,6 @@ export function mayCancel(order: Order, who: Who | null | undefined): boolean {
 	return allows(order, who, 'cancel', cancelFallback(order));
 }
 
-/** The page's own rule when the API sends no actions (an older API). */
 /**
  * Whether the order can be cancelled by its owner now, as far as the order
  * itself says (the API's actions when sent, else the page's own rule):
@@ -91,10 +90,16 @@ export function cancellable(order: Order): boolean {
 	return actions ? actions.includes('cancel') : cancelFallback(order);
 }
 
+/** The page's own rule when the API sends no actions (an older API). */
 function cancelFallback(order: Order): boolean {
 	if (!CHANGEABLE.includes(order.lifecycle) || changeInProgress(order)) return false;
+	return !sentOut(order);
+}
+
+/** A GK delivery that has left the kitchen (out for delivery, or its delivery failed). */
+function sentOut(order: Order): boolean {
 	const sent = ['out_for_delivery', 'exception'].includes(order.fulfillment?.state ?? '');
-	return !(order.fulfillment_mode === 'gk_delivery' && sent);
+	return order.fulfillment_mode === 'gk_delivery' && sent;
 }
 
 /**
@@ -114,10 +119,11 @@ export function cancelViaChef(order: Order, who: Who | null | undefined): boolea
 	const open = CHANGEABLE.includes(order.lifecycle) && !changeInProgress(order);
 	if (deliveryProblemOpen(order)) return allows(order, who, 'cancel', open);
 	// The API offers this caller no cancellation on a changeable order (for
-	// example after the dispatch, or a link without the cancel grant): the
-	// terms still say "Cancel before…", so say who to ask.
+	// example a link without the cancel grant): the terms still say "Cancel
+	// before…", so say who to ask. Never once a GK delivery has been sent
+	// out: the cake is on its way, nothing to cancel (as the fallback).
 	const actions = apiActions(order);
-	return open && actions !== undefined && !actions.includes('cancel');
+	return open && !sentOut(order) && actions !== undefined && !actions.includes('cancel');
 }
 
 /**

@@ -178,13 +178,17 @@ export function refundSteps(order: Order): LaneStep[] {
 	const m = (minor: number) => formatMoney(minor, cur);
 	const requested: LaneStepState = r.state === 'requested' ? 'current' : 'done';
 	const parts = refundParts(r);
-	const steps: LaneStep[] = [];
+	// Each step with its state when it isn't the lane's first current step:
+	// a part requested beside it has been requested (done); a share still
+	// waiting for the chef, or the return, hasn't happened yet.
+	const steps: (LaneStep & { later: LaneStepState })[] = [];
 	if (parts && parts.length > 0) {
 		for (const p of parts) {
 			steps.push({
 				label: partLabel(p, m),
 				detail: partDetail(p, order),
-				state: partState(p, requested)
+				state: partState(p, requested),
+				later: p.pending_chef_minor > 0 ? 'upcoming' : 'done'
 			});
 		}
 	} else if (Number.isSafeInteger(r.target_minor)) {
@@ -193,25 +197,27 @@ export function refundSteps(order: Order): LaneStep[] {
 		steps.push({
 			label: `Refund of ${m(r.target_minor)} requested`,
 			detail: cakeDetail(order),
-			state: requested
+			state: requested,
+			later: 'done'
 		});
 		if (positive(r.delivery_pending_minor)) {
 			steps.push({
 				label: `Delivery refund · ${m(r.delivery_pending_minor)}`,
 				detail: 'Sent separately by the chef · waiting for the chef',
-				state: 'current'
+				state: 'current',
+				later: 'upcoming'
 			});
 		}
 	}
-	// One current step per lane: while an earlier step is still current (a
-	// part waiting for the chef), the return keeps its words but isn't "now".
-	const ret = returnStep(order);
-	steps.push(
-		ret.state === 'current' && steps.some((x) => x.state === 'current')
-			? { ...ret, state: 'upcoming' }
-			: ret
+	steps.push({ ...returnStep(order), later: 'upcoming' });
+	// One current (ringed) step per lane, as the design draws it: the first
+	// one in progress is "now". A later one keeps its words: a part
+	// requested beside it reads done (it was requested); a share waiting
+	// for the chef, or the return, reads "not yet" until it comes first.
+	const first = steps.findIndex((x) => x.state === 'current');
+	return steps.map(({ later, ...x }, i) =>
+		x.state === 'current' && i !== first ? { ...x, state: later } : x
 	);
-	return steps;
 }
 
 /**
