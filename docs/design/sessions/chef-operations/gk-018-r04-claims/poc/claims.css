@@ -1,0 +1,70 @@
+/* GK-018 r04-claims (proposal, not approved): additions on top of the unchanged r03b2 admin.css.
+   Tokens are unchanged (GK-015 r12). Only new components, plus 44 px targets for this flow's controls. */
+.btn,.filter-chip,.field input,.field select,.search-box input{min-height:44px}
+.btn-small{min-height:44px;padding:6px 14px}
+.lead{margin:6px 0 0;max-width:68ch}
+.proto{font-style:italic}
+.list-tight{margin:4px 0 8px;padding-left:18px}.list-tight li{margin:2px 0}
+/* sidebar count */
+.nav-count{margin-left:auto;font:600 12px var(--mono);background:var(--accent);color:#fff;border-radius:999px;padding:1px 8px}
+/* tabs (links styled as the r03 filter chips) */
+.tabs{margin:0 0 14px}
+.filter-chip.tab{display:inline-flex;align-items:center;gap:6px;text-decoration:none}
+.filter-chip.tab[aria-current]{background:var(--ink);border-color:var(--ink);color:#fff}
+.tab-count{font:600 12px var(--mono);background:#ffffff33;border-radius:999px;padding:0 7px}
+.filter-chip.tab:not([aria-current]) .tab-count{background:var(--info-bg);color:var(--info)}
+/* queue table */
+.claims-table td,.claims-table th{vertical-align:top}
+.claims-table tbody th{font-weight:600;min-width:150px}
+.claims-table td[data-label="Their note"]{max-width:300px}
+.th-note{font-weight:400;text-transform:none;letter-spacing:0}
+.clamp{margin:0;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.how-chip{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;padding:2px 9px;border-radius:999px;background:#f4e9ee;color:var(--accent);margin-bottom:4px;white-space:nowrap}
+.how-icon{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2}
+.internal-note{display:flex;gap:5px;align-items:flex-start;margin-top:6px;color:#3c4048;background:#f1f2f4;border-radius:10px;padding:4px 8px}
+.note-icon{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;flex:none;margin-top:3px}
+.td-action{text-align:right;white-space:nowrap}
+.more-row{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin-top:10px}.more-row p{margin:0}
+/* loading */
+.loading{display:flex;gap:10px;align-items:center;padding:14px 0;font-weight:500}
+.spinner{width:18px;height:18px;border-radius:50%;border:2.5px solid #c9cdd3;border-top-color:var(--accent);animation:spin 1s linear infinite;display:inline-block;flex:none}
+.spinner.light{border-color:#ffffff66;border-top-color:#fff;width:16px;height:16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.skeleton{display:grid;gap:8px}.skeleton span{height:64px;border-radius:14px;background:linear-gradient(90deg,#eceef1,#f6f7f8,#eceef1)}
+/* decide page */
+.claim-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);gap:18px;align-items:start}
+.claim-grid>*{min-width:0}
+.claim-facts dd{text-align:left;max-width:68%}.claim-facts q{quotes:"“" "”"}
+.order-sum{display:flex;gap:14px;align-items:flex-start}.order-sum img{width:72px;height:72px;object-fit:contain;flex:none}.order-sum p{margin:0 0 4px}
+.order-sum .chip-s{margin-left:4px}
+.find-form{display:grid;grid-template-columns:minmax(200px,2fr) minmax(120px,1fr) minmax(120px,1fr);gap:4px 12px;align-items:end}
+.quick{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0 10px}
+.pick-list{display:grid;gap:6px;margin:8px 0}
+.pick{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;cursor:pointer;min-height:44px}
+.pick input{margin-top:4px;width:18px;height:18px;flex:none}
+.pick.is-picked,.pick:has(input:checked){border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.no-match ul{margin-bottom:0}
+.decision .actions.stack .btn{width:100%}
+.confirm-box{margin-top:6px;padding:14px;border:1px solid var(--line);border-radius:14px;background:#fff}
+.confirm-box p{margin:0 0 6px}.confirm-box .field{margin-top:8px}
+.result{margin:6px 0 0}.result .actions{margin-top:10px}
+.banner[tabindex]:focus-visible,[data-focus]:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.steps{margin:8px 0 12px;padding-left:20px}.steps li{margin:4px 0}
+@media (max-width:1080px){.claim-grid{grid-template-columns:1fr}.decision.sticky{position:static}}
+@media (max-width:860px){
+ .find-form{grid-template-columns:1fr 1fr}.find-form .find-term{grid-column:1/-1}
+ .claims-table td,.claims-table tbody th{display:grid;grid-template-columns:96px minmax(0,1fr);gap:8px;border:0;padding:4px 10px;width:100%}
+ .claims-table tbody th::before{content:attr(data-label);font-size:12px;color:var(--muted);font-weight:400}
+ .claims-table td.td-action{display:block;text-align:left;padding:8px 10px}
+ .claims-table td.td-action::before{content:none}
+ .claims-table td[data-label="Their note"]{max-width:none}
+ .claim-facts div{flex-direction:column;gap:2px}.claim-facts dd{max-width:none}
+ .td-action .btn{width:100%}
+}
+@media (prefers-reduced-motion:reduce){.spinner{animation:none}}
+/* states index */
+.states-table td:first-child{font:500 13px var(--mono);white-space:nowrap}
+.index-main{max-width:1180px;margin:0 auto;padding:28px clamp(16px,3vw,40px) 64px}
+.eyebrow .ref{text-transform:none}
+#acct-err:empty{margin:0}
+@media (max-width:860px){.layout{grid-template-rows:auto 1fr;align-content:start}}
