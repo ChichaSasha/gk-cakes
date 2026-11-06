@@ -4,6 +4,7 @@ import type { BasketItem } from '../flow';
 import type { Quote } from '../types';
 import Allergens from './Allergens.svelte';
 import OrderSummary from './OrderSummary.svelte';
+import OrderTimeline from './OrderTimeline.svelte';
 import PaymentMethods from './PaymentMethods.svelte';
 import RefundTerms from './RefundTerms.svelte';
 
@@ -157,5 +158,36 @@ describe('PaymentMethods', () => {
 		expect(t).toContain('Cards · Apple Pay · Onelink · Klarna · Revolut Pay · Amazon Pay');
 		expect(t).toContain('Show all 17 methods');
 		expect(t).not.toContain('Google Pay');
+	});
+});
+
+describe('OrderTimeline (state 19)', () => {
+	it('two labelled lanes; the current step is marked and every state is spoken', () => {
+		const { body } = render(OrderTimeline, {
+			props: {
+				timeline: {
+					money: [
+						{ label: 'Paid £90', detail: 'Tue 6 October, 14:05', state: 'done' },
+						{ label: 'Refund of £45 requested', state: 'current' }
+					],
+					cake: [
+						{ label: 'Order confirmed', state: 'done' },
+						{ label: 'Not collected', detail: 'The collection time passed', state: 'problem' },
+						{ label: 'Later', state: 'upcoming' }
+					]
+				}
+			}
+		});
+		expect(body).toContain('aria-labelledby="timeline-h"');
+		expect(body).toMatch(/<h3 id="lane-money">Money<\/h3>/);
+		expect(body).toMatch(/<h3 id="lane-cake">Your cake<\/h3>/);
+		expect(body.match(/aria-current="step"/g)).toHaveLength(1);
+		const t = text(body);
+		// (text() drops the span tags; the detail is a block on the page.)
+		expect(t).toContain('Paid £90Tue 6 October, 14:05 · done');
+		expect(t).toContain('Refund of £45 requested · now');
+		expect(t).toContain('Not collectedThe collection time passed · problem');
+		expect(t).toContain('Later · not yet');
+		expect(body).toMatch(/<li class="problem"/);
 	});
 });

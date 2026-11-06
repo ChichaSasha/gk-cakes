@@ -26,13 +26,15 @@
 		keys: ActionKeys;
 		/** The order has a paid GK delivery (worded "cakes and delivery"). */
 		delivery: boolean;
+		/** The cake is being made (state 19): it doesn't reduce the refund. */
+		making?: boolean;
 		/** Keep my order, or the order can't be cancelled now (with the reason). */
 		onclose: (problem?: string) => void;
 		/** The cancellation was accepted (202) for this amount. */
 		oncancelled: (amountMinor: number) => void;
 	}
 
-	let { orderId, who, api, keys, delivery, onclose, oncancelled }: Props = $props();
+	let { orderId, who, api, keys, delivery, making = false, onclose, oncancelled }: Props = $props();
 
 	let preview = $state<CancellationPreview | null>(null);
 	let alert = $state<{ deadline: string; amount: string; half: boolean } | null>(null);
@@ -169,6 +171,12 @@
 				<p class="oc-amount">You get back <strong>{view.amount}</strong></p>
 			{/if}
 			<p>{view.basis}</p>
+			{#if making && !view.nothingPaid}
+				<p>Your cake already being made doesn’t reduce your refund.</p>
+				{#if view.before}
+					<p class="small">After the deadline you would get 50% of what you paid, never less.</p>
+				{/if}
+			{/if}
 			{#if view.split.length > 0}
 				<ul class="oc-split">
 					{#each view.split as line, i (i)}

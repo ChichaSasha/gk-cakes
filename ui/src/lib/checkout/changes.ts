@@ -8,7 +8,14 @@
 import { ApiError } from '../api';
 import type { Who } from './flow';
 import { dateLabel, deadlineLabel, formatMoney, londonTime, timeRange } from './format';
-import type { CancellationPreview, MoveChoices, Order, Refund } from './types';
+import type {
+	CancellationPreview,
+	CustomerAction,
+	MoveChoices,
+	Order,
+	Refund,
+	RefundPart
+} from './types';
 
 /** Lifecycles the API accepts a customer cancellation or pickup move in (K05, K06). */
 export const CHANGEABLE: readonly string[] = ['confirmed', 'in_production', 'ready'];
@@ -21,6 +28,31 @@ export const CHANGEABLE: readonly string[] = ['confirmed', 'in_production', 'rea
  */
 export function canAct(who: Who | null | undefined): who is Who {
 	return who?.kind === 'account' ? who.token !== '' : who?.kind === 'guest' && who.secret !== '';
+}
+
+/**
+ * The API's actions for this caller (0038), when it sends them; undefined
+ * from an older API (the page then decides with its own rules).
+ */
+export function apiActions(order: Order): readonly string[] | undefined {
+	return Array.isArray(order.actions) ? order.actions : undefined;
+}
+
+/**
+ * Whether this viewer may ask for action: the API's actions when it sends
+ * them (they follow the order's state at the API's clock and a guest
+ * link's grants), otherwise the page's own rule (fallback). A hint only:
+ * every command is still checked by the API.
+ */
+export function allows(
+	order: Order,
+	who: Who | null | undefined,
+	action: CustomerAction,
+	fallback: boolean
+): boolean {
+	if (!canAct(who)) return false;
+	const actions = apiActions(order);
+	return actions ? actions.includes(action) : fallback;
 }
 
 /** Whether a protected change of the order is unresolved (the API would answer CONFLICT). */
@@ -43,11 +75,31 @@ export function changeInProgress(order: Order): boolean {
  * handled with the chef), and never a completed or cancelled order.
  */
 export function mayCancel(order: Order, who: Who | null | undefined): boolean {
-	if (!canAct(who) || !CHANGEABLE.includes(order.lifecycle) || changeInProgress(order))
-		return false;
-	if (deliveryProblemOpen(order)) return false;
+	// An open delivery choice is offered instead (it can return everything).
+	if (!canAct(who) || deliveryProblemOpen(order)) return false;
+	return allows(order, who, 'cancel', cancelFallback(order));
+}
+
+/**
+ * Whether the order can be cancelled by its owner now, as far as the order
+ * itself says (the API's actions when sent, else the page's own rule):
+ * the timeline's wording only ("if you cancel"), never a button.
+ */
+export function cancellable(order: Order): boolean {
+	const actions = apiActions(order);
+	return actions ? actions.includes('cancel') : cancelFallback(order);
+}
+
+/** The page's own rule when the API sends no actions (an older API). */
+function cancelFallback(order: Order): boolean {
+	if (!CHANGEABLE.includes(order.lifecycle) || changeInProgress(order)) return false;
+	return !sentOut(order);
+}
+
+/** A GK delivery that has left the kitchen (out for delivery, or its delivery failed). */
+function sentOut(order: Order): boolean {
 	const sent = ['out_for_delivery', 'exception'].includes(order.fulfillment?.state ?? '');
-	return !(order.fulfillment_mode === 'gk_delivery' && sent);
+	return order.fulfillment_mode === 'gk_delivery' && sent;
 }
 
 /**
@@ -63,29 +115,42 @@ export function deliveryProblemOpen(order: Order): boolean {
 
 /** Whether the page says "To cancel this order, please contact the chef." instead of offering cancellation. */
 export function cancelViaChef(order: Order, who: Who | null | undefined): boolean {
-	return (
-		canAct(who) &&
-		CHANGEABLE.includes(order.lifecycle) &&
-		!changeInProgress(order) &&
-		deliveryProblemOpen(order)
-	);
+	if (!canAct(who)) return false;
+	const open = CHANGEABLE.includes(order.lifecycle) && !changeInProgress(order);
+	if (deliveryProblemOpen(order)) return allows(order, who, 'cancel', open);
+	// The API offers this caller no cancellation on a changeable order (for
+	// example a link without the cancel grant): the terms still say "Cancel
+	// before…", so say who to ask. Never once a GK delivery has been sent
+	// out: the cake is on its way, nothing to cancel (as the fallback).
+	const actions = apiActions(order);
+	return open && !sentOut(order) && actions !== undefined && !actions.includes('cancel');
 }
 
 /**
  * The time-change section (state 18): collection and own-courier orders can
  * move on the same day ('move'; 'moving' while a move is processed); a GK
- * delivery time changes only with the chef ('contact_chef').
+ * delivery time changes only with the chef ('contact_chef'). With the API's
+ * actions, an order the API doesn't offer a move for says so ('fixed').
  */
 export function timeChange(
 	order: Order,
 	who: Who | null | undefined
-): 'none' | 'move' | 'moving' | 'contact_chef' {
+): 'none' | 'move' | 'moving' | 'contact_chef' | 'fixed' {
 	if (!canAct(who) || !CHANGEABLE.includes(order.lifecycle)) return 'none';
 	if (order.fulfillment_mode === 'gk_delivery') return 'contact_chef';
 	if (order.appointment_change?.state === 'processing') return 'moving';
 	if (changeInProgress(order)) return 'none';
+	if (apiActions(order)) return allows(order, who, 'move_pickup', false) ? 'move' : 'fixed';
 	return 'move';
 }
+
+/** What the time-change section says when the API offers no move ('fixed'). */
+export const MOVE_FIXED =
+	'This order’s time can’t be changed online. If you need a different time, please contact the chef.';
+
+/** MOVE_FIXED when cancelling also goes through the chef (one contact-the-chef sentence). */
+export const MOVE_FIXED_CANCEL =
+	'This order’s time can’t be changed online. To change the time or cancel this order, please contact the chef.';
 
 /** Whether the page should read the order again soon for these changes. */
 export function changePoll(order: Order): boolean {
@@ -154,6 +219,14 @@ export interface PreviewView {
 	buttonLabel: string;
 }
 
+/** Each labelled allocation of a preview (0038 kind) in the split. */
+const ALLOCATION_LABEL: Record<string, string> = {
+	cake: 'Cakes · back to your payment method',
+	delivery: 'Delivery · back to your payment method',
+	// Recognised, but said in its own sentence beside the amount (never split).
+	stray: ''
+};
+
 /** The cancellation panel for a preview; delivery: the order has a paid GK delivery. */
 export function previewView(
 	p: CancellationPreview,
@@ -165,9 +238,30 @@ export function previewView(
 	const nothingPaid = p.paid_minor === 0;
 	const pending = Number.isSafeInteger(p.delivery_pending_minor) ? p.delivery_pending_minor : 0;
 	const delivery = opts.delivery === true || pending > 0;
-	const split: PreviewLine[] =
+	// Labelled allocations (0038 kind): split whenever more than the cakes
+	// come back; otherwise, as before, only beside the chef's delivery share.
+	const labelled =
+		p.allocations.length > 0 &&
+		p.allocations.every((a) => typeof a.kind === 'string' && a.kind in ALLOCATION_LABEL);
+	// A stray payment comes back beside amount_minor, not inside it: it is
+	// never a line of the split under "You get back" (its own sentence).
+	const inAmount = labelled ? p.allocations.filter((a) => a.kind !== 'stray') : p.allocations;
+	const splitNeeded = pending > 0 || (labelled && inAmount.some((a) => a.kind !== 'cake'));
+	const chef =
 		pending > 0
+			? [{ label: 'Delivery · sent separately by the chef', amount: money(pending) }]
+			: [];
+	const split: PreviewLine[] = !splitNeeded
+		? []
+		: labelled
 			? [
+					...inAmount.map((a) => ({
+						label: ALLOCATION_LABEL[a.kind as string],
+						amount: money(a.amount_minor)
+					})),
+					...chef
+				]
+			: [
 					...p.allocations.map((a) => ({
 						label:
 							p.allocations.length === 1 && !(p.unmatched_minor > 0)
@@ -175,9 +269,15 @@ export function previewView(
 								: 'Back to your payment method',
 						amount: money(a.amount_minor)
 					})),
-					{ label: 'Delivery · sent separately by the chef', amount: money(pending) }
-				]
-			: [];
+					...chef
+				];
+	const strays = labelled ? p.allocations.filter((a) => a.kind === 'stray') : [];
+	const stray =
+		p.unmatched_minor > 0
+			? p.unmatched_minor
+			: strays.length === 1 && strays[0].amount_minor > 0
+				? strays[0].amount_minor
+				: undefined;
 	let basis: string;
 	if (nothingPaid) basis = 'This order cost nothing, so there’s nothing to refund.';
 	else if (before) basis = 'Everything you paid: a full refund.';
@@ -194,8 +294,8 @@ export function previewView(
 		deadline,
 		split,
 		unmatched:
-			p.unmatched_minor > 0
-				? `We’ll also return in full a delivery payment of ${money(p.unmatched_minor)} that couldn’t be used for your order.`
+			stray !== undefined
+				? `We’ll also return in full a delivery payment of ${money(stray)} that couldn’t be used for your order.`
 				: undefined,
 		roundingExample: !before && !nothingPaid && split.length === 0,
 		nothingPaid,
@@ -389,6 +489,60 @@ export interface RefundProgressView {
 	lines: RefundLineItem[];
 	due: string;
 	returnedSoFar: string;
+	/** The refund state in the summary's words (state 11's "Refund · requested"). */
+	stateWord: string;
+	/** A refund the chef agreed (chef_exception): "Refund agreed" in the summary (Q20). */
+	agreed: boolean;
+}
+
+const STATE_WORD: Record<string, string> = {
+	requested: 'requested',
+	pending: 'pending',
+	partly_returned: 'partly returned',
+	returned: 'returned',
+	needs_attention: 'needs a check'
+};
+
+/**
+ * The refund's parts (0038) when the API sends them whole (every amount an
+ * integer), without kinds whose target is 0; undefined otherwise.
+ */
+export function refundParts(r: Refund): RefundPart[] | undefined {
+	if (!Array.isArray(r.parts) || r.parts.length === 0) return undefined;
+	const whole = r.parts.every(
+		(p) =>
+			typeof p?.kind === 'string' &&
+			[p.target_minor, p.succeeded_minor, p.in_progress_minor, p.pending_chef_minor].every(
+				(n) => Number.isSafeInteger(n) && n >= 0
+			)
+	);
+	return whole ? r.parts.filter((p) => p.target_minor > 0) : undefined;
+}
+
+/** A part's line label in the refund split (state 13). */
+function partLabel(p: RefundPart): string {
+	switch (p.kind) {
+		case 'cake':
+			return 'Cakes · to your payment method';
+		case 'delivery':
+			return p.pending_chef_minor > 0
+				? 'Delivery · sent separately by the chef'
+				: 'Delivery · to your payment method';
+		case 'stray':
+			return 'Delivery payment that couldn’t be used · returned in full';
+		default:
+			return 'To your payment method';
+	}
+}
+
+/** A part's status, from its own amounts and the block's state (never ahead of them). */
+function partStatus(p: RefundPart, r: Refund): string {
+	if (p.succeeded_minor >= p.target_minor) return 'Returned';
+	if (p.pending_chef_minor > 0) return 'Waiting for the chef';
+	if (r.state === 'needs_attention') return 'Needs a check by our team';
+	if (p.in_progress_minor > 0 || p.succeeded_minor > 0)
+		return 'Sent · waiting for our payment provider';
+	return 'Requested';
 }
 
 /** The refund's tracker, lines and summary amounts, as far as the API reports them. */
@@ -398,31 +552,44 @@ export function refundProgress(r: Refund, currency = 'GBP'): RefundProgressView 
 		formatMoney(Number.isSafeInteger(minor) ? (minor as number) : 0, cur);
 	const delivery = DELIVERY_PENDING(r);
 	const kind = trackKind(r);
+	const parts = refundParts(r);
+	// With parts: each kind on its own line with its own amount whenever more
+	// than one kind comes back or the chef sends the delivery part.
+	const chefPart = parts?.some((p) => p.kind === 'delivery' && p.pending_chef_minor > 0) === true;
+	const byPart = parts !== undefined && (parts.length > 1 || chefPart);
 	const lines: RefundLineItem[] =
-		delivery > 0
-			? [
-					{
-						label: 'Cakes · to your payment method',
-						status: {
-							requested: 'Requested',
-							pending: 'Sent · waiting for our payment provider',
-							attention: 'Needs a check by our team',
-							returned: 'Returned'
-						}[kind]
-					},
-					{
-						label: 'Delivery · sent separately by the chef',
-						status: 'Waiting for the chef',
-						amount: money(delivery)
-					}
-				]
-			: [];
+		parts && byPart
+			? parts.map((p) => ({
+					label: partLabel(p),
+					status: partStatus(p, r),
+					amount: money(p.target_minor)
+				}))
+			: delivery > 0
+				? [
+						{
+							label: 'Cakes · to your payment method',
+							status: {
+								requested: 'Requested',
+								pending: 'Sent · waiting for our payment provider',
+								attention: 'Needs a check by our team',
+								returned: 'Returned'
+							}[kind]
+						},
+						{
+							label: 'Delivery · sent separately by the chef',
+							status: 'Waiting for the chef',
+							amount: money(delivery)
+						}
+					]
+				: [];
 	return {
 		steps: refundSteps(r),
-		trackLabel: delivery > 0 ? 'Cake refund progress' : 'Refund progress',
+		trackLabel: delivery > 0 || chefPart ? 'Cake refund progress' : 'Refund progress',
 		lines,
 		due: money(r.target_minor),
-		returnedSoFar: money(r.succeeded_minor)
+		returnedSoFar: money(r.succeeded_minor),
+		stateWord: STATE_WORD[r.state] ?? 'requested',
+		agreed: r.reason === 'chef_exception'
 	};
 }
 

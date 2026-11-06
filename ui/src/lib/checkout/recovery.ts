@@ -16,6 +16,8 @@
 import { ApiError } from '../api';
 import {
 	CHANGEABLE,
+	allows,
+	apiActions,
 	canAct,
 	newer,
 	shortDate,
@@ -504,6 +506,7 @@ function nobodyAvailableView(order: Order, view: OrderView): OrderView | undefin
 					])
 		],
 		contactChef: true,
+		contactLabel: undefined,
 		refundTracker: Boolean(order.refund)
 	};
 }
@@ -571,7 +574,7 @@ export function choiceCard(
 	if (!canAct(who) || !CHANGEABLE.includes(order.lifecycle)) return undefined;
 	const day = shortDate(order.date);
 	const f = order.delivery_failure;
-	if (f?.cause === 'our_side' && f.open) {
+	if (f?.cause === 'our_side' && f.open && allows(order, who, 'delivery_failure_choice', true)) {
 		const paid = money(
 			positive(f.delivery_paid_minor) ? f.delivery_paid_minor : undefined,
 			order.currency
@@ -607,8 +610,14 @@ export function choiceCard(
 		};
 	}
 	const dc = order.delivery_choice;
-	if (dc?.open) {
-		const listed = dc.choices ?? ['collection', 'customer_courier', 'full_refund'];
+	if (dc?.open && allows(order, who, 'delivery_choice', true)) {
+		const choices = dc.choices ?? ['collection', 'customer_courier', 'full_refund'];
+		// With the API's actions, only what this caller may choose (a link
+		// with the move grant only: collection or own courier).
+		const listed = apiActions(order)
+			? (dc.allowed_choices ?? []).filter((c) => choices.includes(c))
+			: choices;
+		if (listed.length === 0) return undefined;
 		const all: ChoiceOption[] = [
 			{
 				value: 'collection',
@@ -647,6 +656,43 @@ export function choiceCard(
 		};
 	}
 	return undefined;
+}
+
+// ---------------------------------------------------------------- the API's actions (0038)
+
+/** Instead of a pay button the API doesn't offer this caller now. */
+export const CANT_PAY =
+	'This order can’t be paid from this page just now. If you still want these cakes, please start a new order.';
+export const CANT_CONFIRM =
+	'This order can’t be confirmed from this page just now. If you still want these cakes, please start a new order.';
+export const CANT_PAY_DELIVERY =
+	'Delivery payment isn’t available just now. Please try again later, or contact the chef.';
+
+/**
+ * The view with only the buttons the API's actions allow this caller (an
+ * older API without actions: unchanged). A payment page already open is the
+ * same payment and stays; a new order is never an order command.
+ */
+export function withActions(view: OrderView, order: Order, who: Who | null | undefined): OrderView {
+	if (!apiActions(order)) return view;
+	let v = view;
+	if (v.answer && !allows(order, who, 'answer_late_payment', true)) {
+		v = { ...v, answer: undefined, contactChef: true };
+	}
+	if (v.action === 'start_payment' && !allows(order, who, 'pay', true)) {
+		const attempt = order.payment ? ['No payment was taken for that attempt.'] : [];
+		v = {
+			...v,
+			lines: [...attempt, CANT_PAY],
+			action: 'new_order',
+			actionLabel: 'Start a new order'
+		};
+	} else if (v.action === 'confirm_free' && !allows(order, who, 'free_confirmation', true)) {
+		v = { ...v, lines: [CANT_CONFIRM], action: 'new_order', actionLabel: 'Start a new order' };
+	} else if (v.action === 'pay_delivery' && !allows(order, who, 'pay_delivery', true)) {
+		v = { ...v, lines: [...v.lines, CANT_PAY_DELIVERY], action: 'none', actionLabel: undefined };
+	}
+	return v;
 }
 
 // ---------------------------------------------------------------- order details rows

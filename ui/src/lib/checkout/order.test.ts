@@ -491,3 +491,213 @@ describe('polling', () => {
 		expect(POLL_LIMIT_MS).toBe(300_000);
 	});
 });
+
+// ---------------------------------------------------------------- slice 3 (GK-017 r02b states 11 and 19)
+
+describe('paid after the order was cancelled (state 11, Q7)', () => {
+	const late = (state: string, over: Partial<Order> = {}) =>
+		orderView(
+			order({
+				lifecycle: 'cancelled',
+				cancel_reason: 'payment_not_completed',
+				cancelled_at: '2026-10-10T09:20:00Z',
+				total_minor: 9000,
+				discount_minor: 0,
+				payment: payment({ state: 'succeeded', amount_minor: 9000, checkout_url: null }),
+				refund: {
+					state,
+					target_minor: 9000,
+					succeeded_minor: state === 'returned' ? 9000 : 0,
+					reason: 'late_capture_terminal'
+				},
+				...over
+			})
+		);
+
+	it('requested: kept safe and all of it being returned; a new order offered', () => {
+		const v = late('requested');
+		expect(v.title).toBe('Payment received after this order was cancelled');
+		expect(v.tone).toBe('warning');
+		expect(v.lines).toEqual([
+			'This order had already been cancelled because the payment wasn’t completed in time, and then your payment of £90 arrived. We’ve kept it safe and are returning all of it to you.',
+			'Refund of £90 requested. We’ll update this page as it progresses.',
+			'Please don’t pay again. Your cake won’t be made for this order.'
+		]);
+		expect(v.refund).toBeUndefined();
+		expect(v.action).toBe('new_order');
+		expect(v.actionLabel).toBe('Start a new order');
+		expect(v.paidAfterCancel).toBe(true);
+	});
+
+	it.each([
+		[
+			'pending',
+			'Refund of £90 pending: we’ve asked our payment provider to return it. We’ll update this page when it has been returned.'
+		],
+		[
+			'needs_attention',
+			'Your refund of £90 needs a check by our team before we can send it. We’ll contact you if we need anything.'
+		]
+	])('%s: the API’s refund state, never returned', (state, line) => {
+		const v = late(state);
+		expect(v.lines[1]).toBe(line);
+		expect(v.lines.join(' ')).not.toMatch(/returned all/);
+	});
+
+	it('returned: past tense only once the API says so', () => {
+		const v = late('returned');
+		expect(v.tone).toBe('success');
+		expect(v.lines[0]).toMatch(/We kept it safe and have returned all of it to you\.$/);
+		expect(v.lines[1]).toBe(
+			'Refund of £90 returned to your payment method. Your bank may take a few days to show it.'
+		);
+	});
+
+	it('no refund yet (K11 hides it until secured): as before', () => {
+		const v = late('requested', { refund: null });
+		expect(v.title).toBe('This order was cancelled');
+		expect(v.paidAfterCancel).toBeUndefined();
+	});
+});
+
+describe('being made, collected and not collected (state 19)', () => {
+	const accepted = (over: Partial<Order> = {}) =>
+		order({ lifecycle: 'confirmed', paid_at: '2026-10-06T13:05:00Z', ...over });
+
+	it('being made: the cake is now being prepared', () => {
+		expect(orderView(accepted({ lifecycle: 'in_production' })).lines).toEqual([
+			'We’ve received your payment and your order is confirmed. Your cake is now being prepared.'
+		]);
+		expect(orderView(accepted()).lines).toEqual([
+			'We’ve received your payment and your order is confirmed.'
+		]);
+		expect(
+			orderView(
+				accepted({
+					lifecycle: 'in_production',
+					fulfillment_mode: 'gk_delivery',
+					delivery: { state: 'paid', quote: null, paid_minor: 12000 }
+				})
+			).lines
+		).toEqual([
+			'Your cakes and delivery are paid. The chef has confirmed your delivery and started making your cake.'
+		]);
+		expect(
+			orderView(accepted({ lifecycle: 'in_production', payment_requirement: 'none' })).lines
+		).toEqual(['Your free order is confirmed. Your cake is now being prepared.']);
+	});
+
+	it('collected: ask the chef about anything wrong (Q20)', () => {
+		const v = orderView(
+			accepted({
+				lifecycle: 'completed',
+				fulfillment: { state: 'completed', at: 'x', pending: null }
+			})
+		);
+		expect(v.title).toBe('Your order is complete');
+		expect(v.lines).toEqual([
+			'Thank you for ordering with GK Cakes.',
+			'Something wrong with your cake? Please contact the chef: they’ll look at it with you and agree any refund.'
+		]);
+		expect(v.contactChef).toBe(true);
+		expect(v.contactLabel).toBe('Contact the chef about your cake');
+		expect(v.refundTerms).toBe('none');
+	});
+
+	it('a refund agreed with the chef after collection (Q20)', () => {
+		const agreed = (state: string) =>
+			orderView(
+				accepted({
+					lifecycle: 'completed',
+					fulfillment: { state: 'completed', at: 'x', pending: null },
+					refund: {
+						state,
+						target_minor: 3000,
+						succeeded_minor: state === 'returned' ? 3000 : 0,
+						reason: 'chef_exception'
+					}
+				})
+			);
+		const v = agreed('requested');
+		expect(v.lines).toEqual([
+			'Thank you for ordering with GK Cakes.',
+			'Refund of £30 requested: the amount you agreed with the chef after collection. We’ll update this page as it progresses.'
+		]);
+		expect(v.refund).toBeUndefined();
+		expect(v.contactChef).toBeUndefined();
+		const back = agreed('returned');
+		expect(back.lines[1]).toBe(
+			'Refund of £30 requested: the amount you agreed with the chef after collection.'
+		);
+		expect(back.refund).toBe(
+			'Refund of £30 returned to your payment method. Your bank may take a few days to show it.'
+		); // A delivered GK order says "after delivery" (review nit 6).
+		const delivered = orderView(
+			accepted({
+				lifecycle: 'completed',
+				fulfillment_mode: 'gk_delivery',
+				fulfillment: { state: 'completed', at: 'x', pending: null },
+				refund: {
+					state: 'requested',
+					target_minor: 3000,
+					succeeded_minor: 0,
+					reason: 'chef_exception'
+				}
+			})
+		);
+		expect(delivered.lines[1]).toBe(
+			'Refund of £30 requested: the amount you agreed with the chef after delivery. We’ll update this page as it progresses.'
+		);
+	});
+
+	it('not collected: 50% requested automatically when the chef recorded it (Q19)', () => {
+		const v = orderView(
+			accepted({
+				lifecycle: 'completed',
+				fulfillment: { state: 'no_show', at: 'x', pending: null },
+				refund: {
+					state: 'requested',
+					target_minor: 16500,
+					succeeded_minor: 0,
+					reason: 'no_show',
+					// A stray refund beside it: the cake part is the 50%, not the block.
+					parts: [
+						{
+							kind: 'cake',
+							target_minor: 4500,
+							succeeded_minor: 0,
+							in_progress_minor: 4500,
+							pending_chef_minor: 0
+						},
+						{
+							kind: 'stray',
+							target_minor: 12000,
+							succeeded_minor: 0,
+							in_progress_minor: 12000,
+							pending_chef_minor: 0
+						}
+					]
+				}
+			})
+		);
+		expect(v.title).toBe('Your cake wasn’t collected');
+		expect(v.tone).toBe('warning');
+		expect(v.lines).toEqual([
+			'Your cake was ready at St Katharine Docks on Thu 22 October, 11:00–12:00, but it wasn’t collected.',
+			'Under the refund terms you get 50% of what you paid back: £45. We requested it automatically when the chef recorded that the cake wasn’t collected.'
+		]);
+		expect(v.refund).toBe('Refund of £165 requested. We’ll update this page as it progresses.');
+		expect(v.contactChef).toBe(true);
+	});
+
+	it('not collected, nothing refunded (a free order): no amount', () => {
+		const v = orderView(
+			accepted({
+				lifecycle: 'completed',
+				payment_requirement: 'none',
+				fulfillment: { state: 'no_show', at: 'x', pending: null }
+			})
+		);
+		expect(v.lines).toHaveLength(1);
+	});
+});

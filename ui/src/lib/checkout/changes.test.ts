@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../api';
 import {
+	MOVE_FIXED,
+	MOVE_FIXED_CANCEL,
+	cancellable,
+	allows,
+	apiActions,
 	amountChanged,
 	boundaryAlert,
 	canAct,
@@ -21,6 +26,7 @@ import {
 	moveView,
 	previewRefreshDelay,
 	previewView,
+	refundParts,
 	refundProgress,
 	refundSteps,
 	timeChange,
@@ -28,7 +34,7 @@ import {
 	trackKind
 } from './changes';
 import type { Who } from './flow';
-import type { CancellationPreview, MoveChoices, Order, Refund, Slot } from './types';
+import type { CancellationPreview, MoveChoices, Order, Refund, RefundPart, Slot } from './types';
 
 const guest: Who = { kind: 'guest', secret: 'a'.repeat(43) };
 const owner: Who = { kind: 'account', token: 't' };
@@ -842,5 +848,308 @@ describe('amountChanged (m1)', () => {
 		expect(amountChanged(seen, preview({ paid_minor: 9500 }))).toBe(true);
 		expect(amountChanged(seen, preview({ rate: 50, amount_minor: 4500 }))).toBe(false);
 		expect(amountChanged(null, preview())).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------- slice 3: the API's actions, parts, kinds
+
+describe('the API’s actions for this caller (0038)', () => {
+	const q5 = { open: true, reason: 'pay_by_passed', pending: false };
+
+	it('cancel follows actions, not the page’s own guess', () => {
+		expect(mayCancel(order({ actions: ['cancel', 'move_pickup'] }), guest)).toBe(true);
+		expect(mayCancel(order({ actions: ['move_pickup'] }), guest)).toBe(false);
+		expect(mayCancel(order({ actions: [] }), owner)).toBe(false);
+		// The API allows a cancellation after a secured redelivery choice
+		// (the page's own rule never offered one after a dispatch).
+		const exception = { state: 'exception', at: 'x', pending: null };
+		const redelivery = order({
+			fulfillment_mode: 'gk_delivery',
+			lifecycle: 'ready',
+			fulfillment: exception
+		});
+		expect(mayCancel(redelivery, owner)).toBe(false);
+		expect(mayCancel({ ...redelivery, actions: ['cancel'] }, owner)).toBe(true);
+	});
+
+	it('an open delivery choice is still offered instead of the standard cancellation', () => {
+		const o = order({
+			fulfillment_mode: 'gk_delivery',
+			delivery_choice: q5,
+			actions: ['cancel', 'delivery_choice']
+		});
+		expect(mayCancel(o, owner)).toBe(false);
+		expect(cancelViaChef(o, owner)).toBe(true);
+		expect(cancelViaChef({ ...o, actions: ['delivery_choice'] }, owner)).toBe(false);
+	});
+
+	it('actions without cancel on a changeable order: contact the chef to cancel (review finding 4)', () => {
+		expect(cancelViaChef(order({ actions: ['move_pickup'] }), guest)).toBe(true);
+		expect(cancelViaChef(order({ actions: [] }), owner)).toBe(true);
+		expect(cancelViaChef(order({ actions: ['cancel'] }), owner)).toBe(false);
+		// Not without actions (the page's own rule offers the cancellation), not
+		// for a finished order, not while another change is processed.
+		expect(cancelViaChef(order(), owner)).toBe(false);
+		expect(cancelViaChef(order({ lifecycle: 'completed', actions: [] }), owner)).toBe(false);
+		expect(
+			cancelViaChef(
+				order({
+					actions: [],
+					fulfillment: { state: 'awaiting_handover', at: null, pending: 'handover' }
+				}),
+				owner
+			)
+		).toBe(false);
+		expect(cancelViaChef(order({ actions: [] }), null)).toBe(false);
+		// A GK delivery already on its way (still ready; the API sends []):
+		// nothing to cancel through the chef either (review round 2).
+		for (const state of ['out_for_delivery', 'exception']) {
+			const sent = order({
+				fulfillment_mode: 'gk_delivery',
+				lifecycle: 'ready',
+				fulfillment: { state, at: 'x', pending: null },
+				actions: []
+			});
+			expect(cancelViaChef(sent, owner)).toBe(false);
+			expect(cancelViaChef({ ...sent, actions: undefined }, owner)).toBe(false);
+		}
+		expect(
+			cancelViaChef(
+				order({ fulfillment_mode: 'gk_delivery', lifecycle: 'ready', actions: [] }),
+				owner
+			)
+		).toBe(true);
+		expect(MOVE_FIXED_CANCEL).toBe(
+			'This order’s time can’t be changed online. To change the time or cancel this order, please contact the chef.'
+		);
+	});
+
+	it('cancellable: the timeline’s "if you cancel" wording', () => {
+		expect(cancellable(order({ actions: ['cancel'] }))).toBe(true);
+		expect(cancellable(order({ actions: [] }))).toBe(false);
+		expect(cancellable(order())).toBe(true);
+		expect(cancellable(order({ lifecycle: 'completed' }))).toBe(false);
+	});
+
+	it('no viewer: nothing, whatever the actions say', () => {
+		expect(allows(order({ actions: ['cancel'] }), null, 'cancel', true)).toBe(false);
+		expect(mayCancel(order({ actions: ['cancel'] }), null)).toBe(false);
+	});
+
+	it('actions absent (an older API): the page’s own rule', () => {
+		expect(apiActions(order())).toBeUndefined();
+		expect(allows(order(), guest, 'cancel', true)).toBe(true);
+		expect(allows(order(), guest, 'cancel', false)).toBe(false);
+		expect(mayCancel(order(), guest)).toBe(true);
+		expect(timeChange(order(), guest)).toBe('move');
+	});
+
+	it('move_pickup: a move, or the order’s time can’t be changed online', () => {
+		expect(timeChange(order({ actions: ['cancel', 'move_pickup'] }), guest)).toBe('move');
+		expect(timeChange(order({ actions: ['cancel'] }), guest)).toBe('fixed');
+		expect(MOVE_FIXED).toBe(
+			'This order’s time can’t be changed online. If you need a different time, please contact the chef.'
+		);
+		// GK delivery and a move in progress are unchanged.
+		expect(timeChange(order({ fulfillment_mode: 'gk_delivery', actions: [] }), guest)).toBe(
+			'contact_chef'
+		);
+		expect(timeChange(order({ lifecycle: 'completed', actions: [] }), guest)).toBe('none');
+	});
+});
+
+describe('labelled cancellation allocations (0038 kind)', () => {
+	it('cake only: no split (as before)', () => {
+		const v = previewView(
+			preview({ allocations: [{ collection_id: 'c1', amount_minor: 9000, kind: 'cake' }] })
+		);
+		expect(v.split).toEqual([]);
+	});
+
+	it('cake and a stray payment: each labelled exactly; the stray isn’t said twice', () => {
+		const v = previewView(
+			preview({
+				rate: 50,
+				amount_minor: 4500,
+				unmatched_minor: 12000,
+				allocations: [
+					{ collection_id: 'c1', amount_minor: 4500, kind: 'cake' },
+					{ collection_id: 'c2', amount_minor: 12000, kind: 'stray' }
+				]
+			})
+		);
+		// The stray comes back beside "You get back £45", never inside its
+		// split (review finding 2): its own sentence, as before.
+		expect(v.amount).toBe('£45');
+		expect(v.split).toEqual([]);
+		expect(v.unmatched).toBe(
+			'We’ll also return in full a delivery payment of £120 that couldn’t be used for your order.'
+		);
+		expect(v.roundingExample).toBe(true);
+		// Without unmatched_minor, the single labelled stray allocation's amount.
+		const fromAllocation = previewView(
+			preview({
+				rate: 50,
+				amount_minor: 4500,
+				allocations: [
+					{ collection_id: 'c1', amount_minor: 4500, kind: 'cake' },
+					{ collection_id: 'c2', amount_minor: 12000, kind: 'stray' }
+				]
+			})
+		);
+		expect(fromAllocation.unmatched).toContain('£120');
+		// A delivery inside the amount keeps its line; the stray still doesn't.
+		const both = previewView(
+			preview({
+				unmatched_minor: 12000,
+				allocations: [
+					{ collection_id: 'c1', amount_minor: 9000, kind: 'cake' },
+					{ collection_id: 'c3', amount_minor: 12000, kind: 'delivery' },
+					{ collection_id: 'c2', amount_minor: 12000, kind: 'stray' }
+				]
+			})
+		);
+		expect(both.split.map((l) => l.label)).toEqual([
+			'Cakes · back to your payment method',
+			'Delivery · back to your payment method'
+		]);
+	});
+
+	it('a delivery returned automatically and the chef’s share keep their own lines', () => {
+		const delivery = previewView(
+			preview({
+				allocations: [
+					{ collection_id: 'c1', amount_minor: 9000, kind: 'cake' },
+					{ collection_id: 'c2', amount_minor: 12000, kind: 'delivery' }
+				]
+			})
+		);
+		expect(delivery.split.map((l) => l.label)).toEqual([
+			'Cakes · back to your payment method',
+			'Delivery · back to your payment method'
+		]);
+		const chef = previewView(
+			preview({
+				rate: 50,
+				amount_minor: 10500,
+				delivery_pending_minor: 6000,
+				allocations: [{ collection_id: 'c1', amount_minor: 4500, kind: 'cake' }]
+			})
+		);
+		expect(chef.split).toEqual([
+			{ label: 'Cakes · back to your payment method', amount: '£45' },
+			{ label: 'Delivery · sent separately by the chef', amount: '£60' }
+		]);
+	});
+
+	it('an unknown kind: the unlabelled lines (and the stray sentence) as before', () => {
+		const v = previewView(
+			preview({
+				unmatched_minor: 12000,
+				delivery_pending_minor: 6000,
+				allocations: [{ collection_id: 'c1', amount_minor: 4500, kind: 'other' }]
+			})
+		);
+		expect(v.split[0].label).toBe('Back to your payment method');
+		expect(v.unmatched).toContain('£120');
+	});
+});
+
+describe('refund parts (0038): each kind with its own amount, no arithmetic', () => {
+	const part = (kind: string, over: Partial<RefundPart> = {}): RefundPart => ({
+		kind,
+		target_minor: 4500,
+		succeeded_minor: 0,
+		in_progress_minor: 4500,
+		pending_chef_minor: 0,
+		...over
+	});
+
+	it('cake and the chef’s delivery: both amounts from the parts', () => {
+		const v = refundProgress(
+			refund({
+				target_minor: 10500,
+				in_progress_minor: 4500,
+				delivery_pending_minor: 6000,
+				parts: [
+					part('cake'),
+					part('delivery', { target_minor: 6000, in_progress_minor: 0, pending_chef_minor: 6000 })
+				]
+			})
+		);
+		expect(v.lines).toEqual([
+			{
+				label: 'Cakes · to your payment method',
+				status: 'Sent · waiting for our payment provider',
+				amount: '£45'
+			},
+			{
+				label: 'Delivery · sent separately by the chef',
+				status: 'Waiting for the chef',
+				amount: '£60'
+			}
+		]);
+		expect(v.trackLabel).toBe('Cake refund progress');
+	});
+
+	it('the chef has sent the delivery part: the line stays, with its status', () => {
+		const v = refundProgress(
+			refund({
+				state: 'partly_returned',
+				target_minor: 10500,
+				succeeded_minor: 4500,
+				in_progress_minor: 6000,
+				delivery_pending_minor: 0,
+				parts: [
+					part('cake', { succeeded_minor: 4500, in_progress_minor: 0 }),
+					part('delivery', { target_minor: 6000, in_progress_minor: 6000 })
+				]
+			})
+		);
+		expect(v.lines).toEqual([
+			{ label: 'Cakes · to your payment method', status: 'Returned', amount: '£45' },
+			{
+				label: 'Delivery · to your payment method',
+				status: 'Sent · waiting for our payment provider',
+				amount: '£60'
+			}
+		]);
+	});
+
+	it('a single cake part: no split lines; a needs-a-check refund says so per part', () => {
+		expect(refundProgress(refund({ parts: [part('cake', { target_minor: 9000 })] })).lines).toEqual(
+			[]
+		);
+		const v = refundProgress(
+			refund({
+				state: 'needs_attention',
+				parts: [part('cake'), part('stray', { target_minor: 12000, in_progress_minor: 0 })]
+			})
+		);
+		expect(v.lines.map((l) => l.status)).toEqual([
+			'Needs a check by our team',
+			'Needs a check by our team'
+		]);
+		expect(v.lines[1].label).toBe('Delivery payment that couldn’t be used · returned in full');
+	});
+
+	it('parts with all-zero kinds are left out; malformed parts are ignored', () => {
+		expect(
+			refundParts(
+				refund({
+					parts: [part('cake'), part('delivery', { target_minor: 0, in_progress_minor: 0 })]
+				})
+			)
+		).toHaveLength(1);
+		expect(refundParts(refund({ parts: [part('cake', { target_minor: -1 })] }))).toBeUndefined();
+		expect(refundParts(refund({ parts: [] }))).toBeUndefined();
+		expect(refundParts(refund())).toBeUndefined();
+	});
+
+	it('summary words: state 11’s refund state and an agreed refund (Q20)', () => {
+		expect(refundProgress(refund({ state: 'needs_attention' })).stateWord).toBe('needs a check');
+		expect(refundProgress(refund({ state: 'partly_returned' })).stateWord).toBe('partly returned');
+		expect(refundProgress(refund({ reason: 'chef_exception' })).agreed).toBe(true);
+		expect(refundProgress(refund({ reason: 'no_show' })).agreed).toBe(false);
 	});
 });
