@@ -171,8 +171,8 @@ export function freshSignIn(at: number | null, now: number): boolean {
  * only for that same account, so someone else signing in on this browser
  * never skips the review. It is kept in localStorage because the email link
  * usually opens in a new tab (as the sign-in return page is), for as long as
- * the link works, and every sign-out the account pages make removes it
- * (guard.ts signOutHere; privacy's Sign out everywhere).
+ * the link works, and the account pages' Sign out, Sign out everywhere and
+ * the ended-session sign-out remove it (guard.ts signOutHere).
  */
 export const DELETION_MARKER_KEY = 'gk-account-deletion';
 export const DELETION_MARKER_MS = 30 * 60 * 1000;
@@ -210,6 +210,29 @@ export function deletionMarked(
 	} catch {
 		return false;
 	}
+}
+
+/**
+ * What the delete page may do now, from who opened it and who is signed in:
+ * 'final' only for the same account, marked and freshly signed in;
+ * 'reauth' for the same account whose fresh sign-in or marker has run out
+ * (sign in again; the server would refuse anyway); 'review' when another
+ * account's session (or none we can identify) is in this browser — never a
+ * shortcut for anyone else.
+ */
+export function finalDecision(f: {
+	openedFor: string | undefined;
+	who: string | undefined;
+	marked: boolean;
+	fresh: boolean;
+}): 'final' | 'reauth' | 'review' {
+	if (f.who === undefined || f.who !== f.openedFor) return 'review';
+	return f.marked && f.fresh ? 'final' : 'reauth';
+}
+
+/** Whether a confirmation link may be marked for this deletion: the account that reviewed it is still the one signed in. */
+export function mayMark(openedFor: string | undefined, who: string | undefined): who is string {
+	return who !== undefined && who === openedFor;
 }
 
 export function forgetDeletion(storage: DeviceStorage | null): void {

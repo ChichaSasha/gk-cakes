@@ -387,7 +387,8 @@ navigation (`src/lib/account/ui/AccountShell.svelte`, styles in
   return path `/account`) and a marker in localStorage holding only its
   expiry and a SHA-256 of the account's subject (30 minutes, as long as the
   link; the link usually opens in a new tab). It counts only for that
-  account, and every sign-out from the account pages removes it, so someone
+  account, and the account pages' Sign out, Sign out everywhere and an ended
+  session remove it, so someone
   else signing in on this browser never skips the review. Back on `/account` with the marker and a session signed in by email
   link or Google within 10 minutes (the token's `amr`, as the API reads it),
   a notice leads on to the final step, which asks for a new preview,

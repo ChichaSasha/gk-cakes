@@ -19,6 +19,28 @@ export async function accountApi(): Promise<AccountApi | null> {
 	};
 }
 
+/**
+ * The signed-in email address and marker hash from ONE session read, so the
+ * address a link goes to and the account it is marked for always match.
+ */
+export async function sessionIdentity(): Promise<{ email?: string; who?: string }> {
+	if (!signInConfigured) return {};
+	const session = await currentSession();
+	return { email: session?.user?.email ?? undefined, who: await markerIdOf(session?.user?.id) };
+}
+
+async function markerIdOf(sub: string | undefined): Promise<string | undefined> {
+	try {
+		const subtle = globalThis.crypto?.subtle;
+		if (!sub || !subtle) return undefined;
+		const digest = await subtle.digest('SHA-256', new TextEncoder().encode(sub));
+		return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+	} catch {
+		// No hash (for example an insecure context): no marker, so no shortcut.
+		return undefined;
+	}
+}
+
 /** The signed-in email address (from the session), for "Signed in as …". */
 export async function signedInEmail(): Promise<string | undefined> {
 	if (!signInConfigured) return undefined;
@@ -32,16 +54,7 @@ export async function signedInEmail(): Promise<string | undefined> {
  */
 export async function accountMarkerId(): Promise<string | undefined> {
 	if (!signInConfigured) return undefined;
-	try {
-		const sub = (await currentSession())?.user?.id;
-		const subtle = globalThis.crypto?.subtle;
-		if (!sub || !subtle) return undefined;
-		const digest = await subtle.digest('SHA-256', new TextEncoder().encode(sub));
-		return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
-	} catch {
-		// No hash (for example an insecure context): no marker, so no shortcut.
-		return undefined;
-	}
+	return markerIdOf((await currentSession())?.user?.id);
 }
 
 /**

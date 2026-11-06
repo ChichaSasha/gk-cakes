@@ -26,7 +26,7 @@ export async function endedSession(e: unknown): Promise<boolean> {
 		// Several reads failing at once sign out and redirect only once.
 		ending ??= (async () => {
 			try {
-				await signOut();
+				await signOutHere();
 				await toSignIn(true);
 			} finally {
 				ending = undefined;

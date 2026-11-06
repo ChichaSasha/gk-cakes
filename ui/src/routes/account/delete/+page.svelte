@@ -37,22 +37,19 @@
 		deletionFailure,
 		deletionMarked,
 		deletionStep,
+		finalDecision,
 		forgetDeletion,
 		freshSignIn,
 		markDeletion,
+		mayMark,
 		ordersTickLabel,
 		tickErrors,
+		type Ticks,
 		upcomingLine,
-		upcomingWarning,
-		type Ticks
+		upcomingWarning
 	} from '../../../lib/account/privacy';
 	import { SaveKey } from '../../../lib/account/profile';
-	import {
-		accountApi,
-		accountMarkerId,
-		sessionSignInAt,
-		signedInEmail
-	} from '../../../lib/account/session';
+	import { accountApi, sessionIdentity, sessionSignInAt } from '../../../lib/account/session';
 	import AccountShell from '../../../lib/account/ui/AccountShell.svelte';
 	import { emptyBag } from '../../../lib/shop/bag';
 	import { bag } from '../../../lib/shop/bag.svelte';
@@ -80,6 +77,8 @@
 	let sending = $state(false);
 	let sendProblem = $state('');
 	let reauthNote = $state(false);
+	// Another account's session took over this browser: its review starts here.
+	let swapNote = $state(false);
 	let staleNote = $state(false);
 	let deleting = $state(false);
 	let deleteProblem = $state('');
@@ -110,32 +109,49 @@
 	}
 
 	/**
-	 * Whether this page may show the final step now: the same account it
-	 * opened for, still marked, still freshly signed in. Otherwise it starts
-	 * again from the review (never a shortcut for anyone else).
+	 * What the page may do now (privacy.ts finalDecision): the final step
+	 * only for the account it opened for, marked and freshly signed in; the
+	 * same account whose window ran out signs in again; another account's
+	 * session starts again from the review (never a shortcut for anyone else).
 	 */
-	async function stillFinal(): Promise<boolean> {
-		const who = await accountMarkerId();
+	async function decide(): Promise<'final' | 'reauth' | 'review'> {
+		const { email: now_email, who } = await sessionIdentity();
 		const now = Date.now();
-		const ok =
-			who !== undefined &&
-			who === openedFor &&
-			deletionMarked(local(), now, who) &&
-			freshSignIn(await sessionSignInAt(), now);
-		if (!ok) {
+		const decision = finalDecision({
+			openedFor,
+			who,
+			marked: who !== undefined && deletionMarked(local(), now, who),
+			fresh: freshSignIn(await sessionSignInAt(), now)
+		});
+		if (decision === 'review') {
 			stage = 'start';
 			if (who !== openedFor) {
 				openedFor = who;
-				email = await signedInEmail();
+				email = now_email;
+				swapNote = true;
 			}
 		}
-		return ok;
+		return decision;
+	}
+
+	/** Back to the review for another account's session, with a note. */
+	async function toReview() {
+		if (await loadPreview()) await focus(swapNote ? 'del-swap' : 'delete-h');
+	}
+
+	/** The same account must sign in again (its fresh sign-in or marker ran out). */
+	async function toSignInAgain() {
+		stage = 'start';
+		reauthNote = true;
+		sendProblem = '';
+		step = 'reauth';
+		await focus('del-reauth-note');
 	}
 
 	/** Asks the API what deleting would do now and shows the matching step. */
 	async function loadPreview(): Promise<boolean> {
 		if (!api) return false;
-		if (stage === 'final') await stillFinal();
+		if (stage === 'final' && (await decide()) !== 'final') stage = 'start';
 		loadProblem = '';
 		try {
 			preview = await deletionPreview(api, newIdempotencyKey());
@@ -175,9 +191,10 @@
 				await toSignIn();
 				return;
 			}
-			email = await signedInEmail();
+			const identity = await sessionIdentity();
+			email = identity.email;
 			const at = await sessionSignInAt();
-			const who = await accountMarkerId();
+			const who = identity.who;
 			openedFor = who;
 			if (!active) return;
 			// Back from the confirmation link, as the same account that asked
@@ -211,6 +228,7 @@
 		event.preventDefault();
 		if (await showTickErrors(tickErrors(ticks, step === 'warn'))) return;
 		reauthNote = false;
+		swapNote = false;
 		sendProblem = '';
 		step = 'reauth';
 		await focus('reauth-h');
@@ -220,6 +238,21 @@
 	async function sendLink() {
 		if (sending) return;
 		sendProblem = '';
+		// The link and the marker are for the account signed in now, which
+		// must be the one that did the review on this page.
+		const identity = await sessionIdentity();
+		if (!mayMark(openedFor, identity.who)) {
+			if (identity.who !== openedFor) {
+				openedFor = identity.who;
+				email = identity.email;
+				swapNote = true;
+			}
+			stage = 'start';
+			await toReview();
+			return;
+		}
+		const who = identity.who;
+		email = identity.email;
 		if (!email) {
 			sendProblem =
 				'We can’t find this account’s email address. Please sign out and sign in again.';
@@ -249,8 +282,7 @@
 			await focus('del-send-problem');
 			return;
 		}
-		const who = await accountMarkerId();
-		if (who) markDeletion(local(), Date.now(), who);
+		markDeletion(local(), Date.now(), who);
 		step = 'sent';
 		await focus('del-status');
 	}
@@ -271,10 +303,10 @@
 		if (deleting || !api || !preview) return;
 		deleteProblem = '';
 		staleNote = false;
-		// Someone else's session took over this browser: back to the review.
-		if (step === 'final' && !(await stillFinal())) {
-			if (await loadPreview()) await arrive();
-			return;
+		if (step === 'final') {
+			const decision = await decide();
+			if (decision === 'review') return toReview();
+			if (decision === 'reauth') return toSignInAgain();
 		}
 		if (await showTickErrors(tickErrors(ticks, upcoming.length > 0, false))) return;
 		const input = { preview_id: preview.preview_id, preview_hash: preview.preview_hash };
@@ -563,7 +595,17 @@
 			</section>
 		{:else if step === 'review' || step === 'warn'}
 			<section class="acc-card" id="delete" aria-labelledby="delete-h">
-				<h2 class="acc-h" id="delete-h">Delete your account</h2>
+				<h2 class="acc-h" id="delete-h" tabindex="-1">Delete your account</h2>
+				{#if swapNote}
+					<div class="notice" id="del-swap" role="alert" tabindex="-1">
+						<div>
+							<p>
+								You’re now signed in{email ? ` as ${email}` : ''}. Please review what happens before
+								deleting this account.
+							</p>
+						</div>
+					</div>
+				{/if}
 				{#if step === 'warn'}
 					{@render upcomingNotice()}
 				{:else}

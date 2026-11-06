@@ -9,6 +9,8 @@ import {
 	DELETION_MARKER_MS,
 	deletionFailure,
 	deletionMarked,
+	finalDecision,
+	mayMark,
 	deletionStep,
 	forgetDeletion,
 	freshSignIn,
@@ -178,6 +180,31 @@ describe('deletion marker', () => {
 		expect(s.data.has(DELETION_MARKER_KEY)).toBe(false); // and it is gone
 		markDeletion(s, NOW, A);
 		expect(deletionMarked(s, NOW, undefined)).toBe(false);
+	});
+});
+
+describe('delete page decisions', () => {
+	const A = 'a'.repeat(64);
+	const B = 'b'.repeat(64);
+
+	it('the final step only for the same account, marked and freshly signed in', () => {
+		expect(finalDecision({ openedFor: A, who: A, marked: true, fresh: true })).toBe('final');
+		expect(finalDecision({ openedFor: A, who: A, marked: false, fresh: true })).toBe('reauth');
+		expect(finalDecision({ openedFor: A, who: A, marked: true, fresh: false })).toBe('reauth');
+		expect(finalDecision({ openedFor: A, who: B, marked: true, fresh: true })).toBe('review');
+		expect(finalDecision({ openedFor: A, who: undefined, marked: true, fresh: true })).toBe(
+			'review'
+		);
+		expect(finalDecision({ openedFor: undefined, who: undefined, marked: true, fresh: true })).toBe(
+			'review'
+		);
+	});
+
+	it('marks a link only for the account that reviewed on this page', () => {
+		expect(mayMark(A, A)).toBe(true);
+		expect(mayMark(A, B)).toBe(false);
+		expect(mayMark(undefined, undefined)).toBe(false);
+		expect(mayMark(A, undefined)).toBe(false);
 	});
 });
 
