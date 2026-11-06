@@ -189,6 +189,7 @@
 		attempt = null;
 		submitted = null;
 		code = newCheckCode();
+		copied = '';
 	}
 
 	async function load() {
@@ -285,6 +286,11 @@
 	}
 
 	function go(next: 'review' | 'approve' | 'decline') {
+		if (next !== 'review' && next !== decision) {
+			// A note written for adding isn't a decline's note (and the other way round).
+			note = '';
+			confirmed = false;
+		}
 		if (next !== 'review') decision = next;
 		if (next === 'review') {
 			result = null;
@@ -393,6 +399,8 @@
 			confirmError = '';
 			noteError = '';
 			code = newCheckCode();
+			copied = '';
+			emailOpen = false;
 		}
 	});
 
@@ -442,6 +450,7 @@
 	}
 
 	let copied = $state('');
+	let emailOpen = $state(false);
 	async function copyEmail(text: string) {
 		try {
 			await navigator.clipboard.writeText(text);
@@ -813,16 +822,18 @@
 								? `Starts around their month, ${monthLabel(c.approximate_date)}.`
 								: 'They gave no month: starts with the last 3 months.'}
 						</p>
-						<div class="quick" class:is-locked={locked}>
+						<div class="quick">
 							<span class="small">Search for:</span>
 							{#if c.reference}<button
 									class="btn btn-small"
 									type="button"
+									disabled={locked}
 									onclick={() => (term = c.reference ?? '')}>their reference “{c.reference}”</button
 								>{/if}
 							{#if surname(name)}<button
 									class="btn btn-small"
 									type="button"
+									disabled={locked}
 									onclick={() => (term = surname(name) ?? '')}
 									>their surname “{surname(name)}”</button
 								>{/if}
@@ -846,6 +857,7 @@
 									{#if search === 'error'}<button
 											class="btn btn-small"
 											type="button"
+											disabled={locked}
 											onclick={() => void runSearch()}>Try again</button
 										>{/if}
 								</div>
@@ -939,7 +951,10 @@
 									<dt>A one-off code for this check</dt>
 									<dd>
 										<span class="mono">{code}</span>
-										<span class="small muted">(new each time this page opens; use it once)</span>
+										<span class="small muted"
+											>(for a new email; use it once). If you already emailed this address, check
+											the reply against the code in the email you sent.</span
+										>
 									</dd>
 								</div>
 							</dl>
@@ -968,7 +983,7 @@
 									>
 								</p>
 							{/if}
-							<details class="draft">
+							<details class="draft" bind:open={emailOpen}>
 								<summary class="btn btn-small">Show the email to the order’s address</summary>
 								<div class="draft-body">
 									<p class="small">To: <span class="mono">{o.contact_email}</span></p>

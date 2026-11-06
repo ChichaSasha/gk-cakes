@@ -1123,3 +1123,10 @@
 .chef .find-fields {
 	display: contents;
 }
+.chef .find-fields:disabled .search-box,
+.chef .find-fields:disabled select,
+.chef .pick-list:disabled .pick {
+	background: #f1f2f4;
+	color: var(--muted);
+	cursor: default;
+}
