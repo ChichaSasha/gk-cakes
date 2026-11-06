@@ -102,7 +102,7 @@ func NewHandler(opts Options) http.Handler {
 		checkoutRoutes(mux, opts.Checkout, opts.Identity, opts.CheckoutEnabled, opts.Logger)
 	}
 	if opts.Schedule != nil {
-		schedulePublicRoutes(mux, opts.Schedule, opts.Logger)
+		schedulePublicRoutes(mux, opts.Schedule, opts.Identity, opts.Logger)
 		if opts.Identity != nil {
 			scheduleStaffRoutes(mux, opts.Schedule, opts.Identity, opts.Logger)
 		}

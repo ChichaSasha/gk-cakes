@@ -21,10 +21,8 @@ import (
 	"github.com/ChichaSasha/gk-cakes/api/internal/database"
 	"github.com/ChichaSasha/gk-cakes/api/internal/dbtest"
 	"github.com/ChichaSasha/gk-cakes/api/internal/jobs"
-	"github.com/ChichaSasha/gk-cakes/api/internal/migrate"
 	"github.com/ChichaSasha/gk-cakes/api/internal/notifications"
 	"github.com/ChichaSasha/gk-cakes/api/internal/recovery"
-	"github.com/ChichaSasha/gk-cakes/api/migrations"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -192,11 +190,8 @@ type harness struct {
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	ctx := context.Background()
-	db := dbtest.New(t)
+	db := dbtest.NewMigrated(t, "")
 	owner := db.MigratorConn(t)
-	if _, err := migrate.Run(ctx, owner, migrations.FS); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
 	h := &harness{t: t, ctx: ctx, db: db, owner: owner, admin: db.AdminConn(t), pool: workerPool(t, db),
 		provider: newFakeResend(t), journal: recovery.NewMemoryJournal(), logs: &syncBuffer{}}
 	sealer, err := recovery.NewSealer("k1:" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32)))
