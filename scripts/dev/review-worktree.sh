@@ -10,7 +10,8 @@
 # checkout created (an owner mark in its Git directory), detached and without
 # changes or untracked files, is ever refreshed or removed; --take-over
 # accepts one another checkout created.
-# The target is a PR number (its current head), a commit ID, or a branch of
+# The target is a PR number (its current head as GitHub reports it; right
+# after a push give the commit ID instead), a commit ID (7+ hex), or a branch of
 # origin (`main`, `origin/main` and `sasha-chycha/x` all mean the remote
 # branch, freshly fetched; local branches are never used). GK_SCRATCH (default
 # $TMPDIR) must be outside every Git working tree.
@@ -72,7 +73,7 @@ done
 path="$ROOT/$name"
 
 # Resolve the target to a commit.
-if printf '%s' "$target" | grep -Eq '^[0-9]+$'; then
+if printf '%s' "$target" | grep -Eq '^[0-9]{1,6}$'; then
 	need gh
 	sha="$(gh pr view "$target" -R "$GK_REPO" --json headRefOid -q .headRefOid)"
 	git -C "$MAIN" fetch -q origin "pull/$target/head"

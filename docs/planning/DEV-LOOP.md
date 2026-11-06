@@ -71,7 +71,8 @@ owner's behalf), **Tests** (what ran, with results) and, after review,
 - `scripts/dev/review-worktree.sh review-pr-<n> <n> --node-modules-from <your worktree>`
   creates a detached worktree of the PR head outside every clone (in
   `GK_SCRATCH`, default `$TMPDIR`) and reuses your installed dependencies when
-  the lockfile is the same. Targets are a PR number, a commit ID or a branch of
+  the lockfile is the same. Targets are a PR number, a commit ID (use it right
+  after a push, while GitHub may still report the old head) or a branch of
   origin; local branches are never used. Use one name per reviewer (for
   example `review-pr-52-api`); only a review worktree your checkout created,
   detached and without changes, is ever refreshed or removed.

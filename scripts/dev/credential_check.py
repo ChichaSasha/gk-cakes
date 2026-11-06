@@ -20,27 +20,42 @@ TOKEN_FORMATS = [
     ("Slack token", r"\bxox[abprs]-[\w-]{10,}"),
     ("JWT", r"\beyJ[\w-]{10,}\.eyJ[\w-]{10,}"),
     ("bearer token", r"(?i)\bbearer\s+(?!REDACTED\b)[\w.~+/=-]{12,}"),
-    ("basic credentials", r"(?i)\bbasic\s+(?!REDACTED\b)[A-Za-z0-9+/]{8,}={0,2}"),
-    ("password in a URL", r"(?i)\b[a-z][a-z0-9+.-]*://[^/\s:@]+:(?!REDACTED@)[^\s@]+@"),
+    ("basic credentials", r"\bBasic\s+(?!REDACTED\b)[A-Za-z0-9+/]{12,}={0,2}"),
+    ("password in a URL", r"(?i)\b[a-z][a-z0-9+.-]*://[^/\s:@]+:(?!REDACTED@)(?!\d{1,5}(?:/|$))[^\s@]+@"),
     ("key in a URL (DSN)", r"(?i)\bhttps?://[0-9a-f]{16,}@"),
 ]
-# NAME = value / NAME: value, where NAME is a secret word, alone or as a
-# _/- separated part (access_token, client_secret, STAFF_PW, DB_PASS,
-# secret_key_base, Idempotency-Key ...). Quoted values are read to the closing
-# quote. Bare "key" needs a random-looking value ("Primary key: id" is prose).
-SECRET_WORD = r"(?:api[_-]?key|apikey|key|token|secret|password|passwd|pwd|pw|pass|credentials?|cookie|dsn)"
+# NAME = value / NAME: value, where a part of NAME (split at _, - and
+# camelCase) is a secret word, or NAME ends in one run together
+# (access_token, clientSecret, STAFF_PW, DB_PASS, adminPassword,
+# STAFFPASSWORD, secret_key_base, Idempotency-Key ...). Quoted values are read
+# to the closing quote. Bare "key" needs a random-looking value ("Primary key:
+# id" is prose), and prose "pass:" ("Tests pass: 42/42") does not count.
+SECRET_PARTS = {"key", "apikey", "token", "secret", "password", "passwd", "pwd", "pw", "pass",
+                "credential", "credentials", "cookie", "dsn", "auth"}
+RUN_TOGETHER = re.compile(r"(?i)(password|passwd|secret|token|apikey|credentials?)$")
 NAMED = re.compile(
-    r"(?i)(?<![\w-])(?P<name>(?:[A-Za-z0-9]+[_-])*" + SECRET_WORD + r"(?:[_-][A-Za-z0-9]+)*)[\"']?\s*[=:]\s*"
+    r"(?<![\w-])(?P<name>[A-Za-z0-9][\w-]*)[\"']?\s*[=:]\s*"
     r"(?:\"(?P<dq>[^\"\n]*)\"|'(?P<sq>[^'\n]*)'|(?P<bare>[^\s\"']+))"
 )
 PASSWORD_LIKE = re.compile(r"(?i)(pass|pwd|pw|secret|credential)")
+
+
+def is_secret_name(name):
+    parts = [p.lower() for p in re.split(r"[_-]|(?<=[a-z0-9])(?=[A-Z])", name) if p]
+    return bool(SECRET_PARTS & set(parts)) or bool(RUN_TOGETHER.search(name))
 
 
 def findings(text):
     found = [label for label, pattern in TOKEN_FORMATS if re.search(pattern, text)]
     for m in NAMED.finditer(text):
         name = m["name"]
+        if not is_secret_name(name):
+            continue
         value = m["dq"] if m["dq"] is not None else m["sq"] if m["sq"] is not None else m["bare"]
+        # "pass" after a word on the same line is prose ("Tests pass: 42/42").
+        line_before = text[text.rfind("\n", 0, m.start()) + 1:m.start()]
+        if name.lower() == "pass" and re.search(r"[A-Za-z]\s+$", line_before):
+            continue
         normalised = re.sub(r"[-_\s]", "", name.lower())
         before = text[max(0, m.start() - 12):m.start()].lower()
         if normalised.endswith("idempotencykey") or before.endswith("idempotency "):
@@ -86,6 +101,15 @@ def self_test():
         "secret_key_base=abcdefgh12345678",
         "https://0123456789abcdef0123456789abcdef@o1.ingest.sentry.io/1",
         "postgres://gk:pa/ss1234@db.example/gk",
+        '{"clientSecret": "abcd1234efgh5678"}',
+        "accessToken: abcdefgh12345678",
+        "adminPassword=hunter2hunter2",
+        '"refreshToken": "abcdefgh12345678"',
+        "privateKey: abcdefgh12345678abcd",
+        "STAFFPASSWORD=hunter2hunter2",
+        "dbpassword: hunter2hunter2",
+        "pass=letmein1",
+        "X-Auth-Token: abcdefgh12345678",
     ]
     allow = [
         "key=REDACTED and token=REDACTED",
@@ -102,6 +126,10 @@ def self_test():
         "monkey: banana-bread-recipe",
         "token budget is fine; the key point: Pink first",
         "password: REDACTED",
+        "Use a basic buttercream and basic information",
+        "http://localhost:5173/node_modules/@sveltejs/kit",
+        "http://127.0.0.1:4190/@vite/client",
+        "Checks pass: ui-preflight green. Tests pass: 42/42",
     ]
     bad = [t for t in refuse if not findings(t)] + [f"allowed wrongly refused: {t}" for t in allow if findings(t)]
     if bad:
