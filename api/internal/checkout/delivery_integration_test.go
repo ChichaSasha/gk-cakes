@@ -797,12 +797,14 @@ func TestDeliveryRefundStaysChefOnly(t *testing.T) {
 }
 
 // A delivery payment that succeeds after the order was cancelled is kept
-// and flagged (order_not_open), never marked paid.
+// (order_not_open), never marked paid, and, the order already having a
+// refund goal (the chef's 100% cancellation), added to that goal and
+// returned in full (K05 cumulative goal).
 func TestDeliveryPaymentAfterCancellationIsUnmatched(t *testing.T) {
 	h := newPayHarness(t)
 	f := h.setup(t)
 	pol := h.policy(t, "p1")
-	order, d, _ := h.deliveryOrder(t, f, pol, "dc", "")
+	order, d, cake := h.deliveryOrder(t, f, pol, "dc", "")
 	v, _ := h.deliveryView(t, order, d)
 	if _, err := h.quoteDelivery("q1", order, v.Version, 12000); err != nil {
 		t.Fatal(err)
@@ -826,7 +828,14 @@ func TestDeliveryPaymentAfterCancellationIsUnmatched(t *testing.T) {
 	if v, raw := h.deliveryView(t, order, d); v.Lifecycle != "cancelled" || v.Delivery.State == "paid" || *v.Delivery.Payable {
 		t.Fatalf("cancelled %s", raw)
 	}
-	if flags := string(h.staffJSON(t, chef, order)["attention"]); !strings.Contains(flags, "delivery_payment_unmatched") {
+	if c, s := refundAmounts(t, h, cake), refundAmounts(t, h, coll); len(c) != 1 || c[0] != 10000 || len(s) != 1 || s[0] != 12000 {
+		t.Fatalf("refunds cake %v stray %v", c, s)
+	}
+	if v, raw := h.deliveryView(t, order, d); v.Refund.TargetMinor != 22000 || v.Refund.SucceededMinor != 22000 ||
+		v.Refund.State != "returned" || v.Delivery.UnmatchedMinor != nil {
+		t.Fatalf("returned %s", raw)
+	}
+	if flags := string(h.staffJSON(t, chef, order)["attention"]); strings.Contains(flags, "delivery_payment_unmatched") {
 		t.Fatalf("attention %s", flags)
 	}
 	// A cancelled order takes no new quote.
@@ -867,6 +876,71 @@ func (h *payHarness) strayOrder(t *testing.T, f fixture, pol, key string) (strin
 		t.Fatalf("stray view %s", raw)
 	}
 	return order, d, cake, stray, q2.ID
+}
+
+// previewStray is the cancellation preview's unmatched_minor: the stray
+// delivery payment it returns in full beside amount_minor.
+func (h *payHarness) previewStray(t *testing.T, order string, d []byte) int64 {
+	t.Helper()
+	raw, err := h.co.PreviewCancellation(h.ctx, order, "", d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var p struct {
+		UnmatchedMinor *int64 `json:"unmatched_minor"`
+	}
+	if err := json.Unmarshal(raw, &p); err != nil || p.UnmatchedMinor == nil {
+		t.Fatalf("preview %s: %v", raw, err)
+	}
+	return *p.UnmatchedMinor
+}
+
+// cancellationStray is the cancellation block's unmatched_minor (nil when
+// the outcome states none) and the order JSON.
+func (h *payHarness) cancellationStray(t *testing.T, order string, d []byte) (*int64, string) {
+	t.Helper()
+	raw, err := h.co.GetOrder(h.ctx, order, "", d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		Cancellation map[string]json.RawMessage
+	}
+	if err := json.Unmarshal(raw, &v); err != nil {
+		t.Fatal(err)
+	}
+	m, ok := v.Cancellation["unmatched_minor"]
+	if !ok {
+		return nil, string(raw)
+	}
+	var n int64
+	if err := json.Unmarshal(m, &n); err != nil {
+		t.Fatal(err)
+	}
+	return &n, string(raw)
+}
+
+// cancelNotice renders the cancelled notice from the order's secured
+// cancellation outcome, as the notice machinery does when it is secured.
+func (h *payHarness) cancelNotice(t *testing.T, order string) string {
+	t.Helper()
+	tx, err := h.db.MigratorConn(t).Begin(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(h.ctx)
+	if _, err := tx.Exec(h.ctx, "SET LOCAL ROLE gk_owner"); err != nil {
+		t.Fatal(err)
+	}
+	var text string
+	if err := tx.QueryRow(h.ctx, `SELECT r.body_text FROM business.orders o
+		JOIN business.order_command c ON c.order_id = o.id AND c.command = 'cancel'
+		JOIN business.recovery_operation ro ON ro.id = c.id AND ro.state = 'secured',
+		business.order_notice_render('cancelled', o, ro.outcome -> 'evidence', 'https://gk.example') r
+		WHERE o.id = $1::uuid`, order).Scan(&text); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	return text
 }
 
 // returnStray is the chef's documented return of a stray payment: an agreed
@@ -933,11 +1007,20 @@ func TestStrayDeliveryPaymentStaysOutOfThePolicyBasis(t *testing.T) {
 			p.Allocations[0].CollectionID != cake || p.Allocations[0].AmountMinor != 5000 || p.DeliveryPending != 0 {
 			t.Fatalf("preview %+v", p)
 		}
+		if got := h.previewStray(t, order, d); got != 0 {
+			t.Fatalf("preview stray %d after its return", got)
+		}
 		if _, err := h.cancel(order, d, "c", v.Version, p); err != nil {
 			t.Fatal(err)
 		}
 		if errs := h.drain(t); len(errs) != 0 {
 			t.Fatalf("cancel:\n%s", reasons(errs))
+		}
+		if n, raw := h.cancellationStray(t, order, d); n != nil {
+			t.Fatalf("returned stray shown again: %s", raw)
+		}
+		if text := h.cancelNotice(t, order); strings.Contains(text, "delivery payment") || !strings.Contains(text, "£50") {
+			t.Fatalf("notice %s", text)
 		}
 		if got := refundAmounts(t, h, cake); len(got) != 1 || got[0] != 5000 {
 			t.Fatalf("cake refunds %v", got)
@@ -982,11 +1065,28 @@ func TestStrayDeliveryPaymentStaysOutOfThePolicyBasis(t *testing.T) {
 			allocs[stray] != 12000 || p.DeliveryPending != 0 {
 			t.Fatalf("preview %+v", p)
 		}
+		// What the customer is told matches what is returned: the policy
+		// amount and, beside it, the stray returned in full.
+		if got := h.previewStray(t, order, d); got != 12000 {
+			t.Fatalf("preview stray %d", got)
+		}
 		if _, err := h.cancel(order, d, "c", v.Version, p); err != nil {
 			t.Fatal(err)
 		}
 		if errs := h.drain(t); len(errs) != 0 {
 			t.Fatalf("cancel:\n%s", reasons(errs))
+		}
+		if n, raw := h.cancellationStray(t, order, d); n == nil || *n != 12000 || !strings.Contains(raw, `"amount_minor":5000,"unmatched_minor":12000`) {
+			t.Fatalf("cancellation %s", raw)
+		}
+		// (Rendered from the outcome evidence alone, as when the cancellation
+		// is secured before the refunds return.)
+		if text := h.cancelNotice(t, order); !strings.Contains(text, "Refund requested: £50,") ||
+			!strings.Contains(text, "delivery payment of £120") || !strings.Contains(text, "£170 is being returned to you in total") {
+			t.Fatalf("notice %s", text)
+		}
+		if sup := string(h.staffJSON(t, support, order)["cancellation"]); strings.Contains(sup, "unmatched") || strings.Contains(sup, "amount") {
+			t.Fatalf("support cancellation %s", sup)
 		}
 		if c, s := refundAmounts(t, h, cake), refundAmounts(t, h, stray); len(c) != 1 || c[0] != 5000 || len(s) != 1 || s[0] != 12000 {
 			t.Fatalf("refunds cake %v stray %v", c, s)
@@ -1170,5 +1270,94 @@ func TestStuckDeliveryCollectionIsClosed(t *testing.T) {
 	h.stripe.mu.Unlock()
 	if !strings.Contains(cakeForm, "GK+Cakes+order") {
 		t.Fatalf("cake request %s", cakeForm)
+	}
+}
+
+// K05 cumulative goal: a stray that arrives after a goal was recorded is
+// added on top of it, never taken from the cake's share. The reviewer's
+// probe: a late cancellation (goal 5000p) with the cake refund pending at
+// Stripe; the in-flight delivery payment succeeds (unmatched,
+// order_not_open); then the cake refund fails. The end state returns cake
+// 5000p + stray 12000p.
+func TestStrayAfterAGoalIsAddedOnTop(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	order, d, cake := h.deliveryOrder(t, f, pol, "sg", "")
+	v, _ := h.deliveryView(t, order, d)
+	if _, err := h.quoteDelivery("q1", order, v.Version, 12000); err != nil {
+		t.Fatal(err)
+	}
+	stray, s := h.deliveryStarted(t, order, d, "c1")
+	h.withRefunds()
+	h.stripe.mu.Lock()
+	h.stripe.refunds.newStatus = "pending"
+	h.stripe.mu.Unlock()
+	h.now = cancelDeadline
+	v, _ = h.deliveryView(t, order, d)
+	p := h.preview(t, order, d)
+	if p.Rate != 50 || p.AmountMinor != 5000 {
+		t.Fatalf("preview %+v", p)
+	}
+	if _, err := h.cancel(order, d, "c", v.Version, p); err != nil {
+		t.Fatal(err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("cancel:\n%s", reasons(errs))
+	}
+	if ops := h.operations(t, cake); len(ops) != 1 || ops[0].State != "pending" {
+		t.Fatalf("cake refund %+v", ops)
+	}
+	// The delivery money arrives: added on top of the goal and reserved.
+	h.stripe.mu.Lock()
+	h.stripe.refunds.newStatus = ""
+	h.stripe.mu.Unlock()
+	h.deliveryPaid(t, order, stray, s, "evt_sg_paid")
+	if got := h.deliveryOutcome(t, stray); got != "unmatched/order_not_open" {
+		t.Fatalf("outcome %s", got)
+	}
+	if got := refundAmounts(t, h, stray); len(got) != 1 || got[0] != 12000 {
+		t.Fatalf("stray refunds %v", got)
+	}
+	if cv, raw := h.cancelView(t, order, d); cv.Refund.TargetMinor != 17000 {
+		t.Fatalf("raised goal %s", raw)
+	}
+	// The cake refund fails: under the raised goal its remainder is
+	// reserved once (K05), on the cake.
+	h.stripe.setRefund("re_fake1", "failed", "expired_or_canceled_card")
+	h.refundEvent(t, "evt_re_failed", "refund.failed", "re_fake1")
+	errs := h.drain(t)
+	for _, err := range errs {
+		if got := attention([]error{err}); len(got) != 1 || !strings.Contains(got[0], "refund failed") {
+			t.Fatalf("after the failure:\n%s", reasons(errs))
+		}
+	}
+	rows, err := h.admin.Query(h.ctx, `SELECT state, amount_minor FROM business.refund_operation WHERE collection_id = $1::uuid
+		ORDER BY created_at, id`, cake)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cakeOps []string
+	for rows.Next() {
+		var state string
+		var amount int64
+		if err := rows.Scan(&state, &amount); err != nil {
+			t.Fatal(err)
+		}
+		cakeOps = append(cakeOps, fmt.Sprintf("%s %d", state, amount))
+	}
+	rows.Close()
+	if strings.Join(cakeOps, ", ") != "failed 5000, succeeded 5000" {
+		t.Fatalf("cake refunds %v", cakeOps)
+	}
+	if got := refundAmounts(t, h, stray); len(got) != 1 || got[0] != 12000 {
+		t.Fatalf("stray refunded again: %v", got)
+	}
+	cv, raw := h.cancelView(t, order, d)
+	if cv.Refund.TargetMinor != 17000 || cv.Refund.SucceededMinor != 17000 || cv.Refund.State != "returned" {
+		t.Fatalf("end state %s", raw)
+	}
+	if dv, raw := h.deliveryView(t, order, d); dv.Delivery.UnmatchedMinor != nil {
+		t.Fatalf("stray still shown: %s", raw)
 	}
 }

@@ -72,7 +72,12 @@
 -- of its full amount in refund_shares and refund_goal_compute, so a goal is
 -- the policy target plus the stray in full (capped by every succeeded
 -- collection) and the stray's own return never counts against the cake's
--- share. The chef's exception limit counts every succeeded collection.
+-- share. The chef's exception limit counts every succeeded collection. A
+-- stray recorded on an order that already has a refund goal raises that
+-- goal by the stray and reserves it at once (K05 cumulative goal). A
+-- cancellation that returns a stray states it beside the policy amount
+-- (preview, outcome evidence, cancellation block and notice:
+-- unmatched_minor).
 --
 -- Never dispatched. A delivery collection still created whose Stripe call
 -- was never admitted 15 minutes after its request holds no money (no
@@ -343,7 +348,9 @@ END;
 $$;
 
 -- Owner-internal: record what succeeded delivery collection p_c settled (see
--- the header), once; the order is locked by the caller. Returns the outcome.
+-- the header), once; the order is locked by the caller. An unmatched payment
+-- on an order that already has a refund goal raises that goal by the stray
+-- and reserves it (K05 cumulative goal). Returns the outcome.
 CREATE FUNCTION business.delivery_payment_settle(p_o business.orders, p_c business.payment_collection)
 RETURNS text
 LANGUAGE plpgsql
@@ -369,6 +376,17 @@ BEGIN
   v_outcome := CASE WHEN v_reason IS NULL THEN 'paid' ELSE 'unmatched' END;
   INSERT INTO business.delivery_payment_outcome (collection_id, order_id, quote_id, outcome, reason)
   VALUES (p_c.id, p_o.id, p_c.delivery_quote_id, v_outcome, v_reason);
+  IF v_outcome = 'unmatched' AND EXISTS (SELECT 1 FROM business.refund_goal g WHERE g.order_id = p_o.id) THEN
+    -- K05 cumulative goal: a goal recorded before this money arrived did
+    -- not count it. Raise it now by the stray's implicit floor (the stray on
+    -- top of what the goal already owes, never taken from the cake's share)
+    -- and reserve the new allocation, as a recorded floor does (0022
+    -- refund_delivery_failure_record). An unresolved refund elsewhere keeps
+    -- its own course; one that later settles under this raised goal
+    -- reserves the remainder once (refund_operation_settled).
+    PERFORM business.refund_goal_apply(p_o.id, NULL, NULL, NULL, NULL, NULL, 'system', NULL);
+    PERFORM business.refund_reserve(p_o.id);
+  END IF;
   IF v_outcome = 'paid' THEN
     PERFORM business.audit_record('system', NULL, 'delivery.paid', 'order', p_o.id, NULL,
                                   pg_catalog.json_build_object('collection_id', p_c.id, 'quote_id', p_c.delivery_quote_id));
@@ -755,10 +773,11 @@ $$;
 
 -- Worker: the kind of the leased dispatch's collection (cake or delivery),
 -- for the Checkout Session line item it builds at the first dispatch.
+-- VOLATILE: the lease check (payment_leased) locks the job row.
 CREATE FUNCTION business.payment_dispatch_kind(p_job_id uuid, p_worker uuid, p_generation bigint, p_operation_id uuid)
 RETURNS text
 LANGUAGE plpgsql
-STABLE
+VOLATILE
 SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
 AS $$
@@ -1127,6 +1146,352 @@ END;
 $$;
 
 
+-- As in 0022, plus unmatched_minor (outside the hash, as
+-- delivery_pending_minor): a stray delivery payment (0035) this cancellation
+-- returns in full beside amount_minor (the policy amount, unchanged); the
+-- allocations already include it.
+CREATE OR REPLACE FUNCTION business.order_cancellation_preview(p_owner uuid, p_guest_digest bytea, p_order uuid, p_now timestamptz)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_o business.orders%ROWTYPE;
+  v_l record;
+  v_account uuid;
+  v_capability uuid;
+  v_id uuid := pg_catalog.gen_random_uuid();
+  v_rate smallint;
+  v_paid bigint;
+  v_amount bigint;
+  v_alloc json;
+  v_body json;
+  v_hash text;
+  v_p business.cancellation_preview%ROWTYPE;
+  v_pending bigint;
+  v_stray bigint;
+BEGIN
+  IF p_now IS NULL THEN
+    RAISE EXCEPTION 'proof_invalid' USING ERRCODE = 'GK422';
+  END IF;
+  SELECT * INTO v_l FROM business.order_customer_lock(p_owner, p_guest_digest, p_order, 'cancel') l;
+  v_o := v_l.o_order;
+  v_account := v_l.o_account;
+  v_capability := v_l.o_capability;
+  IF EXISTS (SELECT 1 FROM business.order_command c JOIN business.recovery_operation r ON r.id = c.id
+             WHERE c.order_id = p_order AND c.command = 'cancel'
+               AND NOT (r.state = 'secured' AND r.outcome ->> 'status' = 'refused'))
+     OR NOT business.cancellation_eligible(v_o.lifecycle) THEN
+    RAISE EXCEPTION 'cancellation_not_eligible' USING ERRCODE = 'GK409';
+  END IF;
+  IF v_o.recovery_state <> 'secured' THEN
+    RAISE EXCEPTION 'state_conflict' USING ERRCODE = 'GK409';
+  END IF;
+  v_rate := business.cancellation_rate(v_o.full_refund_deadline_at, p_now, false);
+  v_paid := business.order_paid_minor(p_order);
+  v_amount := business.cancellation_amount(v_paid, v_rate);
+  -- Allocated as the goal would be (combined with any recorded floor).
+  v_alloc := business.cancellation_allocations(p_order, business.refund_goal_compute(p_order, v_amount));
+  v_pending := business.refund_delivery_pending(p_order, business.refund_goal_compute(p_order, v_amount));
+  -- A stray delivery payment (0035) returned in full with this cancellation,
+  -- beside the policy amount (it is in the allocations); none without a goal.
+  v_stray := CASE WHEN v_amount > 0 THEN business.delivery_unmatched_minor(p_order) ELSE 0 END;
+  -- An unexpired identical preview of this actor and version is reused.
+  SELECT * INTO v_p FROM business.cancellation_preview p
+  WHERE p.order_id = p_order AND p.order_version = v_o.version
+    AND p.actor_account_id IS NOT DISTINCT FROM v_account AND p.guest_capability_id IS NOT DISTINCT FROM v_capability
+    AND p.rate = v_rate AND p.paid_minor = v_paid AND p.amount_minor = v_amount
+    AND p.allocations::text = v_alloc::text AND p.full_refund_deadline_at = v_o.full_refund_deadline_at
+    AND p.computed_at <= p_now AND p_now < p.expires_at
+  ORDER BY p.computed_at DESC, p.id DESC LIMIT 1;
+  IF FOUND THEN
+    v_body := pg_catalog.json_build_object(
+      'preview_id', v_p.id, 'order_id', p_order, 'order_version', v_p.order_version, 'rate', v_p.rate,
+      'paid_minor', v_p.paid_minor, 'amount_minor', v_p.amount_minor, 'currency', 'GBP', 'allocations', v_p.allocations,
+      'full_refund_deadline_at', v_p.full_refund_deadline_at, 'computed_at', v_p.computed_at, 'expires_at', v_p.expires_at);
+    RETURN (v_body::jsonb || pg_catalog.jsonb_build_object('preview_hash', v_p.body_sha256,
+                                                           'delivery_pending_minor', v_pending,
+                                                           'unmatched_minor', v_stray))::json;
+  END IF;
+  v_body := pg_catalog.json_build_object(
+    'preview_id', v_id, 'order_id', p_order, 'order_version', v_o.version, 'rate', v_rate,
+    'paid_minor', v_paid, 'amount_minor', v_amount, 'currency', 'GBP', 'allocations', v_alloc,
+    'full_refund_deadline_at', v_o.full_refund_deadline_at,
+    'computed_at', p_now, 'expires_at', p_now + interval '10 minutes');
+  v_hash := pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(v_body::text, 'UTF8')), 'hex');
+  INSERT INTO business.cancellation_preview (id, order_id, order_version, actor_account_id, guest_capability_id, rate,
+                                             paid_minor, amount_minor, allocations, full_refund_deadline_at,
+                                             computed_at, expires_at, body_sha256)
+  VALUES (v_id, p_order, v_o.version, v_account, v_capability, v_rate, v_paid, v_amount, v_alloc,
+          v_o.full_refund_deadline_at, p_now, p_now + interval '10 minutes', v_hash);
+  RETURN (v_body::jsonb || pg_catalog.jsonb_build_object('preview_hash', v_hash, 'delivery_pending_minor', v_pending,
+                                                         'unmatched_minor', v_stray))::json;
+END;
+$$;
+
+
+-- As in 0022, plus: the outcome evidence (and audit) states unmatched_minor,
+-- the stray delivery payment (0035) the goal returns in full beside the
+-- policy refund_target_minor, when there is one.
+CREATE OR REPLACE FUNCTION business.order_terminal_return(p_order uuid, p_version integer, p_reason text, p_rate smallint,
+                                               p_source text, p_actor_kind text, p_account uuid, p_operation uuid,
+                                               p_at timestamptz)
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_o business.orders%ROWTYPE;
+  v_paid bigint := business.order_paid_minor(p_order);
+  v_target bigint := business.cancellation_amount(v_paid, p_rate);
+  -- A stray delivery payment (0035) not returned yet: the goal returns it in
+  -- full beside the policy target, so the outcome states it.
+  v_stray bigint := CASE WHEN v_target > 0 THEN business.delivery_unmatched_minor(p_order) ELSE 0 END;
+BEGIN
+  SELECT * INTO v_o FROM business.orders o WHERE o.id = p_order FOR UPDATE;
+  UPDATE business.orders o
+  SET lifecycle = 'cancelled', cancel_reason = p_reason, cancelled_at = p_at,
+      recovery_state = 'cancellation_pending', version = o.version + 1, updated_at = pg_catalog.now()
+  WHERE o.id = p_order;
+  IF v_target > 0 THEN
+    PERFORM business.refund_goal_apply(p_order, p_reason, p_source, p_rate, v_paid, v_target, 'system', NULL);
+    PERFORM business.refund_reserve(p_order);
+  END IF;
+  IF EXISTS (SELECT 1 FROM business.capacity_allocation a WHERE a.order_ref = p_order AND a.day = v_o.handover_day) THEN
+    PERFORM business.capacity_release(p_order, v_o.handover_day);
+  END IF;
+  PERFORM business.audit_record(CASE p_actor_kind WHEN 'guest' THEN 'system' ELSE p_actor_kind END, p_account,
+                                'order.cancelled', 'order', p_order, NULL,
+                                CASE WHEN v_stray > 0
+                                     THEN pg_catalog.json_build_object('operation_id', p_operation, 'reason', p_reason,
+                                                                       'rate', p_rate, 'refund_target_minor', v_target,
+                                                                       'unmatched_minor', v_stray)
+                                     ELSE pg_catalog.json_build_object('operation_id', p_operation, 'reason', p_reason,
+                                                                       'rate', p_rate, 'refund_target_minor', v_target) END);
+  IF v_stray > 0 THEN
+    RETURN pg_catalog.format(
+      '{"status":"cancelled","evidence":{"order_version":%s,"reason":"%s","rate":%s,"paid_minor":%s,"refund_target_minor":%s,'
+      '"unmatched_minor":%s}}',
+      p_version + 1, p_reason, p_rate, v_paid, v_target, v_stray);
+  END IF;
+  RETURN pg_catalog.format(
+    '{"status":"cancelled","evidence":{"order_version":%s,"reason":"%s","rate":%s,"paid_minor":%s,"refund_target_minor":%s}}',
+    p_version + 1, p_reason, p_rate, v_paid, v_target);
+END;
+$$;
+
+
+-- As in 0032, plus one sentence in the cancelled notice when its outcome
+-- states a stray delivery payment returned in full (unmatched_minor, 0035):
+-- the customer is told the total actually returned.
+CREATE OR REPLACE FUNCTION business.order_notice_render(p_kind text, p_o business.orders, p_facts json, p_origin text,
+                                             OUT subject text, OUT body_text text, OUT body_html text)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_text text[] := ARRAY[]::text[];
+  v_html text[] := ARRAY[]::text[];
+  v_p text;
+  v_paid bigint := business.order_paid_minor(p_o.id);
+  v_free boolean := p_o.payment_requirement = 'none';
+  v_link text := p_origin || '/orders/' || p_o.id::text;
+  v_when text := business.notice_day(business.order_handover_at(p_o)) || ', ' || business.notice_time(business.order_handover_at(p_o))
+                 || ' to ' || business.notice_time(p_o.handover_ends_at) || ' (London time)';
+  v_mode text := CASE p_o.fulfillment_mode WHEN 'collection' THEN 'collection' WHEN 'customer_courier' THEN 'courier collection'
+                                           ELSE 'handover' END;
+  v_items text;
+  v_totals text;
+  v_rate integer;
+  v_target bigint;
+  v_returned boolean;
+  v_from text;
+  v_to text;
+  v_before bigint;
+  v_new bigint;
+  v_style constant text := 'margin:0 0 16px';
+  v_link_style constant text := 'color:#5b1a2e';
+BEGIN
+  SELECT pg_catalog.string_agg(
+           '- ' || CASE WHEN i.quantity > 1 THEN i.quantity::text || ' × ' ELSE '' END || c.name || ' (' || r.flavour_name
+           || ', ' || business.notice_size(r.size_code) || CASE WHEN i.physical_lot_id IS NOT NULL THEN ', ready-made' ELSE '' END
+           || '): ' || business.notice_money(i.unit_price_minor) || CASE WHEN i.quantity > 1 THEN ' each' ELSE '' END,
+           E'\n' ORDER BY i.line_no)
+  INTO v_items
+  FROM business.order_item i
+  JOIN business.variant va ON va.id = i.variant_id
+  JOIN business.cake c ON c.id = va.cake_id
+  JOIN business.recipe_version r ON r.id = i.recipe_version_id
+  WHERE i.order_id = p_o.id;
+  v_totals := CASE WHEN p_o.discount_minor > 0
+                   THEN 'Cakes: ' || business.notice_money(p_o.subtotal_minor) || E'\nDiscount: −'
+                        || business.notice_money(p_o.discount_minor) || E'\n' ELSE '' END;
+
+  IF p_kind = 'confirmed' THEN
+    subject := 'Your GK Cakes order is confirmed';
+    v_text := v_text || CASE WHEN v_free THEN 'Thank you. Your order is confirmed. It is free, so there is nothing to pay.'
+                             ELSE 'Thank you. Your order is confirmed and we have received your payment of '
+                                  || business.notice_money(v_paid) || '.' END;
+    v_text := v_text || ('Order reference: ' || p_o.id::text || E'\n' || pg_catalog.upper(pg_catalog.left(v_mode, 1))
+                         || pg_catalog.substr(v_mode, 2) || ': ' || v_when);
+    v_text := v_text || (E'Your cakes:\n' || coalesce(v_items, '') || E'\n' || v_totals
+                         || CASE WHEN v_free THEN 'Total: £0' ELSE 'Total paid: ' || business.notice_money(v_paid) END);
+    v_text := v_text || CASE p_o.fulfillment_mode
+      WHEN 'collection' THEN 'Collection is from St Katharine Docks, London. The chef will send you the exact address and instructions about two days before.'
+      WHEN 'customer_courier' THEN 'Please arrange and pay for your own courier to collect at the time above. The chef will send the exact collection address and instructions about two days before. Once the cake is handed to your courier, it is their responsibility.'
+      ELSE 'Delivery by GK Cakes is agreed and paid separately. The chef will contact you about it.' END;
+    IF NOT v_free THEN
+      -- Against the command's persisted receipt (as the cancellation rate
+      -- is), so a replayed transition renders the same bytes.
+      v_text := v_text || CASE WHEN p_o.full_refund_deadline_at > (p_facts ->> 'received_at')::timestamptz
+        THEN 'If you need to cancel: cancel before ' || business.notice_time(p_o.full_refund_deadline_at) || ' on '
+             || business.notice_day(p_o.full_refund_deadline_at)
+             || ' (London time) for a full refund of what you paid. From then on, the refund is 50%.'
+        ELSE 'If you need to cancel: the refund is now 50% of what you paid.' END;
+    END IF;
+  ELSIF p_kind = 'paid_awaiting_agreement' THEN
+    subject := 'Payment received for your GK Cakes order';
+    v_text := v_text || ('We have received your payment of ' || business.notice_money(v_paid)
+                         || '. It arrived after the preparation time needed for your chosen date, so your order is not confirmed yet.');
+    v_text := v_text || 'The chef will contact you about whether the date can still work. If you do not agree a handover, the full amount you paid will be returned.'::text;
+    v_text := v_text || ('Order reference: ' || p_o.id::text || E'\nRequested ' || v_mode || ': ' || v_when);
+    v_text := v_text || (E'Your cakes:\n' || coalesce(v_items, '') || E'\n' || v_totals || 'Paid: ' || business.notice_money(v_paid));
+  ELSIF p_kind = 'released' THEN
+    subject := 'Your GK Cakes order has been released';
+    v_text := v_text || CASE WHEN p_o.cancel_reason = 'free_not_confirmed'
+      THEN 'Your free order has been released because it was not confirmed in time. The date and cakes are no longer held for you.'
+      ELSE 'Your order has been released because its payment was not completed. The date and cakes are no longer held for you.' END;
+    IF NOT v_free THEN
+      v_text := v_text || 'We have no record of a successful payment for this order. If a payment does arrive later, the full amount will be returned.'::text;
+    END IF;
+    v_text := v_text || ('Order reference: ' || p_o.id::text || E'\nRequested ' || v_mode || ': ' || v_when);
+  ELSIF p_kind = 'cancelled' THEN
+    subject := 'Your GK Cakes order is cancelled';
+    v_rate := (p_facts ->> 'rate')::integer;
+    v_target := coalesce((p_facts ->> 'refund_target_minor')::bigint, 0);
+    v_text := v_text || CASE p_facts ->> 'reason'
+      WHEN 'chef_cancelled' THEN 'We are sorry: the chef has had to cancel your order.'
+      WHEN 'late_payment_returned' THEN 'Your order has been cancelled because a handover could not be agreed after your payment arrived.'
+      ELSE 'Your order has been cancelled as you asked.' END;
+    v_returned := coalesce((p_facts ->> 'refund_returned')::boolean, false);
+    v_text := v_text || CASE
+      WHEN coalesce((p_facts ->> 'paid_minor')::bigint, 0) = 0 THEN 'There was no payment for this order, so there is nothing to refund.'
+      WHEN v_target = 0 THEN 'No refund is due for this order.'
+      ELSE CASE WHEN v_returned THEN 'Refund: ' ELSE 'Refund requested: ' END || business.notice_money(v_target)
+           || CASE WHEN v_rate = 100 THEN ', the full amount you paid.'
+                   ELSE ', which is ' || v_rate::text || '% of the ' || business.notice_money((p_facts ->> 'paid_minor')::bigint)
+                        || ' you paid, because the full-refund deadline had been reached.' END END;
+    IF v_target > 0 THEN
+      v_text := v_text || CASE WHEN v_returned THEN 'It has already been returned to you.'
+                               ELSE 'We have asked for this refund and will email you once it has been returned.' END;
+    END IF;
+    -- A stray delivery payment (0035): returned in full beside the refund
+    -- above (only outcomes that carry it; earlier notices render as before).
+    IF coalesce((p_facts ->> 'unmatched_minor')::bigint, 0) > 0 THEN
+      v_text := v_text || ('We are also returning in full a delivery payment of '
+                           || business.notice_money((p_facts ->> 'unmatched_minor')::bigint)
+                           || ' that could not be used for your order, so ' || business.notice_money(v_target
+                              + (p_facts ->> 'unmatched_minor')::bigint)
+                           || CASE WHEN v_returned THEN ' has been returned to you in total.'
+                                   ELSE ' is being returned to you in total.' END);
+    END IF;
+    v_text := v_text || ('Order reference: ' || p_o.id::text || E'\nIt was planned for: ' || v_when);
+  ELSIF p_kind = 'refund_returned' THEN
+    subject := 'Your GK Cakes refund has been returned';
+    v_text := v_text || ('We have returned ' || business.notice_money((p_facts ->> 'target_minor')::bigint)
+                         || CASE WHEN (p_facts ->> 'goal_version')::integer > 1 THEN ' in total' ELSE '' END
+                         || ' to you for this order. Depending on your bank, it can take a few working days to show on your statement.');
+    v_text := v_text || ('Order reference: ' || p_o.id::text);
+  ELSIF p_kind = 'no_show' THEN
+    subject := CASE WHEN p_o.fulfillment_mode = 'gk_delivery' THEN 'Your GK Cakes order could not be handed over'
+                    ELSE 'Your GK Cakes order was not collected' END;
+    v_text := v_text || ('Your order was not ' || CASE WHEN p_o.fulfillment_mode = 'gk_delivery' THEN 'handed over'
+                                                       ELSE 'collected' END
+                         || ' at the agreed time (' || v_when || '), so it has been closed as not collected.');
+    -- The amount this no-show newly reserved (earlier refunds count against
+    -- the 50%, K05 cumulative goal), never the nominal 50% on its own.
+    v_target := coalesce((p_facts ->> 'refund_target_minor')::bigint, 0);
+    v_before := coalesce((p_facts ->> 'returned_before_minor')::bigint, 0);
+    v_new := coalesce((p_facts ->> 'new_refund_minor')::bigint, 0);
+    v_returned := coalesce((p_facts ->> 'refund_returned')::boolean, false);
+    v_text := v_text || CASE
+      WHEN coalesce((p_facts ->> 'paid_minor')::bigint, 0) = 0 THEN 'There was no payment for this order, so there is nothing to refund.'
+      ELSE 'Our terms return 50% of what you paid when an order is not collected: ' || business.notice_money(v_target)
+           || ' of the ' || business.notice_money((p_facts ->> 'paid_minor')::bigint) || ' you paid.' END;
+    IF v_new > 0 THEN
+      v_text := v_text || (CASE WHEN v_returned THEN 'Refund: ' ELSE 'Refund requested: ' END || business.notice_money(v_new)
+                           || CASE WHEN v_before > 0 THEN ' (the ' || business.notice_money(v_before)
+                                                          || ' already refunded counts towards it).' ELSE '.' END);
+      v_text := v_text || CASE WHEN v_returned THEN 'It has already been returned to you.'
+                               ELSE 'We have asked for this refund and will email you once it has been returned.' END;
+    ELSIF v_target > 0 AND v_before >= v_target THEN
+      v_text := v_text || ('The ' || business.notice_money(v_before) || ' already refunded covers this, so nothing more is due.');
+    ELSIF v_target > v_before THEN
+      v_text := v_text || ('The chef will contact you about the remaining ' || business.notice_money(v_target - v_before) || '.');
+    END IF;
+    v_text := v_text || ('If you think this is a mistake, please reply to this email.' || E'\nOrder reference: ' || p_o.id::text);
+  ELSIF p_kind IN ('pickup_moved', 'appointment_changed') THEN
+    v_from := business.notice_day((p_facts ->> 'from_starts_at')::timestamptz) || ', '
+              || business.notice_time((p_facts ->> 'from_starts_at')::timestamptz) || ' to '
+              || business.notice_time((p_facts ->> 'from_ends_at')::timestamptz) || ' (London time)';
+    v_to := business.notice_day((p_facts ->> 'to_starts_at')::timestamptz) || ', '
+            || business.notice_time((p_facts ->> 'to_starts_at')::timestamptz) || ' to '
+            || business.notice_time((p_facts ->> 'to_ends_at')::timestamptz) || ' (London time)';
+    IF p_kind = 'pickup_moved' THEN
+      subject := 'Your GK Cakes ' || v_mode || ' time has changed';
+      v_text := v_text || ('Your ' || v_mode || ' time has been changed as you asked.')::text;
+    ELSE
+      subject := 'Your GK Cakes ' || v_mode || ' date or time has changed';
+      v_text := v_text || ('As agreed with you, the chef has changed your ' || v_mode || ' date or time.')::text;
+    END IF;
+    v_text := v_text || ('New time: ' || v_to || E'\nPrevious time: ' || v_from || E'\nOrder reference: ' || p_o.id::text);
+    IF p_kind = 'pickup_moved' THEN
+      v_text := v_text || ('You can change the time yourself to another available time on the same day until six hours before it starts. '
+                           || 'For anything else, please contact the chef.')::text;
+    END IF;
+    IF NOT v_free THEN
+      v_text := v_text || CASE WHEN p_o.full_refund_deadline_at > (p_facts ->> 'received_at')::timestamptz
+        THEN 'Changing the time does not change your cancellation terms: cancel before '
+             || business.notice_time(p_o.full_refund_deadline_at) || ' on ' || business.notice_day(p_o.full_refund_deadline_at)
+             || ' (London time) for a full refund of what you paid. From then on, the refund is 50%.'
+        ELSE 'Changing the time does not change your cancellation terms: the refund is 50% of what you paid.' END;
+    END IF;
+  ELSE
+    RAISE EXCEPTION 'unknown order notice %', p_kind USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- Paragraphs: plain text separated by blank lines; HTML paragraphs with
+  -- line breaks; then the link paragraph and the footer.
+  FOREACH v_p IN ARRAY v_text LOOP
+    v_html := v_html || ('<p style="' || v_style || '">' || pg_catalog.replace(business.notice_html(v_p), E'\n', '<br>') || '</p>');
+  END LOOP;
+  -- A released order has no order page paragraph (and no invitation to
+  -- order again: no marketing).
+  IF p_kind <> 'released' THEN
+    v_text := v_text || ('Your order page: ' || v_link
+                         || E'\nIf you ordered without signing in, open this link on the same device and browser you ordered with.');
+    v_html := v_html || ('<p style="' || v_style || '">Your order page: <a href="' || business.notice_html(v_link)
+                         || '" style="' || v_link_style || '">' || business.notice_html(v_link)
+                         || '</a><br>If you ordered without signing in, open this link on the same device and browser you ordered with.</p>');
+  END IF;
+  v_p := E'GK Cakes, London\nYou can reply to this email if you have a question. You are receiving it because of your order with GK Cakes.';
+  body_text := E'Hello,\n\n' || pg_catalog.array_to_string(v_text, E'\n\n') || E'\n\n' || v_p || E'\n';
+  body_html := '<!DOCTYPE html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
+    || '<title>' || business.notice_html(subject) || '</title></head>'
+    || '<body style="margin:0;padding:24px;background:#ffffff;color:#141416;font-family:Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5">'
+    || '<div style="max-width:560px;margin:0 auto">'
+    || '<p style="margin:0 0 24px;font-family:Georgia,serif;font-size:22px;color:#5b1a2e">GK Cakes</p>'
+    || '<p style="' || v_style || '">Hello,</p>' || pg_catalog.array_to_string(v_html, '')
+    || '<p style="margin:32px 0 0;font-size:13px;color:#55585e">' || pg_catalog.replace(business.notice_html(v_p), E'\n', '<br>')
+    || '</p></div></body></html>';
+END;
+$$;
+
+
 -- As in 0032, except that a dispatch needs the current delivery quote paid
 -- or waived (K06), not merely any succeeded delivery collection.
 CREATE OR REPLACE FUNCTION business.fulfillment_refusal(p_o business.orders, p_action text, p_at timestamptz)
@@ -1288,7 +1653,19 @@ AS $$
                                  JOIN business.recovery_operation r ON r.id = c.id
                                  WHERE c.order_id = o.id AND c.command = 'free_confirm'
                                  ORDER BY c.created_at DESC, c.id DESC LIMIT 1),
-           'cancellation', (SELECT pg_catalog.json_build_object(
+           'cancellation', (SELECT CASE WHEN r.state = 'secured' AND (r.outcome -> 'evidence' ->> 'unmatched_minor') IS NOT NULL
+                              -- A stray delivery payment returned in full beside
+                              -- amount_minor (0035), only when the outcome states
+                              -- it (other cancellations render as in 0034).
+                              THEN pg_catalog.json_build_object(
+                                'state', r.outcome ->> 'status',
+                                'reason', r.outcome -> 'evidence' ->> 'reason',
+                                'rate', (r.outcome -> 'evidence' ->> 'rate')::integer,
+                                'amount_minor', (r.outcome -> 'evidence' ->> 'refund_target_minor')::bigint,
+                                'unmatched_minor', (r.outcome -> 'evidence' ->> 'unmatched_minor')::bigint,
+                                'requested_by', CASE c.actor_kind WHEN 'staff' THEN 'chef' ELSE 'customer' END,
+                                'requested_at', c.received_at)
+                              ELSE pg_catalog.json_build_object(
                               'state', CASE WHEN r.state <> 'secured' THEN 'processing'
                                             ELSE r.outcome ->> 'status' END,
                               'reason', CASE WHEN r.state = 'secured' THEN r.outcome -> 'evidence' ->> 'reason' END,
@@ -1296,7 +1673,7 @@ AS $$
                               'amount_minor', CASE WHEN r.state = 'secured'
                                                    THEN (r.outcome -> 'evidence' ->> 'refund_target_minor')::bigint END,
                               'requested_by', CASE c.actor_kind WHEN 'staff' THEN 'chef' ELSE 'customer' END,
-                              'requested_at', c.received_at)
+                              'requested_at', c.received_at) END
                             FROM business.order_command c
                             JOIN business.recovery_operation r ON r.id = c.id
                             LEFT JOIN business.late_payment_decision d ON d.command_id = c.id
@@ -1441,7 +1818,8 @@ BEGIN
                   'paid_at', v -> 'paid_at', 'free_confirmed_at', v -> 'free_confirmed_at',
                   'free_confirmation', v -> 'free_confirmation',
                   'cancellation', CASE WHEN pg_catalog.jsonb_typeof(v -> 'cancellation') = 'object'
-                                       THEN (v -> 'cancellation') - ARRAY['amount_minor', 'rate'] ELSE v -> 'cancellation' END,
+                                       THEN (v -> 'cancellation') - ARRAY['amount_minor', 'rate', 'unmatched_minor']
+                                       ELSE v -> 'cancellation' END,
                   'payment', CASE WHEN pg_catalog.jsonb_typeof(v -> 'payment') = 'object'
                                   THEN (v -> 'payment') - ARRAY['amount_minor', 'currency', 'checkout_url'] ELSE v -> 'payment' END,
                   'refund', CASE WHEN pg_catalog.jsonb_typeof(v -> 'refund') = 'object'

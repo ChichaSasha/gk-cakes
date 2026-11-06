@@ -2632,6 +2632,31 @@ deadline 48 h before handover, then the same choice").
   returned: goal 24000p. Nothing is returned twice: the per-collection room
   bounds the chef's exception and the automatic plan alike. The chef's
   exception limit and the goal cap count every succeeded collection.
+- **A stray after a goal (K05 cumulative goal).** When an unmatched payment
+  is recorded on an order that already has a refund goal (for example the
+  order was cancelled while the delivery payment was in flight, or the chef
+  recorded an exception), the reconcile raises that goal under the order
+  lock by the stray's implicit floor (`refund_goal_apply`) and reserves the
+  new allocation at once (`refund_reserve`), as a recorded floor does: the
+  stray goes back in full on top of what the goal already owed, never in
+  place of the cake's share. A refund still unresolved elsewhere keeps its
+  own course; if it later fails under the raised goal its remainder is
+  reserved once (`refund_operation_settled`). Probe
+  (`TestStrayAfterAGoalIsAddedOnTop`): late cancellation, goal 5000p, the
+  cake refund pending; the stray 12000p arrives (goal 17000p, stray sent);
+  the cake refund fails; the cake's 5000p is reserved again and returned:
+  17000p in all.
+- **What the customer is told.** `amount_minor` (preview and the order's
+  `cancellation` block) and the cancelled notice's policy amount keep their
+  meaning; beside them a cancellation that returns a stray states it: the
+  preview's `unmatched_minor` (always present, 0 when none or when nothing
+  is owed; outside the preview hash, like `delivery_pending_minor`), the
+  outcome evidence and `cancellation.unmatched_minor` (only when the
+  outcome states one), and one more sentence in the cancelled notice: "We
+  are also returning in full a delivery payment of £120 that could not be
+  used for your order, so £170 is being returned to you in total" (wording
+  for Creator review; notices without a stray render exactly as before).
+  Technical support's `cancellation` drops it with the other amounts.
 - **Refunds** are unchanged: a delivery collection is the chef-only share of
   `refund_plan` (K05). A cancellation of an order whose delivery was paid
   returns the cake automatically and leaves the delivery share as
@@ -2649,10 +2674,14 @@ Decisions taken (small and reversible, for Creator review):
   `succeeded`, never marks the delivery paid and raises
   `delivery_payment_unmatched` for the chef, who returns it with the agreed
   exception refund on that collection (`POST /admin/orders/{id}/refunds`),
-  and the customer's `unmatched_minor`. It is not refunded at settlement
-  (K04 "retain actual funds ... give chef an actionable resolution"); a
-  later cancellation or no-show returns it in full with the policy refund
-  (its implicit floor, above) unless the chef returned it already.
+  and the customer's `unmatched_minor`. On an order without a refund goal
+  it is not refunded at settlement (K04 "retain actual funds ... give chef
+  an actionable resolution"); a later cancellation or no-show that records a
+  goal returns it in full with the policy refund (its implicit floor,
+  above) unless the chef returned it already. One that records no goal (a
+  policy amount of 0: a free-confirmed cake whose only delivery money is the
+  stray) leaves it flagged for the chef to return. On an order that already
+  has a goal it is added to that goal and returned at once (above).
 - **Replacement while paying is refused** (`PAYMENT_IN_PROGRESS`), and so is
   a waiver, so an in-flight payment always pays the quote it was started
   for; a paid quote is never replaced (the agreement stands).
@@ -2678,7 +2707,10 @@ while paying, records distance and source, one code use, dispatch; refunds:
 the delivery share stays chef-only; a stray delivery payment stays out of
 the policy basis: returned then a late cancellation, not returned then a
 late cancellation, before the deadline, returned then a no-show, never
-returned twice, customer and staff `unmatched_minor`; a stuck collection:
+returned twice, customer and staff `unmatched_minor`, the preview's and
+the cancellation's `unmatched_minor` and the notice sentence; a stray after
+a goal is added on top (the probe above; a stray after the chef's 100%
+cancellation is returned at once); a stuck collection:
 young is in flight, after 15 minutes flagged, payable and not blocking
 deletion, closed as never dispatched by the next quote and never sent; the
 99999999p quote; the delivery line item), `delivery_test.go` (the API clock and
@@ -2700,9 +2732,11 @@ Follow-ups (not implemented):
 - A stuck delivery collection is closed by the next delivery command, not
   by a timer: until someone acts it stays `created` (not in flight, flagged
   `delivery_payment_stuck`).
-- A stray delivery payment recorded on an order whose refund goal already
-  exists (for example cancelled while the payment was in flight) does not
-  raise that goal by itself: the chef returns it (flagged).
+- A free-confirmed cake cancelled (or not collected) while its only
+  delivery money is a stray records no refund goal, so the stray stays
+  flagged for the chef rather than being returned automatically.
+- The no-show notice's "Refund requested" amount includes a stray reserved
+  with the no-show, but it has no separate stray sentence yet.
 - `GET /me/orders` summaries and the staff list do not carry the delivery
   state yet; the UI (state 15) and a chef screen for quotes and waivers.
 
