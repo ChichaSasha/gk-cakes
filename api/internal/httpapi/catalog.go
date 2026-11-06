@@ -510,6 +510,9 @@ var conflictMessages = map[string]string{
 	"delivery_pay_by_passed": "The time to pay for this delivery has passed (48 hours before the delivery).",
 	"quote_not_current":      "This delivery quote is no longer the current one. Please reload your order.",
 	"waiver_not_eligible":    "Only an order placed with a free-delivery code can have its delivery waived.",
+	// Q5 choice when GK can't deliver (GK-017 r02b).
+	"choice_not_open":       "This choice isn't open for your order now. Please reload your order.",
+	"delivery_not_possible": "GK can't deliver this order, so it can't be sent out. The customer chooses another way.",
 }
 
 // catalogError maps catalog errors to K00 responses without SQL detail.
@@ -610,6 +613,10 @@ func catalogError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, e
 			code = "QUOTE_NOT_CURRENT"
 		case "waiver_not_eligible":
 			code = "WAIVER_NOT_ELIGIBLE"
+		case "choice_not_open":
+			code = "CHOICE_NOT_OPEN"
+		case "delivery_not_possible":
+			code = "DELIVERY_NOT_POSSIBLE"
 		}
 		writeError(w, r, http.StatusConflict, code, msg, false)
 	case errors.As(err, &inv):

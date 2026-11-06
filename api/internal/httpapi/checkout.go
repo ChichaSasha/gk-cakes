@@ -56,6 +56,8 @@ type Checkout interface {
 	QuoteDelivery(ctx context.Context, subject, key, id string, in checkout.DeliveryQuoteInput) (catalog.Result, error)
 	WaiveDelivery(ctx context.Context, subject, key, id string, in checkout.DeliveryWaiverInput) (catalog.Result, error)
 	StartDeliveryPayment(ctx context.Context, id, subject string, digest []byte, key string, in checkout.DeliveryPaymentInput) (catalog.Result, error)
+	RecordDeliveryNotPossible(ctx context.Context, subject, key, id string, in checkout.DeliveryNotPossibleInput) (catalog.Result, error)
+	ChooseDelivery(ctx context.Context, id, subject string, digest []byte, key string, in checkout.DeliveryChoiceInput) (catalog.Result, error)
 	CurrentPolicy(ctx context.Context) (checkout.Policy, error)
 	RecordPolicy(ctx context.Context, subject, key string, in checkout.PolicyInput) (catalog.Result, error)
 }
@@ -356,7 +358,31 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 				PollAfterSeconds: checkout.PollAfterSeconds}, nil
 		})
 	}
+	// GK-017 r02b Q5: the customer's choice when GK can't deliver (owner, or
+	// a guest capability with "cancel" for full_refund and "move_pickup" for
+	// a time): 202 while its K11 protection runs; poll the order.
+	postDeliveryChoice := func(w http.ResponseWriter, r *http.Request) {
+		a, digest, ok := orderActor(w, r)
+		if !ok {
+			return
+		}
+		var in checkout.DeliveryChoiceInput
+		key, ok := readCommand(w, r, &in)
+		if !ok {
+			return
+		}
+		res, err := co.ChooseDelivery(r.Context(), r.PathValue("id"), a.Subject, digest, key, in)
+		if errors.Is(err, checkout.ErrOrdersFrozen) {
+			writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Order changes are temporarily unavailable", true)
+			return
+		}
+		respondCommand(w, r, logger, http.StatusAccepted, res, err, func() (any, error) {
+			return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: "choice_pending",
+				PollAfterSeconds: checkout.PollAfterSeconds}, nil
+		})
+	}
 	if checkoutEnabled {
+		mux.HandleFunc("POST /api/v1/orders/{id}/delivery-choice", postDeliveryChoice)
 		mux.HandleFunc("POST /api/v1/orders/{id}/delivery-payment", postDeliveryPayment)
 		mux.HandleFunc("POST /api/v1/orders/{id}/late-payment/answer", postLatePaymentAnswer)
 		mux.HandleFunc("POST /api/v1/orders/{id}/pickup", postPickup)
@@ -537,6 +563,18 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 			}
 			res, err := co.WaiveDelivery(r.Context(), a.Subject, key, r.PathValue("id"), in)
 			chefDelivery(w, r, res, err, "waiver_id")
+		}))
+		// GK-017 r02b Q5: the chef records that GK can't deliver; the
+		// customer then chooses (nothing is refunded here). 200
+		// {order_id, decision_id}.
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/delivery-not-possible", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+			var in checkout.DeliveryNotPossibleInput
+			key, ok := readCommand(w, r, &in)
+			if !ok {
+				return
+			}
+			res, err := co.RecordDeliveryNotPossible(r.Context(), a.Subject, key, r.PathValue("id"), in)
+			chefDelivery(w, r, res, err, "decision_id")
 		}))
 		// K05 chef refunds: an agreed partial refund with allocations, and
 		// the pending delivery share of a cancellation (chef-only). 202 while
