@@ -29,8 +29,13 @@
 		toSignIn
 	} from '../../lib/account/guard';
 	import { groupOrders } from '../../lib/account/orders';
-	import { deletionMarked, freshSignIn } from '../../lib/account/privacy';
-	import { accountApi, sessionSignInAt, signedInEmail } from '../../lib/account/session';
+	import { deletionMarked, forgetDeletion, freshSignIn } from '../../lib/account/privacy';
+	import {
+		accountApi,
+		accountMarkerId,
+		sessionSignInAt,
+		signedInEmail
+	} from '../../lib/account/session';
 	import AccountShell from '../../lib/account/ui/AccountShell.svelte';
 	import OrderRow from '../../lib/account/ui/OrderRow.svelte';
 	import { favourites } from '../../lib/shop/favourites.svelte';
@@ -137,10 +142,11 @@
 			}
 			email = await signedInEmail();
 			const at = await sessionSignInAt();
+			const who = await accountMarkerId();
 			if (!active) return;
 			let marked = false;
 			try {
-				marked = deletionMarked(window.localStorage, Date.now());
+				marked = deletionMarked(window.localStorage, Date.now(), who);
 			} catch {
 				// storage refused: no notice
 			}
@@ -163,6 +169,7 @@
 	});
 
 	async function leave() {
+		forgetDeletionHere();
 		const reached = await signOut();
 		account = null;
 		orders = null;
@@ -173,6 +180,15 @@
 			return;
 		}
 		await goto(resolve('/'), { replaceState: true });
+	}
+
+	/** A deletion someone started on this browser never outlives their sign-out. */
+	function forgetDeletionHere() {
+		try {
+			forgetDeletion(window.localStorage);
+		} catch {
+			// storage refused: nothing kept
+		}
 	}
 
 	// A disclosure: focus stays on the button (aria-expanded tells the state).

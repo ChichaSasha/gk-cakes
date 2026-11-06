@@ -165,31 +165,45 @@ export function freshSignIn(at: number | null, now: number): boolean {
 }
 
 /**
- * The marker that the customer reviewed the deletion and asked for a
- * confirmation link: only its expiry, no personal data. It is kept in
- * localStorage because the email link usually opens in a new tab (as the
- * sign-in return page is), for as long as the link works.
+ * The marker that a customer reviewed the deletion and asked for a
+ * confirmation link: its expiry and a one-way hash of the account it was set
+ * for (`who`, see session.ts accountMarkerId), no personal data. It counts
+ * only for that same account, so someone else signing in on this browser
+ * never skips the review. It is kept in localStorage because the email link
+ * usually opens in a new tab (as the sign-in return page is), for as long as
+ * the link works, and every sign-out the account pages make removes it.
  */
 export const DELETION_MARKER_KEY = 'gk-account-deletion';
 export const DELETION_MARKER_MS = 30 * 60 * 1000;
+const WHO = /^[0-9a-f]{64}$/;
 
-export function markDeletion(storage: DeviceStorage | null, now: number): boolean {
+export function markDeletion(storage: DeviceStorage | null, now: number, who: string): boolean {
+	if (!WHO.test(who)) return false;
 	try {
-		storage?.setItem(DELETION_MARKER_KEY, String(now + DELETION_MARKER_MS));
+		storage?.setItem(DELETION_MARKER_KEY, `${now + DELETION_MARKER_MS}:${who}`);
 		return storage !== null;
 	} catch {
 		return false;
 	}
 }
 
-/** Whether the marker is set and not expired at `now` (an expired or damaged one is removed). */
-export function deletionMarked(storage: DeviceStorage | null, now: number): boolean {
+/**
+ * Whether the marker is set for this account (`who`) and not expired at
+ * `now`. An expired, damaged or another account's marker is removed.
+ */
+export function deletionMarked(
+	storage: DeviceStorage | null,
+	now: number,
+	who: string | undefined
+): boolean {
 	try {
 		const raw = storage?.getItem(DELETION_MARKER_KEY);
 		if (raw === null || raw === undefined) return false;
-		const until = /^\d{1,16}$/.test(raw) ? Number(raw) : NaN;
+		const m = /^(\d{1,16}):([0-9a-f]{64})$/.exec(raw);
+		const until = m ? Number(m[1]) : NaN;
 		// Never longer than a marker set now would last (an edited entry).
-		if (Number.isFinite(until) && until > now && until <= now + DELETION_MARKER_MS) return true;
+		const live = Number.isFinite(until) && until > now && until <= now + DELETION_MARKER_MS;
+		if (live && m && who !== undefined && m[2] === who) return true;
 		storage?.removeItem(DELETION_MARKER_KEY);
 		return false;
 	} catch {

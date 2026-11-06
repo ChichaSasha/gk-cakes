@@ -385,8 +385,10 @@ navigation (`src/lib/account/ui/AccountShell.svelte`, styles in
   first missing tick). Then a fresh sign-in by email link
   (`signInWithOtp` to the signed-in address, `shouldCreateUser: false`,
   return path `/account`) and a marker in localStorage holding only its
-  expiry (30 minutes, as long as the link; the link usually opens in a new
-  tab). Back on `/account` with the marker and a session signed in by email
+  expiry and a SHA-256 of the account's subject (30 minutes, as long as the
+  link; the link usually opens in a new tab). It counts only for that
+  account, and every sign-out from the account pages removes it, so someone
+  else signing in on this browser never skips the review. Back on `/account` with the marker and a session signed in by email
   link or Google within 10 minutes (the token's `amr`, as the API reads it),
   a notice leads on to the final step, which asks for a new preview,
   requires the upcoming-order tick again if there is one, and deletes with

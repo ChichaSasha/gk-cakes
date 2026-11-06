@@ -147,22 +147,37 @@ describe('fresh sign-in', () => {
 });
 
 describe('deletion marker', () => {
-	it('holds only an expiry, lasts as long as the link and is removed when expired or damaged', () => {
+	const A = 'a'.repeat(64);
+	const B = 'b'.repeat(64);
+
+	it('holds an expiry and the account hash only, lasts as long as the link, removed when expired or damaged', () => {
 		const s = memory();
-		expect(markDeletion(s, NOW)).toBe(true);
-		expect(s.data.get(DELETION_MARKER_KEY)).toBe(String(NOW + DELETION_MARKER_MS));
-		expect(deletionMarked(s, NOW + DELETION_MARKER_MS - 1)).toBe(true);
-		expect(deletionMarked(s, NOW + DELETION_MARKER_MS)).toBe(false);
+		expect(markDeletion(s, NOW, A)).toBe(true);
+		expect(s.data.get(DELETION_MARKER_KEY)).toBe(`${NOW + DELETION_MARKER_MS}:${A}`);
+		expect(deletionMarked(s, NOW + DELETION_MARKER_MS - 1, A)).toBe(true);
+		expect(deletionMarked(s, NOW + DELETION_MARKER_MS, A)).toBe(false);
 		expect(s.data.has(DELETION_MARKER_KEY)).toBe(false);
 		s.setItem(DELETION_MARKER_KEY, 'nonsense');
-		expect(deletionMarked(s, NOW)).toBe(false);
-		s.setItem(DELETION_MARKER_KEY, String(NOW + 10 * DELETION_MARKER_MS));
-		expect(deletionMarked(s, NOW)).toBe(false);
-		markDeletion(s, NOW);
+		expect(deletionMarked(s, NOW, A)).toBe(false);
+		s.setItem(DELETION_MARKER_KEY, `${NOW + 10 * DELETION_MARKER_MS}:${A}`);
+		expect(deletionMarked(s, NOW, A)).toBe(false);
+		s.setItem(DELETION_MARKER_KEY, String(NOW + DELETION_MARKER_MS)); // old format: no account
+		expect(deletionMarked(s, NOW, A)).toBe(false);
+		markDeletion(s, NOW, A);
 		forgetDeletion(s);
-		expect(deletionMarked(s, NOW)).toBe(false);
-		expect(markDeletion(null, NOW)).toBe(false);
-		expect(deletionMarked(null, NOW)).toBe(false);
+		expect(deletionMarked(s, NOW, A)).toBe(false);
+		expect(markDeletion(null, NOW, A)).toBe(false);
+		expect(markDeletion(memory(), NOW, 'not-a-hash')).toBe(false);
+		expect(deletionMarked(null, NOW, A)).toBe(false);
+	});
+
+	it('counts only for the account that set it (another sign-in on this browser never skips the review)', () => {
+		const s = memory();
+		markDeletion(s, NOW, A);
+		expect(deletionMarked(s, NOW, B)).toBe(false);
+		expect(s.data.has(DELETION_MARKER_KEY)).toBe(false); // and it is gone
+		markDeletion(s, NOW, A);
+		expect(deletionMarked(s, NOW, undefined)).toBe(false);
 	});
 });
 

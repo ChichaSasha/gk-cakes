@@ -17,7 +17,7 @@
 		leaveWhenSignedOut,
 		toSignIn
 	} from '../../../lib/account/guard';
-	import { clearDevice, RETENTION } from '../../../lib/account/privacy';
+	import { clearDevice, forgetDeletion, RETENTION } from '../../../lib/account/privacy';
 	import { accountApi, signedInEmail } from '../../../lib/account/session';
 	import AccountShell from '../../../lib/account/ui/AccountShell.svelte';
 	import { emptyBag } from '../../../lib/shop/bag';
@@ -110,6 +110,7 @@
 		// This page reports the result itself: don't leave for sign-in.
 		unsubscribe?.();
 		unsubscribe = undefined;
+		forgetDeletion(storage('localStorage'));
 		let reached = false;
 		try {
 			const { error } = await auth().auth.signOut({ scope: 'global' });
@@ -129,7 +130,7 @@
 		favourites.state = emptyFavourites();
 		bag.state = emptyBag();
 		cleared = ok
-			? 'Cleared the favourites and bag saved in this browser.'
+			? 'Cleared the favourites saved in this browser and the bag in this tab.'
 			: 'This browser didn’t let us clear everything. You can clear this site’s data in your browser’s settings.';
 	}
 
@@ -143,6 +144,7 @@
 
 	async function leave() {
 		unsubscribe?.();
+		forgetDeletion(storage('localStorage'));
 		const reached = await signOut();
 		account = null;
 		if (!reached) {

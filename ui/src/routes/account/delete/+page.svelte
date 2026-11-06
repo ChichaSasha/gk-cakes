@@ -46,7 +46,12 @@
 		type Ticks
 	} from '../../../lib/account/privacy';
 	import { SaveKey } from '../../../lib/account/profile';
-	import { accountApi, sessionSignInAt, signedInEmail } from '../../../lib/account/session';
+	import {
+		accountApi,
+		accountMarkerId,
+		sessionSignInAt,
+		signedInEmail
+	} from '../../../lib/account/session';
 	import AccountShell from '../../../lib/account/ui/AccountShell.svelte';
 	import { emptyBag } from '../../../lib/shop/bag';
 	import { bag } from '../../../lib/shop/bag.svelte';
@@ -144,10 +149,12 @@
 			}
 			email = await signedInEmail();
 			const at = await sessionSignInAt();
+			const who = await accountMarkerId();
 			if (!active) return;
-			// Back from the confirmation link: straight to the final step.
+			// Back from the confirmation link, as the same account that asked
+			// for it: straight to the final step.
 			const now = Date.now();
-			if (deletionMarked(local(), now) && freshSignIn(at, now)) stage = 'final';
+			if (deletionMarked(local(), now, who) && freshSignIn(at, now)) stage = 'final';
 			if (await loadPreview()) await arrive();
 		})();
 		unsubscribe = leaveWhenSignedOut(() => {
@@ -213,7 +220,8 @@
 			await focus('del-send-problem');
 			return;
 		}
-		markDeletion(local(), Date.now());
+		const who = await accountMarkerId();
+		if (who) markDeletion(local(), Date.now(), who);
 		step = 'sent';
 		await focus('del-status');
 	}
@@ -301,12 +309,13 @@
 		favourites.state = emptyFavourites();
 		bag.state = emptyBag();
 		cleared = ok
-			? 'Cleared the favourites and bag saved in this browser.'
+			? 'Cleared the favourites saved in this browser and the bag in this tab.'
 			: 'This browser didn’t let us clear everything. You can clear this site’s data in your browser’s settings.';
 	}
 
 	async function leave() {
 		unsubscribe?.();
+		forgetDeletion(local());
 		const reached = await signOut();
 		preview = null;
 		step = null;
