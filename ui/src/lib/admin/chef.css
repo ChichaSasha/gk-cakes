@@ -555,6 +555,7 @@
 }
 @media (forced-colors: active) {
 	.chef .filter-chip[aria-pressed='true'],
+	.chef .filter-chip.tab[aria-current],
 	.chef .sidebar a[aria-current] {
 		outline: 3px solid Highlight;
 	}
@@ -568,4 +569,320 @@
 	text-decoration: underline;
 	text-underline-offset: 3px;
 	cursor: pointer;
+}
+
+/* Account requests (Creator-approved GK-018 r04d-claims sketch, claims.css):
+   additions on top of the r03b2 styles; tokens unchanged; 44 px targets. */
+.chef .nav-count {
+	margin-left: auto;
+	padding: 1px 8px;
+	border-radius: 999px;
+	background: var(--accent);
+	color: #fff;
+	font: 600 12px var(--mono);
+}
+.chef .lead {
+	max-width: 68ch;
+	margin: 6px 0 0;
+}
+.chef .banner-info {
+	background: var(--info-bg);
+	color: #22355e;
+}
+.chef .banner-icon {
+	width: 22px;
+	height: 22px;
+	flex: none;
+	margin-top: 1px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.8;
+}
+.chef .tabs {
+	margin: 0 0 14px;
+}
+.chef .filter-chip.tab {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 44px;
+	text-decoration: none;
+}
+.chef .filter-chip.tab[aria-current] {
+	border-color: var(--ink);
+	background: var(--ink);
+	color: #fff;
+}
+.chef .tab-count {
+	padding: 0 7px;
+	border-radius: 999px;
+	background: #ffffff33;
+	font: 600 12px var(--mono);
+}
+.chef .filter-chip.tab:not([aria-current]) .tab-count {
+	background: var(--info-bg);
+	color: var(--info);
+}
+.chef .btn-small {
+	min-height: 44px;
+	padding: 6px 14px;
+}
+.chef .chip-s {
+	display: inline-block;
+	padding: 1px 9px;
+	border-radius: 999px;
+	font-size: 12px;
+	font-weight: 600;
+	white-space: nowrap;
+	vertical-align: 1px;
+}
+.chef .chip-ok {
+	background: var(--ok-bg);
+	color: var(--ok);
+}
+.chef .chip-warn {
+	background: var(--warn-bg);
+	color: var(--warn);
+}
+.chef .chip-info {
+	background: var(--info-bg);
+	color: var(--info);
+}
+.chef .chip-neutral {
+	background: #eceef1;
+	color: #3c4048;
+}
+.chef .mono {
+	font-family: var(--mono);
+}
+.chef .info-text {
+	color: var(--info);
+}
+.chef .warn-text {
+	color: var(--warn);
+}
+.chef .claims-table td,
+.chef .claims-table th {
+	vertical-align: top;
+}
+.chef .claims-table tbody th {
+	min-width: 150px;
+	font-weight: 600;
+	text-align: left;
+}
+.chef .claims-table td[data-label='Their note'] {
+	max-width: 300px;
+}
+.chef .th-note {
+	font-weight: 400;
+	letter-spacing: 0;
+	text-transform: none;
+}
+.chef .clamp {
+	display: -webkit-box;
+	margin: 0;
+	overflow: hidden;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 4;
+	line-clamp: 4;
+}
+.chef .how-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	margin-bottom: 4px;
+	padding: 2px 9px;
+	border-radius: 999px;
+	background: #f4e9ee;
+	color: var(--accent);
+	font-size: 12.5px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+.chef .tag-future {
+	display: inline-block;
+	margin-left: 6px;
+	padding: 0 7px;
+	border: 1px dashed var(--warn);
+	border-radius: 999px;
+	color: var(--warn);
+	font: 600 11px var(--mono);
+	vertical-align: 1px;
+}
+.chef .internal-note {
+	display: flex;
+	gap: 5px;
+	align-items: flex-start;
+	margin-top: 6px;
+	padding: 4px 8px;
+	border-radius: 10px;
+	background: #f1f2f4;
+	color: #3c4048;
+}
+.chef .note-icon {
+	width: 14px;
+	height: 14px;
+	flex: none;
+	margin-top: 3px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 2;
+}
+.chef .td-action {
+	text-align: right;
+	white-space: nowrap;
+}
+.chef .more-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 14px;
+	align-items: center;
+	margin-top: 10px;
+}
+.chef .more-row p {
+	margin: 0;
+}
+.chef .loading {
+	display: flex;
+	gap: 10px;
+	align-items: center;
+	padding: 14px 0;
+	font-weight: 500;
+}
+.chef .spinner {
+	display: inline-block;
+	width: 18px;
+	height: 18px;
+	flex: none;
+	border: 2.5px solid #c9cdd3;
+	border-top-color: var(--accent);
+	border-radius: 50%;
+	animation: chef-spin 1s linear infinite;
+}
+@keyframes chef-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+.chef .skeleton {
+	display: grid;
+	gap: 8px;
+}
+.chef .skeleton span {
+	height: 64px;
+	border-radius: 14px;
+	background: linear-gradient(90deg, #eceef1, #f6f7f8, #eceef1);
+}
+.chef .empty {
+	padding: 48px 20px;
+	text-align: center;
+}
+.chef .empty p {
+	margin: 10px 0 20px;
+}
+.chef .role-note {
+	margin: 10px 0 0;
+	padding: 8px 12px;
+	border-radius: 12px;
+	background: var(--info-bg);
+	color: var(--info);
+	font-size: 13px;
+}
+.chef .back {
+	display: inline-flex;
+	gap: 6px;
+	align-items: center;
+	margin-bottom: 14px;
+	color: var(--muted);
+	font-weight: 500;
+	text-decoration: none;
+}
+.chef .card-h {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	margin: 0 0 12px;
+	font-size: 16px;
+	font-weight: 600;
+}
+.chef .facts {
+	display: grid;
+	gap: 8px;
+	margin: 0;
+}
+.chef .facts div {
+	display: flex;
+	justify-content: space-between;
+	gap: 16px;
+	padding-bottom: 8px;
+	border-bottom: 1px dashed var(--line);
+}
+.chef .facts div:last-child {
+	border-bottom: 0;
+}
+.chef .facts dt {
+	color: var(--muted);
+}
+.chef .facts dd {
+	max-width: 68%;
+	margin: 0;
+	font-weight: 500;
+	text-align: left;
+}
+.chef .claim-grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1.5fr) minmax(300px, 1fr);
+	gap: 18px;
+	align-items: start;
+}
+.chef .claim-grid > * {
+	min-width: 0;
+}
+@media (max-width: 1080px) {
+	.chef .claim-grid {
+		grid-template-columns: 1fr;
+	}
+}
+@media (max-width: 860px) {
+	.chef .claims-table .chip-s,
+	.chef .claims-table .how-chip {
+		white-space: normal;
+	}
+	.chef .claims-table tbody th {
+		display: grid;
+		grid-template-columns: 96px minmax(0, 1fr);
+		gap: 8px;
+		width: 100%;
+		padding: 4px 10px;
+		border: 0;
+	}
+	.chef .claims-table tbody th::before {
+		content: attr(data-label);
+		color: var(--muted);
+		font-size: 12px;
+		font-weight: 400;
+	}
+	.chef .claims-table td.td-action {
+		display: block;
+		padding: 8px 10px;
+		text-align: left;
+	}
+	.chef .claims-table td.td-action::before {
+		content: none;
+	}
+	.chef .claims-table td[data-label='Their note'] {
+		max-width: none;
+	}
+	.chef .facts div {
+		flex-direction: column;
+		gap: 2px;
+	}
+	.chef .facts dd {
+		max-width: none;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.chef .spinner {
+		animation: none;
+	}
 }
