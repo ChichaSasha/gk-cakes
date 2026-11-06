@@ -10,6 +10,14 @@
 import { ApiError, apiGet, apiPost } from '../api';
 import { formatMoney, londonTime, sizeLabel, timeRange } from '../checkout/format';
 import type { StaffApi } from './catalogue';
+import type {
+	DeliveryBlock,
+	DeliveryQuoteRecord,
+	LatePaymentBlock,
+	StaffDeliveryChoice,
+	StaffDeliveryFailure,
+	StaffLatePaymentOffer
+} from './order-decisions';
 import {
 	MODES,
 	statusOf,
@@ -104,43 +112,10 @@ export interface Cancellation {
 	rate?: number | null;
 }
 
-export interface StaffDelivery {
-	state: string;
-	quote?: {
-		id: string;
-		quoted_at: string;
-		amount_minor?: number;
-		currency?: string;
-		pay_by?: string;
-	} | null;
-	paid_minor?: number;
-	waived?: { at: string };
-}
-
-export interface DeliveryChoice {
-	open: boolean;
-	reason: 'not_possible' | 'pay_by_passed' | string | null;
-	pending: boolean;
-	chosen?: { choice: string; state: string } | null;
-	not_possible?: { at: string } | null;
-}
-
-export interface DeliveryFailure {
-	cause: 'our_side' | 'nobody_available' | string;
-	at: string;
-	state: string;
-	open: boolean;
-	pending: boolean;
-	chosen?: { choice: string; state: string } | null;
-	redelivery_time_set?: boolean;
-}
-
-export interface LatePayment {
-	state: 'waiting' | 'offered' | 'processing' | string;
-	offer: { date: string; start: string; end: string; accept_until: string } | null;
-	paid_minor?: number;
-	currency?: string;
-}
+export type StaffDelivery = DeliveryBlock;
+export type DeliveryChoice = StaffDeliveryChoice;
+export type DeliveryFailure = StaffDeliveryFailure;
+export type LatePayment = LatePaymentBlock;
 
 export interface RefundObservation {
 	quarantined: boolean;
@@ -190,6 +165,8 @@ export interface StaffOrderDetail {
 	needs_attention?: boolean;
 	commands?: StaffCommand[];
 	late_payment?: LatePayment | null;
+	late_payment_offers?: StaffLatePaymentOffer[];
+	delivery_history?: DeliveryQuoteRecord[];
 	// chef only
 	contact_email?: string;
 	subtotal_minor?: number;
@@ -489,6 +466,41 @@ export function banners(o: StaffOrderDetail, view: StaffView, now: Date): Banner
 			small: ['The manager tools come in a later update.']
 		});
 	}
+	if (flags.includes('delivery_payment_unmatched')) {
+		const amount =
+			chef && o.delivery?.unmatched_minor != null
+				? `A delivery payment of ${money(o, o.delivery.unmatched_minor)}`
+				: 'A delivery payment';
+		out.push({
+			key: 'unmatched',
+			tone: 'bad',
+			title: 'A delivery payment couldn’t be used.',
+			text: `${amount} arrived but couldn’t be matched to the current quote (for example it paid a replaced quote, or arrived after the order closed). It’s kept as received; the customer sees that the chef will return it and mustn’t pay again.`,
+			small: [
+				'A later cancellation or no-show returns it in full automatically. Returning it before that is a refund from this order (sending refunds from this page comes in a later update).'
+			]
+		});
+	}
+	if (flags.includes('delivery_payment_stuck')) {
+		out.push({
+			key: 'stuck',
+			tone: 'warn',
+			title: 'A delivery payment page was never created.',
+			text: 'The customer’s delivery payment didn’t start, so nothing was charged. They can pay again; the next payment, quote or waiver closes the stuck one.',
+			small: []
+		});
+	}
+	if (flags.includes('redelivery_time_needed')) {
+		out.push({
+			key: 'redelivery',
+			tone: 'warn',
+			title: chef ? 'Set the new delivery time.' : 'A new delivery time is needed.',
+			text: chef
+				? 'The customer chose a new delivery after it failed. Agree the time with them and set it under Handover; the cake can go out again once that change is confirmed.'
+				: 'The customer chose a new delivery after it failed. Elina agrees the new time with them.',
+			small: []
+		});
+	}
 	if (flags.includes('refund_quarantine')) {
 		const obs = (o.refund_observations ?? []).find((r) => r.quarantined && !r.resolved_at);
 		const what =
@@ -508,36 +520,31 @@ export function banners(o: StaffOrderDetail, view: StaffView, now: Date): Banner
 	return out;
 }
 
-/** Paid late (K04 Q2): the decision card. Deciding itself is the next slice. */
+/**
+ * Paid late (K04 Q2): the decision card's explanation. The current offer,
+ * the answer and the chef's choices are order-decisions' (latePaymentStatus,
+ * latePaymentChoices).
+ */
 export function latePaymentCard(
 	o: StaffOrderDetail,
 	view: StaffView
-): { title: string; text: string[]; note: string } | null {
+): { title: string; text: string[] } | null {
 	if (o.lifecycle !== 'paid_awaiting_agreement') return null;
 	if (view !== 'chef') {
 		return {
 			title: 'Paid late · Elina decides',
 			text: [
 				'Don’t start this cake: Elina decides with the customer whether it goes ahead. Its day place is already counted.'
-			],
-			note: ''
+			]
 		};
 	}
 	const paid = o.late_payment?.paid_minor;
-	const lines = [
-		`The payment completed${o.paid_at ? ` ${when(o.paid_at)}` : ''}, after the 192-hour point before the handover, so it isn’t accepted automatically.`,
-		`${paid != null ? `The ${formatMoney(paid, o.late_payment?.currency ?? o.currency ?? 'GBP')} is received, and the` : 'The'} order already counts in ${dayShort(o.date)} (its place is taken, like a confirmed order). Until you decide: no production, no automatic start and no collection details. Silence never counts as agreement. A full return releases the place.`
-	];
-	const offer = o.late_payment?.offer;
-	if (o.late_payment?.state === 'offered' && offer) {
-		lines.push(
-			`You offered ${dayShort(offer.date)}, ${timeRange(offer.start, offer.end)}; waiting for the customer’s answer (they can accept until ${when(offer.accept_until)}).`
-		);
-	}
 	return {
 		title: 'Paid late · your decision',
-		text: lines,
-		note: 'Making an offer to the customer or returning everything isn’t on this page yet; it comes in the next update.'
+		text: [
+			`The payment completed${o.paid_at ? ` ${when(o.paid_at)}` : ''}, after the 192-hour point before the handover, so it isn’t accepted automatically.`,
+			`${paid != null ? `The ${formatMoney(paid, o.late_payment?.currency ?? o.currency ?? 'GBP')} is received, and the` : 'The'} order already counts in ${dayShort(o.date)} (its place is taken, like a confirmed order). Until you decide: no production, no automatic start and no collection details. Silence never counts as agreement. A full return releases the place.`
+		]
 	};
 }
 
@@ -703,7 +710,7 @@ export function dispatchBlock(o: StaffOrderDetail): string {
 			return 'The delivery failed on our side and the customer hasn’t chosen what happens next, so it can’t go out again yet.';
 		}
 		if (f.chosen.choice === 'redelivery' && f.redelivery_time_set === false) {
-			return 'The customer chose a new delivery. Agree the new time with them (change the appointment) before it goes out again.';
+			return 'The customer chose a new delivery. Agree the new time with them and set it under Handover before it goes out again.';
 		}
 	}
 	if (!d || (d.state !== 'paid' && d.state !== 'waived')) {
@@ -1032,7 +1039,7 @@ export function refusalOf(e: unknown, a: StepAction): Refusal {
 			);
 		case 'REDELIVERY_TIME_NOT_SET':
 			return r(
-				'Agree the new delivery time with the customer first (change the appointment), then send it out again.'
+				'Agree the new delivery time with the customer first and set it under Handover, then send it out again.'
 			);
 		case 'UNAVAILABLE':
 			return r(

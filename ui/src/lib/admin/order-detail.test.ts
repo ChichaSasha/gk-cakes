@@ -553,7 +553,7 @@ describe('latePaymentCard', () => {
 		const c = latePaymentCard(o, 'chef');
 		expect(c?.title).toBe('Paid late · your decision');
 		expect(c?.text.join(' ')).toMatch(/The £90 is received/);
-		expect(c?.note).toMatch(/next update/);
+		expect(c?.text.join(' ')).not.toMatch(/next update/);
 		expect(latePaymentCard(helper(o), 'fulfillment')?.title).toBe('Paid late · Elina decides');
 		expect(latePaymentCard(chef(), 'chef')).toBeNull();
 	});
