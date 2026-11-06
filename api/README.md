@@ -2722,8 +2722,8 @@ the older-build request), `fulfillment_integration_test.go`
 
 Follow-ups (not implemented):
 
-- **The Q5 choice** after `pay_by_passed` (collection / own courier / full
-  refund, no deadline: Q8/Q9) and its API states.
+- ~~The Q5 choice after `pay_by_passed`~~: built in migration 0036, see
+  "Q5 choice when GK can't deliver (GK-017 r02b)" below.
 - **Emails:** "delivery quote" (with the pay-by time) and "delivery paid"
   need Creator-reviewed wording and new template revisions; today the
   customer learns of a quote on the order page.
@@ -2739,6 +2739,192 @@ Follow-ups (not implemented):
   with the no-show, but it has no separate stray sentence yet.
 - `GET /me/orders` summaries and the staff list do not carry the delivery
   state yet; the UI (state 15) and a chef screen for quotes and waivers.
+
+## Q5 choice when GK can't deliver (GK-017 r02b)
+
+Migration `0036_delivery_choice.sql` (expand only), store
+`internal/checkout/delivery_choice.go`, routes in `internal/httpapi/checkout.go`.
+Inputs (sha256 prefixes): design `docs/design/sessions/checkout-recovery/gk-017-r02/session.md`
+`e11d934591fa` state 14 ("We can't deliver after payment": collection,
+own courier or full refund; "There's no deadline"; every opening time that
+day; the paid delivery "returned in full whatever they choose") and state 15
+("pay-by time passed ... the same choice with no deadline"); Creator
+decisions Q5, Q8 ("No time limit on the Q5 choice; the case stays open with
+the chef"), Q9, Q10 ("any opening time that day"); contracts
+`docs/design/contracts.md` `a2817cb743c8` K03, K05 ("chef cancellation
+100%", "GK-caused unperformed delivery raises its target to 100% delivery
+... explicit collection floor", cumulative goal), K06 ("No implicit
+date/delivery-mode change", courier responsibility at handover), K08, K09,
+K11.
+
+| Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
+| --- | --- | --- |
+| `POST /api/v1/admin/orders/{id}/delivery-not-possible` | chef | `{expected_version, reason?}` with Idempotency-Key; 200 `{order_id, decision_id}` (`Idempotent-Replayed: true` for the same key, also during a restore freeze, and when the order already has a decision) |
+| `POST /api/v1/orders/{id}/delivery-choice` | the owner (bearer) or the guest (`X-Order-Capability` with `cancel` for `full_refund`, `move_pickup` for a time) | `{expected_version, choice: "collection" \| "customer_courier" \| "full_refund", target_slot_id}` (`target_slot_id` for the two time choices only) with Idempotency-Key; 202 `{order_id, operation_id, state: "choice_pending", poll_after_seconds}` |
+
+- **GK can't deliver** (`business.delivery_not_possible`, one immutable row
+  per order). Only on a `gk_delivery` order whose cake is visibly confirmed
+  (`confirmed`, `in_production` or `ready`, secured, paid or free-confirmed),
+  never dispatched (409 `CONFLICT` otherwise, also while any K11 command is
+  unresolved) and with no delivery collection in flight (409
+  `PAYMENT_IN_PROGRESS`: settled first, K04). Records the current quote, the
+  chef, the receipt instant and an optional `reason` (1–500 characters, one
+  line), which only the chef's staff view shows: never audited
+  (`delivery.not_possible {decision_id, quote_id}`), never in the
+  customer's or technical support's view. Versioned (order version + 1,
+  409 `STALE_VERSION`), idempotent (K00 command receipt; another body is
+  `KEY_REUSED`); a second decision on the same order answers the first as a
+  replay; 503 during a restore freeze, checked before any outcome. It refunds
+  nothing: the customer's choice decides (a paid delivery is never returned
+  until then). From then on the delivery is never dispatched (409
+  `DELIVERY_NOT_POSSIBLE`) and no quote, waiver or delivery payment is
+  accepted (`delivery_order_open`): an unpaid quote is closed.
+- **When the choice is open** (`business.delivery_choice_basis`): a
+  `gk_delivery` order, cake visibly confirmed, never dispatched, and either
+  the chef's decision (reason `not_possible`) or, without any chef action,
+  the current quote unpaid, not waived, no payment in flight and its pay-by
+  (original handover − 48 h, 0035) passed (`pay_by_passed`, equality has
+  passed). No deadline (Q8): it stays open until the customer chooses or the
+  order leaves those states.
+- **The choice** is a K11 order command `delivery_choice` (prepared envelope
+  before the commit, outcome envelope before it is visible, exactly one
+  outcome, the same actor and key replay, another body is `KEY_REUSED`,
+  another protected change in progress is 409 `CONFLICT`, a restore freeze
+  refuses new requests with 503 and defers the commit). Refused 409
+  `CHOICE_NOT_OPEN` unless open at the receipt instant, then
+  `STALE_VERSION`. The request stores `business.delivery_choice` (choice,
+  basis, decision, quote, the paid delivery collection, the GK delivery mode
+  and appointment it replaces, the target with its schedule revision, the
+  access used as account or guest capability, the receipt): the immutable
+  history of the explicit, agreed mode change (K06).
+  - `collection` / `customer_courier`: `target_slot_id` is a published start
+    of the current schedule on the order's own handover day (not a closed
+    date), after the receipt, within the ready cakes' shelf life; every
+    opening time of the day, without the six-hour self-move cutoff (Q10),
+    otherwise 409 `SLOT_UNAVAILABLE`. The commit changes `fulfillment_mode`
+    and the appointment (`slot_id`, `handover_starts_at`/`ends_at`); the day
+    and its place stay (no capacity admission); `original_handover_at`, the
+    refund deadline and the production anchor never move. A paid delivery
+    (the current quote's matched succeeded collection) gets a 100% floor
+    (`business.refund_floor`, reason `gk_delivery_failure`, recorded by the
+    chef who made the decision), the goal raised and the refund reserved,
+    exactly as 0022's delivery-failure floor (K05 cumulative goal): the
+    delivery comes back in full, automatically, the cake is not refunded. An
+    unpaid quote is simply closed: nothing to refund.
+  - `full_refund`: `order_terminal_return` with `cancel_reason`
+    `delivery_not_possible`, rate 100 of everything actually paid (cake and
+    matched delivery; a stray delivery payment in full on top, as 0035
+    defines), goal source `customer`; it reads like a cancellation
+    (`cancellation_pending` until secured, then the `cancellation` block
+    with reason `delivery_not_possible`, `requested_by` `customer`). A paid
+    delivery gets its floor first, so its share is reserved automatically
+    instead of waiting for the chef's `delivery-refund` (the chef already
+    decided).
+  - The commit re-checks the version, the open choice at the receipt, the
+    quote and its paid collection and the target slot; otherwise it records
+    a refusal (`order_changed`, `not_open`, `slot_unavailable`; version + 1
+    only) and the choice is open again. Production (timer and manual) and the
+    chef's refunds wait while a choice is unresolved (`order_terminal_pending`).
+- **Order view.** `GET /orders/{id}` adds `delivery_choice` (null unless the
+  order is a GK delivery or a choice changed it): `{open, reason:
+  "not_possible" | "pay_by_passed" | null, opens_at, pending, choices,
+  times: [{id, starts_at, ends_at}], chosen}`. `opens_at` is the unpaid
+  quote's pay-by while no chef decision exists (null otherwise); `open` and
+  `reason` follow it at the API's clock (as 0035's `pay_by_passed`) unless
+  `pending` (a protected change of the order is unresolved). `choices` is
+  `["collection", "customer_courier", "full_refund"]` and `times` the day's
+  published starts after now (API clock) within shelf life, both only while
+  open (else `[]`). `chosen` is the latest choice: `{choice, reason (its
+  basis), state: "processing" | "chosen" | "cancelled" | "refused",
+  refusal_reason, requested_at, to: {fulfillment_mode, date, id, starts_at,
+  ends_at} | null, delivery_refund_minor (only when the delivery was paid)}`.
+  While a time choice is committed but not secured, `fulfillment_mode` and
+  `slot`/`date` still show the GK delivery (`order_visible_mode`,
+  `order_visible_appointment`). After a secured time choice the `delivery`
+  block reads **`cancelled_by_choice`** (the delivery is not happening; a
+  paid one keeps `paid_minor`) and the `refund` block shows the delivery's
+  full refund (reason `delivery_failure`). The delivery block's `payable` is
+  false after the chef's decision.
+- **Staff views** (orders whose customer view has the block): the chef gets
+  it plus `not_possible {id, at, quote_id, order_version, reason}` and
+  `history` (every choice oldest first with `command_id`, `access`
+  `account` | `guest_link`, `from`), and the attention flag
+  `delivery_choice_open` (database clock); technical support the same
+  without `delivery_refund_minor` or the reason (K00 no money; K09);
+  fulfilment `{open, reason, opens_at, pending, chosen}` without money. The
+  delivery block and `delivery_history` stay after a choice changed the mode;
+  the staff list shows the visible mode.
+- **Late money.** A delivery payment settled after the chef's decision or
+  after a time choice never pays the delivery: `unmatched` with the new
+  reason `delivery_not_possible` (a stray as 0035 defines: returned with a
+  goal, otherwise flagged `delivery_payment_unmatched` for the chef).
+- **Emails.** No new template. A full refund sends the existing cancelled
+  notice once when secured, with a new first sentence for the reason: "We
+  are sorry that we could not deliver your order. As you chose, it has been
+  cancelled and everything you paid is being returned." (wording for
+  Creator review); its refund line says "the full amount you paid". A time
+  choice sends no email (the returned delivery is announced by the existing
+  `refund_returned` notice once the refund is back).
+- **Tests:** `internal/checkout/delivery_choice_integration_test.go`
+  (not-possible rules: mode, chef only, reason checks, stale version,
+  payment in flight, freeze and replays, one decision per order, nothing
+  refunded, closed quote, audit and customer view without the reason, staff
+  redaction, attention flag, dispatch refused, too late after a dispatch,
+  late money is `delivery_not_possible`; the choice opening at pay-by without
+  the chef at the API clock; access by another guest, another customer, a
+  read-only link and a link without `move_pickup`; times limited to the
+  day's starts after the receipt, also within six hours of the delivery;
+  another day's or an unknown slot; stale version, replay, `KEY_REUSED`,
+  pending conflict; customer courier with an unpaid quote end to end (mode,
+  time, unchanged deadline, anchor and day place, no refund, closed quote,
+  `CHOICE_NOT_OPEN` afterwards, no dispatch); collection with a paid
+  delivery through the K11 crash points (journal down, outcome envelope
+  down with the old mode and time still visible, secured), the delivery
+  returned once through its floor, the cake untouched, envelopes once,
+  staff redaction; full refund with a paid delivery (22000p returned, one
+  cancelled notice with the reason) and, by the signed-in owner, with an
+  unpaid quote after pay-by (cake only); freeze deferral; a refusal at
+  the commit after a new schedule version, then the new version's time),
+  `delivery_choice_test.go` (inputs and the API clock),
+  `internal/httpapi` `TestDeliveryChoiceRoutes`, and the exact `gk_api`
+  allowlist in `internal/notifications`.
+
+Decisions taken (small and reversible, for Creator review):
+
+- **`cancelled_by_choice`** is the delivery block's state after a secured
+  time choice (the delivery is not happening; the refund block carries any
+  money returned).
+- **Capabilities.** A guest needs `cancel` for `full_refund` and
+  `move_pickup` for a time choice (the cancellation's and the same-day
+  move's access) rather than one new capability.
+- **Full refund returns a paid delivery automatically** (its floor is
+  recorded first) instead of leaving it as the chef's pending delivery
+  share: the chef's "GK can't deliver" is the chef action K05 asks for, and
+  the design says it comes back "whatever they choose".
+- **The reason is the chef's only** (like the quote's note): technical
+  support does not see it.
+- **A second "GK can't deliver" answers the first** (200, replayed) instead
+  of 409; the decision is not reversible through the API.
+- **Delivery payment in flight** refuses the chef's decision
+  (`PAYMENT_IN_PROGRESS`): the payment's outcome is settled first.
+- **Times are not limited by the original delivery start**: after the
+  delivery time has passed on the day, later opening times stay choosable
+  (Q10 "every opening time that day", only after the receipt).
+
+Follow-ups (not implemented):
+
+- The UI (states 14 and 15) and a chef screen for the decision.
+- The ordinary cancellation of an order whose choice is open still follows
+  the 100%/50% deadline rule; the full refund is the Q5 `full_refund`
+  choice. Whether the ordinary cancel should also give 100% once GK can't
+  deliver is a Creator question.
+- An order with no quote at all never opens the choice by itself: the chef
+  records "GK can't deliver".
+- No reversal of the chef's decision (a later "we can deliver after all")
+  and no redelivery choice (Q17 covers a failed delivery: state 19).
+- A time choice sends no confirmation email (needs Creator-approved
+  wording and a template revision); `GET /me/orders` summaries do not carry
+  the block.
 
 ## Customer accounts (GK-016 r02b)
 

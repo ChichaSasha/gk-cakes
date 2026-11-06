@@ -12,6 +12,7 @@ import (
 	"github.com/ChichaSasha/gk-cakes/api/internal/catalog"
 	"github.com/ChichaSasha/gk-cakes/api/internal/checkout"
 	"github.com/ChichaSasha/gk-cakes/api/internal/recovery"
+	"github.com/ChichaSasha/gk-cakes/api/internal/schedule"
 )
 
 // The Q5 choice when GK can't deliver (GK-017 r02b states 14 and 15; Q5,
@@ -456,6 +457,7 @@ func TestDeliveryChoiceCollectionReturnsThePaidDelivery(t *testing.T) {
 	slots := h.slotsOn(t, "2026-11-14")
 	order, d, cake, delivery := h.paidDeliveryOrder(t, f, pol, "pd")
 	h.withRefunds()
+	h.withNotices(t)
 	v, _ := h.choiceView(t, order, d)
 	if _, err := h.notPossible("np", order, v.Version, "Driver unavailable"); err != nil {
 		t.Fatal(err)
@@ -527,6 +529,17 @@ func TestDeliveryChoiceCollectionReturnsThePaidDelivery(t *testing.T) {
 	}
 	if n := h.count(t, "SELECT count(*) FROM business.refund_operation WHERE collection_id = $1::uuid", cake); n != 0 {
 		t.Fatalf("the cake was refunded (%d)", n)
+	}
+	// No new email for the choice; the existing refund_returned notice
+	// announces the returned delivery once.
+	ns := h.notices(t, order)
+	if noticeCount(ns, "refund_returned") != 1 || noticeCount(ns, "cancelled") != 0 || noticeCount(ns, "pickup_moved") != 0 {
+		t.Fatalf("notices %+v", ns)
+	}
+	for _, n := range ns {
+		if n.Kind == "refund_returned" {
+			has(t, "refund notice", h.request(t, n).Text, "£120")
+		}
 	}
 	key, _ := h.coord.EnvelopeKey(recovery.Operation{ID: op.ID, AggregateID: order, PriorVersion: v.Version})
 	if h.journal.Puts(key+".prepared") != 1 || h.journal.Puts(key+".outcome") != 1 {
@@ -699,5 +712,59 @@ func TestDeliveryChoiceFreeze(t *testing.T) {
 	}
 	if v2, raw := h.choiceView(t, order, d); v2.FulfillmentMode != "collection" || v2.Slot.ID != slots[3] {
 		t.Fatalf("after the freeze: %s", raw)
+	}
+}
+
+// The chef publishes a new schedule version between the choice and its
+// commit: the target's slot ID is no longer offered, the choice is refused
+// (slot_unavailable, version + 1 only), the order stays a GK delivery at its
+// time, nothing is refunded, and the choice is open again with the new
+// version's times.
+func TestDeliveryChoiceRefusedAtTheCommit(t *testing.T) {
+	h := newPayHarness(t)
+	f := h.setup(t)
+	pol := h.policy(t, "p1")
+	slots := h.slotsOn(t, "2026-11-14")
+	order, d, _, delivery := h.paidDeliveryOrder(t, f, pol, "rc")
+	h.withRefunds()
+	v, _ := h.choiceView(t, order, d)
+	if _, err := h.notPossible("np", order, v.Version, ""); err != nil {
+		t.Fatal(err)
+	}
+	v, _ = h.choiceView(t, order, d)
+	op, err := h.choose(order, d, "c1", v.Version, checkout.ChoiceCollection, slots[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	must[catalog.Result](t)(h.sch.PublishVersion(h.ctx, chef, "sched2", schedule.VersionInput{ExpectedRevision: ptr(1),
+		StandardLimit: ptr(7), BookableUntil: "2027-01-31", Weekdays: []schedule.WeekdayInput{
+			{Weekday: "saturday", Opens: "12:30", Closes: "15:00", Starts: []string{"12:30", "13:00", "13:30", "14:00"}}}}))
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("drain:\n%s", reasons(errs))
+	}
+	v2, raw := h.choiceView(t, order, d)
+	b := v2.DeliveryChoice
+	if v2.FulfillmentMode != "gk_delivery" || v2.Slot.ID != f.slot || v2.Version != v.Version+1 || b.Chosen == nil ||
+		b.Chosen.State != "refused" || b.Chosen.RefusalReason == nil || *b.Chosen.RefusalReason != "slot_unavailable" ||
+		!b.Open || len(b.Times) != 4 || timeIDs(b.Times) == strings.Join(slots, ",") || v2.Delivery.State != "paid" ||
+		v2.Refund != nil {
+		t.Fatalf("refused: %s", raw)
+	}
+	if n := h.count(t, "SELECT count(*) FROM business.refund_floor WHERE collection_id = $1::uuid", delivery); n != 0 {
+		t.Fatalf("a floor for a refused choice (%d)", n)
+	}
+	if again, err := h.choose(order, d, "c1", v.Version, checkout.ChoiceCollection, slots[2]); err != nil || !again.Replayed || again.ID != op.ID {
+		t.Fatalf("replay of the refused choice: %+v %v", again, err)
+	}
+	// The new version's time is taken.
+	if _, err := h.choose(order, d, "c2", v2.Version, checkout.ChoiceCollection, b.Times[2].ID); err != nil {
+		t.Fatal(err)
+	}
+	if errs := h.drain(t); len(errs) != 0 {
+		t.Fatalf("drain:\n%s", reasons(errs))
+	}
+	if v3, raw := h.choiceView(t, order, d); v3.FulfillmentMode != "collection" || v3.Slot.ID != b.Times[2].ID ||
+		v3.DeliveryChoice.Chosen.State != "chosen" || v3.Refund == nil || v3.Refund.SucceededMinor != 12000 {
+		t.Fatalf("second choice: %s", raw)
 	}
 }
