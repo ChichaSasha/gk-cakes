@@ -438,6 +438,9 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.account_delete(uuid, text, text, uuid, text, timestamp with time zone, timestamp with time zone)",
 		"business.account_deletion_preview_create(uuid, timestamp with time zone)",
 		"business.account_order_page(uuid, timestamp with time zone, uuid, integer)",
+		// Order view refinements (0038): account summaries with their order
+		// blocks, and the caller's order actions.
+		"business.account_order_summaries(uuid, timestamp with time zone, uuid, integer)",
 		"business.account_profile_get(uuid)",
 		"business.account_profile_update(uuid, text, text, integer, boolean, text, boolean, text, boolean, text)",
 		"business.capacity_day_limit_set(uuid, text, text, date, integer, integer)",
@@ -497,6 +500,7 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.order_claim_staff_list(uuid, text, timestamp with time zone, uuid, integer)",
 		"business.order_claim_submit(uuid, text, text, text, text, text, text, bytea, timestamp with time zone)",
 		"business.order_claim_withdraw(uuid, text, text, uuid, integer, timestamp with time zone)",
+		"business.order_customer_actions(uuid, uuid, bytea)",
 		// Q5 choice (0036): the customer's choice and the chef's "GK can't deliver".
 		"business.order_delivery_choice_request(uuid, bytea, uuid, text, text, integer, text, uuid, text, timestamp with time zone)",
 		// Failed GK delivery (0037): the chef's record and the customer's choice.
