@@ -7,7 +7,10 @@
 	// changed order is read again and said so. Slice 2 adds the chef's date
 	// and delivery decisions (late-payment offers and decision, delivery
 	// quote and waiver, GK can't deliver, a failed delivery, the time
-	// change); cancelling and refunds come later.
+	// change). Slice 3 adds money: the chef's cancellation, refunds (an
+	// agreed part, the delivery share, an unmatched delivery payment), the
+	// manager decisions on this order's payments and refunds, and the
+	// verified transfer (K05 Q5).
 	import { resolve } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -67,7 +70,28 @@
 		type Decision,
 		type DecisionInput
 	} from '../../../../lib/admin/order-decisions';
+	import {
+		hasPayouts,
+		managerCases,
+		MONEY_REFUSED,
+		moneyDone,
+		moneyKey,
+		moneyRefusal,
+		moneySettled,
+		moneySlot,
+		payouts as listPayouts,
+		pollMoney,
+		sendMoney,
+		type MoneyAction,
+		type MoneyInput,
+		type MoneyOutcome,
+		type Payout
+	} from '../../../../lib/admin/order-money';
 	import { staffApi } from '../../../../lib/admin/session';
+	import CancelPanel from '../../../../lib/admin/ui/CancelPanel.svelte';
+	import DecisionStatus from '../../../../lib/admin/ui/DecisionStatus.svelte';
+	import ManagerPanel from '../../../../lib/admin/ui/ManagerPanel.svelte';
+	import RefundPanel from '../../../../lib/admin/ui/RefundPanel.svelte';
 	import AppointmentPanel from '../../../../lib/admin/ui/AppointmentPanel.svelte';
 	import DeliveryPanel from '../../../../lib/admin/ui/DeliveryPanel.svelte';
 	import LatePaymentPanel from '../../../../lib/admin/ui/LatePaymentPanel.svelte';
@@ -75,6 +99,7 @@
 	import ChefShell from '../../../../lib/admin/ui/ChefShell.svelte';
 	import '../../../../lib/admin/order-detail.css';
 	import '../../../../lib/admin/order-decisions.css';
+	import '../../../../lib/admin/order-money.css';
 
 	const orderId = orderIdFrom(page.params.id ?? '');
 
@@ -125,6 +150,35 @@
 		poll_after_seconds: number;
 	} | null>(null);
 	const decisionKeys: Record<string, string> = {};
+	// Money (slice 3): one command in flight at a time, its messages shown
+	// where it belongs; keys as above (action, version and exactly what is sent).
+	type MoneyArea = 'cancel' | 'refund' | 'manager';
+	const MONEY_AREA: Record<MoneyAction, MoneyArea> = {
+		cancel: 'cancel',
+		refund: 'refund',
+		stray: 'refund',
+		delivery_refund: 'refund',
+		resolve: 'manager',
+		decide: 'manager',
+		clear_refund: 'manager',
+		clear_payment: 'manager',
+		re_reserve: 'manager',
+		payout: 'manager',
+		payout_outcome: 'manager'
+	};
+	let acting = $state<MoneyAction | null>(null);
+	let moneyArea = $state<MoneyArea | null>(null);
+	let moneyStatus = $state('');
+	let moneyError = $state('');
+	let moneyPending = $state<{
+		input: MoneyInput;
+		operation_id: string;
+		poll_after_seconds: number;
+		before: string[];
+	} | null>(null);
+	const moneyKeys: Record<string, string> = {};
+	let payoutList = $state<Payout[]>([]);
+	let payoutsError = $state('');
 	let mounted = true;
 	const isActive = () => mounted;
 
@@ -153,7 +207,7 @@
 			? [...historyLines(order), ...offerLines(order)].sort((x, y) => x.at.localeCompare(y.at))
 			: []
 	);
-	const anyBusy = $derived(busy !== null || deciding !== null);
+	const anyBusy = $derived(busy !== null || deciding !== null || acting !== null);
 	const msg = (a: Area) => ({
 		status: area === a ? decisionStatus : '',
 		error: area === a ? decisionError : '',
@@ -165,6 +219,25 @@
 	const ended = $derived(
 		order ? ['cancelled', 'cancellation_pending'].includes(order.lifecycle) : false
 	);
+	const moneyMsg = (a: MoneyArea) => ({
+		status: moneyArea === a ? moneyStatus : '',
+		error: moneyArea === a ? moneyError : '',
+		pending: moneyArea === a && moneyPending !== null
+	});
+	const cases = $derived(order && view ? managerCases(order, view) : []);
+	const showManager = $derived(
+		cases.length > 0 ||
+			(view === 'chef' && payoutList.length > 0) ||
+			(moneyArea === 'manager' && Boolean(moneyStatus || moneyError || moneyPending))
+	);
+	// The manual payouts (chef): read again whenever the order changes while it has any.
+	const payoutKey = $derived(
+		order && view && hasPayouts(order, view) ? `${order.id}:${order.version}` : ''
+	);
+	$effect(() => {
+		if (payoutKey) void loadPayouts();
+		else payoutList = [];
+	});
 
 	async function sessionEnded(e: unknown): Promise<boolean> {
 		if (e instanceof ApiError && e.signInRequired) {
@@ -361,7 +434,7 @@
 
 	async function run(a: StepAction) {
 		const o = order;
-		if (!api || !o || busy || deciding) return;
+		if (!api || !o || busy || deciding || acting) return;
 		if (a === 'delivery_exception') {
 			reasonError = reasonProblem(reason);
 			if (reasonError) {
@@ -489,7 +562,7 @@
 	 */
 	async function decide(input: DecisionInput): Promise<boolean> {
 		const o = order;
-		if (!api || !o || busy || deciding) return false;
+		if (!api || !o || busy || deciding || acting) return false;
 		const a = AREA[input.d];
 		deciding = input.d;
 		area = a;
@@ -560,6 +633,156 @@
 		} finally {
 			deciding = null;
 			if (area) focusDecision(area);
+		}
+	}
+
+	async function loadPayouts() {
+		const o = order;
+		if (!api || !o || view !== 'chef') return;
+		try {
+			const items = await listPayouts(api, o);
+			if (!isActive() || order?.id !== o.id) return;
+			payoutList = items;
+			payoutsError = '';
+		} catch (e) {
+			if (!isActive() || (await sessionEnded(e))) return;
+			payoutsError = 'The verified transfers couldn’t be loaded. Reload the page to see them.';
+		}
+	}
+
+	const ACTING: Partial<Record<MoneyAction, string>> = {
+		cancel: 'Cancelling…',
+		refund: 'Sending the refund…',
+		stray: 'Returning the payment…',
+		delivery_refund: 'Sending the delivery refund…',
+		re_reserve: 'Reserving the remainder…',
+		payout: 'Reserving the transfer…'
+	};
+
+	function focusMoney(a: MoneyArea) {
+		void focusLater(() => document.getElementById(moneyError ? `${a}-error` : `${a}-status`));
+	}
+
+	/** Shows an accepted money command's outcome from a poll. */
+	function moneyOutcome(
+		r: { order: StaffOrderDetail | null; outcome: MoneyOutcome },
+		input: MoneyInput,
+		accepted: { operation_id: string; poll_after_seconds: number },
+		before: string[],
+		refund: boolean
+	) {
+		if (r.order) order = r.order;
+		now = new Date();
+		const o = order;
+		if (!o) return;
+		if (r.outcome === 'pending' && !refund) {
+			moneyStatus = STILL;
+			moneyPending = { input, ...accepted, before };
+			return;
+		}
+		moneyPending = null;
+		if (r.outcome === 'refused') {
+			moneyStatus = '';
+			moneyError = MONEY_REFUSED;
+			return;
+		}
+		moneyStatus = moneyDone(o, input, r.outcome === 'pending' ? 'reserved' : r.outcome);
+	}
+
+	/**
+	 * Sends one money command at the version shown (its key per request) and
+	 * reads the order again; an accepted one is watched: a K11 command until
+	 * it's secured, a refund until it reaches the payment provider. True when
+	 * it was accepted (the panel closes its form).
+	 */
+	async function act(input: MoneyInput): Promise<boolean> {
+		const o = order;
+		if (!api || !o || busy || deciding || acting) return false;
+		const a = MONEY_AREA[input.m];
+		acting = input.m;
+		moneyArea = a;
+		stale = false;
+		stepStatus = '';
+		stepError = '';
+		decisionStatus = '';
+		decisionError = '';
+		moneyError = '';
+		moneyPending = null;
+		moneyStatus = ACTING[input.m] ?? 'Recording…';
+		const slot = moneySlot(o, input);
+		const key = moneyKeys[slot] ?? moneyKey(o, input.m, nonce());
+		moneyKeys[slot] = key;
+		const before = (o.refund_operations ?? []).map((r) => r.id);
+		try {
+			const answer = await sendMoney(api, o, input, key);
+			delete moneyKeys[slot];
+			if (answer.kind === 'done') {
+				await load(true);
+				moneyStatus = moneyDone(order ?? o, input);
+			} else {
+				await load(true);
+				const refund = answer.mode === 'refund';
+				if (refund && order) {
+					const s = moneySettled(order, input, answer.accepted.operation_id, before);
+					moneyStatus = moneyDone(order, input, s === 'pending' ? 'reserved' : s);
+				} else {
+					moneyStatus = input.m === 'cancel' ? 'Cancelling · being confirmed…' : 'Being recorded…';
+				}
+				focusMoney(a);
+				const r = await pollMoney(read, input, answer.accepted, {
+					before,
+					tries: refund ? 6 : 20,
+					active: isActive
+				});
+				if (!isActive()) return true;
+				moneyOutcome(r, input, answer.accepted, before, refund);
+				if (input.m === 'payout' || input.m === 'payout_outcome') void loadPayouts();
+			}
+			focusMoney(a);
+			return true;
+		} catch (e) {
+			const refusal = moneyRefusal(e, input.m);
+			if (refusal.signIn) {
+				await sessionEnded(e);
+				return false;
+			}
+			if (!refusal.retry) delete moneyKeys[slot];
+			moneyStatus = '';
+			if (refusal.stale) {
+				await load(true);
+				stale = true;
+				void focusLater(() => staleEl);
+				return false;
+			}
+			moneyError = refusal.text;
+			if (refusal.reload) await load(true);
+			focusMoney(a);
+			return false;
+		} finally {
+			acting = null;
+		}
+	}
+
+	/** Reads a still-pending money command again. */
+	async function checkMoney() {
+		const p = moneyPending;
+		if (!p || anyBusy) return;
+		acting = p.input.m;
+		moneyStatus = 'Checking…';
+		try {
+			const r = await pollMoney(read, p.input, p, {
+				before: p.before,
+				tries: 1,
+				active: isActive,
+				wait: async () => {}
+			});
+			moneyOutcome(r, p.input, p, p.before, false);
+			if (p.input.m === 'payout' || p.input.m === 'payout_outcome') void loadPayouts();
+		} catch (e) {
+			await sessionEnded(e);
+		} finally {
+			acting = null;
+			if (moneyArea) focusMoney(moneyArea);
 		}
 	}
 
@@ -659,6 +882,38 @@
 						{decide}
 						oncheck={() => void checkDecision()}
 					/>
+				</section>
+			{/if}
+
+			{#if showManager}
+				<section class="card card-alert" aria-labelledby="mgr-h">
+					<h2 id="mgr-h" class="card-h"><ChefIcon name="alert" />Needs a manager</h2>
+					<p class="small muted">
+						{v === 'chef'
+							? 'Cases on this order’s payments and refunds that can’t be settled automatically. Nothing is sent, refunded or confirmed until you decide; no decision here calls the payment provider.'
+							: 'Cases on this order’s payments and refunds that can’t be settled automatically. Elina decides them.'}
+						<a href={resolve('/admin/attention')}>Needs attention</a>
+					</p>
+					<ManagerPanel
+						api={api as StaffApi}
+						order={o}
+						view={v}
+						{now}
+						busy={anyBusy}
+						{acting}
+						payouts={v === 'chef' ? payoutList : []}
+						{payoutsError}
+						{act}
+						onsession={sessionEnded}
+					/>
+					{#if v === 'chef'}
+						<DecisionStatus
+							area="manager"
+							{...moneyMsg('manager')}
+							busy={anyBusy}
+							oncheck={() => void checkMoney()}
+						/>
+					{/if}
 				</section>
 			{/if}
 
@@ -949,7 +1204,21 @@
 								{/if}
 							{/if}
 							{#if v === 'chef'}
-								<p class="role-note">Sending refunds from this page comes in a later update.</p>
+								<RefundPanel order={o} view={v} busy={anyBusy} {acting} {act} />
+								<DecisionStatus
+									area="refund"
+									{...moneyMsg('refund')}
+									busy={anyBusy}
+									oncheck={() => void checkMoney()}
+								/>
+								{#if ended}
+									<DecisionStatus
+										area="cancel"
+										{...moneyMsg('cancel')}
+										busy={anyBusy}
+										oncheck={() => void checkMoney()}
+									/>
+								{/if}
 							{/if}
 						</section>
 					{/if}
@@ -972,13 +1241,26 @@
 							{:else if o.lifecycle === 'confirmation_pending'}
 								<p class="role-note">Cancelling is available once the order is confirmed.</p>
 							{/if}
+							<CancelPanel order={o} view={v} busy={anyBusy} {acting} {act} />
+							<DecisionStatus
+								area="cancel"
+								{...moneyMsg('cancel')}
+								busy={anyBusy}
+								oncheck={() => void checkMoney()}
+							/>
+							{#if !o.refund}
+								<RefundPanel order={o} view={v} busy={anyBusy} {acting} {act} />
+								<DecisionStatus
+									area="refund"
+									{...moneyMsg('refund')}
+									busy={anyBusy}
+									oncheck={() => void checkMoney()}
+								/>
+							{/if}
 						</section>
 					{/if}
 				</div>
 			</div>
-			{#if v === 'chef'}
-				<p class="muted small foot">Not on this page yet: cancelling and sending refunds.</p>
-			{/if}
 		{/if}
 	</div>
 </ChefShell>

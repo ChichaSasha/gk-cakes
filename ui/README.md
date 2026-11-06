@@ -649,6 +649,7 @@ or the problem form and returns focus to its button.
 Not on this page yet (next slices): cancelling and refunds, recovery tools,
 batches with Start making (slice 2 below builds the date and delivery
 decisions).
+Slice 3 below builds cancelling, refunds and the recovery tools.
 The API gives no allergens, cake image, emails sent, payment-link deadlines,
 staff names or delivery address yet, so those parts of the sketch are left
 out.
@@ -701,6 +702,80 @@ renewed when anything sent changes; refusals are plain words
 the form. Status and errors are live regions in the card the decision
 belongs to, and focus moves to them; Escape closes a form and returns focus to
 its button.
+
+### Order page money (GK-031 slice 3)
+
+Cancelling, refunds and the manager recovery tools on the order, in r03b2's
+wording (`src/lib/admin/order-money.ts`, panels `CancelPanel`, `RefundPanel`
+and `ManagerPanel` in `src/lib/admin/ui/`, styles `order-money.css`). Every
+command is the chef's (the API's role `chef`); technical support sees the
+same cases without amounts or buttons, fulfilment none of it. Controls appear
+only when the README's rules allow them at the page's clock (the API still
+decides), and the order's collections, refund operations, observations and
+goal (the staff detail) are the source:
+
+- **Cancel and refund…** (Money card; confirmed, in production or ready,
+  secured, nothing in progress): a one-line reason, then a review of what
+  goes back (100% of everything paid from the server's figures: the cake
+  automatically, a delivery paid separately as "Delivery refund · your step"
+  unless GK couldn't deliver, an unmatched delivery payment in full, earlier
+  refunds counting), then `POST …/cancel` (202, polled until cancelled or
+  refused). The API has no chef preview route, so the review is the page's
+  preview; the customer's own cancellation stays on their page.
+- **Refunds** (Refund card, or Money card before any refund): "Refund
+  delivery · £x" (`POST …/delivery-refund`, the paid delivery collection);
+  "Return the unmatched delivery payment…" (the agreed exception refund,
+  `POST …/refunds`, the whole remainder of the stray, an editable reason);
+  "Refund part of the payment…" (amounts per payment typed in pounds and
+  parsed to whole pence as text, each within that payment's room, a reason).
+  Not offered while a manager case is open (`RECONCILIATION_REQUIRED`), a
+  refund may still succeed (`REFUND_IN_PROGRESS`) or the payment's last
+  refund failed definitively. 202 `refund_pending`: the order is read until
+  the new operation leaves "reserved" (sent, confirmed or failed).
+- **Needs a manager** (a card above the details): an outside refund ("Match
+  or explain…": match to a refund of the same payment, or accept as made
+  outside GK Cakes; a note), a changed refund result ("Review…": keep, failed
+  or confirmed), a decided payment mismatch ("Reconcile…"; an unknown
+  payment's mismatch says reconciliation isn't in the workspace yet), an
+  unknown refund past its window ("Decide the result…": never made, or went
+  through with its `re_` ID), a refund waiting for a provider action (no
+  tool), and a definitive failure still owed ("Reserve £x again…" or
+  "Arrange a verified transfer…", never both). Decisions are 200; re-reserving
+  is 202 like a refund.
+- **Verified transfer** (K05 Q5, 0026): two evidence _references_ (never bank
+  details: six or more digits once spaces, hyphens and dots go, or anything
+  IBAN-like, are refused as the API does), a 10-minute preview
+  (`…/manual-payouts/preview`), then the reservation (202, polled until its
+  K11 command is secured); the list (`GET …/manual-payouts`) shows the
+  transfer details and payment reference once secured, and the outcomes the
+  state allows (sent / withdrawn; arrived with its reference, exactly the
+  reserved amount and evidence / failed / unknown).
+
+Keys are `chef-<action>-<order>-v<version>-<nonce>`, renewed when anything
+sent changes; refusals are plain words (`moneyRefusal`); 409 `STALE_VERSION`
+reloads with the banner. Field errors are linked (`aria-invalid`,
+`aria-describedby`); status and errors are live regions where the action
+belongs (the cancel status moves to the Refund card once cancelled; the
+manager card stays for its outcome), focus moves to them, and Escape closes a
+form and returns focus to its button. The banners now point the chef to
+Needs a manager instead of "a later update".
+
+### Needs attention (GK-031 slice 3)
+
+`/admin/attention` (sidebar "Needs attention") is r03b2's `support.html` as a
+read-only queue from `GET /api/v1/admin/attention`
+(`src/lib/admin/attention.ts`, styles `attention.css`): Money · needs a
+manager decision (outside refunds, contradictions, failed refunds still owed,
+refunds waiting for a provider action, unknown refunds past their window),
+Still checking with the provider, open to-dos (delivery shares, verified
+transfers) and Technical (Sasha) (jobs in attention, with the API's reason),
+each linking to its order. The chef sees amounts; technical support the same
+items without them (the API leaves them null and audits the read);
+fulfilment gets the sketch's role note and no request. Not from the sketch
+yet (the API has no data for them): paid-late decisions, emails, "Check
+again with the provider", requeue tools, the cake and customer on each item
+and the audit list. The root layout's plain header shows above this page (as
+on Account requests): hiding it is a root layout change outside this slice.
 
 ## Chef workspace: Account requests (GK-018 r04d-claims)
 

@@ -3,6 +3,7 @@
 	// the workspace's sections and who is signed in, and the main area.
 	// Sections not built yet are shown as "later", as in the sketch. Account
 	// requests (GK-018 r04d-claims) is the chef's only, with a waiting count.
+	// Needs attention (GK-031 slice 3) is the API's attention list.
 	import '../chef.css';
 	import type { Snippet } from 'svelte';
 	import { resolve } from '$app/paths';
@@ -16,7 +17,7 @@
 		onsignout,
 		children
 	}: {
-		active: 'orders' | 'claims';
+		active: 'orders' | 'claims' | 'attention';
 		view: StaffView | null;
 		onsignout: () => void;
 		children: Snippet;
@@ -41,7 +42,12 @@
 		{ key: 'calendar', icon: 'calendar', label: 'Calendar & capacity' },
 		{ key: 'stock', icon: 'stock', label: 'Ingredients' },
 		{ key: 'mail', icon: 'mail', label: 'Messages' },
-		{ key: 'support', icon: 'support', label: 'Needs attention' },
+		{
+			key: 'attention',
+			icon: 'support',
+			label: 'Needs attention',
+			href: resolve('/admin/attention')
+		},
 		{
 			key: 'claims',
 			icon: 'claims',

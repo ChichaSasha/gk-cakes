@@ -1,0 +1,74 @@
+/* Needs attention (GK-018 r03b2 support.html: q-section, queue, q-item,
+   need-dot), scoped to .attention-page like order-detail.css is to
+   .order-page, so a visit here changes no other chef page. */
+.chef .attention-page .q-section {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 22px 0 4px;
+	font-size: 16px;
+}
+.chef .attention-page .count {
+	display: inline-grid;
+	place-items: center;
+	min-width: 22px;
+	height: 22px;
+	padding: 0 6px;
+	border-radius: 11px;
+	background: var(--ink);
+	color: #fff;
+	font-size: 12px;
+}
+.chef .attention-page .queue {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+	gap: 14px;
+	margin: 10px 0 0;
+	padding: 0;
+	list-style: none;
+}
+.chef .attention-page .q-item {
+	min-width: 0;
+}
+.chef .attention-page .q-item p {
+	margin: 6px 0 0;
+}
+.chef .attention-page .q-row {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 4px 12px;
+}
+.chef .attention-page .q-title {
+	margin: 0;
+	font-size: 15px;
+	overflow-wrap: anywhere;
+}
+.chef .attention-page .need-dot {
+	display: inline-block;
+	width: 8px;
+	height: 8px;
+	margin-right: 8px;
+	border-radius: 50%;
+	vertical-align: 2px;
+	background: var(--muted);
+}
+.chef .attention-page .need-bad {
+	background: var(--bad, #b3261e);
+}
+.chef .attention-page .need-info {
+	background: #3b5bdb;
+}
+.chef .attention-page .need-id {
+	margin-left: 6px;
+	color: var(--muted);
+	font: 500 12px var(--mono);
+	white-space: nowrap;
+}
+@media (forced-colors: active) {
+	.chef .attention-page .need-dot {
+		forced-color-adjust: none;
+		background: CanvasText;
+	}
+}
