@@ -286,6 +286,24 @@ func (f *fakeCheckout) StartDeliveryPayment(_ context.Context, id, subject strin
 	return catalog.Result{ID: "dpay-" + id, Replayed: f.replayed}, nil
 }
 
+func (f *fakeCheckout) RecordDeliveryNotPossible(_ context.Context, subject, _, id string, _ checkout.DeliveryNotPossibleInput) (catalog.Result, error) {
+	f.calls++
+	f.subject, f.orderID = subject, id
+	if f.freeErr != nil {
+		return catalog.Result{}, f.freeErr
+	}
+	return catalog.Result{ID: "decision-" + id, Replayed: f.replayed}, nil
+}
+
+func (f *fakeCheckout) ChooseDelivery(_ context.Context, id, subject string, digest []byte, _ string, _ checkout.DeliveryChoiceInput) (catalog.Result, error) {
+	f.calls++
+	f.subject, f.digest, f.orderID = subject, digest, id
+	if f.freeErr != nil {
+		return catalog.Result{}, f.freeErr
+	}
+	return catalog.Result{ID: "choice-" + id, Replayed: f.replayed}, nil
+}
+
 func (f *fakeCheckout) CurrentPolicy(context.Context) (checkout.Policy, error) {
 	return checkout.Policy{ID: "p"}, nil
 }
@@ -1461,6 +1479,140 @@ func TestDeliveryRoutes(t *testing.T) {
 		Logger: slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))})
 	for _, p := range []string{quote, waiver, pay} {
 		req := httptest.NewRequest(http.MethodPost, p, strings.NewReader(quoteBody))
+		req.Header.Set("Idempotency-Key", "k")
+		req.Header.Set("Authorization", "Bearer chef")
+		rec := httptest.NewRecorder()
+		off.ServeHTTP(rec, req)
+		if rec.Code != 404 && rec.Code != 405 {
+			t.Errorf("%s while disabled: %d", p, rec.Code)
+		}
+	}
+}
+
+// GK-017 r02b Q5: the chef's "GK can't deliver" (chef only, synchronous,
+// versioned) and the customer's choice (owner or guest capability, 202).
+func TestDeliveryChoiceRoutes(t *testing.T) {
+	id := catalogIdentity()
+	id.actors["fulfil"] = identity.Actor{AccountID: "acc-ful", Subject: "sub-ful", Capabilities: []string{identity.Fulfillment}}
+	const np = "/api/v1/admin/orders/o1/delivery-not-possible"
+	npBody := `{"expected_version":3,"reason":"Van off the road on Saturday"}`
+	for name, who := range map[string]struct {
+		auth   string
+		status int
+	}{"support": {"support", 403}, "fulfillment": {"fulfil", 403}, "customer": {secretToken, 403}, "guest": {"", 401}, "chef": {"chef", 200}} {
+		if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, np, who.auth, "k", npBody, nil); rec.Code != who.status {
+			t.Errorf("not possible by %s: %d %s, want %d", name, rec.Code, rec.Body.String(), who.status)
+		}
+	}
+	fc := &fakeCheckout{}
+	rec := serveCheckout(t, fc, id, http.MethodPost, np, "chef", "k", npBody, nil)
+	if rec.Code != 200 || fc.orderID != "o1" || rec.Body.String() != `{"decision_id":"decision-o1","order_id":"o1"}`+"\n" {
+		t.Fatalf("not possible: %d %q", rec.Code, rec.Body.String())
+	}
+	if rec := serveCheckout(t, &fakeCheckout{}, id, http.MethodPost, np, "chef", "k", `{"expected_version":3}`, nil); rec.Code != 200 {
+		t.Fatalf("not possible without a reason: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := serveCheckout(t, &fakeCheckout{replayed: true}, id, http.MethodPost, np, "chef", "k", npBody, nil); rec.Code != 200 ||
+		rec.Header().Get("Idempotent-Replayed") != "true" {
+		t.Fatalf("not possible replayed: %d %v", rec.Code, rec.Header())
+	}
+	if rec := serveCheckout(t, &fakeCheckout{freeErr: checkout.ErrOrdersFrozen}, id, http.MethodPost, np, "chef", "k", npBody, nil); rec.Code != 503 ||
+		!strings.Contains(rec.Body.String(), `"retryable":true`) {
+		t.Fatalf("not possible frozen: %d %s", rec.Code, rec.Body.String())
+	}
+	for name, c := range map[string]struct {
+		body, key string
+		status    int
+	}{
+		"no key":          {npBody, "", 400},
+		"unknown field":   {`{"expected_version":3,"refund":true}`, "k", 400},
+		"no version":      {`{"reason":"x"}`, "k", 422},
+		"empty reason":    {`{"expected_version":3,"reason":""}`, "k", 422},
+		"two-line reason": {`{"expected_version":3,"reason":"a\nb"}`, "k", 422},
+		"padded reason":   {`{"expected_version":3,"reason":" a"}`, "k", 422},
+	} {
+		fc := &fakeCheckout{}
+		if rec := serveCheckout(t, fc, id, http.MethodPost, np, "chef", c.key, c.body, nil); rec.Code != c.status || fc.calls != 0 {
+			t.Errorf("not possible %s: %d %s (calls %d), want %d", name, rec.Code, rec.Body.String(), fc.calls, c.status)
+		}
+	}
+	for code, want := range map[string]string{"payment_in_progress": "PAYMENT_IN_PROGRESS", "stale_version": "STALE_VERSION",
+		"state_conflict": "CONFLICT", "key_reused": "KEY_REUSED"} {
+		rec := serveCheckout(t, &fakeCheckout{freeErr: &catalog.ConflictError{Code: code}}, id, http.MethodPost, np, "chef", "k", npBody, nil)
+		if rec.Code != 409 || !strings.Contains(rec.Body.String(), `"code":"`+want+`"`) {
+			t.Errorf("not possible %s: %d %s, want 409 %s", code, rec.Code, rec.Body.String(), want)
+		}
+	}
+
+	// The customer's choice.
+	guest := map[string]string{OrderCapabilityHeader: testProof}
+	const choose = "/api/v1/orders/o1/delivery-choice"
+	collect := `{"expected_version":5,"choice":"collection","target_slot_id":"8d3f0f8e-5d55-4c3e-9a49-34a0e2a9f001"}`
+	refund := `{"expected_version":5,"choice":"full_refund"}`
+	for _, body := range []string{collect, refund,
+		`{"expected_version":5,"choice":"customer_courier","target_slot_id":"8d3f0f8e-5d55-4c3e-9a49-34a0e2a9f001"}`} {
+		fc := &fakeCheckout{}
+		rec := serveCheckout(t, fc, id, http.MethodPost, choose, "", "k", body, guest)
+		if rec.Code != 202 || len(fc.digest) != 32 || fc.subject != "" || fc.orderID != "o1" ||
+			rec.Body.String() != `{"order_id":"o1","operation_id":"choice-o1","state":"choice_pending","poll_after_seconds":3}`+"\n" {
+			t.Fatalf("guest choice %s: %d %q", body, rec.Code, rec.Body.String())
+		}
+	}
+	fc = &fakeCheckout{}
+	if rec := serveCheckout(t, fc, id, http.MethodPost, choose, secretToken, "k", refund, nil); rec.Code != 202 || fc.digest != nil || fc.subject == "" {
+		t.Fatalf("signed-in choice: %d", rec.Code)
+	}
+	if rec := serveCheckout(t, &fakeCheckout{replayed: true}, id, http.MethodPost, choose, "", "k", refund, guest); rec.Code != 202 ||
+		rec.Header().Get("Idempotent-Replayed") != "true" {
+		t.Fatalf("replayed choice: %d", rec.Code)
+	}
+	if rec := serveCheckout(t, &fakeCheckout{freeErr: checkout.ErrOrdersFrozen}, id, http.MethodPost, choose, "", "k", refund, guest); rec.Code != 503 ||
+		!strings.Contains(rec.Body.String(), `"retryable":true`) {
+		t.Fatalf("frozen choice: %d %s", rec.Code, rec.Body.String())
+	}
+	for name, c := range map[string]struct {
+		body, key string
+		hdr       map[string]string
+		status    int
+	}{
+		"no capability":         {refund, "k", nil, 404},
+		"bad capability":        {refund, "k", map[string]string{OrderCapabilityHeader: "short"}, 404},
+		"no key":                {refund, "", guest, 400},
+		"unknown field":         {`{"expected_version":5,"choice":"full_refund","amount_minor":1}`, "k", guest, 400},
+		"unknown choice":        {`{"expected_version":5,"choice":"redeliver"}`, "k", guest, 422},
+		"no choice":             {`{"expected_version":5}`, "k", guest, 422},
+		"time without slot":     {`{"expected_version":5,"choice":"collection"}`, "k", guest, 422},
+		"refund with slot":      {`{"expected_version":5,"choice":"full_refund","target_slot_id":"8d3f0f8e-5d55-4c3e-9a49-34a0e2a9f001"}`, "k", guest, 422},
+		"upper-case slot":       {`{"expected_version":5,"choice":"collection","target_slot_id":"8D3F0F8E-5D55-4C3E-9A49-34A0E2A9F001"}`, "k", guest, 422},
+		"no version":            {`{"choice":"full_refund"}`, "k", guest, 422},
+		"version as text":       {`{"expected_version":"5","choice":"full_refund"}`, "k", guest, 400},
+		"two objects":           {refund + refund, "k", guest, 400},
+		"choice in wrong case":  {`{"expected_version":5,"choice":"Full_Refund"}`, "k", guest, 422},
+		"duplicate choice keys": {`{"expected_version":5,"choice":"full_refund","choice":"collection"}`, "k", guest, 400},
+	} {
+		fc := &fakeCheckout{}
+		if rec := serveCheckout(t, fc, id, http.MethodPost, choose, "", c.key, c.body, c.hdr); rec.Code != c.status || fc.calls != 0 {
+			t.Errorf("choice %s: %d %s (calls %d), want %d", name, rec.Code, rec.Body.String(), fc.calls, c.status)
+		}
+	}
+	for code, want := range map[string]string{"choice_not_open": "CHOICE_NOT_OPEN", "slot_unavailable": "SLOT_UNAVAILABLE",
+		"stale_version": "STALE_VERSION", "state_conflict": "CONFLICT", "key_reused": "KEY_REUSED"} {
+		rec := serveCheckout(t, &fakeCheckout{freeErr: &catalog.ConflictError{Code: code}}, id, http.MethodPost, choose, "", "k", refund, guest)
+		if rec.Code != 409 || !strings.Contains(rec.Body.String(), `"code":"`+want+`"`) {
+			t.Errorf("choice %s: %d %s, want 409 %s", code, rec.Code, rec.Body.String(), want)
+		}
+	}
+	// The dispatch refusal's code.
+	rec = serveCheckout(t, &fakeCheckout{freeErr: &catalog.ConflictError{Code: "delivery_not_possible"}}, id, http.MethodPost,
+		"/api/v1/admin/orders/o1/transitions", "chef", "k", `{"action":"dispatch","expected_version":3}`, nil)
+	if rec.Code != 409 || !strings.Contains(rec.Body.String(), `"code":"DELIVERY_NOT_POSSIBLE"`) {
+		t.Errorf("dispatch refused: %d %s", rec.Code, rec.Body.String())
+	}
+	// Disabled checkout: none of the routes.
+	off := NewHandler(Options{UIOrigin: "https://gkcake.com", DB: fakePinger{}, Identity: id, Checkout: &fakeCheckout{},
+		Logger: slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))})
+	for _, p := range []string{np, choose} {
+		req := httptest.NewRequest(http.MethodPost, p, strings.NewReader(refund))
 		req.Header.Set("Idempotency-Key", "k")
 		req.Header.Set("Authorization", "Bearer chef")
 		rec := httptest.NewRecorder()

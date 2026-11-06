@@ -432,6 +432,8 @@ var invalidFields = map[string]string{
 	// GK delivery (0035).
 	"delivery_amount_invalid": "amount_minor", "distance_invalid": "distance_m",
 	"distance_source_invalid": "distance_source", "quote_invalid": "quote_id",
+	// Q5 choice (0036).
+	"not_possible_reason_invalid": "reason", "choice_invalid": "choice", "choice_target_invalid": "target_slot_id",
 }
 
 var invalidMessages = map[string]string{
@@ -481,6 +483,10 @@ var invalidMessages = map[string]string{
 	"distance_invalid":        "must be the measured driving distance in whole metres (1 to 1000000)",
 	"distance_source_invalid": "must be 1 to 200 characters on one line without surrounding spaces",
 	"quote_invalid":           "must be the delivery quote shown on the order page",
+	// Q5 choice (0036).
+	"not_possible_reason_invalid": "must be 1 to 500 characters on one line without surrounding spaces",
+	"choice_invalid":              "must be collection, customer_courier or full_refund",
+	"choice_target_invalid":       "must be one of the day's opening times for collection or customer_courier, and absent for full_refund",
 }
 
 var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "state_conflict": true,
@@ -497,7 +503,9 @@ var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "
 	// Late-payment agreement (0034).
 	"offer_not_current": true,
 	// GK delivery (0035).
-	"delivery_pay_by_passed": true, "quote_not_current": true, "waiver_not_eligible": true}
+	"delivery_pay_by_passed": true, "quote_not_current": true, "waiver_not_eligible": true,
+	// Q5 choice (0036).
+	"choice_not_open": true, "delivery_not_possible": true}
 
 // conflictAliases name engine refusals in the customer's terms.
 var conflictAliases = map[string]string{"day_full": "slot_unavailable", "stock_unavailable": "item_unavailable"}

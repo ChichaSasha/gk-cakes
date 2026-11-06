@@ -90,3 +90,31 @@ func TestDeliveryInputs(t *testing.T) {
 		}
 	}
 }
+
+// The fulfilment view's delivery block shows only the state: the database
+// adds the quote's pay-by for the API, which decides quoted / pay_by_passed
+// at its own clock and always removes it, whatever the database's clock said.
+func TestWithDeliveryClockFulfilmentBlock(t *testing.T) {
+	payBy := "2026-11-12T12:30:00Z"
+	for name, c := range map[string]struct {
+		now        time.Time
+		dbState    string
+		want, rest string
+	}{
+		"before, database passed": {time.Date(2026, 11, 12, 12, 29, 59, 0, time.UTC), "pay_by_passed", "quoted", ""},
+		"at, database not passed": {time.Date(2026, 11, 12, 12, 30, 0, 0, time.UTC), "quoted", "pay_by_passed", ""},
+		"paid stays paid":         {time.Date(2027, 6, 1, 0, 0, 0, 0, time.UTC), "paid", "paid", ""},
+	} {
+		s := &Store{Now: func() time.Time { return c.now }}
+		raw := `{"id":"o","delivery":{"state":"` + c.dbState + `","pay_by":"` + payBy + `"}}`
+		got := string(s.withDeliveryClock([]byte(raw)))
+		if want := `{"delivery":{"state":"` + c.want + `"},"id":"o"}`; got != want {
+			t.Errorf("%s: %s, want %s", name, got, want)
+		}
+	}
+	// An unreadable internal pay-by is still never shown.
+	s := &Store{Now: func() time.Time { return time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC) }}
+	if got := string(s.withDeliveryClock([]byte(`{"delivery":{"state":"quoted","pay_by":"soon"}}`))); got != `{"delivery":{"state":"quoted"}}` {
+		t.Errorf("unreadable pay-by: %s", got)
+	}
+}
