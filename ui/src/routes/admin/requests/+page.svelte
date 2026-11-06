@@ -212,8 +212,8 @@
 				<p>
 					<strong>Only website orders can be added for now.</strong> Instagram, email, phone and in-person
 					orders aren’t in the system yet: recording older orders by hand comes later. Customers also
-					send guest website orders through “Add an older order”, with the order’s reference; finding
-					and adding them comes in the next update.
+					send guest website orders through “Add an older order”, with the order’s reference; those you
+					can find and add.
 				</p>
 			</div>
 		</div>
