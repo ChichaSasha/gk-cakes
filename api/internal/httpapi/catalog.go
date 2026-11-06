@@ -513,6 +513,9 @@ var conflictMessages = map[string]string{
 	// Q5 choice when GK can't deliver (GK-017 r02b).
 	"choice_not_open":       "This choice isn't open for your order now. Please reload your order.",
 	"delivery_not_possible": "GK can't deliver this order, so it can't be sent out. The customer chooses another way.",
+	// Failed GK delivery (GK-017 r02b state 19).
+	"delivery_failure_open":   "The delivery failed on our side and the customer hasn't chosen yet, so it can't be sent out again.",
+	"redelivery_time_not_set": "Agree the new delivery time with the customer (change the appointment) before sending it out again.",
 }
 
 // catalogError maps catalog errors to K00 responses without SQL detail.
@@ -617,6 +620,10 @@ func catalogError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, e
 			code = "CHOICE_NOT_OPEN"
 		case "delivery_not_possible":
 			code = "DELIVERY_NOT_POSSIBLE"
+		case "delivery_failure_open":
+			code = "DELIVERY_FAILURE_OPEN"
+		case "redelivery_time_not_set":
+			code = "REDELIVERY_TIME_NOT_SET"
 		}
 		writeError(w, r, http.StatusConflict, code, msg, false)
 	case errors.As(err, &inv):

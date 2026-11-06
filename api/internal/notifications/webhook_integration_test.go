@@ -499,6 +499,9 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.order_claim_withdraw(uuid, text, text, uuid, integer, timestamp with time zone)",
 		// Q5 choice (0036): the customer's choice and the chef's "GK can't deliver".
 		"business.order_delivery_choice_request(uuid, bytea, uuid, text, text, integer, text, uuid, text, timestamp with time zone)",
+		// Failed GK delivery (0037): the chef's record and the customer's choice.
+		"business.order_delivery_failed(uuid, uuid, text, text, integer, text, text, text, timestamp with time zone)",
+		"business.order_delivery_failure_choice_request(uuid, bytea, uuid, text, text, integer, text, uuid, text, timestamp with time zone)",
 		"business.order_delivery_not_possible(uuid, uuid, text, text, integer, text, timestamp with time zone)",
 		// GK delivery quote and free-delivery waiver (0035, chef).
 		"business.order_delivery_quote(uuid, uuid, text, text, integer, bigint, text, timestamp with time zone)",

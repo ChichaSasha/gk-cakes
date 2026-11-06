@@ -434,6 +434,9 @@ var invalidFields = map[string]string{
 	"distance_source_invalid": "distance_source", "quote_invalid": "quote_id",
 	// Q5 choice (0036).
 	"not_possible_reason_invalid": "reason", "choice_invalid": "choice", "choice_target_invalid": "target_slot_id",
+	// Failed GK delivery (0037).
+	"failure_cause_invalid": "cause", "failure_reason_invalid": "reason", "failure_choice_invalid": "choice",
+	"failure_target_invalid": "target_slot_id",
 }
 
 var invalidMessages = map[string]string{
@@ -487,6 +490,11 @@ var invalidMessages = map[string]string{
 	"not_possible_reason_invalid": "must be 1 to 500 characters on one line without surrounding spaces",
 	"choice_invalid":              "must be collection, customer_courier or full_refund",
 	"choice_target_invalid":       "must be one of the day's opening times for collection or customer_courier, and absent for full_refund",
+	// Failed GK delivery (0037).
+	"failure_cause_invalid":  "must be our_side or nobody_available",
+	"failure_reason_invalid": "must be 1 to 500 characters on one line without surrounding spaces",
+	"failure_choice_invalid": "must be redelivery or collection",
+	"failure_target_invalid": "must be one of the opening times still ahead today for collection, and absent for redelivery",
 }
 
 var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "state_conflict": true,
@@ -505,7 +513,9 @@ var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "
 	// GK delivery (0035).
 	"delivery_pay_by_passed": true, "quote_not_current": true, "waiver_not_eligible": true,
 	// Q5 choice (0036).
-	"choice_not_open": true, "delivery_not_possible": true}
+	"choice_not_open": true, "delivery_not_possible": true,
+	// Failed GK delivery (0037).
+	"delivery_failure_open": true, "redelivery_time_not_set": true}
 
 // conflictAliases name engine refusals in the customer's terms.
 var conflictAliases = map[string]string{"day_full": "slot_unavailable", "stock_unavailable": "item_unavailable"}
