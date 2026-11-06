@@ -1151,7 +1151,10 @@ export function decisionSettled(
 		return s === 'noshow' || s === 'done' ? 'done' : s;
 	}
 	if (d === 'honour' || d === 'full_return') {
-		if (o.lifecycle === 'cancellation_pending') return 'pending';
+		// Not secured yet (K11): a confirmation or cancellation still being secured.
+		if (o.lifecycle === 'cancellation_pending' || o.lifecycle === 'confirmation_pending') {
+			return 'pending';
+		}
 		if (o.lifecycle === 'cancelled') return 'returned';
 		if (o.lifecycle !== 'paid_awaiting_agreement') return 'done';
 		if (o.late_payment?.state === 'processing' && !cmd) return 'pending';

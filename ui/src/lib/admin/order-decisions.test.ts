@@ -1048,6 +1048,9 @@ describe('commands', () => {
 		expect(decisionSettled(order({ lifecycle: 'cancellation_pending' }), 'full_return', 'op')).toBe(
 			'pending'
 		);
+		expect(decisionSettled(order({ lifecycle: 'confirmation_pending' }), 'honour', 'op')).toBe(
+			'pending'
+		);
 		expect(decisionSettled(late({ commands: sec('refused') }), 'honour', 'op')).toBe('refused');
 		expect(
 			decisionSettled(late({ late_payment: { state: 'processing', offer: null } }), 'honour', 'op')
