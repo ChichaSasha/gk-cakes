@@ -532,3 +532,14 @@
 		justify-self: stretch;
 	}
 }
+/* Forced colours drop box-shadows: give fields a real edge and a distinct
+   invalid edge there. */
+@media (forced-colors: active) {
+	.shop .field > :is(input, textarea, select),
+	.shop .acc-changed {
+		border: 1px solid CanvasText;
+	}
+	.shop .field > :is(input, textarea, select)[aria-invalid='true'] {
+		border: 3px solid Highlight;
+	}
+}

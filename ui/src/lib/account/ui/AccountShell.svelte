@@ -7,7 +7,7 @@
 	// (aria-current="true"), since that link leads to the form, not this page.
 	import '../account.css';
 	import { resolve } from '$app/paths';
-	import type { Snippet } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 	import ShopShell from '../../shop/ui/ShopShell.svelte';
 
 	let {
@@ -23,6 +23,14 @@
 		onsignout?: () => void;
 		children: Snippet;
 	} = $props();
+
+	// On narrow screens the nav scrolls sideways: show where the customer is.
+	let nav = $state<HTMLElement>();
+	onMount(() => {
+		nav
+			?.querySelector('[aria-current]')
+			?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+	});
 </script>
 
 <ShopShell>
@@ -32,7 +40,7 @@
 			{#if sub}<p>{sub}</p>{/if}
 		</div>
 		<div class="acc-layout">
-			<nav class="acc-nav" aria-label="Your account">
+			<nav class="acc-nav" aria-label="Your account" bind:this={nav}>
 				<a href={resolve('/account')} aria-current={active === 'orders' ? 'page' : undefined}
 					>Orders &amp; requests</a
 				>
