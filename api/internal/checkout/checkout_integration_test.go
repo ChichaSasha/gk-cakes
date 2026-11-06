@@ -17,9 +17,7 @@ import (
 	"github.com/ChichaSasha/gk-cakes/api/internal/catalog"
 	"github.com/ChichaSasha/gk-cakes/api/internal/checkout"
 	"github.com/ChichaSasha/gk-cakes/api/internal/dbtest"
-	"github.com/ChichaSasha/gk-cakes/api/internal/migrate"
 	"github.com/ChichaSasha/gk-cakes/api/internal/schedule"
-	"github.com/ChichaSasha/gk-cakes/api/migrations"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -51,10 +49,7 @@ func newHarness(t *testing.T) *harness {
 func newHarnessAt(t *testing.T, target string) *harness {
 	t.Helper()
 	ctx := context.Background()
-	db := dbtest.New(t)
-	if _, err := migrate.RunTo(ctx, db.MigratorConn(t), migrations.FS, target); err != nil {
-		t.Fatal(err)
-	}
+	db := dbtest.NewMigrated(t, target)
 	pool, err := pgxpool.New(ctx, db.LoginURL(t, "gk_api"))
 	if err != nil {
 		t.Fatal(err)

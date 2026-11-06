@@ -9,17 +9,12 @@ import (
 	"testing"
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/dbtest"
-	"github.com/ChichaSasha/gk-cakes/api/internal/migrate"
-	"github.com/ChichaSasha/gk-cakes/api/migrations"
 )
 
 // The operator commands work end to end with the migration credential.
 func TestOperatorCommands(t *testing.T) {
 	ctx := context.Background()
-	db := dbtest.New(t)
-	if _, err := migrate.Run(ctx, db.MigratorConn(t), migrations.FS); err != nil {
-		t.Fatal(err)
-	}
+	db := dbtest.NewMigrated(t, "")
 	env := map[string]string{"APP_ENV": "test", "MIGRATION_DATABASE_URL": db.MigratorURL()}
 	getenv := func(k string) string { return env[k] }
 	for _, step := range []struct {

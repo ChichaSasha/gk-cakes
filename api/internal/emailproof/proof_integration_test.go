@@ -28,10 +28,8 @@ import (
 	"github.com/ChichaSasha/gk-cakes/api/internal/emailproof"
 	"github.com/ChichaSasha/gk-cakes/api/internal/httpapi"
 	"github.com/ChichaSasha/gk-cakes/api/internal/jobs"
-	"github.com/ChichaSasha/gk-cakes/api/internal/migrate"
 	"github.com/ChichaSasha/gk-cakes/api/internal/notifications"
 	"github.com/ChichaSasha/gk-cakes/api/internal/recovery"
-	"github.com/ChichaSasha/gk-cakes/api/migrations"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -122,10 +120,7 @@ func newSandbox(t *testing.T, withWebhook bool) (*sandbox, *dbtest.DB) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	db := dbtest.New(t)
-	if _, err := migrate.Run(ctx, db.MigratorConn(t), migrations.FS); err != nil {
-		t.Fatal(err)
-	}
+	db := dbtest.NewMigrated(t, "")
 	s := &sandbox{t: t, ctx: ctx, logs: &syncBuffer{}, bounceAs: "email.bounced"}
 	logger := slog.New(slog.NewJSONHandler(s.logs, nil))
 	pool := func(group, app string) *pgxpool.Pool {
