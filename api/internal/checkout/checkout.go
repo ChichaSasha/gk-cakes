@@ -426,6 +426,9 @@ var invalidFields = map[string]string{
 	"claim_note_invalid": "note", "claim_invalid": "claim", "claim_decision_invalid": "decision",
 	"claim_order_invalid": "order_id", "decision_note_invalid": "note", "evidence_invalid": "evidence",
 	"account_unknown": "account_id", "deletion_preview_invalid": "preview_id", "claim_state_invalid": "state",
+	// Late-payment agreement (0034).
+	"offer_kind_invalid": "kind", "offer_target_invalid": "target_slot_id", "offer_invalid": "offer_id",
+	"answer_invalid": "answer",
 }
 
 var invalidMessages = map[string]string{
@@ -465,6 +468,11 @@ var invalidMessages = map[string]string{
 	"account_unknown":          "must name one active account (account_id or account_subject)",
 	"deletion_preview_invalid": "must be a deletion preview you requested, with its preview_hash",
 	"claim_state_invalid":      "must be pending, approved, declined or withdrawn",
+	// Late-payment agreement (0034).
+	"offer_kind_invalid":   "must be requested or other",
+	"offer_target_invalid": "must be another time than the requested one (kind other), or absent for kind requested",
+	"offer_invalid":        "must be the offer shown on the order page",
+	"answer_invalid":       "must be accept or decline",
 }
 
 var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "state_conflict": true,
@@ -477,7 +485,9 @@ var conflictCodes = map[string]bool{"stale_version": true, "key_reused": true, "
 	"transition_not_allowed": true,
 	// Customer accounts (0033).
 	"account_deletion_blocked": true, "claim_limit": true, "claim_pending": true, "already_yours": true,
-	"order_owned": true, "account_unavailable": true, "staff_account": true, "deletion_preview_stale": true}
+	"order_owned": true, "account_unavailable": true, "staff_account": true, "deletion_preview_stale": true,
+	// Late-payment agreement (0034).
+	"offer_not_current": true}
 
 // conflictAliases name engine refusals in the customer's terms.
 var conflictAliases = map[string]string{"day_full": "slot_unavailable", "stock_unavailable": "item_unavailable"}

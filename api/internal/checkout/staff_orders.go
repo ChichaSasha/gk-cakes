@@ -164,5 +164,5 @@ func (s *Store) StaffOrder(ctx context.Context, subject, id string) (json.RawMes
 	if err := s.DB.QueryRow(ctx, `SELECT business.order_staff_get($1::uuid, $2::uuid)::text`, subject, id).Scan(&raw); err != nil {
 		return nil, gatewayError("staff order", err)
 	}
-	return json.RawMessage(raw), nil
+	return json.RawMessage(s.withAcceptable(raw)), nil
 }

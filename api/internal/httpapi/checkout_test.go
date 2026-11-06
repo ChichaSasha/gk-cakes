@@ -152,6 +152,24 @@ func (f *fakeCheckout) LatePayment(_ context.Context, subject, _, id string, _ c
 	return catalog.Result{ID: "late-" + id, Replayed: f.replayed}, nil
 }
 
+func (f *fakeCheckout) OfferLatePayment(_ context.Context, subject, _, id string, _ checkout.LatePaymentOfferInput) (catalog.Result, error) {
+	f.calls++
+	f.subject, f.orderID = subject, id
+	if f.freeErr != nil {
+		return catalog.Result{}, f.freeErr
+	}
+	return catalog.Result{ID: "offer-" + id, Replayed: f.replayed}, nil
+}
+
+func (f *fakeCheckout) AnswerLatePayment(_ context.Context, id, subject string, digest []byte, _ string, _ checkout.LatePaymentAnswerInput) (catalog.Result, error) {
+	f.calls++
+	f.subject, f.digest, f.orderID = subject, digest, id
+	if f.freeErr != nil {
+		return catalog.Result{}, f.freeErr
+	}
+	return catalog.Result{ID: "answer-" + id, Replayed: f.replayed}, nil
+}
+
 func (f *fakeCheckout) RecordRefund(_ context.Context, subject, _, id string, _ checkout.RefundInput) (catalog.Result, error) {
 	f.calls++
 	f.subject = subject
@@ -1157,5 +1175,132 @@ func TestTransitionRoutes(t *testing.T) {
 	if rec := serveCheckout(t, &fakeCheckout{freeErr: checkout.ErrOrdersFrozen}, id, http.MethodPost, path, "chef", "k",
 		`{"action":"handover","expected_version":3}`, nil); rec.Code != 503 {
 		t.Fatalf("frozen: %d", rec.Code)
+	}
+}
+
+// GK-017 r02b Q6: the chef's late-payment offer (chef only) and the
+// customer's answer on the order page (owner or guest capability).
+func TestLatePaymentAgreementRoutes(t *testing.T) {
+	id := catalogIdentity()
+	id.actors["fulfil"] = identity.Actor{AccountID: "acc-ful", Subject: "sub-ful", Capabilities: []string{identity.Fulfillment}}
+	const offer = "/api/v1/admin/orders/o1/late-payment/offer"
+	requested := `{"expected_version":3,"kind":"requested"}`
+	other := `{"expected_version":3,"kind":"other","target_date":"2026-11-21","target_slot_id":"aaaaaaaa-1111-4111-8111-11111111111b"}`
+	for name, c := range map[string]struct {
+		auth   string
+		status int
+	}{"support": {"support", 403}, "fulfillment": {"fulfil", 403}, "customer": {secretToken, 403}, "guest": {"", 401}, "chef": {"chef", 200}} {
+		fc := &fakeCheckout{}
+		if rec := serveCheckout(t, fc, id, http.MethodPost, offer, c.auth, "k", requested, nil); rec.Code != c.status {
+			t.Errorf("offer by %s: %d %s, want %d", name, rec.Code, rec.Body.String(), c.status)
+		}
+	}
+	fc := &fakeCheckout{}
+	rec := serveCheckout(t, fc, id, http.MethodPost, offer, "chef", "k", other, nil)
+	if rec.Code != 200 || fc.orderID != "o1" || rec.Body.String() != `{"offer_id":"offer-o1","order_id":"o1"}`+"\n" {
+		t.Fatalf("other offer: %d %q", rec.Code, rec.Body.String())
+	}
+	rec = serveCheckout(t, &fakeCheckout{replayed: true}, id, http.MethodPost, offer, "chef", "k", requested, nil)
+	if rec.Code != 200 || rec.Header().Get("Idempotent-Replayed") != "true" {
+		t.Fatalf("replayed offer: %d %v", rec.Code, rec.Header())
+	}
+	for name, c := range map[string]struct {
+		body, key string
+		status    int
+	}{
+		"no key":               {requested, "", 400},
+		"unknown field":        {`{"expected_version":3,"kind":"requested","slot_id":"aaaaaaaa-1111-4111-8111-11111111111b"}`, "k", 400},
+		"null unknown field":   {`{"expected_version":3,"kind":"requested","start":null}`, "k", 400},
+		"null kind":            {`{"expected_version":3,"kind":null}`, "k", 422},
+		"no version":           {`{"kind":"requested"}`, "k", 422},
+		"bad kind":             {`{"expected_version":3,"kind":"tomorrow"}`, "k", 422},
+		"requested with slot":  {`{"expected_version":3,"kind":"requested","target_date":"2026-11-21","target_slot_id":"aaaaaaaa-1111-4111-8111-11111111111b"}`, "k", 422},
+		"other without slot":   {`{"expected_version":3,"kind":"other","target_date":"2026-11-21"}`, "k", 422},
+		"other without date":   {`{"expected_version":3,"kind":"other","target_slot_id":"aaaaaaaa-1111-4111-8111-11111111111b"}`, "k", 422},
+		"other upper-case":     {`{"expected_version":3,"kind":"other","target_date":"2026-11-21","target_slot_id":"AAAAAAAA-1111-4111-8111-11111111111B"}`, "k", 422},
+		"other impossible day": {`{"expected_version":3,"kind":"other","target_date":"2026-02-30","target_slot_id":"aaaaaaaa-1111-4111-8111-11111111111b"}`, "k", 422},
+	} {
+		fc := &fakeCheckout{}
+		if rec := serveCheckout(t, fc, id, http.MethodPost, offer, "chef", c.key, c.body, nil); rec.Code != c.status || fc.calls != 0 {
+			t.Errorf("offer %s: %d %s (calls %d), want %d", name, rec.Code, rec.Body.String(), fc.calls, c.status)
+		}
+	}
+	for code, want := range map[string]string{"honour_too_late": "HONOUR_TOO_LATE", "slot_unavailable": "SLOT_UNAVAILABLE",
+		"stale_version": "STALE_VERSION", "state_conflict": "CONFLICT", "key_reused": "KEY_REUSED"} {
+		rec := serveCheckout(t, &fakeCheckout{freeErr: &catalog.ConflictError{Code: code}}, id, http.MethodPost, offer, "chef", "k", requested, nil)
+		if rec.Code != 409 || !strings.Contains(rec.Body.String(), `"code":"`+want+`"`) {
+			t.Errorf("offer %s: %d %s, want 409 %s", code, rec.Code, rec.Body.String(), want)
+		}
+	}
+	if rec := serveCheckout(t, &fakeCheckout{freeErr: checkout.ErrOrdersFrozen}, id, http.MethodPost, offer, "chef", "k", requested, nil); rec.Code != 503 {
+		t.Fatalf("frozen offer: %d", rec.Code)
+	}
+
+	// The customer's answer: the order's owner or the guest capability.
+	guest := map[string]string{OrderCapabilityHeader: testProof}
+	const answer = "/api/v1/orders/o1/late-payment/answer"
+	accept := `{"expected_version":4,"offer_id":"bbbbbbbb-1111-4111-8111-11111111111b","answer":"accept"}`
+	fc = &fakeCheckout{}
+	rec = serveCheckout(t, fc, id, http.MethodPost, answer, "", "k", accept, guest)
+	if rec.Code != 202 || len(fc.digest) != 32 || fc.subject != "" || fc.orderID != "o1" ||
+		rec.Body.String() != `{"order_id":"o1","operation_id":"answer-o1","state":"answer_pending","poll_after_seconds":3}`+"\n" {
+		t.Fatalf("guest answer: %d %q", rec.Code, rec.Body.String())
+	}
+	fc = &fakeCheckout{}
+	if rec := serveCheckout(t, fc, id, http.MethodPost, answer, secretToken, "k", strings.Replace(accept, "accept", "decline", 1), nil); rec.Code != 202 ||
+		fc.digest != nil || fc.subject == "" {
+		t.Fatalf("signed-in decline: %d", rec.Code)
+	}
+	rec = serveCheckout(t, &fakeCheckout{replayed: true}, id, http.MethodPost, answer, "", "k", accept, guest)
+	if rec.Code != 202 || rec.Header().Get("Idempotent-Replayed") != "true" {
+		t.Fatalf("replayed answer: %d", rec.Code)
+	}
+	for name, c := range map[string]struct {
+		body, key string
+		hdr       map[string]string
+		status    int
+	}{
+		"no capability":    {accept, "k", nil, 404},
+		"bad capability":   {accept, "k", map[string]string{OrderCapabilityHeader: "short"}, 404},
+		"no key":           {accept, "", guest, 400},
+		"unknown field":    {`{"expected_version":4,"offer_id":"bbbbbbbb-1111-4111-8111-11111111111b","answer":"accept","channel":"order_page"}`, "k", guest, 400},
+		"null unknown":     {`{"expected_version":4,"offer_id":"bbbbbbbb-1111-4111-8111-11111111111b","answer":"accept","agreed_at":null}`, "k", guest, 400},
+		"null answer":      {`{"expected_version":4,"offer_id":"bbbbbbbb-1111-4111-8111-11111111111b","answer":null}`, "k", guest, 422},
+		"no offer":         {`{"expected_version":4,"answer":"accept"}`, "k", guest, 422},
+		"upper-case offer": {`{"expected_version":4,"offer_id":"BBBBBBBB-1111-4111-8111-11111111111B","answer":"accept"}`, "k", guest, 422},
+		"maybe":            {`{"expected_version":4,"offer_id":"bbbbbbbb-1111-4111-8111-11111111111b","answer":"maybe"}`, "k", guest, 422},
+		"no version":       {`{"offer_id":"bbbbbbbb-1111-4111-8111-11111111111b","answer":"accept"}`, "k", guest, 422},
+	} {
+		fc := &fakeCheckout{}
+		if rec := serveCheckout(t, fc, id, http.MethodPost, answer, "", c.key, c.body, c.hdr); rec.Code != c.status || fc.calls != 0 {
+			t.Errorf("answer %s: %d %s (calls %d), want %d", name, rec.Code, rec.Body.String(), fc.calls, c.status)
+		}
+	}
+	for code, want := range map[string]string{"offer_not_current": "OFFER_NOT_CURRENT", "slot_unavailable": "SLOT_UNAVAILABLE",
+		"honour_too_late": "HONOUR_TOO_LATE", "stale_version": "STALE_VERSION", "key_reused": "KEY_REUSED", "state_conflict": "CONFLICT"} {
+		rec := serveCheckout(t, &fakeCheckout{freeErr: &catalog.ConflictError{Code: code}}, id, http.MethodPost, answer, "", "k", accept, guest)
+		if rec.Code != 409 || !strings.Contains(rec.Body.String(), `"code":"`+want+`"`) {
+			t.Errorf("answer %s: %d %s, want 409 %s", code, rec.Code, rec.Body.String(), want)
+		}
+	}
+	if rec := serveCheckout(t, &fakeCheckout{freeErr: checkout.ErrOfferLapsed}, id, http.MethodPost, answer, "", "k", accept, guest); rec.Code != 409 ||
+		!strings.Contains(rec.Body.String(), `"code":"SLOT_UNAVAILABLE"`) {
+		t.Fatalf("lapsed offer: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := serveCheckout(t, &fakeCheckout{freeErr: checkout.ErrOrdersFrozen}, id, http.MethodPost, answer, "", "k", accept, guest); rec.Code != 503 {
+		t.Fatalf("frozen answer: %d", rec.Code)
+	}
+	// Disabled checkout: neither route.
+	off := NewHandler(Options{UIOrigin: "https://gkcake.com", DB: fakePinger{}, Identity: id, Checkout: &fakeCheckout{},
+		Logger: slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))})
+	for _, p := range []string{offer, answer} {
+		req := httptest.NewRequest(http.MethodPost, p, strings.NewReader(requested))
+		req.Header.Set("Idempotency-Key", "k")
+		req.Header.Set("Authorization", "Bearer chef")
+		rec := httptest.NewRecorder()
+		off.ServeHTTP(rec, req)
+		if rec.Code != 404 && rec.Code != 405 {
+			t.Errorf("%s while disabled: %d", p, rec.Code)
+		}
 	}
 }
