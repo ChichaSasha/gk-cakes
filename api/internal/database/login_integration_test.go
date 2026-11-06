@@ -14,19 +14,13 @@ import (
 
 	"github.com/ChichaSasha/gk-cakes/api/internal/database"
 	"github.com/ChichaSasha/gk-cakes/api/internal/dbtest"
-	"github.com/ChichaSasha/gk-cakes/api/internal/migrate"
-	"github.com/ChichaSasha/gk-cakes/api/migrations"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func migrated(t *testing.T) *dbtest.DB {
 	t.Helper()
-	db := dbtest.New(t)
-	if _, err := migrate.Run(context.Background(), db.MigratorConn(t), migrations.FS); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	return db
+	return dbtest.NewMigrated(t, "")
 }
 
 // login creates a login with the given CREATE ROLE options (after LOGIN) and
