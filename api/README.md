@@ -2429,7 +2429,9 @@ BO-GK-001.ready_cancellation `93a75483…`.
   paid (a succeeded delivery collection whose outcome is `paid`) or waived,
   else 409 `DELIVERY_NOT_PAID` (K06 "paid/waived separate collection
   required before dispatch"; since migration 0035, see "GK delivery quote,
-  payment and waiver" below).
+  payment and waiver" below). Since migration 0036 a dispatch after the
+  chef recorded that GK can't deliver is 409 `DELIVERY_NOT_POSSIBLE` (see
+  "Q5 choice when GK can't deliver").
 - **Never rewound.** `completed` is terminal (orders_guard); a completed or
   no-show order accepts no further step, cancellation or appointment change
   (409 `TRANSITION_NOT_ALLOWED` / `CANCELLATION_NOT_ELIGIBLE` /
