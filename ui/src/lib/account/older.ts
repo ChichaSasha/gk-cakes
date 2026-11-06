@@ -205,6 +205,9 @@ export function refusal(e: unknown): string {
 				return 'You’ve already asked to add this order. The chef will check it.';
 			case 'ALREADY_IN_ACCOUNT':
 				return 'This order is already in your account.';
+			case 'INVALID_INPUT':
+				// A check we can't tie to one field: trying again won't help.
+				return 'We couldn’t send this request as it is. Please check the details, or contact us.';
 		}
 	}
 	return SEND_PROBLEM;
@@ -219,7 +222,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** Whether a request page's path names a request ID at all (anything else is "not found"). */
 export function isClaimId(value: string): boolean {
-	return UUID.test(value);
+	return UUID.test(value.toLowerCase());
 }
 
 export const WITHDRAW_PROBLEM = 'We couldn’t withdraw this request right now. Please try again.';
