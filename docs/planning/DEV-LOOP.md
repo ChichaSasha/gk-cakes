@@ -50,12 +50,20 @@ While CI, auto-merge and the staging deployment run, start the next slice
   serves it on 4192 against the staging API through a read-only proxy on 4191
   and stops both afterwards. `scripts/dev/qa/lib.cjs` has `open`, `sweep`
   (widths and sideways scrolling), `ctl` (proxy delay, failure or fixed answer
-  per path) and staff sign-in. `scripts/dev/qa/smoke-shop.cjs` is a full shop
-  sweep.
-- Staff pages: read the test password from the Keychain into the command's
-  environment only:
-  `STAFF_PW="$(security find-generic-password -a gk-test-staff@gkcake.com -s gk-supabase-test-staff -w)" scripts/dev/qa/with-ui.sh -- node check.cjs`.
-- The same scripts check a deployed environment:
+  per path) and staff and customer sign-in. `scripts/dev/qa/smoke-shop.cjs`
+  is a full shop sweep; `scripts/dev/qa/smoke-account.cjs` sweeps the
+  signed-in account pages (read only; it skips the delete page, whose
+  opening asks the API for a deletion preview).
+- Staff and customer pages: read the test password from the Keychain into
+  the command's environment only:
+  `STAFF_PW="$(security find-generic-password -a gk-test-staff@gkcake.com -s gk-supabase-test-staff -w)" scripts/dev/qa/with-ui.sh -- node check.cjs`
+  (customer: `CUSTOMER_PW` from `-a gk-test-customer@gkcake.com -s gk-supabase-test-customer`).
+- Account deletion, global sign-out and email links reach the sign-in
+  provider directly, not through the read-only proxy: in browser checks,
+  answer them inside the browser (request interception) and never let them
+  through; the staging test accounts are shared.
+- The same scripts check a deployed environment (Node from `ui/.nvmrc` on
+  `PATH`; puppeteer-core needs it):
   `GK_QA_BASE=https://staging.gkcake.com node scripts/dev/qa/smoke-shop.cjs`.
 
 ## 4. Pull request

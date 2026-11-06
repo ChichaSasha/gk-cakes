@@ -77,6 +77,8 @@
 	let sending = $state(false);
 	let sendProblem = $state('');
 	let reauthNote = $state(false);
+	// The send problem ends with how to reach us (no way forward on this page).
+	let sendProblemContact = $state(false);
 	// Another account's session took over this browser: its review starts here.
 	let swapNote = $state(false);
 	let staleNote = $state(false);
@@ -254,6 +256,7 @@
 	async function sendLink() {
 		if (sending) return;
 		sendProblem = '';
+		sendProblemContact = false;
 		// The link and the marker are for the account signed in now, which
 		// must be the one that did the review on this page.
 		const identity = await sessionIdentity();
@@ -261,7 +264,8 @@
 			// This browser can't identify the account (no Web Crypto, for example
 			// an insecure address): no link, and say why instead of looping.
 			sendProblem =
-				'We can’t confirm it’s you in this browser. Please open this page over a secure connection in an up-to-date browser, or contact us.';
+				'We can’t confirm it’s you in this browser. Please open this page over a secure connection in an up-to-date browser.';
+			sendProblemContact = true;
 			await focus('del-send-problem');
 			return;
 		}
@@ -427,8 +431,10 @@
 		<div class="notice" id="del-swap" role="alert" tabindex="-1">
 			<div>
 				<p>
-					You’re now signed in{email ? ` as ${email}` : ''}. Please review what happens before
-					deleting this account.
+					You’re now signed in{email
+						? ` as ${email}`
+						: ''}.{#if step === 'review' || step === 'warn'}
+						Please review what happens before deleting this account.{/if}
 				</p>
 			</div>
 		</div>
@@ -698,7 +704,10 @@
 				</div>
 				{#if sendProblem}
 					<div class="notice error" id="del-send-problem" role="alert" tabindex="-1">
-						<div><p>{sendProblem}</p></div>
+						<div>
+							<p>{sendProblem}</p>
+							{#if sendProblemContact}<p>Need help? {@render contact()}</p>{/if}
+						</div>
 					</div>
 				{/if}
 				{#if email}
