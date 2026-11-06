@@ -58,10 +58,14 @@ While CI, auto-merge and the staging deployment run, start the next slice
   the command's environment only:
   `STAFF_PW="$(security find-generic-password -a gk-test-staff@gkcake.com -s gk-supabase-test-staff -w)" scripts/dev/qa/with-ui.sh -- node check.cjs`
   (customer: `CUSTOMER_PW` from `-a gk-test-customer@gkcake.com -s gk-supabase-test-customer`).
-- Account deletion, global sign-out and email links reach the sign-in
-  provider directly, not through the read-only proxy: in browser checks,
-  answer them inside the browser (request interception) and never let them
-  through; the staging test accounts are shared.
+- The read-only proxy covers only API requests in local runs. Calls to the
+  sign-in provider go to it directly (password sign-in, sign out — global or
+  local — and email-link sends), and against a deployed site
+  (`GK_QA_BASE`) there is no proxy at all, so every write a script triggers
+  is real. The staging test accounts are shared: answer non-GET API requests
+  and provider calls such as global sign-out and email links inside the
+  browser (request interception), and never let account deletion, global
+  sign-out or email links through.
 - The same scripts check a deployed environment (Node from `ui/.nvmrc` on
   `PATH`; puppeteer-core needs it):
   `GK_QA_BASE=https://staging.gkcake.com node scripts/dev/qa/smoke-shop.cjs`.

@@ -433,8 +433,8 @@
 				<p>
 					You’re now signed in{email
 						? ` as ${email}`
-						: ''}.{#if step === 'review' || step === 'warn'}
-						Please review what happens before deleting this account.{/if}
+						: ''}.{#if step === 'review' || step === 'warn'}{' '}Please review what happens before
+						deleting this account.{/if}
 				</p>
 			</div>
 		</div>
