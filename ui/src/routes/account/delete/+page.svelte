@@ -77,6 +77,8 @@
 	let sending = $state(false);
 	let sendProblem = $state('');
 	let reauthNote = $state(false);
+	// The send problem ends with how to reach us (no way forward on this page).
+	let sendProblemContact = $state(false);
 	// Another account's session took over this browser: its review starts here.
 	let swapNote = $state(false);
 	let staleNote = $state(false);
@@ -86,6 +88,14 @@
 	let signOutProblem = $state('');
 
 	const upcoming = $derived(preview?.upcoming ?? []);
+	// The note after another account's session took over this browser; on the
+	// review steps it also asks to review before deleting.
+	const swapLine = $derived(
+		`You’re now signed in${email ? ` as ${email}` : ''}.` +
+			(step === 'review' || step === 'warn'
+				? ' Please review what happens before deleting this account.'
+				: '')
+	);
 
 	function local(): Storage | null {
 		try {
@@ -136,7 +146,23 @@
 
 	/** Back to the review for another account's session, with a note. */
 	async function toReview() {
-		if (await loadPreview()) await focus(swapNote ? 'del-swap' : 'delete-h');
+		if (await loadPreview()) await settleFocus();
+		else await focus('del-retry');
+	}
+
+	/**
+	 * After the page reloads its preview, focus what changed: the stale note,
+	 * else the swap note, else the step's status, else its heading.
+	 */
+	async function settleFocus() {
+		await tick();
+		const target =
+			(staleNote && document.getElementById('del-stale')) ||
+			(swapNote && document.getElementById('del-swap')) ||
+			((step === 'blocked' || step === 'staff' || step === 'final') &&
+				document.getElementById('del-status')) ||
+			document.getElementById('delete-h');
+		target?.focus();
 	}
 
 	/** The same account must sign in again (its fresh sign-in or marker ran out). */
@@ -238,9 +264,19 @@
 	async function sendLink() {
 		if (sending) return;
 		sendProblem = '';
+		sendProblemContact = false;
 		// The link and the marker are for the account signed in now, which
 		// must be the one that did the review on this page.
 		const identity = await sessionIdentity();
+		if (identity.who === undefined && openedFor === undefined) {
+			// This browser can't identify the account (no Web Crypto, for example
+			// an insecure address): no link, and say why instead of looping.
+			sendProblem =
+				'We can’t confirm it’s you in this browser. Please open this page over a secure connection in an up-to-date browser.';
+			sendProblemContact = true;
+			await focus('del-send-problem');
+			return;
+		}
 		if (!mayMark(openedFor, identity.who)) {
 			if (identity.who !== openedFor) {
 				openedFor = identity.who;
@@ -352,7 +388,7 @@
 				// The facts changed: show them as they are now.
 				if (await loadPreview()) {
 					staleNote = kind === 'stale' && step === 'final';
-					await focus(staleNote ? 'del-stale' : 'del-status');
+					await settleFocus();
 				} else {
 					await focus('del-retry');
 				}
@@ -397,6 +433,14 @@
 	<title>Delete your account · GK Cake London</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
+
+{#snippet swapNotice()}
+	{#if swapNote}
+		<div class="notice" id="del-swap" role="alert" tabindex="-1">
+			<div><p>{swapLine}</p></div>
+		</div>
+	{/if}
+{/snippet}
 
 {#snippet lists()}
 	<div class="acc-two acc-lists">
@@ -547,7 +591,8 @@
 			<p role="status" aria-busy="true">Checking your account…</p>
 		{:else if step === 'blocked'}
 			<section class="acc-card" id="delete" aria-labelledby="delete-h">
-				<h2 class="acc-h" id="delete-h">Delete your account</h2>
+				<h2 class="acc-h" id="delete-h" tabindex="-1">Delete your account</h2>
+				{@render swapNotice()}
 				<div class="notice error" id="del-status" role="alert" tabindex="-1">
 					<div>
 						{#if preview.blocked.length > 0}
@@ -580,7 +625,8 @@
 			</section>
 		{:else if step === 'staff'}
 			<section class="acc-card" id="delete" aria-labelledby="delete-h">
-				<h2 class="acc-h" id="delete-h">Delete your account</h2>
+				<h2 class="acc-h" id="delete-h" tabindex="-1">Delete your account</h2>
+				{@render swapNotice()}
 				<div class="notice error" id="del-status" role="alert" tabindex="-1">
 					<div>
 						<p>
@@ -596,16 +642,7 @@
 		{:else if step === 'review' || step === 'warn'}
 			<section class="acc-card" id="delete" aria-labelledby="delete-h">
 				<h2 class="acc-h" id="delete-h" tabindex="-1">Delete your account</h2>
-				{#if swapNote}
-					<div class="notice" id="del-swap" role="alert" tabindex="-1">
-						<div>
-							<p>
-								You’re now signed in{email ? ` as ${email}` : ''}. Please review what happens before
-								deleting this account.
-							</p>
-						</div>
-					</div>
-				{/if}
+				{@render swapNotice()}
 				{#if step === 'warn'}
 					{@render upcomingNotice()}
 				{:else}
@@ -668,7 +705,10 @@
 				</div>
 				{#if sendProblem}
 					<div class="notice error" id="del-send-problem" role="alert" tabindex="-1">
-						<div><p>{sendProblem}</p></div>
+						<div>
+							<p>{sendProblem}</p>
+							{#if sendProblemContact}<p>Need help? {@render contact()}</p>{/if}
+						</div>
 					</div>
 				{/if}
 				{#if email}
