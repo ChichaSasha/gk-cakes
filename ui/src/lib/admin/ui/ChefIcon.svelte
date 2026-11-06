@@ -10,6 +10,10 @@
 		| 'support'
 		| 'money'
 		| 'search'
+		| 'claims'
+		| 'info'
+		| 'alert'
+		| 'clock'
 		| 'check';
 </script>
 
@@ -40,6 +44,16 @@
 		/>
 	{:else if name === 'money'}
 		<rect x="3" y="6" width="18" height="12" rx="3" /><circle cx="12" cy="12" r="2.5" />
+	{:else if name === 'claims'}
+		<circle cx="10" cy="8" r="3.5" /><path
+			d="M3.5 20c.6-3.6 3.2-5.5 6.5-5.5 1.3 0 2.5.3 3.5.9"
+		/><path d="M18 14v6M15 17h6" />
+	{:else if name === 'info'}
+		<circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7.5h.01" />
+	{:else if name === 'alert'}
+		<path d="M12 4 2 20h20L12 4Z" /><path d="M12 10v4M12 17h.01" />
+	{:else if name === 'clock'}
+		<circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
 	{:else if name === 'search'}
 		<circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" />
 	{:else}
