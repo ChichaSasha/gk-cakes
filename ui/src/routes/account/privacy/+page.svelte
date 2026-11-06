@@ -15,6 +15,7 @@
 		accountUnusable,
 		endedSession,
 		leaveWhenSignedOut,
+		signOutHere,
 		toSignIn
 	} from '../../../lib/account/guard';
 	import { clearDevice, forgetDeletion, RETENTION } from '../../../lib/account/privacy';
@@ -144,8 +145,7 @@
 
 	async function leave() {
 		unsubscribe?.();
-		forgetDeletion(storage('localStorage'));
-		const reached = await signOut();
+		const reached = await signOutHere();
 		account = null;
 		if (!reached) {
 			signOutProblem =

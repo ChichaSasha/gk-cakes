@@ -27,6 +27,7 @@
 		accountUnusable,
 		endedSession,
 		leaveWhenSignedOut,
+		signOutHere,
 		toSignIn
 	} from '../../../lib/account/guard';
 	import { orderRef } from '../../../lib/account/orders';
@@ -66,6 +67,9 @@
 	let email = $state<string>();
 	/** 'final' once the customer has signed in again (a preview then leads to the final step). */
 	let stage: 'start' | 'final' = 'start';
+	// The account this page opened for (its marker hash): if another account's
+	// session replaces it in this browser, the page starts again from the review.
+	let openedFor: string | undefined;
 	let preview = $state<DeletionPreview | null>(null);
 	let step = $state<Step | null>(null);
 	let ticks = $state<Ticks>({ orders: false, undone: false });
@@ -105,9 +109,33 @@
 		document.getElementById(id)?.focus();
 	}
 
+	/**
+	 * Whether this page may show the final step now: the same account it
+	 * opened for, still marked, still freshly signed in. Otherwise it starts
+	 * again from the review (never a shortcut for anyone else).
+	 */
+	async function stillFinal(): Promise<boolean> {
+		const who = await accountMarkerId();
+		const now = Date.now();
+		const ok =
+			who !== undefined &&
+			who === openedFor &&
+			deletionMarked(local(), now, who) &&
+			freshSignIn(await sessionSignInAt(), now);
+		if (!ok) {
+			stage = 'start';
+			if (who !== openedFor) {
+				openedFor = who;
+				email = await signedInEmail();
+			}
+		}
+		return ok;
+	}
+
 	/** Asks the API what deleting would do now and shows the matching step. */
 	async function loadPreview(): Promise<boolean> {
 		if (!api) return false;
+		if (stage === 'final') await stillFinal();
 		loadProblem = '';
 		try {
 			preview = await deletionPreview(api, newIdempotencyKey());
@@ -150,6 +178,7 @@
 			email = await signedInEmail();
 			const at = await sessionSignInAt();
 			const who = await accountMarkerId();
+			openedFor = who;
 			if (!active) return;
 			// Back from the confirmation link, as the same account that asked
 			// for it: straight to the final step.
@@ -242,6 +271,11 @@
 		if (deleting || !api || !preview) return;
 		deleteProblem = '';
 		staleNote = false;
+		// Someone else's session took over this browser: back to the review.
+		if (step === 'final' && !(await stillFinal())) {
+			if (await loadPreview()) await arrive();
+			return;
+		}
 		if (await showTickErrors(tickErrors(ticks, upcoming.length > 0, false))) return;
 		const input = { preview_id: preview.preview_id, preview_hash: preview.preview_hash };
 		deleting = true;
@@ -315,8 +349,7 @@
 
 	async function leave() {
 		unsubscribe?.();
-		forgetDeletion(local());
-		const reached = await signOut();
+		const reached = await signOutHere();
 		preview = null;
 		step = null;
 		if (!reached) {

@@ -10,7 +10,6 @@
 	import { resolve } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import { onMount, tick } from 'svelte';
-	import { signOut } from '../../lib/auth';
 	import {
 		me as readMe,
 		myClaims,
@@ -26,10 +25,11 @@
 		accountUnusable,
 		endedSession,
 		leaveWhenSignedOut,
+		signOutHere,
 		toSignIn
 	} from '../../lib/account/guard';
 	import { groupOrders } from '../../lib/account/orders';
-	import { deletionMarked, forgetDeletion, freshSignIn } from '../../lib/account/privacy';
+	import { deletionMarked, freshSignIn } from '../../lib/account/privacy';
 	import {
 		accountApi,
 		accountMarkerId,
@@ -169,8 +169,7 @@
 	});
 
 	async function leave() {
-		forgetDeletionHere();
-		const reached = await signOut();
+		const reached = await signOutHere();
 		account = null;
 		orders = null;
 		claims = null;
@@ -180,15 +179,6 @@
 			return;
 		}
 		await goto(resolve('/'), { replaceState: true });
-	}
-
-	/** A deletion someone started on this browser never outlives their sign-out. */
-	function forgetDeletionHere() {
-		try {
-			forgetDeletion(window.localStorage);
-		} catch {
-			// storage refused: nothing kept
-		}
 	}
 
 	// A disclosure: focus stays on the button (aria-expanded tells the state).

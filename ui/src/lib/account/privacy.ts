@@ -171,7 +171,8 @@ export function freshSignIn(at: number | null, now: number): boolean {
  * only for that same account, so someone else signing in on this browser
  * never skips the review. It is kept in localStorage because the email link
  * usually opens in a new tab (as the sign-in return page is), for as long as
- * the link works, and every sign-out the account pages make removes it.
+ * the link works, and every sign-out the account pages make removes it
+ * (guard.ts signOutHere; privacy's Sign out everywhere).
  */
 export const DELETION_MARKER_KEY = 'gk-account-deletion';
 export const DELETION_MARKER_MS = 30 * 60 * 1000;

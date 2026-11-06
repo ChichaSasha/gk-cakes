@@ -26,22 +26,28 @@ export async function signedInEmail(): Promise<string | undefined> {
 }
 
 /**
- * The session's latest email-link or Google sign-in instant (ms), or null:
- * whether the deletion's fresh sign-in is likely done (the API decides).
- */
-/**
  * A one-way identifier of the signed-in account for the deletion marker:
  * SHA-256 of the session's subject (hex). Not personal data in itself, and
  * it never leaves this browser.
  */
 export async function accountMarkerId(): Promise<string | undefined> {
 	if (!signInConfigured) return undefined;
-	const sub = (await currentSession())?.user?.id;
-	if (!sub) return undefined;
-	const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(sub));
-	return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+	try {
+		const sub = (await currentSession())?.user?.id;
+		const subtle = globalThis.crypto?.subtle;
+		if (!sub || !subtle) return undefined;
+		const digest = await subtle.digest('SHA-256', new TextEncoder().encode(sub));
+		return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+	} catch {
+		// No hash (for example an insecure context): no marker, so no shortcut.
+		return undefined;
+	}
 }
 
+/**
+ * The session's latest email-link or Google sign-in instant (ms), or null:
+ * whether the deletion's fresh sign-in is likely done (the API decides).
+ */
 export async function sessionSignInAt(): Promise<number | null> {
 	if (!signInConfigured) return null;
 	return signInAt((await currentSession())?.access_token);

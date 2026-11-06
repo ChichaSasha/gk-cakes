@@ -10,7 +10,6 @@
 	import { goto } from '$app/navigation';
 	import { onMount, tick } from 'svelte';
 	import { ApiError } from '../../../../lib/api';
-	import { signOut } from '../../../../lib/auth';
 	import {
 		myClaim,
 		withdrawClaim,
@@ -23,6 +22,7 @@
 		accountUnusable,
 		endedSession,
 		leaveWhenSignedOut,
+		signOutHere,
 		toSignIn
 	} from '../../../../lib/account/guard';
 	import {
@@ -165,7 +165,7 @@
 	}
 
 	async function leave() {
-		const reached = await signOut();
+		const reached = await signOutHere();
 		clear();
 		if (!reached) {
 			signOutProblem =
