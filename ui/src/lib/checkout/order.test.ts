@@ -241,6 +241,97 @@ describe('orderView: after payment', () => {
 		).toMatch(/free order wasn’t confirmed/);
 	});
 
+	it('cancellation pending: polls, with the confirmed preview amount, never a refund state yet', () => {
+		const v = orderView(order({ lifecycle: 'cancellation_pending', paid_at: 'x' }), {
+			cancelledMinor: 4500
+		});
+		expect(v.title).toBe('Cancelling your order');
+		expect(v.poll).toBe(true);
+		expect(v.action).toBe('none');
+		expect(v.lines).toEqual([
+			'We’re cancelling your order. This usually takes a few seconds.',
+			'Refund of £45 requested. We’ll update this page as it progresses.'
+		]);
+		expect(orderView(order({ lifecycle: 'cancellation_pending' })).lines).toHaveLength(1);
+	});
+
+	it('cancelled by the customer: why this amount, then the built refund line (state 13)', () => {
+		const v = orderView(
+			order({
+				lifecycle: 'cancelled',
+				cancel_reason: 'customer_cancelled',
+				cancelled_at: 'x',
+				paid_at: 'x',
+				payment: payment({ state: 'succeeded', checkout_url: null }),
+				cancellation: {
+					state: 'cancelled',
+					reason: 'customer_cancelled',
+					rate: 50,
+					amount_minor: 4500,
+					requested_by: 'customer',
+					requested_at: 'x'
+				},
+				refund: { state: 'requested', target_minor: 4500, succeeded_minor: 0 }
+			})
+		);
+		expect(v.title).toBe('Your order is cancelled');
+		expect(v.tone).toBe('info');
+		expect(v.lines).toEqual([
+			'You cancelled after the full-refund deadline, so you get 50% of what you paid, rounded in your favour.',
+			'Refund of £45 requested. We’ll update this page as it progresses.'
+		]);
+		expect(v.refund).toBeUndefined();
+		expect(v.lines.join(' ')).not.toMatch(/new order|returned to/);
+	});
+
+	it('state 13 tones and the partly returned delivery wording', () => {
+		const base = {
+			lifecycle: 'cancelled' as const,
+			cancel_reason: 'customer_cancelled',
+			payment: payment({ state: 'succeeded', checkout_url: null })
+		};
+		expect(
+			orderView(
+				order({ ...base, refund: { state: 'returned', target_minor: 9000, succeeded_minor: 9000 } })
+			).tone
+		).toBe('success');
+		expect(
+			orderView(
+				order({
+					...base,
+					refund: { state: 'needs_attention', target_minor: 9000, succeeded_minor: 0 }
+				})
+			).tone
+		).toBe('warning');
+		expect(
+			orderView(
+				order({
+					...base,
+					fulfillment_mode: 'gk_delivery',
+					refund: {
+						state: 'partly_returned',
+						target_minor: 10500,
+						succeeded_minor: 4500,
+						in_progress_minor: 0,
+						delivery_pending_minor: 6000
+					}
+				})
+			).lines
+		).toEqual([
+			'£45 of £105 returned so far; the rest is still pending.',
+			'The chef sends the delivery part separately.'
+		]);
+		const chef = orderView(
+			order({
+				...base,
+				cancel_reason: 'chef_cancelled',
+				refund: { state: 'requested', target_minor: 9000, succeeded_minor: 0 }
+			})
+		);
+		expect(chef.title).toBe('We had to cancel your order');
+		expect(chef.lines[0]).toMatch(/We’re sorry.*100%/);
+	});
+
 	it('cancelled with a late recorded payment: do not pay again, we will contact you', () => {
 		const v = orderView(
 			order({
@@ -382,7 +473,9 @@ describe('refundLine', () => {
 		expect(r('partly_returned', 4050)).toBe(
 			'£40.50 of £81 returned so far; the rest is still pending.'
 		);
-		expect(r('returned', 8100)).toBe('Refund of £81 returned to your payment method.');
+		expect(r('returned', 8100)).toBe(
+			'Refund of £81 returned to your payment method. Your bank may take a few days to show it.'
+		);
 		expect(r('needs_attention')).toMatch(/needs a check by our team/);
 		expect(r('needs_attention')).not.toMatch(/returned/);
 		expect(r('something_new')).not.toMatch(/returned/);

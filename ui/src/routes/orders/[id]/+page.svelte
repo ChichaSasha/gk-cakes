@@ -4,13 +4,26 @@
 	// words (orderView). The return from the payment page
 	// (?payment=returned) only changes the wording to "still checking"; the
 	// API's order snapshot alone says whether anything was paid or confirmed.
+	// GK-030: cancellation with the API's preview, refund progress and the
+	// same-day time change (GK-017 r02b states 12, 13 and 18).
 	import '../../../lib/checkout/checkout.css';
-	import { onMount } from 'svelte';
+	import '../../../lib/checkout/changes.css';
+	import { onMount, tick } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { ApiError } from '../../../lib/api';
 	import { orderCapability, takeOrderProblem } from '../../../lib/guest';
-	import { accountToken, api, checkoutConfigured } from '../../../lib/checkout/client';
+	import { accountToken, api, changesApi, checkoutConfigured } from '../../../lib/checkout/client';
+	import {
+		changePoll,
+		deliveryPaid,
+		mayCancel,
+		refundProgress,
+		timeChange
+	} from '../../../lib/checkout/changes';
+	import CancelPanel from '../../../lib/checkout/ui/CancelPanel.svelte';
+	import ChangeTime from '../../../lib/checkout/ui/ChangeTime.svelte';
+	import RefundProgress from '../../../lib/checkout/ui/RefundProgress.svelte';
 	import { ActionKeys, startPaymentFromOrder, type Who } from '../../../lib/checkout/flow';
 	import {
 		dateLabel,
@@ -51,7 +64,13 @@
 	let busy = $state(false);
 	let busyText = $state('');
 	let pollStopped = $state(false);
-	let who: Who | null = null;
+	let who = $state<Who | null>(null);
+	/** The cancellation panel is open. */
+	let cancelOpen = $state(false);
+	/** The amount of the preview this page confirmed, while its cancellation is secured. */
+	let cancelledMinor = $state<number | undefined>(undefined);
+	/** This page asked for a cancellation and waits for its outcome. */
+	let awaitingCancel = $state(false);
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let attempt = 0;
 	let pollStarted = 0;
@@ -60,8 +79,28 @@
 	// A dead end (lead time missed, price expired) offers a new order
 	// instead of paying or confirming this one.
 	const view = $derived(
-		order ? withOrderProblem(orderView(order, { returned }), handoff?.next) : null
+		order ? withOrderProblem(orderView(order, { returned, cancelledMinor }), handoff?.next) : null
 	);
+	const canCancel = $derived(order ? mayCancel(order, who) : false);
+	const change = $derived(order ? timeChange(order, who) : 'none');
+	const refundSummary = $derived(
+		order?.refund ? refundProgress(order.refund, order.currency) : null
+	);
+
+	// The outcome of this page's own cancellation: a refusal (the order
+	// changed meanwhile) leaves the order as it was, and says so.
+	$effect(() => {
+		if (!awaitingCancel || !order) return;
+		const state = order.cancellation?.state;
+		if (state === 'refused') {
+			awaitingCancel = false;
+			cancelledMinor = undefined;
+			actionProblem =
+				'We couldn’t cancel your order because it changed while we were cancelling it. It hasn’t been cancelled: you can try again.';
+		} else if (state === 'cancelled' || order.lifecycle === 'cancelled') {
+			awaitingCancel = false;
+		}
+	});
 
 	onMount(() => {
 		void start();
@@ -135,8 +174,8 @@
 	function schedule() {
 		clearTimeout(timer);
 		if (!active || !order) return;
-		const v = orderView(order, { returned });
-		if (!v.poll) {
+		const v = orderView(order, { returned, cancelledMinor });
+		if (!v.poll && !changePoll(order) && !awaitingCancel) {
 			attempt = 0;
 			pollStarted = 0;
 			return;
@@ -154,6 +193,31 @@
 		attempt = 0;
 		pollStarted = 0;
 		void load();
+	}
+
+	async function openCancel() {
+		actionProblem = '';
+		cancelOpen = true;
+	}
+
+	async function closeCancel(problem?: string) {
+		cancelOpen = false;
+		if (problem) {
+			actionProblem = problem;
+			refresh();
+		}
+		await tick();
+		document.getElementById('preview-cancel')?.focus();
+	}
+
+	async function cancelled(amountMinor: number) {
+		cancelOpen = false;
+		cancelledMinor = amountMinor;
+		awaitingCancel = true;
+		actionProblem = '';
+		refresh();
+		await tick();
+		document.getElementById('status-h')?.focus();
 	}
 
 	async function act() {
@@ -222,12 +286,18 @@
 		{:else}
 			<section class="co-card" aria-labelledby="status-h">
 				<div aria-live="polite">
-					<h2 class="co-h" id="status-h">{view.title}</h2>
+					<h2 class="co-h oc-focus" id="status-h" tabindex="-1">{view.title}</h2>
 					<div class="notice {view.tone}">
 						{#each view.lines as line (line)}<p>{line}</p>{/each}
 						{#if view.refund}<p>{view.refund}</p>{/if}
 					</div>
 				</div>
+				{#if order.lifecycle === 'cancelled' && order.refund}
+					<RefundProgress refund={order.refund} currency={order.currency} />
+					<div class="oc-actions">
+						<a class="text-link" href="mailto:gk.cake.london@gmail.com">Contact us</a>
+					</div>
+				{/if}
 				{#if handoff}
 					<p class="co-errors" role="alert">{handoff.message}</p>
 				{/if}
@@ -265,6 +335,41 @@
 					<p class="small">This page updates by itself.</p>
 				{/if}
 			</section>
+
+			{#if cancelOpen && who}
+				<CancelPanel
+					orderId={order.id}
+					{who}
+					api={changesApi}
+					{keys}
+					delivery={deliveryPaid(order)}
+					onclose={(p) => void closeCancel(p)}
+					oncancelled={(amount) => void cancelled(amount)}
+				/>
+			{:else if who && (change !== 'none' || canCancel)}
+				<section class="co-card" aria-labelledby="change-h">
+					{#if change === 'move' || change === 'moving'}
+						<h2 class="co-h" id="change-h">Change your time</h2>
+						<ChangeTime {order} {who} api={changesApi} {keys} onchanged={refresh} />
+					{:else}
+						<h2 class="co-h" id="change-h">Change or cancel</h2>
+						{#if change === 'contact_chef'}
+							<p>
+								Need a different delivery time? Please <a href="mailto:gk.cake.london@gmail.com"
+									>contact the chef</a
+								>: a GK delivery time can only change with the chef’s agreement.
+							</p>
+						{/if}
+					{/if}
+					{#if canCancel}
+						<div class="oc-actions">
+							<button type="button" id="preview-cancel" onclick={() => void openCancel()}
+								>Preview cancellation</button
+							>
+						</div>
+					{/if}
+				</section>
+			{/if}
 
 			<section class="co-card order-details" aria-labelledby="details-h">
 				<h2 class="co-h" id="details-h">Order details</h2>
@@ -333,6 +438,14 @@
 						>{formatMoney(order.total_minor, order.currency)}</span
 					>
 				</div>
+				{#if refundSummary}
+					<div class="totals">
+						<span>Refund due</span><span>{refundSummary.due}</span>
+					</div>
+					<div class="totals">
+						<span>Returned so far</span><span>{refundSummary.returnedSoFar}</span>
+					</div>
+				{/if}
 				{#if view.refundTerms === 'standard'}
 					<p class="small" id="refund-terms">
 						Cancel before {momentLabel(order.full_refund_deadline_at)} for a full refund of what you paid.
