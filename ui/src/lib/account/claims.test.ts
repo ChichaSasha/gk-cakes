@@ -37,7 +37,7 @@ describe('claims in the account', () => {
 		expect(claimView(claim({ state: 'withdrawn' })).pending).toBe(false);
 		expect(claimView(claim({ state: 'mystery' })).chip.text).toBe('Status not available');
 		expect(claimView(claim({ channel: 'offline', approximate_date: null })).title).toBe(
-			'Order made in person or by phone'
+			'Order made by email, phone or in person'
 		);
 	});
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
 	claimOlderOrder,
+	deleteAccount,
+	deletionPreview,
 	MAX_ORDER_PAGES,
 	me,
 	myClaim,
@@ -142,5 +144,58 @@ describe('account API client', () => {
 			code: 'STALE_VERSION'
 		});
 		await expect(me(api)).rejects.toMatchObject({ code: 'ACCOUNT_DISABLED' });
+	});
+
+	it('asks for a deletion preview with an empty body and deletes with exactly its ID and hash', async () => {
+		const preview = {
+			preview_id: CLAIM,
+			preview_hash: 'a'.repeat(64),
+			expires_at: '2026-11-06T10:15:00Z',
+			can_delete: true,
+			blocked: [],
+			upcoming: [],
+			linked_orders: 0,
+			pending_claims: 0,
+			staff_capabilities: []
+		};
+		const { api, calls } = fakeApi(
+			{ body: preview },
+			{
+				body: {
+					account_id: 'a',
+					deleted: true,
+					deleted_at: '2026-11-06T10:01:00Z',
+					orders_unlinked: 2,
+					provider_deletion: 'pending'
+				}
+			}
+		);
+		const p = await deletionPreview(api, 'pv1');
+		const d = await deleteAccount(api, 'del1', { ...p, extra: 'never sent' } as typeof p);
+		expect(d.orders_unlinked).toBe(2);
+		expect(calls.map((c) => [c.method, c.url, c.body, c.headers['Idempotency-Key']])).toEqual([
+			['POST', '/api/v1/me/deletion-preview', {}, 'pv1'],
+			['POST', '/api/v1/me/deletion', { preview_id: CLAIM, preview_hash: 'a'.repeat(64) }, 'del1']
+		]);
+		expect(calls[1].headers.Authorization).toBe('Bearer customer-token');
+	});
+
+	it('passes deletion refusals through (fresh sign-in needed, blocked)', async () => {
+		const err = (code: string, status: number) => ({
+			status,
+			body: { error: { code, message: 'x', request_id: 'r', retryable: false } }
+		});
+		const { api } = fakeApi(
+			err('REAUTHENTICATION_REQUIRED', 401),
+			err('ACCOUNT_DELETION_BLOCKED', 409)
+		);
+		const input = { preview_id: CLAIM, preview_hash: 'b'.repeat(64) };
+		await expect(deleteAccount(api, 'k1', input)).rejects.toMatchObject({
+			status: 401,
+			code: 'REAUTHENTICATION_REQUIRED'
+		});
+		await expect(deleteAccount(api, 'k2', input)).rejects.toMatchObject({
+			code: 'ACCOUNT_DELETION_BLOCKED'
+		});
 	});
 });

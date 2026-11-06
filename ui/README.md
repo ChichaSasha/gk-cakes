@@ -326,6 +326,31 @@ navigation (`src/lib/account/ui/AccountShell.svelte`, styles in
   nothing about an order before approval). **Your favourites**: the device's
   favourites (no account favourites API yet). A failed orders read shows
   "Try again" (focus returns to the card) while the other cards still load.
+  Each request links to its page (View →); the orders card ends with "Can’t
+  see an order? Add an older order" and an **Ordered before?** card opens the
+  form.
+- **Add an older order** (`/account/older`, sketch states 38–39): the chef’s
+  reference, how the customer ordered, roughly when (optional month and
+  year, sent as YYYY-MM; one without the other is an error) and a short note
+  (no card details or health information), checked before sending with the
+  API's path c rules and the sketch's words (`src/lib/account/older.ts`:
+  reference 1–64 and note 1–500 characters, trimmed, line breaks only in the
+  note). "How did you order?" offers only what the API records: Instagram
+  (`instagram`) or Email, phone or in person (`offline`); website orders are
+  added from their order page later. One Idempotency-Key per request (kept
+  while the same request is retried after a lost answer). Error summary and
+  inline errors as on the profile; a 409 (5 requests already waiting, or
+  already asked) or a failure shows a notice. Sent → the request page. Side
+  card: how it works (3 steps), the guest-order note (adding from the order
+  email isn't available yet) and asking the chef.
+- **A request** (`/account/requests/[id]`, states 40–42): waiting for the
+  chef (what was sent, Back to your account, **Withdraw this request** with
+  the version seen and one Idempotency-Key per withdrawal; "Request
+  withdrawn…" in a polite status region, focused; a request that changed
+  meanwhile is shown as it now is); added (the order's reference and View
+  order, from `order_id`, which the API gives only once approved); couldn't
+  add (contact us, nothing about any order); withdrawn. Another account's
+  request, or none, is "Request not found". The state's notice takes focus.
 - **Profile & contact** (`/account/profile`, sketch states 43–46): **Your
   details** — full name, phone and Instagram name, all optional, checked
   before sending with the API's rules and the sketch's words
@@ -341,11 +366,45 @@ navigation (`src/lib/account/ui/AccountShell.svelte`, styles in
   verified email address"; **Emails we send** has the r02b wording (no
   marketing). The name hint about Google and the checkout prefill waits for
   those features.
-- **Not built yet:** changing the sign-in email (needs GK-021 rules), adding
-  an older order, privacy and deleting the account (next slices); the
-  email-link claim belongs on the order page; the sign-in page changes of the
-  sketch (account on first use, Google) belong to GK-021; custom requests and
-  reorder wait for their APIs.
+- **Privacy & your data** (`/account/privacy`, states 48 and 57–59): the
+  r02b retention table (caption, row headers, stacked on narrow screens;
+  K09 and the owner's GK-005 rules, payment records "being confirmed") and
+  "No analytics run on account pages". **Sign out everywhere** asks first,
+  then calls the provider's global sign-out from the page (this device is
+  always signed out; other devices "usually within an hour", never
+  instantly) and shows the built partial wording when the provider can't be
+  reached. **Clear this device** removes the favourites (localStorage), the
+  bag (this tab) and the deletion marker (`src/lib/account/privacy.ts`
+  `clearDevice`); never the session or a guest order's access.
+- **Delete your account** (`/account/delete`, states 50–56): the API's
+  preview (`POST /me/deletion-preview`) decides the step
+  (`deletionStep`): a staff account can't be deleted here; unsettled money
+  blocks (each order with the sketch's reason, Delete disabled); confirmed
+  upcoming orders warn with an extra tick; otherwise the review (what is
+  deleted and kept, "can't be undone" tick; `aria-invalid`, focus on the
+  first missing tick). Then a fresh sign-in by email link
+  (`signInWithOtp` to the signed-in address, `shouldCreateUser: false`,
+  return path `/account`) and a marker in localStorage holding only its
+  expiry and a SHA-256 of the account's subject (30 minutes, as long as the
+  link; the link usually opens in a new tab). It counts only for that
+  account, and the account pages' Sign out, Sign out everywhere and an ended
+  session remove it, so someone
+  else signing in on this browser never skips the review. Back on `/account` with the marker and a session signed in by email
+  link or Google within 10 minutes (the token's `amr`, as the API reads it),
+  a notice leads on to the final step, which asks for a new preview,
+  requires the upcoming-order tick again if there is one, and deletes with
+  that preview's ID and hash and one Idempotency-Key per deletion (kept on
+  a lost answer). Refusals: fresh sign-in needed → the sign-in step again;
+  blocked or stale → checked again and shown; staff → its message.
+  Deleted: signed out here, the r02b wording, Clear this device, Back to
+  the shop. "Keep my account" forgets the marker.
+- **Not built yet:** changing the sign-in email (needs GK-021 rules);
+  Google for the fresh sign-in (Google sign-in isn't live) and the
+  inactivity emails (state 49, GK-031); the email-link claim
+  ("Add this order to my account") belongs on the order page and waits for
+  the emailed order link; the chef's claim queue (admin); the sign-in page
+  changes of the sketch (account on first use, Google) belong to GK-021;
+  custom requests and reorder wait for their APIs.
 
 ## Staff catalogue (GK-018 groundwork)
 

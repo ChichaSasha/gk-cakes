@@ -9,7 +9,6 @@
 	import { goto } from '$app/navigation';
 	import { onMount, tick } from 'svelte';
 	import { ApiError } from '../../../lib/api';
-	import { signOut } from '../../../lib/auth';
 	import {
 		profile as readProfile,
 		updateProfile,
@@ -20,6 +19,7 @@
 		accountProblem,
 		endedSession,
 		leaveWhenSignedOut,
+		signOutHere,
 		toSignIn
 	} from '../../../lib/account/guard';
 	import {
@@ -177,6 +177,8 @@
 	function edited(field: Field) {
 		// Once an error shows, it follows what the customer types (r02b state 45).
 		if (errors[field]) errors[field] = fieldError(field, values[field]);
+		// "Saved." describes the last save, not new unsaved edits.
+		done = false;
 	}
 
 	function describedBy(i: Input): string | undefined {
@@ -240,6 +242,8 @@
 			keys.forget();
 			clear();
 			blocked = accountProblem(e, 'your details');
+			// The form (and its focused button) is gone: focus the message.
+			await focus('pf-blocked');
 			return;
 		}
 		if (e.code === 'STALE_VERSION') {
@@ -291,7 +295,7 @@
 	}
 
 	async function leave() {
-		const reached = await signOut();
+		const reached = await signOutHere();
 		clear();
 		if (!reached) {
 			signOutProblem =
@@ -316,7 +320,9 @@
 	{#if signOutProblem}
 		<div class="notice error" role="alert"><div><p>{signOutProblem}</p></div></div>
 	{:else if blocked}
-		<div class="notice error" role="alert"><div><p>{blocked}</p></div></div>
+		<div class="notice error" role="alert" id="pf-blocked" tabindex="-1">
+			<div><p>{blocked}</p></div>
+		</div>
 		<div class="acc-actions">
 			<a class="button" href="mailto:gk.cake.london@gmail.com">Contact us</a>
 			<button class="btn" type="button" onclick={leave}>Sign out</button>

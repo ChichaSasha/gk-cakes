@@ -1,13 +1,15 @@
 <script lang="ts">
 	// Your account (approved GK-016 r02b sketch, account home): your orders
 	// (In progress, and Past behind "Show past orders"), your requests to add
-	// older orders, and favourites on this device. Everything comes from the
+	// older orders (each opens its own page), favourites on this device and
+	// "Ordered before?" (Add an older order). Back from the confirmation link
+	// of a deletion (marker set, fresh sign-in), a notice leads on to the
+	// final step (/account/delete). Everything comes from the
 	// account API with this browser's session (K00); a failed orders read
 	// leaves the other cards working. No analytics run here (K10).
 	import { resolve } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import { onMount, tick } from 'svelte';
-	import { signOut } from '../../lib/auth';
 	import {
 		me as readMe,
 		myClaims,
@@ -23,10 +25,17 @@
 		accountUnusable,
 		endedSession,
 		leaveWhenSignedOut,
+		signOutHere,
 		toSignIn
 	} from '../../lib/account/guard';
 	import { groupOrders } from '../../lib/account/orders';
-	import { accountApi, signedInEmail } from '../../lib/account/session';
+	import { deletionMarked, freshSignIn } from '../../lib/account/privacy';
+	import {
+		accountApi,
+		accountMarkerId,
+		sessionSignInAt,
+		signedInEmail
+	} from '../../lib/account/session';
 	import AccountShell from '../../lib/account/ui/AccountShell.svelte';
 	import OrderRow from '../../lib/account/ui/OrderRow.svelte';
 	import { favourites } from '../../lib/shop/favourites.svelte';
@@ -45,6 +54,8 @@
 	let showPast = $state(false);
 	let retrying = $state(false);
 	let signOutProblem = $state('');
+	/** Back from a deletion's confirmation link: offer the final step. */
+	let continueDeletion = $state(false);
 
 	const grouped = $derived(orders ? groupOrders(orders) : null);
 	const saved = $derived(favourites.state.ids.length);
@@ -130,8 +141,21 @@
 				return;
 			}
 			email = await signedInEmail();
+			const at = await sessionSignInAt();
+			const who = await accountMarkerId();
 			if (!active) return;
+			let marked = false;
+			try {
+				marked = deletionMarked(window.localStorage, Date.now(), who);
+			} catch {
+				// storage refused: no notice
+			}
 			await loadAccount();
+			if (active && account && marked && freshSignIn(at, Date.now())) {
+				continueDeletion = true;
+				await tick();
+				document.getElementById('acc-continue-delete')?.focus();
+			}
 		})();
 		const unsubscribe = leaveWhenSignedOut(() => {
 			account = null;
@@ -145,7 +169,7 @@
 	});
 
 	async function leave() {
-		const reached = await signOut();
+		const reached = await signOutHere();
 		account = null;
 		orders = null;
 		claims = null;
@@ -196,6 +220,16 @@
 	{:else if !account}
 		<p role="status" aria-busy="true">Loading your account…</p>
 	{:else}
+		{#if continueDeletion}
+			<div class="notice" id="acc-continue-delete" role="status" tabindex="-1">
+				<div>
+					<p>
+						<strong>You’ve signed in again.</strong>
+						<a href={resolve('/account/delete')}>Continue deleting your account →</a>
+					</p>
+				</div>
+			</div>
+		{/if}
 		{#if account.capabilities.length > 0}
 			<section class="acc-card" aria-labelledby="staff-h">
 				<div class="acc-cta">
@@ -261,8 +295,8 @@
 				{/if}
 			{/if}
 			<p class="small acc-foot">
-				Can’t see an order? Open the private link in its order email. We never add orders to your
-				account automatically, even ones made with this email address.
+				Can’t see an order? <a href={resolve('/account/older')}>Add an older order</a>. We never add
+				orders to your account automatically, even ones made with this email address.
 			</p>
 		</section>
 
@@ -287,7 +321,13 @@
 							<p class="acc-ref">Request {c.ref}</p>
 							<h3>{c.title}</h3>
 							<p><span class="acc-chip {c.chip.tone}">{c.chip.text}</span></p>
-							<p class="small">{c.line}</p>
+							<p class="small">
+								{c.line}
+								<a
+									href={resolve('/account/requests/[id]', { id: c.id })}
+									aria-label={`View request ${c.ref}`}>View →</a
+								>
+							</p>
 						</article>
 					{/each}
 				{/if}
@@ -309,6 +349,19 @@
 				<p class="small">Nothing saved yet. Tap the heart on a cake to save it on this device.</p>
 				<a class="text-link" href={resolve('/(shop)/shop')}>Browse cakes →</a>
 			{/if}
+		</section>
+
+		<section class="acc-card" id="older" aria-labelledby="older-h">
+			<div class="acc-cta">
+				<div>
+					<h2 class="acc-h" id="older-h">Ordered before?</h2>
+					<p class="small">
+						Add an order you made on Instagram, by email or in person, with the chef’s reference.
+						The chef checks it first.
+					</p>
+				</div>
+				<a class="button acc-small-btn" href={resolve('/account/older')}>Add an older order</a>
+			</div>
 		</section>
 	{/if}
 </AccountShell>

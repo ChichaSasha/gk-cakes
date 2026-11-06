@@ -6,6 +6,7 @@ import { goto } from '$app/navigation';
 import { resolve } from '$app/paths';
 import { ApiError } from '../api';
 import { leaveOnSignOut, signOut } from '../auth';
+import { forgetDeletion } from './privacy';
 
 /** Where the account sends someone who must sign in (the sign-in page returns to /account). */
 export function toSignIn(ended = false): Promise<void> {
@@ -25,7 +26,7 @@ export async function endedSession(e: unknown): Promise<boolean> {
 		// Several reads failing at once sign out and redirect only once.
 		ending ??= (async () => {
 			try {
-				await signOut();
+				await signOutHere();
 				await toSignIn(true);
 			} finally {
 				ending = undefined;
@@ -59,4 +60,18 @@ export function leaveWhenSignedOut(clear: () => void): () => void {
 		clear();
 		void toSignIn();
 	});
+}
+
+/**
+ * The account pages' Sign out: forgets a deletion started on this browser
+ * (it never outlives the sign-out), then signs out here. Returns whether the
+ * sign-in service could be reached.
+ */
+export async function signOutHere(): Promise<boolean> {
+	try {
+		forgetDeletion(window.localStorage);
+	} catch {
+		// storage refused: nothing kept
+	}
+	return signOut();
 }
