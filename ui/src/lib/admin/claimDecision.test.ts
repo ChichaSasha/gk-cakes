@@ -164,6 +164,9 @@ describe('the internal note (one line, ≤500 code points)', () => {
 		expect(noteProblem('x'.repeat(501), false)).toBe('The note is 1 characters too long.');
 		expect(noteLength('🎂'.repeat(500))).toBe(500);
 		expect(noteProblem('🎂'.repeat(500), false)).toBeNull();
+		expect(noteProblem('a\tb', false)).toBe(
+			'Remove tabs and other control characters from the note.'
+		);
 	});
 });
 
@@ -183,6 +186,9 @@ describe('refusals', () => {
 		expect(refusalOf(api(401, 'UNAUTHENTICATED'))).toBe('signed_out');
 		expect(refusalOf(api(403, 'FORBIDDEN'))).toBe('forbidden');
 		expect(refusalOf(new Error('boom'))).toBe('lost');
+		expect(refusalOf(api(409, 'KEY_REUSED'))).toBe('unexpected');
+		expect(refusalOf(api(400, 'BAD_REQUEST'))).toBe('unexpected');
+		expect(retrySafe('unexpected')).toBe(false);
 		expect(retrySafe('lost')).toBe(true);
 		expect(retrySafe('paused')).toBe(true);
 		expect(retrySafe('order_owned')).toBe(false);

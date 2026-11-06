@@ -97,7 +97,9 @@ http
 			if (r?.delay) await new Promise((done) => setTimeout(done, r.delay));
 			if (r?.fail > 0) {
 				r.fail--;
-				req.socket.destroy(); // the answer is lost: the browser sees a network error
+				// The answer is lost: the connection breaks with a malformed reply, so the browser sees a
+				// network error (closing an idle socket instead would make it resend the command).
+				req.socket.end('XX\r\n\r\n');
 				return;
 			}
 			if (r?.body || r?.status) {

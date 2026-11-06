@@ -177,11 +177,12 @@ export function noteLength(v: string): number {
 	return [...v].length;
 }
 
-/** Why a note can't be saved, or null: one line, no surrounding spaces, at most 500 characters. */
+/** Why a note can't be saved, or null: one line, no control characters, at most 500 characters (as the API). */
 export function noteProblem(v: string, required: boolean): string | null {
 	const n = v.trim();
 	if (!n) return required ? 'Say how you confirmed it before adding.' : null;
 	if (/[\r\n\u2028\u2029]/.test(v)) return 'Keep the note to one line.';
+	if (/\p{Cc}/u.test(n)) return 'Remove tabs and other control characters from the note.';
 	if (noteLength(n) > NOTE_MAX)
 		return `The note is ${noteLength(n) - NOTE_MAX} characters too long.`;
 	return null;
@@ -196,6 +197,7 @@ export type DecisionRefusal =
 	| 'account_unavailable'
 	| 'paused'
 	| 'lost'
+	| 'unexpected'
 	| 'forbidden'
 	| 'signed_out';
 
@@ -219,6 +221,8 @@ export function refusalOf(e: unknown): DecisionRefusal {
 			return 'forbidden';
 	}
 	if (e.status === 503) return 'paused';
+	// Another definite refusal (4xx): retrying the same decision won't change it.
+	if (e.status >= 400 && e.status < 500) return 'unexpected';
 	return 'lost';
 }
 

@@ -1120,3 +1120,6 @@
 		grid-column: 1 / -1;
 	}
 }
+.chef .find-fields {
+	display: contents;
+}

@@ -126,9 +126,12 @@
 	let note = $state('');
 	let confirmError = $state('');
 	let noteError = $state('');
-	let savedNote = $state('');
 	let attempt: { key: string; signature: string } | null = null;
-	const code = newCheckCode();
+	// A fresh one-off code for each order chosen on each request (never reused: design Gaps).
+	let code = $state(newCheckCode());
+	// What was sent: the result and Try again use this, never the live choice.
+	let submitted = $state<{ order: StaffOrderRow | null; note: string } | null>(null);
+	let linkRev = 0;
 
 	const pending = $derived(claim?.state === 'pending');
 	const future = $derived(claim ? isFuturePath(claim) : false);
@@ -137,8 +140,14 @@
 	const verb = $derived(pending || step === 'done' ? 'asks' : 'asked');
 	const matches = $derived(rows ? matchOrders(rows, term) : []);
 	const picked = $derived<StaffOrderRow | null>(
-		future ? linkOrder : (rows?.find((o) => o.id === pickId) ?? null)
+		future
+			? linkOrder && claim && linkOrder.id === claim.order_id
+				? linkOrder
+				: null
+			: (rows?.find((o) => o.id === pickId) ?? null)
 	);
+	// The search and choice are locked once a decision is being confirmed, sent or answered.
+	const locked = $derived(step !== 'review');
 	const needsCheck = $derived(!future);
 	const same = $derived(claim && future ? sameOrderRequests(claim, waiting) : []);
 	const following = $derived(claim ? nextWaiting(claim, waiting) : null);
@@ -178,6 +187,8 @@
 		confirmError = '';
 		noteError = '';
 		attempt = null;
+		submitted = null;
+		code = newCheckCode();
 	}
 
 	async function load() {
@@ -185,6 +196,10 @@
 		const id = page.params.id ?? '';
 		phase = 'loading';
 		resetDecision();
+		linkOrder = null;
+		linkLoad = 'idle';
+		rows = null;
+		search = 'idle';
 		try {
 			if (!view) {
 				const who = await apiGet<Me>('/api/v1/admin/me', {
@@ -244,27 +259,37 @@
 
 	async function loadLinkOrder(c: StaffClaim) {
 		if (!api || !c.order_id) return;
+		const rev = ++linkRev;
 		linkLoad = 'loading';
 		try {
-			linkOrder = await apiGet<StaffOrderRow>(`/api/v1/admin/orders/${c.order_id}`, {
+			const o = await apiGet<StaffOrderRow>(`/api/v1/admin/orders/${c.order_id}`, {
 				baseUrl: api.baseUrl,
 				token: api.token
 			});
+			if (rev !== linkRev || !mounted || claim?.id !== c.id) return;
+			linkOrder = o;
 			linkLoad = 'ready';
 		} catch (e) {
-			if (!mounted || (await ended(e))) return;
+			if (rev !== linkRev || !mounted || (await ended(e))) return;
 			linkLoad = 'error';
 		}
 	}
 
 	async function focusStep() {
 		await tick();
-		document.querySelector<HTMLElement>('[data-focus]')?.focus();
+		const target =
+			step === 'review'
+				? document.querySelector<HTMLElement>(future ? '#dec-h' : '#find-h')
+				: document.querySelector<HTMLElement>('[data-focus]');
+		target?.focus();
 	}
 
 	function go(next: 'review' | 'approve' | 'decline') {
 		if (next !== 'review') decision = next;
-		if (next === 'review') result = null;
+		if (next === 'review') {
+			result = null;
+			submitted = null;
+		}
 		confirmError = '';
 		noteError = '';
 		step = next;
@@ -278,10 +303,11 @@
 		return attempt.key;
 	}
 
-	async function submit(e?: SubmitEvent) {
+	async function submit(e?: SubmitEvent, retry = false) {
 		e?.preventDefault();
 		if (!api || !claim) return;
 		const c = claim;
+		if (retry && submitted) return send(c, submitted.order, submitted.note);
 		const order = picked;
 		if (decision === 'approve') {
 			if (!order) return;
@@ -305,7 +331,13 @@
 				return;
 			}
 		}
-		const trimmed = note.trim();
+		await send(c, order, note.trim());
+	}
+
+	async function send(c: StaffClaim, order: StaffOrderRow | null, trimmed: string) {
+		if (!api) return;
+		if (decision === 'approve' && !order) return;
+		submitted = { order, note: trimmed };
 		const signature = `${decision}|${order?.id ?? ''}|${trimmed}`;
 		const key = keyFor(signature);
 		step = 'busy';
@@ -325,7 +357,6 @@
 					: { expected_version: c.version, decision: 'decline', note: trimmed || undefined }
 			);
 			if (!mounted) return;
-			savedNote = trimmed;
 			claim = {
 				...c,
 				state: decision === 'approve' ? 'approved' : 'declined',
@@ -361,6 +392,7 @@
 			note = '';
 			confirmError = '';
 			noteError = '';
+			code = newCheckCode();
 		}
 	});
 
@@ -689,10 +721,10 @@
 					{@render sentCard(true)}
 					{@render whoCard()}
 				{:else if savedNow}
-					{#if decision === 'approve' && picked}
+					{#if decision === 'approve' && submitted?.order}
 						<section class="card" aria-labelledby="ad-h">
 							<h2 id="ad-h" class="card-h">The order you added</h2>
-							{@render orderSummary(picked)}
+							{@render orderSummary(submitted.order)}
 						</section>
 					{/if}
 					{@render sentCard(true)}
@@ -741,34 +773,39 @@
 					{@render sentCard(false)}
 					{@render whoCard()}
 					<section class="card" aria-labelledby="find-h">
-						<h2 id="find-h" class="card-h"><ChefIcon name="search" />Find the order</h2>
+						<h2 id="find-h" class="card-h" tabindex="-1">
+							<ChefIcon name="search" />Find the order
+						</h2>
 						<p class="small muted">
 							Looks only at orders already in the system (website orders). Choosing one is your
 							judgement: a matching name or reference isn’t proof.
 						</p>
 						<form class="find-form" role="search" onsubmit={(e) => e.preventDefault()}>
-							<label class="field find-term"
-								><span>Start of the order ID, or the name on the order</span><span
-									class="search-box"
-									><ChefIcon name="search" /><input
-										type="search"
-										bind:value={term}
-										placeholder="e.g. 8b20 or Becker"
-										autocomplete="off"
-										aria-describedby="find-hint"
-									/></span
-								></label
-							>
-							<label class="field"
-								>Handover from<select bind:value={from} onchange={() => void runSearch()}>
-									{#each MONTHS as m (m)}<option value={m}>{monthName(m)}</option>{/each}
-								</select></label
-							>
-							<label class="field"
-								>to<select bind:value={to} onchange={() => void runSearch()}>
-									{#each MONTHS as m (m)}<option value={m}>{monthName(m)}</option>{/each}
-								</select></label
-							>
+							<fieldset class="find-fields" disabled={locked}>
+								<legend class="sr-only">Search for the order</legend>
+								<label class="field find-term"
+									><span>Start of the order ID, or the name on the order</span><span
+										class="search-box"
+										><ChefIcon name="search" /><input
+											type="search"
+											bind:value={term}
+											placeholder="e.g. 8b20 or Becker"
+											autocomplete="off"
+											aria-describedby="find-hint"
+										/></span
+									></label
+								>
+								<label class="field"
+									>Handover from<select bind:value={from} onchange={() => void runSearch()}>
+										{#each MONTHS as m (m)}<option value={m}>{monthName(m)}</option>{/each}
+									</select></label
+								>
+								<label class="field"
+									>to<select bind:value={to} onchange={() => void runSearch()}>
+										{#each MONTHS as m (m)}<option value={m}>{monthName(m)}</option>{/each}
+									</select></label
+								>
+							</fieldset>
 						</form>
 						<p id="find-hint" class="small muted">
 							Up to 3 months at a time (the order list reads at most 93 days); every order in those
@@ -776,7 +813,7 @@
 								? `Starts around their month, ${monthLabel(c.approximate_date)}.`
 								: 'They gave no month: starts with the last 3 months.'}
 						</p>
-						<div class="quick">
+						<div class="quick" class:is-locked={locked}>
 							<span class="small">Search for:</span>
 							{#if c.reference}<button
 									class="btn btn-small"
@@ -853,7 +890,7 @@
 										? ` · matching “${term.trim()}”`
 										: ''}
 								</p>
-								<fieldset class="pick-list">
+								<fieldset class="pick-list" disabled={locked}>
 									<legend class="sr-only">Choose the order to add</legend>
 									{#each matches as o (o.id)}
 										{@const life = LIFE[o.lifecycle] ?? [o.lifecycle, 'neutral']}
@@ -959,7 +996,7 @@
 
 			<div class="claim-side">
 				<section class="card decision sticky" aria-labelledby="dec-h">
-					<h2 id="dec-h" class="card-h">
+					<h2 id="dec-h" class="card-h" tabindex="-1">
 						{c.state === 'pending' || savedNow ? 'Your decision' : 'Decision'}
 					</h2>
 					{#if c.state !== 'pending' && !savedNow}
@@ -1132,7 +1169,9 @@
 									{#if decision === 'approve'}
 										<p>
 											<strong>Added to {theirAccount} ✓</strong> Order
-											<span class="mono">{picked ? shortRef(picked.id) : ''}</span> is now in their account.
+											<span class="mono"
+												>{submitted?.order ? shortRef(submitted.order.id) : ''}</span
+											> is now in their account.
 										</p>
 										<ul class="small list-tight">
 											<li>Guest access to the order no longer works; they see it by signing in.</li>
@@ -1144,8 +1183,8 @@
 											to contact us.
 										</p>
 									{/if}
-									{#if savedNote}<p class="small">
-											Your internal note (only you see it): “{savedNote}”
+									{#if submitted?.note}<p class="small">
+											Your internal note (only you see it): “{submitted.note}”
 										</p>{/if}
 									<div class="actions">
 										{#if following}<a
@@ -1203,11 +1242,28 @@
 									</div>
 								</div>
 							</div>
-						{:else if result === 'not_found_order'}
+						{:else if result === 'not_found_order' || result === 'unexpected'}
 							<div class="banner banner-bad result" role="alert" tabindex="-1" data-focus>
 								<ChefIcon name="alert" cls="banner-icon" />
 								<div>
-									{#if future}
+									{#if result === 'unexpected' || decision === 'decline'}
+										<p>
+											<strong>The decision wasn’t accepted.</strong> Nothing changed, and the
+											request is still waiting.{decision === 'decline'
+												? ' Check the note and try again.'
+												: ''}
+										</p>
+										<div class="actions">
+											<button class="btn btn-small" type="button" onclick={() => go(decision)}
+												>Back to the decision</button
+											>
+											<button
+												class="btn btn-small btn-quiet"
+												type="button"
+												onclick={() => void load()}>Show the latest</button
+											>
+										</div>
+									{:else if future}
 										<p>
 											<strong>That isn’t the order they asked from.</strong> For this request only
 											order
@@ -1266,8 +1322,10 @@
 									</p>
 									<p class="small">Try again in a few minutes.</p>
 									<div class="actions">
-										<button class="btn btn-small" type="button" onclick={() => void submit()}
-											>Try again</button
+										<button
+											class="btn btn-small"
+											type="button"
+											onclick={() => void submit(undefined, true)}>Try again</button
 										>
 									</div>
 								</div>
@@ -1284,8 +1342,10 @@
 										Try again. It’s safe: the same decision is never applied twice.
 									</p>
 									<div class="actions">
-										<button class="btn btn-small" type="button" onclick={() => void submit()}
-											>Try again</button
+										<button
+											class="btn btn-small"
+											type="button"
+											onclick={() => void submit(undefined, true)}>Try again</button
 										>
 									</div>
 								</div>
