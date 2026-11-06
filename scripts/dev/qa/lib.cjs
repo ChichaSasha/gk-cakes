@@ -16,7 +16,11 @@ const WIDTHS = [1440, 1024, 390, 320];
 
 /** A headless Chrome page that collects page errors and console errors. */
 async function open({ width = 1440, height = 900 } = {}) {
-	const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new' });
+	// Chrome never gets the test passwords in its environment.
+	const env = { ...process.env };
+	delete env.STAFF_PW;
+	delete env.CUSTOMER_PW;
+	const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new', env });
 	const page = await browser.newPage();
 	await page.setViewport({ width, height });
 	const errors = [];
