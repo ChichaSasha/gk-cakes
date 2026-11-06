@@ -218,8 +218,7 @@ function deliveryQuoteView(order: Order, view: OrderView): OrderView | undefined
 				'Don’t want delivery? Please contact the chef.'
 			],
 			action: d.payable === true && amount ? 'pay_delivery' : 'none',
-			actionLabel: d.payable === true && amount ? `Pay for delivery · ${amount}` : undefined,
-			contactChef: true
+			actionLabel: d.payable === true && amount ? `Pay for delivery · ${amount}` : undefined
 		};
 	}
 	if (d.state === 'payment_checking') {

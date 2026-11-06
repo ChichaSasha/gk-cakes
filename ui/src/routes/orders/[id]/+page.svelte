@@ -416,11 +416,6 @@
 						onproblem={(m, r) => void commandRefused(m, r)}
 					/>
 				{/if}
-				{#if view.contactChef}
-					<div class="oc-actions">
-						<a class="text-link" href="mailto:gk.cake.london@gmail.com">Contact the chef</a>
-					</div>
-				{/if}
 				{#if handoff}
 					<p class="co-errors" role="alert">{handoff.message}</p>
 				{/if}
@@ -447,6 +442,11 @@
 						{#if pollStopped}
 							<button type="button" onclick={() => void refresh()}>Refresh status</button>
 						{/if}
+					</div>
+				{/if}
+				{#if view.contactChef}
+					<div class="oc-actions">
+						<a class="text-link" href="mailto:gk.cake.london@gmail.com">Contact the chef</a>
 					</div>
 				{/if}
 				{#if pollStopped}
@@ -500,7 +500,12 @@
 							api={changesApi}
 							{keys}
 							onchanged={() => void refresh()}
-							onwaiting={(w) => (awaitingMove = w)}
+							onwaiting={(w) => {
+								awaitingMove = w;
+								// No longer waiting (an outcome, or the control was removed):
+								// the next read is planned again without this reason.
+								if (!w) schedule();
+							}}
 						/>
 					{:else}
 						<h2 class="co-h" id="change-h">Change or cancel</h2>
