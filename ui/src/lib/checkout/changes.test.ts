@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { ApiError } from '../api';
 import {
 	MOVE_FIXED,
+	MOVE_FIXED_CANCEL,
+	cancellable,
 	allows,
 	apiActions,
 	amountChanged,
@@ -881,6 +883,36 @@ describe('the API’s actions for this caller (0038)', () => {
 		expect(cancelViaChef({ ...o, actions: ['delivery_choice'] }, owner)).toBe(false);
 	});
 
+	it('actions without cancel on a changeable order: contact the chef to cancel (review finding 4)', () => {
+		expect(cancelViaChef(order({ actions: ['move_pickup'] }), guest)).toBe(true);
+		expect(cancelViaChef(order({ actions: [] }), owner)).toBe(true);
+		expect(cancelViaChef(order({ actions: ['cancel'] }), owner)).toBe(false);
+		// Not without actions (the page's own rule offers the cancellation), not
+		// for a finished order, not while another change is processed.
+		expect(cancelViaChef(order(), owner)).toBe(false);
+		expect(cancelViaChef(order({ lifecycle: 'completed', actions: [] }), owner)).toBe(false);
+		expect(
+			cancelViaChef(
+				order({
+					actions: [],
+					fulfillment: { state: 'awaiting_handover', at: null, pending: 'handover' }
+				}),
+				owner
+			)
+		).toBe(false);
+		expect(cancelViaChef(order({ actions: [] }), null)).toBe(false);
+		expect(MOVE_FIXED_CANCEL).toBe(
+			'This order’s time can’t be changed online. To change the time or cancel this order, please contact the chef.'
+		);
+	});
+
+	it('cancellable: the timeline’s "if you cancel" wording', () => {
+		expect(cancellable(order({ actions: ['cancel'] }))).toBe(true);
+		expect(cancellable(order({ actions: [] }))).toBe(false);
+		expect(cancellable(order())).toBe(true);
+		expect(cancellable(order({ lifecycle: 'completed' }))).toBe(false);
+	});
+
 	it('no viewer: nothing, whatever the actions say', () => {
 		expect(allows(order({ actions: ['cancel'] }), null, 'cancel', true)).toBe(false);
 		expect(mayCancel(order({ actions: ['cancel'] }), null)).toBe(false);
@@ -928,15 +960,41 @@ describe('labelled cancellation allocations (0038 kind)', () => {
 				]
 			})
 		);
-		expect(v.split).toEqual([
-			{ label: 'Cakes · back to your payment method', amount: '£45' },
-			{
-				label: 'Delivery payment that couldn’t be used · back to your payment method',
-				amount: '£120'
-			}
+		// The stray comes back beside "You get back £45", never inside its
+		// split (review finding 2): its own sentence, as before.
+		expect(v.amount).toBe('£45');
+		expect(v.split).toEqual([]);
+		expect(v.unmatched).toBe(
+			'We’ll also return in full a delivery payment of £120 that couldn’t be used for your order.'
+		);
+		expect(v.roundingExample).toBe(true);
+		// Without unmatched_minor, the single labelled stray allocation's amount.
+		const fromAllocation = previewView(
+			preview({
+				rate: 50,
+				amount_minor: 4500,
+				allocations: [
+					{ collection_id: 'c1', amount_minor: 4500, kind: 'cake' },
+					{ collection_id: 'c2', amount_minor: 12000, kind: 'stray' }
+				]
+			})
+		);
+		expect(fromAllocation.unmatched).toContain('£120');
+		// A delivery inside the amount keeps its line; the stray still doesn't.
+		const both = previewView(
+			preview({
+				unmatched_minor: 12000,
+				allocations: [
+					{ collection_id: 'c1', amount_minor: 9000, kind: 'cake' },
+					{ collection_id: 'c3', amount_minor: 12000, kind: 'delivery' },
+					{ collection_id: 'c2', amount_minor: 12000, kind: 'stray' }
+				]
+			})
+		);
+		expect(both.split.map((l) => l.label)).toEqual([
+			'Cakes · back to your payment method',
+			'Delivery · back to your payment method'
 		]);
-		expect(v.unmatched).toBeUndefined();
-		expect(v.roundingExample).toBe(false);
 	});
 
 	it('a delivery returned automatically and the chef’s share keep their own lines', () => {

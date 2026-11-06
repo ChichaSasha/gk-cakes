@@ -7,6 +7,7 @@ import type { Delivery, DeliveryFailure, Order, Refund, RefundPart } from './typ
 // on Sat 17 October, GK delivery £120.
 const NOW = new Date('2026-10-22T11:00:00Z'); // the handover day, 12:00 London
 const NEXT_DAY = new Date('2026-10-23T09:00:00Z');
+const BEFORE_DEADLINE = new Date('2026-10-14T09:00:00Z'); // the full refund still ahead
 
 function order(over: Partial<Order> = {}): Order {
 	return {
@@ -130,7 +131,7 @@ describe('orderTimeline: which orders have one', () => {
 
 describe('orderTimeline: confirmed · being made (collection)', () => {
 	it('confirmed: paid, the refund window, the cake still to be made', () => {
-		expect(lanes(order())).toEqual({
+		expect(lanes(order(), BEFORE_DEADLINE)).toEqual({
 			money: [
 				'Paid £90 | Tue 6 October, 14:05 | done',
 				'Full refund until 11:00 on Sat 17 October | From then on 50% if you cancel; 100% if we cancel | upcoming'
@@ -138,7 +139,7 @@ describe('orderTimeline: confirmed · being made (collection)', () => {
 			cake: [
 				'Order confirmed |  | done',
 				'Being made |  | upcoming',
-				'Ready for collection | We send the exact collection address about 48 hours before | upcoming',
+				'Ready for collection | The chef will share the exact collection address before your collection | upcoming',
 				'Collected | Thu 22 October, 11:00–12:00 · St Katharine Docks | upcoming'
 			]
 		});
@@ -285,10 +286,12 @@ describe('orderTimeline: the refund follows the API refund state only', () => {
 				]
 			})
 		).money;
+		// Each part from its own amounts: the cake back is done, the chef's
+		// share not yet sent is current (one current step: the return waits).
 		expect(money.slice(1)).toEqual([
 			'Refund of £45 requested | Automatically · 50% for a cake that wasn’t collected | done',
-			'Delivery refund of £60 requested | Sent separately by the chef · waiting for the chef | done',
-			'Return to your payment method | £45 of £105 returned so far | current'
+			'Delivery refund of £60 requested | Sent separately by the chef · waiting for the chef | current',
+			'Return to your payment method | £45 of £105 returned so far | upcoming'
 		]);
 	});
 
@@ -320,7 +323,7 @@ describe('orderTimeline: the refund follows the API refund state only', () => {
 		);
 		expect(steps).toEqual([
 			'Refund of £105 requested | Automatically · 50% for a cake that wasn’t collected | current',
-			'Delivery refund · £60 | Sent separately by the chef · waiting for the chef | upcoming',
+			'Delivery refund · £60 | Sent separately by the chef · waiting for the chef | current',
 			'Return to your payment method |  | upcoming'
 		]);
 	});
@@ -337,7 +340,7 @@ describe('orderTimeline: the refund follows the API refund state only', () => {
 
 describe('orderTimeline: GK delivery', () => {
 	it('being made: cakes and delivery paid separately, delivery confirmed by the chef', () => {
-		expect(lanes(gk({ lifecycle: 'in_production' }))).toEqual({
+		expect(lanes(gk({ lifecycle: 'in_production' }), BEFORE_DEADLINE)).toEqual({
 			money: [
 				'Cakes paid · £90 | Tue 6 October, 14:05 | done',
 				'Delivery paid · £120 |  | done',
@@ -355,7 +358,8 @@ describe('orderTimeline: GK delivery', () => {
 
 	it('before the quote: the delivery quote still to come, delivery not confirmed', () => {
 		const t = lanes(
-			gk({ delivery: { state: 'awaiting_quote', quote: null, payable: false, payment: null } })
+			gk({ delivery: { state: 'awaiting_quote', quote: null, payable: false, payment: null } }),
+			BEFORE_DEADLINE
 		);
 		expect(t.money[1]).toBe(
 			'Delivery quote | Appears on this page once the chef has confirmed your delivery | upcoming'
@@ -587,5 +591,43 @@ describe('orderTimeline: delivery failed · nobody available (Q18)', () => {
 			})
 		);
 		expect(t.money).toHaveLength(2);
+	});
+});
+
+describe('orderTimeline: the full-refund window after its deadline (review finding 1)', () => {
+	const window = (o: Order, now: Date) =>
+		lanes(o, now).money.find((x) => x.startsWith('Full refund'));
+
+	it('finished in the past tense once the deadline has passed', () => {
+		expect(window(order({ actions: ['cancel', 'move_pickup'] }), NOW)).toBe(
+			'Full refund ended 11:00 on Sat 17 October | Now 50% if you cancel; 100% if we cancel | done'
+		);
+		expect(window(gk({ lifecycle: 'in_production', actions: ['cancel'] }), NOW)).toBe(
+			'Full refund ended 11:00 on Sat 17 October | Now 50% of cakes and delivery if you cancel; 100% if we cancel | done'
+		);
+		// The deadline instant itself has passed (K05: 50% at the deadline).
+		expect(window(order(), new Date('2026-10-17T10:00:00Z'))).toContain('Full refund ended');
+		expect(window(order(), new Date('2026-10-17T09:59:59Z'))).toContain('Full refund until');
+	});
+
+	it('no "if you cancel" when the order can’t be cancelled', () => {
+		expect(window(order({ lifecycle: 'ready', actions: [] }), NOW)).toBe(
+			'Full refund ended 11:00 on Sat 17 October | 100% if we cancel | done'
+		);
+		expect(window(order({ actions: ['move_pickup'] }), BEFORE_DEADLINE)).toBe(
+			'Full refund until 11:00 on Sat 17 October | From then on 50%; 100% if we cancel | upcoming'
+		);
+	});
+
+	it('out for delivery: can’t be cancelled (actions, or the page’s own rule without them)', () => {
+		const out = { state: 'out_for_delivery', at: '2026-10-22T09:15:00Z', pending: null };
+		for (const o of [
+			gk({ lifecycle: 'ready', fulfillment: out }),
+			gk({ lifecycle: 'ready', fulfillment: out, actions: [] })
+		]) {
+			expect(window(o, NOW)).toBe(
+				'Full refund ended 11:00 on Sat 17 October | 100% if we cancel | done'
+			);
+		}
 	});
 });

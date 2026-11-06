@@ -253,7 +253,7 @@ function completed(order: Order, base: Base): OrderView {
 			...done,
 			lines: [
 				'Thank you for ordering with GK Cakes.',
-				`Refund of ${amount} requested: the amount you agreed with the chef after collection.${requested ? ' We’ll update this page as it progresses.' : ''}`
+				`Refund of ${amount} requested: the amount you agreed with the chef after ${order.fulfillment_mode === 'gk_delivery' ? 'delivery' : 'collection'}.${requested ? ' We’ll update this page as it progresses.' : ''}`
 			],
 			refund: requested ? undefined : base.refund
 		};

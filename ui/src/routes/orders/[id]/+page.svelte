@@ -32,6 +32,7 @@
 		deliveryPaid,
 		mayCancel,
 		MOVE_FIXED,
+		MOVE_FIXED_CANCEL,
 		refundProgress,
 		timeChange,
 		type ChangeBaseline
@@ -597,10 +598,10 @@
 								>: a GK delivery time can only change with the chef’s agreement.
 							</p>
 						{:else if change === 'fixed'}
-							<p>{MOVE_FIXED}</p>
+							<p>{cancelContact ? MOVE_FIXED_CANCEL : MOVE_FIXED}</p>
 						{/if}
 					{/if}
-					{#if cancelContact && change !== 'contact_chef'}
+					{#if cancelContact && change !== 'contact_chef' && change !== 'fixed'}
 						<p>
 							To cancel this order, please <a href="mailto:gk.cake.london@gmail.com"
 								>contact the chef</a

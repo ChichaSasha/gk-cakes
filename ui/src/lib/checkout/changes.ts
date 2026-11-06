@@ -81,6 +81,16 @@ export function mayCancel(order: Order, who: Who | null | undefined): boolean {
 }
 
 /** The page's own rule when the API sends no actions (an older API). */
+/**
+ * Whether the order can be cancelled by its owner now, as far as the order
+ * itself says (the API's actions when sent, else the page's own rule):
+ * the timeline's wording only ("if you cancel"), never a button.
+ */
+export function cancellable(order: Order): boolean {
+	const actions = apiActions(order);
+	return actions ? actions.includes('cancel') : cancelFallback(order);
+}
+
 function cancelFallback(order: Order): boolean {
 	if (!CHANGEABLE.includes(order.lifecycle) || changeInProgress(order)) return false;
 	const sent = ['out_for_delivery', 'exception'].includes(order.fulfillment?.state ?? '');
@@ -100,13 +110,14 @@ export function deliveryProblemOpen(order: Order): boolean {
 
 /** Whether the page says "To cancel this order, please contact the chef." instead of offering cancellation. */
 export function cancelViaChef(order: Order, who: Who | null | undefined): boolean {
-	if (!canAct(who) || !deliveryProblemOpen(order)) return false;
-	return allows(
-		order,
-		who,
-		'cancel',
-		CHANGEABLE.includes(order.lifecycle) && !changeInProgress(order)
-	);
+	if (!canAct(who)) return false;
+	const open = CHANGEABLE.includes(order.lifecycle) && !changeInProgress(order);
+	if (deliveryProblemOpen(order)) return allows(order, who, 'cancel', open);
+	// The API offers this caller no cancellation on a changeable order (for
+	// example after the dispatch, or a link without the cancel grant): the
+	// terms still say "Cancel before…", so say who to ask.
+	const actions = apiActions(order);
+	return open && actions !== undefined && !actions.includes('cancel');
 }
 
 /**
@@ -130,6 +141,10 @@ export function timeChange(
 /** What the time-change section says when the API offers no move ('fixed'). */
 export const MOVE_FIXED =
 	'This order’s time can’t be changed online. If you need a different time, please contact the chef.';
+
+/** MOVE_FIXED when cancelling also goes through the chef (one contact-the-chef sentence). */
+export const MOVE_FIXED_CANCEL =
+	'This order’s time can’t be changed online. To change the time or cancel this order, please contact the chef.';
 
 /** Whether the page should read the order again soon for these changes. */
 export function changePoll(order: Order): boolean {
@@ -202,7 +217,8 @@ export interface PreviewView {
 const ALLOCATION_LABEL: Record<string, string> = {
 	cake: 'Cakes · back to your payment method',
 	delivery: 'Delivery · back to your payment method',
-	stray: 'Delivery payment that couldn’t be used · back to your payment method'
+	// Recognised, but said in its own sentence beside the amount (never split).
+	stray: ''
 };
 
 /** The cancellation panel for a preview; delivery: the order has a paid GK delivery. */
@@ -221,7 +237,10 @@ export function previewView(
 	const labelled =
 		p.allocations.length > 0 &&
 		p.allocations.every((a) => typeof a.kind === 'string' && a.kind in ALLOCATION_LABEL);
-	const splitNeeded = pending > 0 || (labelled && p.allocations.some((a) => a.kind !== 'cake'));
+	// A stray payment comes back beside amount_minor, not inside it: it is
+	// never a line of the split under "You get back" (its own sentence).
+	const inAmount = labelled ? p.allocations.filter((a) => a.kind !== 'stray') : p.allocations;
+	const splitNeeded = pending > 0 || (labelled && inAmount.some((a) => a.kind !== 'cake'));
 	const chef =
 		pending > 0
 			? [{ label: 'Delivery · sent separately by the chef', amount: money(pending) }]
@@ -230,7 +249,7 @@ export function previewView(
 		? []
 		: labelled
 			? [
-					...p.allocations.map((a) => ({
+					...inAmount.map((a) => ({
 						label: ALLOCATION_LABEL[a.kind as string],
 						amount: money(a.amount_minor)
 					})),
@@ -246,7 +265,13 @@ export function previewView(
 					})),
 					...chef
 				];
-	const strayListed = labelled && splitNeeded && p.allocations.some((a) => a.kind === 'stray');
+	const strays = labelled ? p.allocations.filter((a) => a.kind === 'stray') : [];
+	const stray =
+		p.unmatched_minor > 0
+			? p.unmatched_minor
+			: strays.length === 1 && strays[0].amount_minor > 0
+				? strays[0].amount_minor
+				: undefined;
 	let basis: string;
 	if (nothingPaid) basis = 'This order cost nothing, so there’s nothing to refund.';
 	else if (before) basis = 'Everything you paid: a full refund.';
@@ -263,8 +288,8 @@ export function previewView(
 		deadline,
 		split,
 		unmatched:
-			p.unmatched_minor > 0 && !strayListed
-				? `We’ll also return in full a delivery payment of ${money(p.unmatched_minor)} that couldn’t be used for your order.`
+			stray !== undefined
+				? `We’ll also return in full a delivery payment of ${money(stray)} that couldn’t be used for your order.`
 				: undefined,
 		roundingExample: !before && !nothingPaid && split.length === 0,
 		nothingPaid,

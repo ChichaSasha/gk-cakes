@@ -286,7 +286,10 @@ order view refinements (`src/lib/checkout/timeline.ts`,
   production, ready and completed orders, except while the delivery quote or
   the Q5 choice is open (states 14 and 15 keep their own screens). Money: paid
   (`paid_at`) or cakes and delivery paid separately (`delivery.paid_minor`;
-  waived; the quote still to come), the full-refund window before any refund,
+  waived; the quote still to come), the full-refund window before any refund
+  ("Full refund until …", then "Full refund ended …" once
+  `full_refund_deadline_at` has passed by the browser's clock, which only
+  picks the wording; "if you cancel" only while the order can be cancelled),
   "Delivery refund · 100% if you collect instead" beside an our-side failure,
   then the refund: one "Refund of £X requested" step per `refund.parts` kind
   (why for a no-show, Q19, or a refund agreed with the chef, Q20; the chef's
@@ -295,7 +298,9 @@ order view refinements (`src/lib/checkout/timeline.ts`,
   `refund.state` is returned; "Delivery payment kept" after nobody was
   available (Q18). With the lanes there is no separate refund tracker.
   Your cake: confirmed, being made (`in_production`) or prepared, ready for
-  collection and collected / not collected, or for a GK delivery: delivery
+  collection ("The chef will share the exact collection address before your
+  collection": neutral until GK-031 order emails, a Creator decision) and
+  collected / not collected, or for a GK delivery: delivery
   confirmed by the chef, out for delivery (`fulfillment.at`) and delivered;
   a failed delivery keeps its history (couldn't be completed or nobody
   available, `delivery_failure.at`) followed by the secured choice
@@ -318,7 +323,9 @@ order view refinements (`src/lib/checkout/timeline.ts`,
   grants): `cancel` decides Preview cancellation (an open delivery choice is
   still shown instead, so the API's cancel there means "contact the chef");
   `move_pickup` decides Change your time (otherwise "This order's time can't
-  be changed online…"); `answer_late_payment` the answer buttons; `pay`,
+  be changed online…"); without `cancel` on a changeable order the card says
+  "To cancel this order, please contact the chef." (one sentence with the
+  time or GK delivery line); `answer_late_payment` the answer buttons; `pay`,
   `free_confirmation` and `pay_delivery` their buttons (otherwise a new order,
   or "Delivery payment isn't available just now…"; an open payment page is the
   same payment and stays); `delivery_choice` with
@@ -328,8 +335,10 @@ order view refinements (`src/lib/checkout/timeline.ts`,
 - **Refund parts and allocations**: the cancelled order's split shows each
   kind's own amount from `refund.parts` (the cake line too; the chef's
   delivery line stays after the chef sends it); the cancellation preview
-  labels `allocations[].kind` (cakes, delivery, a delivery payment that
-  couldn't be used). The Q5 full refund still reads "everything paid": no
+  labels `allocations[].kind` (cakes, delivery) in the split under "You get
+  back"; a stray payment comes back beside that amount, so it is its own
+  sentence ("We'll also return in full a delivery payment of £120…"), never a
+  split line. The Q5 full refund still reads "everything paid": no
   field states that amount before the choice.
 
 **Not built here:** the discovery pages and real basket (GK-016), the GK

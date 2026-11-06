@@ -10,7 +10,7 @@
 // unsecured outcome in the API, so nothing is reconstructed here. Dates are
 // shown only where the API carries the instant (there is no confirmed,
 // production-start or ready time in the order view). Times are London time.
-import { CHANGEABLE, refundParts, shortDate } from './changes';
+import { CHANGEABLE, cancellable, refundParts, shortDate } from './changes';
 import { formatMoney, londonTime, londonToday, timeRange } from './format';
 import type { Order, RefundPart } from './types';
 
@@ -57,12 +57,12 @@ export function orderTimeline(order: Order, now: Date = new Date()): Timeline | 
 	) {
 		return undefined;
 	}
-	return { money: moneyLane(order), cake: cakeLane(order, now) };
+	return { money: moneyLane(order, now), cake: cakeLane(order, now) };
 }
 
 // ---------------------------------------------------------------- Money
 
-function moneyLane(order: Order): LaneStep[] {
+function moneyLane(order: Order, now: Date): LaneStep[] {
 	const cur = order.currency || 'GBP';
 	const m = (minor: number) => formatMoney(minor, cur);
 	const d = order.delivery;
@@ -106,15 +106,7 @@ function moneyLane(order: Order): LaneStep[] {
 		!order.refund &&
 		!f
 	) {
-		const at = order.full_refund_deadline_at;
-		steps.push({
-			label: `Full refund until ${londonTime(at)} on ${shortDate(londonToday(new Date(at)))}`,
-			detail:
-				paidDelivery !== undefined
-					? 'Covers cakes and delivery; from then on 50%'
-					: 'From then on 50% if you cancel; 100% if we cancel',
-			state: 'upcoming'
-		});
+		steps.push(refundWindow(order, now, paidDelivery !== undefined));
 	}
 
 	if (
@@ -143,6 +135,38 @@ function moneyLane(order: Order): LaneStep[] {
 }
 
 /**
+ * The full-refund window (K05): ahead until full_refund_deadline_at, then
+ * finished in the past tense. The browser's clock only picks the wording
+ * (the amounts are always the API's preview). "If you cancel" only while
+ * the order can be cancelled (the API's actions, or the page's own rule).
+ */
+function refundWindow(order: Order, now: Date, delivery: boolean): LaneStep {
+	const at = order.full_refund_deadline_at;
+	const when = `${londonTime(at)} on ${shortDate(londonToday(new Date(at)))}`;
+	const canCancel = cancellable(order);
+	if (now.getTime() < Date.parse(at)) {
+		return {
+			label: `Full refund until ${when}`,
+			detail: delivery
+				? 'Covers cakes and delivery; from then on 50%'
+				: canCancel
+					? 'From then on 50% if you cancel; 100% if we cancel'
+					: 'From then on 50%; 100% if we cancel',
+			state: 'upcoming'
+		};
+	}
+	return {
+		label: `Full refund ended ${when}`,
+		detail: canCancel
+			? delivery
+				? 'Now 50% of cakes and delivery if you cancel; 100% if we cancel'
+				: 'Now 50% if you cancel; 100% if we cancel'
+			: '100% if we cancel',
+		state: 'done'
+	};
+}
+
+/**
  * The refund in the money lane: what was requested (one step per kind, from
  * the API's parts), then the return to the payment method, ticked only
  * when the API's refund state is returned.
@@ -157,7 +181,11 @@ export function refundSteps(order: Order): LaneStep[] {
 	const steps: LaneStep[] = [];
 	if (parts && parts.length > 0) {
 		for (const p of parts) {
-			steps.push({ label: partLabel(p, m), detail: partDetail(p, order), state: requested });
+			steps.push({
+				label: partLabel(p, m),
+				detail: partDetail(p, order),
+				state: partState(p, requested)
+			});
 		}
 	} else if (Number.isSafeInteger(r.target_minor)) {
 		// An older API without parts: the whole refund, and the chef's
@@ -171,12 +199,30 @@ export function refundSteps(order: Order): LaneStep[] {
 			steps.push({
 				label: `Delivery refund · ${m(r.delivery_pending_minor)}`,
 				detail: 'Sent separately by the chef · waiting for the chef',
-				state: 'upcoming'
+				state: 'current'
 			});
 		}
 	}
-	steps.push(returnStep(order));
+	// One current step per lane: while an earlier step is still current (a
+	// part waiting for the chef), the return keeps its words but isn't "now".
+	const ret = returnStep(order);
+	steps.push(
+		ret.state === 'current' && steps.some((x) => x.state === 'current')
+			? { ...ret, state: 'upcoming' }
+			: ret
+	);
 	return steps;
+}
+
+/**
+ * A part's "requested" step from its own amounts, like the split's status:
+ * back in full is done; the chef's delivery share not yet sent is current;
+ * otherwise the block's state (requested: current; sent on: done).
+ */
+function partState(p: RefundPart, requested: LaneStepState): LaneStepState {
+	if (p.succeeded_minor >= p.target_minor) return 'done';
+	if (p.pending_chef_minor > 0) return 'current';
+	return requested;
 }
 
 function partLabel(p: RefundPart, m: (minor: number) => string): string {
@@ -338,7 +384,7 @@ function cakeLane(order: Order, now: Date): LaneStep[] {
 				? { label: 'Ready for collection', detail: day, state: 'current' }
 				: {
 						label: 'Ready for collection',
-						detail: 'We send the exact collection address about 48 hours before',
+						detail: 'The chef will share the exact collection address before your collection',
 						state: 'upcoming'
 					},
 		collectedStep(order, `${day}, ${slot} · St Katharine Docks`)

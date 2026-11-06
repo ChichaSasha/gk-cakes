@@ -631,6 +631,22 @@ describe('being made, collected and not collected (state 19)', () => {
 		);
 		expect(back.refund).toBe(
 			'Refund of £30 returned to your payment method. Your bank may take a few days to show it.'
+		); // A delivered GK order says "after delivery" (review nit 6).
+		const delivered = orderView(
+			accepted({
+				lifecycle: 'completed',
+				fulfillment_mode: 'gk_delivery',
+				fulfillment: { state: 'completed', at: 'x', pending: null },
+				refund: {
+					state: 'requested',
+					target_minor: 3000,
+					succeeded_minor: 0,
+					reason: 'chef_exception'
+				}
+			})
+		);
+		expect(delivered.lines[1]).toBe(
+			'Refund of £30 requested: the amount you agreed with the chef after delivery. We’ll update this page as it progresses.'
 		);
 	});
 
