@@ -48,6 +48,15 @@ describe('account API client', () => {
 		expect(calls[0].headers.Authorization).toBe('Bearer customer-token');
 	});
 
+	it('reads the token for every request when given a function (a refreshed session is used)', async () => {
+		const { api, calls } = fakeApi({ body: { claims: [] } }, { body: { claims: [] } });
+		let n = 0;
+		const fresh: AccountApi = { ...api, token: async () => `token-${++n}` };
+		await myClaims(fresh);
+		await myClaims(fresh);
+		expect(calls.map((c) => c.headers.Authorization)).toEqual(['Bearer token-1', 'Bearer token-2']);
+	});
+
 	it('throws rather than return a shortened order list past the page limit', async () => {
 		const { api } = fakeApi(
 			...Array.from({ length: MAX_ORDER_PAGES }, (_, i) => ({
@@ -74,7 +83,7 @@ describe('account API client', () => {
 			`/api/v1/me/order-claims/${CLAIM}`,
 			'/api/v1/me/profile'
 		]);
-		expect(() => myClaim(api, '../orders')).toThrow('not an ID');
+		await expect(myClaim(api, '../orders')).rejects.toThrow('not an ID');
 	});
 
 	it('sends commands with their key and exactly the documented fields', async () => {

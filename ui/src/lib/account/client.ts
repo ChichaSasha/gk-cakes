@@ -75,10 +75,14 @@ export interface Me {
 	session_expires_at?: string;
 }
 
-/** Where and as whom the account API is called. */
+/**
+ * Where and as whom the account API is called. The token is read when each
+ * request is made (a function), so a page left open past the access token's
+ * hour uses the session the sign-in SDK has refreshed meanwhile.
+ */
 export interface AccountApi {
 	baseUrl: string;
-	token: string;
+	token: string | (() => Promise<string | undefined>);
 	fetch?: typeof fetch;
 }
 
@@ -92,16 +96,17 @@ function id(value: string): string {
 	return value;
 }
 
-function opts(api: AccountApi, query?: ApiOptions['query']): ApiOptions {
-	return { baseUrl: api.baseUrl, token: api.token, fetch: api.fetch, query };
+async function opts(api: AccountApi, query?: ApiOptions['query']): Promise<ApiOptions> {
+	const token = typeof api.token === 'function' ? await api.token() : api.token;
+	return { baseUrl: api.baseUrl, token: token || undefined, fetch: api.fetch, query };
 }
 
-function cmd(api: AccountApi, key: string) {
-	return { ...opts(api), idempotencyKey: key };
+async function cmd(api: AccountApi, key: string) {
+	return { ...(await opts(api)), idempotencyKey: key };
 }
 
-export function me(api: AccountApi): Promise<Me> {
-	return apiGet<Me>('/api/v1/me', opts(api));
+export async function me(api: AccountApi): Promise<Me> {
+	return apiGet<Me>('/api/v1/me', await opts(api));
 }
 
 /** Every order of the account, newest placed first (follows next_cursor). */
@@ -111,7 +116,7 @@ export async function myOrders(api: AccountApi): Promise<AccountOrder[]> {
 	for (let i = 0; i < MAX_ORDER_PAGES; i++) {
 		const page = await apiGet<{ orders: AccountOrder[]; next_cursor?: string }>(
 			'/api/v1/me/orders',
-			opts(api, { limit: PAGE, cursor })
+			await opts(api, { limit: PAGE, cursor })
 		);
 		all.push(...page.orders);
 		if (!page.next_cursor) return all;
@@ -122,19 +127,19 @@ export async function myOrders(api: AccountApi): Promise<AccountOrder[]> {
 
 /** The account's claims, newest first (at most 50). */
 export async function myClaims(api: AccountApi): Promise<Claim[]> {
-	return (await apiGet<{ claims: Claim[] }>('/api/v1/me/order-claims', opts(api))).claims;
+	return (await apiGet<{ claims: Claim[] }>('/api/v1/me/order-claims', await opts(api))).claims;
 }
 
-export function myClaim(api: AccountApi, claimId: string): Promise<Claim> {
-	return apiGet<Claim>(`/api/v1/me/order-claims/${id(claimId)}`, opts(api));
+export async function myClaim(api: AccountApi, claimId: string): Promise<Claim> {
+	return apiGet<Claim>(`/api/v1/me/order-claims/${id(claimId)}`, await opts(api));
 }
 
-export function profile(api: AccountApi): Promise<Profile> {
-	return apiGet<Profile>('/api/v1/me/profile', opts(api));
+export async function profile(api: AccountApi): Promise<Profile> {
+	return apiGet<Profile>('/api/v1/me/profile', await opts(api));
 }
 
 /** Changes the named fields; null clears one, absent keeps it. */
-export function updateProfile(
+export async function updateProfile(
 	api: AccountApi,
 	key: string,
 	patch: {
@@ -148,11 +153,11 @@ export function updateProfile(
 	for (const k of ['full_name', 'phone', 'instagram'] as const) {
 		if (patch[k] !== undefined) body[k] = patch[k];
 	}
-	return apiPatch<Profile>('/api/v1/me/profile', body, cmd(api, key));
+	return apiPatch<Profile>('/api/v1/me/profile', body, await cmd(api, key));
 }
 
 /** Asks the chef to add an older order (path c: the chef's reference and a note). */
-export function claimOlderOrder(
+export async function claimOlderOrder(
 	api: AccountApi,
 	key: string,
 	input: {
@@ -168,10 +173,10 @@ export function claimOlderOrder(
 		note: input.note
 	};
 	if (input.approximate_date) body.approximate_date = input.approximate_date;
-	return apiPost<Claim>('/api/v1/me/order-claims', body, cmd(api, key));
+	return apiPost<Claim>('/api/v1/me/order-claims', body, await cmd(api, key));
 }
 
-export function withdrawClaim(
+export async function withdrawClaim(
 	api: AccountApi,
 	key: string,
 	claimId: string,
@@ -180,6 +185,6 @@ export function withdrawClaim(
 	return apiPost<Claim>(
 		`/api/v1/me/order-claims/${id(claimId)}/withdraw`,
 		{ expected_version: expectedVersion },
-		cmd(api, key)
+		await cmd(api, key)
 	);
 }

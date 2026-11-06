@@ -195,6 +195,19 @@ describe('account order list mapping (r02b "Order list mapping")', () => {
 		expect(i.refund).toBe('Refund of £10 pending: we’ve asked our payment provider to return it.');
 	});
 
+	it('an unknown handover mode never claims collection', () => {
+		const lines = ['confirmed', 'in_production', 'ready', 'completed'].map((lifecycle) =>
+			orderListItem(order({ lifecycle, fulfillment_mode: 'teleport' }))
+		);
+		expect(lines.map((i) => i.chip.text)).toEqual([
+			'Confirmed',
+			'Being prepared',
+			'Ready',
+			'Completed'
+		]);
+		for (const i of lines) expect(i.line).not.toMatch(/St Katharine|collection details|courier/);
+	});
+
 	it('an unknown lifecycle or payment state enables nothing', () => {
 		expect(row({ lifecycle: 'teleported' })).toEqual([
 			'info',
@@ -223,8 +236,9 @@ describe('order list helpers', () => {
 		).toBe('A × 2, B');
 		expect(orderName(order({ items: [] }))).toBe('Your order');
 		expect(orderRef(order())).toBe('3f2a9c1b');
+		expect(modeLabel('collection')).toBe('Collect · St Katharine Docks');
 		expect(modeLabel('gk_delivery')).toBe('GK delivery');
-		expect(modeLabel('teleport')).toBe('Handover to agree');
+		expect(modeLabel('teleport')).toBeUndefined();
 		const g = groupOrders([
 			order(),
 			order({ id: 'b', lifecycle: 'completed' }),
