@@ -354,13 +354,32 @@ func TestDeliveryFailureRedelivery(t *testing.T) {
 	if _, err := h.chooseAfterFailure(order, d, "stale", v.Version-1, checkout.FailureRedelivery, ""); conflict(err) != "stale_version" {
 		t.Fatalf("stale: %v", err)
 	}
+	// A restore freeze refuses a new choice before any outcome.
+	h.owner(t, "SELECT business.recovery_set_freeze(true, 'restore drill')")
+	if _, err := h.chooseAfterFailure(order, d, "c1", v.Version, checkout.FailureRedelivery, ""); !errors.Is(err, checkout.ErrOrdersFrozen) {
+		t.Fatalf("frozen: %v", err)
+	}
+	h.owner(t, "SELECT business.recovery_set_freeze(false, NULL)")
 	receipt := h.now
 	op, err := h.chooseAfterFailure(order, d, "c1", v.Version, checkout.FailureRedelivery, "")
 	if err != nil || op.Replayed {
 		t.Fatalf("choice: %+v %v", op, err)
 	}
+	// The same key replays, also while frozen; the commit waits for the thaw.
+	h.owner(t, "SELECT business.recovery_set_freeze(true, 'restore drill')")
 	if again, err := h.chooseAfterFailure(order, d, "c1", v.Version, checkout.FailureRedelivery, ""); err != nil || !again.Replayed || again.ID != op.ID {
-		t.Fatalf("replay: %+v %v", again, err)
+		t.Fatalf("replay while frozen: %+v %v", again, err)
+	}
+	if err := h.moveJob(t, op.ID); err == nil {
+		t.Fatal("committed while frozen")
+	}
+	if got := h.recoveryState(t, op.ID); got != "reserved" {
+		t.Fatalf("while frozen: %s", got)
+	}
+	h.owner(t, "SELECT business.recovery_set_freeze(false, NULL)")
+	h.due(t)
+	if _, err := h.chooseAfterFailure(order, d, "c1", v.Version, checkout.FailureCollection, h.slotsOn(t, "2026-11-14")[2]); conflict(err) != "key_reused" {
+		t.Fatalf("key reused: %v", err)
 	}
 	if _, err := h.chooseAfterFailure(order, d, "c2", v.Version, checkout.FailureCollection, h.slotsOn(t, "2026-11-14")[2]); conflict(err) != "state_conflict" {
 		t.Fatalf("a second choice while one is pending: %v", err)
@@ -591,6 +610,13 @@ func TestDeliveryFailureCollection(t *testing.T) {
 		t.Fatalf("fulfilment %s", ful)
 	}
 	hasNot(t, "audit", strings.Join(h.auditDetails(t, "order.delivery_failure_choice_made"), ""), "example.com", "Test Customer", "Driver")
+	// A collection order again: cancellable under the ordinary rate, the
+	// delivery's floor keeping it at 100% (cake 50% = 5000p still to come).
+	p := h.preview(t, order, d)
+	if p.Rate != 50 || p.PaidMinor != 22000 || p.AmountMinor != 17000 || p.DeliveryPending != 0 || len(p.Allocations) != 1 ||
+		p.Allocations[0].CollectionID != cake || p.Allocations[0].AmountMinor != 5000 {
+		t.Fatalf("preview after the collection choice %+v", p)
+	}
 	// The cake is collected later that day.
 	h.now = at("13:40")
 	if _, err := h.fulfil(fulfilment, "h1", order, checkout.ActionHandover, v2.Version); err != nil {
