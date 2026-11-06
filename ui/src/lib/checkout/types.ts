@@ -193,6 +193,21 @@ export interface Refund {
 	 * are the chef's), not yet reserved. Its own line on the order page.
 	 */
 	delivery_pending_minor?: number;
+	/**
+	 * Per kind (0038): cake, delivery, stray, in that order; all-zero kinds
+	 * are left out. They add up exactly to the block's amounts.
+	 */
+	parts?: RefundPart[];
+}
+
+/** One kind's share of the refund (0038 refund parts). */
+export interface RefundPart {
+	kind: 'cake' | 'delivery' | 'stray' | string;
+	target_minor: number;
+	succeeded_minor: number;
+	in_progress_minor: number;
+	/** The chef's delivery refund not yet reserved (delivery part only). */
+	pending_chef_minor: number;
 }
 
 /**
@@ -222,7 +237,12 @@ export interface CancellationPreview {
 	paid_minor: number;
 	amount_minor: number;
 	currency: string;
-	allocations: { collection_id: string; amount_minor: number }[];
+	/** kind (0038): cake, delivery (a paid quote) or stray (an unmatched delivery payment). */
+	allocations: {
+		collection_id: string;
+		amount_minor: number;
+		kind?: 'cake' | 'delivery' | 'stray' | string;
+	}[];
 	full_refund_deadline_at: string;
 	computed_at: string;
 	expires_at: string;
@@ -306,7 +326,25 @@ export interface Order {
 	late_payment?: LatePayment | null;
 	/** An acceptance on the order page, once secured (0034). */
 	agreed?: Agreed | null;
+	/**
+	 * What this caller may do now (0038), in the API's order: pay,
+	 * free_confirmation, cancel, move_pickup, answer_late_payment,
+	 * pay_delivery, delivery_choice, delivery_failure_choice. Absent from an
+	 * older API (the page then decides as before); [] without checkout.
+	 */
+	actions?: string[];
 }
+
+/** The order commands GET /orders/{id} actions names (0038). */
+export type CustomerAction =
+	| 'pay'
+	| 'free_confirmation'
+	| 'cancel'
+	| 'move_pickup'
+	| 'answer_late_payment'
+	| 'pay_delivery'
+	| 'delivery_choice'
+	| 'delivery_failure_choice';
 
 // ---------------------------------------------------------------- GK-030 slice 2 (0034–0037)
 
@@ -395,6 +433,8 @@ export interface DeliveryChoice {
 	opens_at?: string | null;
 	pending: boolean;
 	choices?: string[];
+	/** The subset of choices this caller may make (0038; with actions). */
+	allowed_choices?: string[];
 	times?: ChoiceTime[];
 	chosen?: {
 		choice: 'collection' | 'customer_courier' | 'full_refund' | string;

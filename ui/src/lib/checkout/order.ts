@@ -3,8 +3,8 @@
 // (?payment=returned) never claims success by itself, a timer is never
 // proof that money failed, and a refund is "returned" only when the API
 // says so.
-import { cancelledStory } from './changes';
-import { formatMoney } from './format';
+import { cancelledStory, shortDate } from './changes';
+import { formatMoney, timeRange } from './format';
 import type { Next } from './messages';
 import type { Order } from './types';
 
@@ -60,6 +60,10 @@ export interface OrderView {
 	next?: { title: string; items: string[] };
 	/** Show a "Contact the chef" link in the status card. */
 	contactChef?: boolean;
+	/** The contact link's words when not "Contact the chef" (state 19, collected). */
+	contactLabel?: string;
+	/** Paid after the order was cancelled (state 11): the summary says so. */
+	paidAfterCancel?: boolean;
 	/** Show the refund tracker (a refund on an order that isn't cancelled). */
 	refundTracker?: boolean;
 }
@@ -98,32 +102,22 @@ export function orderView(
 	};
 
 	switch (order.lifecycle) {
+		case 'completed':
+			return completed(order, base);
 		case 'confirmed':
 		case 'in_production':
 		case 'ready':
-		case 'completed':
 			return {
 				...base,
 				tone: 'success',
 				title: {
 					confirmed: 'Your order is confirmed',
 					in_production: 'Your cake is being made',
-					ready: 'Your cake is ready',
-					completed: 'Your order is complete'
+					ready: 'Your cake is ready'
 				}[order.lifecycle],
-				lines:
-					order.lifecycle === 'completed'
-						? ['Thank you for ordering with GK Cakes.']
-						: [
-								order.payment_requirement === 'none'
-									? 'Your free order is confirmed.'
-									: 'We’ve received your payment and your order is confirmed.'
-							],
+				lines: [acceptedLine(order)],
 				confirmed: true,
-				refundTerms:
-					order.lifecycle !== 'completed' && order.payment_requirement === 'full'
-						? 'standard'
-						: 'none'
+				refundTerms: order.payment_requirement === 'full' ? 'standard' : 'none'
 			};
 		case 'paid_awaiting_agreement':
 			return {
@@ -189,6 +183,121 @@ type Base = Pick<
 	'refund' | 'doNotPayAgain' | 'confirmed' | 'poll' | 'action' | 'promise' | 'refundTerms'
 >;
 
+/** The accepted order's line; being made (state 19) says the cake is being prepared. */
+function acceptedLine(order: Order): string {
+	const making = order.lifecycle === 'in_production';
+	if (order.payment_requirement === 'none') {
+		return making
+			? 'Your free order is confirmed. Your cake is now being prepared.'
+			: 'Your free order is confirmed.';
+	}
+	if (!making) return 'We’ve received your payment and your order is confirmed.';
+	const paid = order.delivery?.paid_minor;
+	return order.fulfillment_mode === 'gk_delivery' &&
+		Number.isSafeInteger(paid) &&
+		(paid as number) > 0
+		? 'Your cakes and delivery are paid. The chef has confirmed your delivery and started making your cake.'
+		: 'We’ve received your payment and your order is confirmed. Your cake is now being prepared.';
+}
+
+/** The cake part of a refund (0038 parts), or the whole refund without parts. */
+function cakeRefundMinor(order: Order): number | undefined {
+	const r = order.refund;
+	if (!r) return undefined;
+	const cake = Array.isArray(r.parts) ? r.parts.find((p) => p?.kind === 'cake') : undefined;
+	const minor = Array.isArray(r.parts) ? cake?.target_minor : r.target_minor;
+	return Number.isSafeInteger(minor) && (minor as number) > 0 ? (minor as number) : undefined;
+}
+
+/**
+ * A completed order (state 19): collected (ask the chef about anything
+ * wrong), a refund agreed with the chef after collection (Q20), or a cake
+ * that wasn't collected (Q19: 50% requested automatically when the chef
+ * recorded it). A GK delivery nobody took is recovery.ts's (Q18).
+ */
+function completed(order: Order, base: Base): OrderView {
+	const done: OrderView = {
+		...base,
+		tone: 'success',
+		title: 'Your order is complete',
+		lines: ['Thank you for ordering with GK Cakes.'],
+		confirmed: true
+	};
+	const r = order.refund;
+	if (
+		order.fulfillment?.state === 'no_show' &&
+		order.delivery_failure?.cause !== 'nobody_available'
+	) {
+		const half = cakeRefundMinor(order);
+		const amount =
+			half !== undefined ? formatMoney(half, r?.currency ?? order.currency) : undefined;
+		return {
+			...done,
+			tone: 'warning',
+			title: 'Your cake wasn’t collected',
+			lines: [
+				`Your cake was ready at St Katharine Docks on ${shortDate(order.date)}, ${timeRange(order.slot.starts_at, order.slot.ends_at)}, but it wasn’t collected.`,
+				...(amount && r?.reason === 'no_show'
+					? [
+							`Under the refund terms you get 50% of what you paid back: ${amount}. We requested it automatically when the chef recorded that the cake wasn’t collected.`
+						]
+					: [])
+			],
+			contactChef: true
+		};
+	}
+	if (r && r.reason === 'chef_exception' && Number.isSafeInteger(r.target_minor)) {
+		const amount = formatMoney(r.target_minor, r.currency ?? order.currency);
+		const requested = r.state === 'requested';
+		return {
+			...done,
+			lines: [
+				'Thank you for ordering with GK Cakes.',
+				`Refund of ${amount} requested: the amount you agreed with the chef after collection.${requested ? ' We’ll update this page as it progresses.' : ''}`
+			],
+			refund: requested ? undefined : base.refund
+		};
+	}
+	return {
+		...done,
+		lines: [
+			'Thank you for ordering with GK Cakes.',
+			'Something wrong with your cake? Please contact the chef: they’ll look at it with you and agree any refund.'
+		],
+		contactChef: true,
+		contactLabel: 'Contact the chef about your cake'
+	};
+}
+
+/**
+ * Paid after the order was cancelled (state 11, Q7): the payment arrived
+ * after the place was released; it is kept safe and all of it returned.
+ * Shown once the API reports the refund (K11); "returned" only when it says so.
+ */
+function paidAfterCancel(order: Order, base: Base): OrderView {
+	const r = order.refund;
+	const p = order.payment;
+	const amount =
+		p?.state === 'succeeded' && Number.isSafeInteger(p.amount_minor)
+			? formatMoney(p.amount_minor, p.currency || order.currency)
+			: undefined;
+	const returned = r?.state === 'returned';
+	return {
+		...base,
+		refund: undefined,
+		tone: returned ? 'success' : 'warning',
+		title: 'Payment received after this order was cancelled',
+		lines: [
+			`This order had already been cancelled because the payment wasn’t completed in time, and then your payment${amount ? ` of ${amount}` : ''} arrived. ${returned ? 'We kept it safe and have returned all of it to you.' : 'We’ve kept it safe and are returning all of it to you.'}`,
+			...(base.refund ? [base.refund] : []),
+			'Please don’t pay again. Your cake won’t be made for this order.'
+		],
+		action: 'new_order',
+		actionLabel: 'Start a new order',
+		paidAfterCancel: true
+	};
+}
+
 function cancelled(order: Order, base: Base): OrderView {
 	const state = order.payment?.state;
 	if (state === 'created' || state === 'pending' || state === 'unknown') {
@@ -202,6 +311,13 @@ function cancelled(order: Order, base: Base): OrderView {
 			poll: true,
 			doNotPayAgain: true
 		};
+	}
+	if (
+		order.cancel_reason === 'payment_not_completed' &&
+		order.refund &&
+		(order.refund.reason === undefined || order.refund.reason === 'late_capture_terminal')
+	) {
+		return paidAfterCancel(order, base);
 	}
 	// A cancellation by the customer or the chef, or a full return (state 13).
 	const story = cancelledStory(order);

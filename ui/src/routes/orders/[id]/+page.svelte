@@ -7,7 +7,9 @@
 	// GK-030: cancellation with the API's preview, refund progress and the
 	// same-day time change (GK-017 r02b states 12, 13 and 18); slice 2: the
 	// late-payment answer (state 10), the delivery quote and its payment
-	// (15), "we can't deliver" (14) and a failed delivery's choice (19).
+	// (15), "we can't deliver" (14) and a failed delivery's choice (19);
+	// slice 3: the order timeline (19), paid after cancellation (11), and
+	// the API's per-caller actions decide which buttons are shown.
 	import '../../../lib/checkout/checkout.css';
 	import '../../../lib/checkout/changes.css';
 	import { onMount, tick } from 'svelte';
@@ -29,6 +31,7 @@
 		changePoll,
 		deliveryPaid,
 		mayCancel,
+		MOVE_FIXED,
 		refundProgress,
 		timeChange,
 		type ChangeBaseline
@@ -38,6 +41,8 @@
 	import RefundProgress from '../../../lib/checkout/ui/RefundProgress.svelte';
 	import DeliveryChoice from '../../../lib/checkout/ui/DeliveryChoice.svelte';
 	import LateAnswer from '../../../lib/checkout/ui/LateAnswer.svelte';
+	import OrderTimeline from '../../../lib/checkout/ui/OrderTimeline.svelte';
+	import { orderTimeline } from '../../../lib/checkout/timeline';
 	import {
 		choiceCard,
 		choiceOutcomeSince,
@@ -49,6 +54,7 @@
 		withPaymentCheck,
 		PAYMENT_CHECK_UNREADABLE,
 		type PaymentCheck,
+		withActions,
 		withRecovery,
 		type ChoiceKind
 	} from '../../../lib/checkout/recovery';
@@ -134,7 +140,7 @@
 	// A dead end (lead time missed, price expired) offers a new order
 	// instead of paying or confirming this one.
 	function fullView(o: Order): OrderView {
-		return withRecovery(orderView(o, { returned, cancelledMinor }), o);
+		return withActions(withRecovery(orderView(o, { returned, cancelledMinor }), o), o, who);
 	}
 	const view = $derived(
 		order
@@ -150,6 +156,8 @@
 	const refundSummary = $derived(
 		order?.refund ? refundProgress(order.refund, order.currency) : null
 	);
+	/** Money and Your cake side by side (state 19), for an accepted order. */
+	const timeline = $derived(order && !checkingPayment ? orderTimeline(order) : undefined);
 
 	// The outcome of this page's own cancellation: a refusal (the order
 	// changed meanwhile) leaves the order as it was, and says so.
@@ -445,10 +453,12 @@
 				</div>
 				{#if order.lifecycle === 'cancelled' && order.refund}
 					<RefundProgress refund={order.refund} currency={order.currency} />
-					<div class="oc-actions">
-						<a class="text-link" href="mailto:gk.cake.london@gmail.com">Contact us</a>
-					</div>
-				{:else if view.refundTracker && order.refund}
+					{#if !view.paidAfterCancel}
+						<div class="oc-actions">
+							<a class="text-link" href="mailto:gk.cake.london@gmail.com">Contact us</a>
+						</div>
+					{/if}
+				{:else if view.refundTracker && order.refund && !timeline}
 					<RefundProgress refund={order.refund} currency={order.currency} />
 				{/if}
 				{#if view.answer && who && !sent}
@@ -497,11 +507,16 @@
 						{#if pollStopped}
 							<button type="button" onclick={() => void refresh()}>Refresh status</button>
 						{/if}
+						{#if view.paidAfterCancel}
+							<a class="text-link" href="mailto:gk.cake.london@gmail.com">Contact us</a>
+						{/if}
 					</div>
 				{/if}
 				{#if view.contactChef}
 					<div class="oc-actions">
-						<a class="text-link" href="mailto:gk.cake.london@gmail.com">Contact the chef</a>
+						<a class="text-link" href="mailto:gk.cake.london@gmail.com"
+							>{view.contactLabel ?? 'Contact the chef'}</a
+						>
 					</div>
 				{/if}
 				{#if pollStopped}
@@ -535,6 +550,10 @@
 				/>
 			{/if}
 
+			{#if timeline}
+				<OrderTimeline {timeline} />
+			{/if}
+
 			{#if cancelOpen && who}
 				<CancelPanel
 					orderId={order.id}
@@ -542,6 +561,7 @@
 					api={changesApi}
 					{keys}
 					delivery={deliveryPaid(order)}
+					making={order.lifecycle === 'in_production'}
 					onclose={(p) => void closeCancel(p)}
 					oncancelled={(amount) => void cancelled(amount)}
 				/>
@@ -576,6 +596,8 @@
 									>contact the chef</a
 								>: a GK delivery time can only change with the chef’s agreement.
 							</p>
+						{:else if change === 'fixed'}
+							<p>{MOVE_FIXED}</p>
 						{/if}
 					{/if}
 					{#if cancelContact && change !== 'contact_chef'}
@@ -658,8 +680,18 @@
 					</div>
 				{/if}
 				<div class="totals total">
-					<span>{order.paid_at ? (delivery.length > 0 ? 'Paid for cakes' : 'Paid') : 'Total'}</span
-					><span>{formatMoney(order.total_minor, order.currency)}</span>
+					{#if view.paidAfterCancel && order.payment?.state === 'succeeded'}
+						<span>Paid (after cancellation)</span><span
+							>{formatMoney(
+								order.payment.amount_minor,
+								order.payment.currency || order.currency
+							)}</span
+						>
+					{:else}
+						<span
+							>{order.paid_at ? (delivery.length > 0 ? 'Paid for cakes' : 'Paid') : 'Total'}</span
+						><span>{formatMoney(order.total_minor, order.currency)}</span>
+					{/if}
 				</div>
 				{#each delivery as row (row.label)}
 					<div class="totals">
@@ -667,14 +699,25 @@
 					</div>
 				{/each}
 				{#if deliveryNote(order)}<p class="small">{deliveryNote(order)}</p>{/if}
-				{#if refundSummary}
+				{#if refundSummary && view.paidAfterCancel}
 					<div class="totals">
-						<span>Refund due</span><span>{refundSummary.due}</span>
+						<span>Refund · {refundSummary.stateWord}</span><span>{refundSummary.due}</span>
+					</div>
+					<p class="small">Full refund of everything paid. Refund amounts come from our system.</p>
+				{:else if refundSummary}
+					<div class="totals">
+						<span>{refundSummary.agreed ? 'Refund agreed' : 'Refund due'}</span><span
+							>{refundSummary.due}</span
+						>
 					</div>
 					<div class="totals">
 						<span>Returned so far</span><span>{refundSummary.returnedSoFar}</span>
 					</div>
-					<p class="small">“Returned” appears only when our payment provider confirms it.</p>
+					<p class="small">
+						{#if refundSummary.agreed && order.lifecycle === 'completed' && order.fulfillment_mode !== 'gk_delivery'}Your
+							collection stays in the order history; the refund is shown separately.
+						{/if}“Returned” appears only when our payment provider confirms it.
+					</p>
 				{/if}
 				{#if view.refundTerms === 'standard'}
 					<p class="small" id="refund-terms">

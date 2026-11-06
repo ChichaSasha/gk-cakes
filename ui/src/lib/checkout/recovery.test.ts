@@ -4,6 +4,9 @@ import type { OrderRecoveryApi } from './client';
 import { ActionKeys, type Who } from './flow';
 import { orderView } from './order';
 import {
+	CANT_CONFIRM,
+	CANT_PAY,
+	CANT_PAY_DELIVERY,
 	LAPSED,
 	choiceBaseline,
 	choiceCard,
@@ -17,6 +20,7 @@ import {
 	sendChoice,
 	shortMoment,
 	startDeliveryPayment,
+	withActions,
 	withPaymentCheck,
 	withRecovery
 } from './recovery';
@@ -1087,5 +1091,136 @@ describe('a payment this page asked for, while the order can’t be read (r2 min
 		expect(v.action).toBe('none');
 		expect(v.doNotPayAgain).toBe(true);
 		expect(withPaymentCheck(waiting, null)).toBe(waiting);
+	});
+});
+
+// ---------------------------------------------------------------- slice 3: the API's actions (0038)
+
+describe('the choice cards follow the API’s actions', () => {
+	const owner: Who = { kind: 'account', token: 't' };
+
+	it('Q5: only the choices this caller may make (allowed_choices)', () => {
+		const o = gk({
+			delivery: delivery({ payable: false }),
+			delivery_choice: q5({ allowed_choices: ['collection', 'customer_courier'] }),
+			actions: ['delivery_choice']
+		});
+		expect(choiceCard(o, guest, NOW)?.options.map((x) => x.value)).toEqual([
+			'collection',
+			'customer_courier'
+		]);
+		const refundOnly = { ...o, delivery_choice: q5({ allowed_choices: ['full_refund'] }) };
+		expect(choiceCard(refundOnly, guest, NOW)?.options.map((x) => x.value)).toEqual([
+			'full_refund'
+		]);
+		// Nothing allowed, or no delivery_choice action: no card.
+		expect(
+			choiceCard({ ...o, delivery_choice: q5({ allowed_choices: [] }) }, guest, NOW)
+		).toBeUndefined();
+		expect(choiceCard({ ...o, actions: ['cancel'] }, owner, NOW)).toBeUndefined();
+		// Never more than the order's own choices.
+		const extra = {
+			...o,
+			delivery_choice: q5({
+				choices: ['full_refund'],
+				allowed_choices: ['collection', 'full_refund']
+			})
+		};
+		expect(choiceCard(extra, owner, NOW)?.options.map((x) => x.value)).toEqual(['full_refund']);
+	});
+
+	it('Q5 without actions (an older API): every listed choice', () => {
+		const o = gk({ delivery: delivery({ payable: false }), delivery_choice: q5() });
+		expect(choiceCard(o, guest, NOW)?.options).toHaveLength(3);
+	});
+
+	it('a failed delivery’s choice needs delivery_failure_choice', () => {
+		expect(choiceCard(failed({}, { actions: ['delivery_failure_choice'] }), guest, NOW)?.kind).toBe(
+			'failure'
+		);
+		expect(choiceCard(failed({}, { actions: ['cancel'] }), guest, NOW)).toBeUndefined();
+		expect(choiceCard(failed(), guest, NOW)?.kind).toBe('failure');
+	});
+});
+
+describe('withActions: only the buttons the API offers this caller', () => {
+	const owner: Who = { kind: 'account', token: 't' };
+	const full = (o: Order, who: Who | null = guest) =>
+		withActions(withRecovery(orderView(o), o, { now: NOW }), o, who);
+	const awaiting = (over: Partial<Order> = {}) =>
+		order({ lifecycle: 'awaiting_payment', paid_at: null, ...over });
+
+	it('pay: offered with the action; otherwise a new order instead', () => {
+		expect(full(awaiting({ actions: ['pay', 'cancel'] })).action).toBe('start_payment');
+		const v = full(awaiting({ actions: [] }));
+		expect(v.action).toBe('new_order');
+		expect(v.actionLabel).toBe('Start a new order');
+		expect(v.lines).toEqual([CANT_PAY]);
+		const failedAttempt = full(
+			awaiting({
+				actions: [],
+				payment: {
+					id: 'p',
+					state: 'failed',
+					amount_minor: 9000,
+					currency: 'GBP',
+					requested_at: 'x',
+					checkout_url: null,
+					expires_at: null
+				}
+			})
+		);
+		expect(failedAttempt.title).toBe('That payment didn’t go through');
+		expect(failedAttempt.lines).toEqual(['No payment was taken for that attempt.', CANT_PAY]);
+	});
+
+	it('an open payment page stays (it is the same payment)', () => {
+		const url = 'https://checkout.stripe.com/c/pay/cs_test_1';
+		const v = full(
+			awaiting({
+				actions: [],
+				payment: {
+					id: 'p',
+					state: 'pending',
+					amount_minor: 9000,
+					currency: 'GBP',
+					requested_at: 'x',
+					checkout_url: url,
+					expires_at: 'x'
+				}
+			})
+		);
+		expect(v.action).toBe('open_payment');
+	});
+
+	it('free confirmation', () => {
+		const free = (actions: string[]) =>
+			awaiting({ payment_requirement: 'none', total_minor: 0, actions });
+		expect(full(free(['free_confirmation'])).action).toBe('confirm_free');
+		const v = full(free([]));
+		expect(v.action).toBe('new_order');
+		expect(v.lines).toEqual([CANT_CONFIRM]);
+	});
+
+	it('pay_delivery: no pay button without it, and a line saying so', () => {
+		expect(full(gk({ actions: ['cancel', 'pay_delivery'] })).action).toBe('pay_delivery');
+		const v = full(gk({ actions: ['cancel'] }));
+		expect(v.action).toBe('none');
+		expect(v.lines.at(-1)).toBe(CANT_PAY_DELIVERY);
+	});
+
+	it('the late-payment answer: no buttons without answer_late_payment (contact the chef)', () => {
+		const o = late({ state: 'offered', offer: offer() });
+		expect(full({ ...o, actions: ['answer_late_payment'] }).answer).toBeDefined();
+		const v = full({ ...o, actions: [] }, owner);
+		expect(v.answer).toBeUndefined();
+		expect(v.contactChef).toBe(true);
+	});
+
+	it('actions absent (an older API): unchanged', () => {
+		const o = late({ state: 'offered', offer: offer() });
+		expect(full(o).answer).toBeDefined();
+		expect(full(awaiting()).action).toBe('start_payment');
+		expect(full(gk()).action).toBe('pay_delivery');
 	});
 });
