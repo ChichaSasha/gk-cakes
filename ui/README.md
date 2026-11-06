@@ -198,9 +198,44 @@ accepted, paid orders.
 It polls while the state can change (from 3 s, backing off to 30 s, stopping
 after 5 minutes with a refresh button).
 
+**Order changes (GK-030 slice 1)** follow the Creator-approved GK-017 r02b
+states 12, 13 and 18 (`src/lib/checkout/changes.ts`, components in
+`src/lib/checkout/ui/`, styles in `src/lib/checkout/changes.css`). They are
+offered to the signed-in owner or this tab's guest capability (checkout binds
+it with read, pay, cancel and move_pickup; the API checks it again).
+
+- **Cancel**: "Preview cancellation" on a confirmed, in-production or ready
+  order (never after a GK delivery was sent out, never while another change
+  is processed) opens "Cancel your order?" with
+  `POST /orders/{id}/cancellation-preview`: the preview's `amount_minor`
+  exactly (never computed here), the side of the deadline from its `rate`,
+  the time left as of its `computed_at`, the labelled rounding example after
+  the deadline, and for a paid GK delivery the allocations back to the
+  payment method beside `delivery_pending_minor` sent by the chef.
+  `POST /orders/{id}/cancel` sends the preview's version, ID and hash with one
+  Idempotency-Key per preview. A preview is asked again at the deadline or
+  its 10-minute expiry and after `PREVIEW_STALE` / `STALE_VERSION`; when the
+  rate dropped, the boundary alert ("The full-refund deadline has just
+  passed…") takes focus and the button shows the new amount. The page then
+  reads "Cancelling your order" (`cancellation_pending`, polled) until the
+  refund appears.
+- **Refund progress**: a cancelled order with a refund block shows why (by
+  `cancel_reason`: customer before/after the deadline, chef's cancellation,
+  date not agreed, couldn't deliver), the refund line, a three-step tracker
+  from `refund.state` only (past tense only once finished), the chef's
+  delivery refund on its own line, and "Refund due" / "Returned so far".
+- **Change your time** (collection and own courier): the move choices
+  (`GET /schedule?purpose=pickup_move&order_id=…`) as a radio list of
+  start–end times with the current one marked; disabled after the six-hour
+  cutoff; `POST /orders/{id}/pickup`, polled until moved or refused; a stale
+  choice keeps the booking and reloads the choices with that time struck
+  through. GK delivery orders have no time control ("please contact the
+  chef").
+
 **Not built here:** the discovery pages and real basket (GK-016), the GK
-delivery request and quote flow, and the GK-017 r02 problem-state designs (not
-approved): problem states are shown plainly with the messages above.
+delivery request and quote flow, and the other GK-017 r02b problem states
+(approved 2026-11-05; only states 12, 13 and 18 are built, above): those are
+shown plainly with the messages above.
 Confirmation emails are not sent yet, so the pages do not promise one.
 
 No browser test runner is configured yet; one is added when a runner is approved

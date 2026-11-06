@@ -434,10 +434,16 @@
 					</div>
 				{/if}
 				<div class="totals total">
-					<span>{order.paid_at ? 'Paid' : 'Total'}</span><span
-						>{formatMoney(order.total_minor, order.currency)}</span
-					>
+					<span>{order.paid_at ? (deliveryPaid(order) ? 'Paid for cakes' : 'Paid') : 'Total'}</span
+					><span>{formatMoney(order.total_minor, order.currency)}</span>
 				</div>
+				{#if deliveryPaid(order) && order.delivery?.paid_minor}
+					<div class="totals">
+						<span>GK delivery · paid separately</span><span
+							>{formatMoney(order.delivery.paid_minor, order.currency)}</span
+						>
+					</div>
+				{/if}
 				{#if refundSummary}
 					<div class="totals">
 						<span>Refund due</span><span>{refundSummary.due}</span>

@@ -13,6 +13,8 @@
 	let { refund, currency = 'GBP' }: Props = $props();
 
 	const view = $derived(refundProgress(refund, currency));
+	// Read after the step's label (the leading space is part of the text).
+	const SPOKEN = { done: ' · done', current: ' · current step', upcoming: '' } as const;
 </script>
 
 {#if view.lines.length > 0}
@@ -31,9 +33,9 @@
 			class={step.state === 'upcoming' ? '' : step.state}
 			aria-current={step.state === 'current' ? 'step' : undefined}
 		>
-			<span>{step.label}</span>{#if step.state === 'done'}<span class="sr-only">
-					· done</span
-				>{:else if step.state === 'current'}<span class="sr-only"> · current step</span>{/if}
+			<span>{step.label}</span>{#if step.state !== 'upcoming'}<span class="sr-only"
+					>{SPOKEN[step.state]}</span
+				>{/if}
 		</li>
 	{/each}
 </ol>

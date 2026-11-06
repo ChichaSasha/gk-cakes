@@ -151,7 +151,7 @@
 			onclick={() => void toggle()}>Change your time</button
 		>
 	</div>
-	<div id="move-panel" hidden={!open}>
+	<div id="move-panel" class="oc-move-panel" hidden={!open}>
 		{#if loading}
 			<p class="small" role="status">Loading available times…</p>
 		{:else if loadFailed}

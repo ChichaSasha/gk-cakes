@@ -21,6 +21,9 @@ describe('RefundProgress', () => {
 		expect(body).toContain('aria-label="Refund progress"');
 		expect(body).toMatch(/<li class="done"[^>]*>/);
 		expect(body).toMatch(/<li class="current" aria-current="step">/);
+		// The spoken state keeps its separating space after the label.
+		expect(body).toContain('<span class="sr-only"> · current step</span>');
+		expect(body).toContain('<span class="sr-only"> · done</span>');
 		expect(text(body)).toBe(
 			'Refund requested · done Sent to our payment provider · waiting for them · current step Return to your payment method'
 		);
