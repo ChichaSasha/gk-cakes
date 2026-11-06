@@ -27,6 +27,7 @@ type Schedule interface {
 	StaffLot(ctx context.Context, subject, id string) (schedule.Lot, error)
 	StaffDays(ctx context.Context, subject string, from, to time.Time) ([]schedule.StaffDay, error)
 	StaffLots(ctx context.Context, subject string, includeInactive bool) ([]schedule.Lot, error)
+	StaffChoices(ctx context.Context, subject, orderID string, day time.Time) (schedule.StaffChoices, error)
 	PublishVersion(ctx context.Context, subject, key string, in schedule.VersionInput) (catalog.Result, error)
 	SetDayLimit(ctx context.Context, subject, key string, day time.Time, in schedule.DayLimitInput) (catalog.Result, error)
 	CreateLot(ctx context.Context, subject, key string, in schedule.LotInput) (catalog.Result, error)
@@ -193,6 +194,30 @@ func scheduleStaffRoutes(mux *http.ServeMux, sch Schedule, id Identity, logger *
 		}
 		lots, err := sch.StaffLots(r.Context(), a.Subject, inactive == "true")
 		respond(w, r, logger, http.StatusOK, map[string]any{"lots": lots}, err)
+	}))
+	// The chef's choices of one day for one order: what the appointment
+	// change (or, for an order paid late, an offer of another date) would
+	// accept now. Reads only; date and order_id are required, nothing else
+	// applies.
+	mux.HandleFunc("GET /api/v1/admin/schedule/choices", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+		q := r.URL.Query()
+		for k := range q {
+			if k != "date" && k != "order_id" {
+				writeError(w, r, http.StatusUnprocessableEntity, "INVALID_INPUT", k+" does not apply to staff schedule choices", false)
+				return
+			}
+		}
+		day, ok := queryDate(w, r, "date")
+		if !ok {
+			return
+		}
+		orderID := q.Get("order_id")
+		if !catalog.ValidUUID(orderID) {
+			writeError(w, r, http.StatusUnprocessableEntity, "INVALID_INPUT", "order_id must be the order's ID", false)
+			return
+		}
+		c, err := sch.StaffChoices(r.Context(), a.Subject, orderID, day)
+		respond(w, r, logger, http.StatusOK, c, err)
 	}))
 
 	mux.HandleFunc("POST /api/v1/admin/schedule/versions", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {

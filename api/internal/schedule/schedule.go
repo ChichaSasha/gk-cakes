@@ -465,6 +465,111 @@ func (s *Store) Choices(ctx context.Context, day time.Time, mode string, quantit
 	return c, nil
 }
 
+// Staff choice purposes: what the chef would do with a chosen start.
+const (
+	PurposeAppointmentChange = "appointment_change"
+	PurposeLatePaymentOffer  = "late_payment_offer"
+)
+
+// StaffSlot is one start of the chef's choices: Allocation is standard or
+// chef_extra on another day for an order holding a day place (what the
+// appointment change would record; an offer is only available within
+// standard places), otherwise null.
+type StaffSlot struct {
+	Slot
+	Allocation *string `json:"allocation"`
+}
+
+// ChoiceAppointment is an order's visible appointment.
+type ChoiceAppointment struct {
+	Date     string    `json:"date"`
+	ID       string    `json:"id"`
+	StartsAt time.Time `json:"starts_at"`
+	EndsAt   time.Time `json:"ends_at"`
+}
+
+// ChoiceCapacity is the chosen day's standard places beside the order's:
+// the day's standard limit, the other orders' committed standard cakes and
+// the order's cakes.
+type ChoiceCapacity struct {
+	StandardLimit     int   `json:"standard_limit"`
+	CommittedStandard int64 `json:"committed_standard"`
+	OrderCakes        int   `json:"order_cakes"`
+}
+
+// StaffChoices is the chef's schedule projection of one date for one order
+// (GET /admin/schedule/choices; migration 0039).
+type StaffChoices struct {
+	ScheduleRevision *int              `json:"schedule_version"`
+	AsOf             time.Time         `json:"as_of"`
+	Timezone         string            `json:"timezone"`
+	OrderID          string            `json:"order_id"`
+	Date             string            `json:"date"`
+	Purpose          string            `json:"purpose"`
+	FulfillmentMode  string            `json:"fulfillment_mode"`
+	DayStatus        string            `json:"day_status"`
+	CurrentSlot      ChoiceAppointment `json:"current_slot"`
+	Capacity         *ChoiceCapacity   `json:"capacity"`
+	Slots            []StaffSlot       `json:"slots"`
+}
+
+// StaffChoices returns, for the chef, the published starts of day judged
+// for order orderID as of now: as the chef's appointment change would judge
+// them, or for an order paid late (paid_awaiting_agreement) as an offer of
+// another date. Reads only (no hold, no lock); the commands re-check
+// everything. ErrNotFound for an unknown order, ErrForbidden without the
+// chef capability.
+func (s *Store) StaffChoices(ctx context.Context, subject, orderID string, day time.Time) (StaffChoices, error) {
+	if !catalog.ValidUUID(orderID) {
+		return StaffChoices{}, catalog.ErrNotFound
+	}
+	now := s.now().UTC()
+	c := StaffChoices{AsOf: now, Timezone: Timezone, OrderID: orderID, Date: day.Format(time.DateOnly), Slots: []StaffSlot{}}
+	rows, err := s.DB.Query(ctx, `SELECT purpose, day_status, order_mode, schedule_revision, current_day,
+		current_slot_id::text, current_starts_at, current_ends_at, standard_limit, committed_standard, order_cakes,
+		slot_id::text, starts_at, ends_at, availability, reason_code, allocation
+		FROM business.schedule_staff_choices($1::uuid, $2::uuid, $3::date, $4)`, subject, orderID, c.Date, now)
+	if err != nil {
+		return StaffChoices{}, gatewayError("staff choices", err)
+	}
+	defer rows.Close()
+	seen := false
+	for rows.Next() {
+		var (
+			current      time.Time
+			limit        *int
+			committed    *int64
+			cakes        *int
+			id           *string
+			starts, ends *time.Time
+			availability *string
+			sl           StaffSlot
+		)
+		if err := rows.Scan(&c.Purpose, &c.DayStatus, &c.FulfillmentMode, &c.ScheduleRevision, &current,
+			&c.CurrentSlot.ID, &c.CurrentSlot.StartsAt, &c.CurrentSlot.EndsAt, &limit, &committed, &cakes,
+			&id, &starts, &ends, &availability, &sl.ReasonCode, &sl.Allocation); err != nil {
+			return StaffChoices{}, gatewayError("staff choices", err)
+		}
+		seen = true
+		c.CurrentSlot.Date = current.Format(time.DateOnly)
+		if limit != nil && committed != nil && cakes != nil {
+			c.Capacity = &ChoiceCapacity{StandardLimit: *limit, CommittedStandard: *committed, OrderCakes: *cakes}
+		}
+		if id == nil {
+			continue // a day without starts
+		}
+		sl.ID, sl.StartsAt, sl.EndsAt, sl.Availability = *id, *starts, *ends, *availability
+		c.Slots = append(c.Slots, sl)
+	}
+	if err := rows.Err(); err != nil {
+		return StaffChoices{}, gatewayError("staff choices", err)
+	}
+	if !seen {
+		return StaffChoices{}, catalog.ErrNotFound
+	}
+	return c, nil
+}
+
 // Lot is a finished cake lot. Staff fields are omitted publicly.
 type Lot struct {
 	ID                 string       `json:"id"`
