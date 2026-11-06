@@ -1,4 +1,4 @@
-// GK-018 r04b-claims — decide one request (proposal, not approved).
+// GK-018 r04c-claims — decide one request (proposal, not approved).
 // Live calls it stands for:
 //   read one: none today (the page finds the request in the four list states); proposed GET /api/v1/admin/order-claims/{id}
 //   approve: POST /api/v1/admin/order-claims/{id}/decision {expected_version, decision: "approve", order_id, note?}
@@ -29,10 +29,14 @@ const theirAccount=name?`${esc(name)}’s account`:'their account';
 const same=pending&&isLink?ALL_CLAIMS.filter(x=>x.state==='pending'&&x.order_id===cl.order_id&&x.id!==cl.id):[];
 const nextPending=CLAIMS.filter(x=>x.state==='pending'&&x.id!==cl.id&&new Date(x.created_at)>=new Date(cl.created_at))[0];
 
-const S={step:STEPS.includes(q.get('step'))?q.get('step'):'review',decision:q.get('decision')==='decline'?'decline':'approve',pick:q.get('pick')||'',answer:ANSWERS.some(a=>a[0]===q.get('answer'))?q.get('answer'):'ok',note:q.get('note')||'',term:q.get('q')||''};
+const S={confirmed:q.get('confirmed')==='1',step:STEPS.includes(q.get('step'))?q.get('step'):'review',decision:q.get('decision')==='decline'?'decline':'approve',pick:q.get('pick')||'',answer:ANSWERS.some(a=>a[0]===q.get('answer'))?q.get('answer'):'ok',note:q.get('note')||'',term:q.get('q')||''};
 if(S.step==='decline')S.decision='decline';if(S.step==='approve')S.decision='approve';
 if(isLink)S.pick=shortId(cl.order_id);
 const answerFor=()=>S.decision==='decline'&&APPROVE_ONLY.includes(S.answer)?'ok':S.answer;
+// Path c ("evidence") adds a website order on the strength of a reference that isn't secret: the chef confirms from
+// the order's contact email first (K00: verified account + order evidence + chef confirmation). Path a (future) proves
+// guest access instead.
+const needsCheck=()=>!isLink;
 const NOTE_MAX=500;const noteLen=v=>[...v].length;
 const picked=()=>S.pick?orderById(S.pick):null;
 
@@ -46,7 +50,10 @@ S.to=MONTH_OPTS.includes(q.get('to'))?q.get('to'):clampM(cl.approximate_date?shi
 const monthsSpan=(a,b)=>{const [y1,m1]=a.split('-').map(Number),[y2,m2]=b.split('-').map(Number);return (y2-y1)*12+(m2-m1)+1};
 
 function keepUrl(){const u=new URL(location.href);const set=(k,v,def)=>{if(v&&v!==def)u.searchParams.set(k,v);else u.searchParams.delete(k)};
- set('step',S.step,'review');set('decision',S.step==='busy'||S.step==='done'?S.decision:'','');set('pick',isLink?'':S.pick,'');set('q',S.term,'');history.replaceState(null,'',u.pathname.split('/').pop()+u.search)}
+ set('step',S.step,'review');set('decision',S.step==='busy'||S.step==='done'?S.decision:'','');set('pick',isLink?'':S.pick,'');
+ // The search term and the internal note are never written back to the URL (personal data); the live page keeps
+ // nothing personal in the URL, as the built Orders page does. Review links may still open a state with ?q= / ?note=.
+ u.searchParams.delete('q');u.searchParams.delete('note');u.searchParams.delete('confirmed');history.replaceState(null,'',u.pathname.split('/').pop()+u.search)}
 
 const orderCard=(od,extra='')=>`<div class="order-sum"><img src="assets/${IMG[od.cake]}.png" alt="" width="72" height="72"><div><p class="strong">Order <span class="mono">${shortId(od.id)}</span> · ${esc(CAKES[od.cake][0])} ${lifeChip(od)}</p><p class="small muted">${esc(CAKES[od.cake][1])} · ${esc(CAKES[od.cake][2])}</p><p class="small">${dayShort(od.date)}, ${od.slot} · ${MODES[od.mode]}</p><p class="small">Name on the order: <strong>${esc(od.customer_full_name)}</strong> · ${money(od.total)}</p>${extra}</div></div>`;
 
@@ -77,6 +84,15 @@ function results(){const t=S.term.trim().toLowerCase();const inRange=ORDERS.filt
  return `<p class="small strong" aria-live="polite" id="find-count">${list.length} ${list.length===1?'order':'orders'} · handover ${range}${t?` · matching “${esc(S.term)}”`:''}</p>
  <fieldset class="pick-list"><legend class="sr-only">Choose the order to add</legend>${list.map(od=>`<label class="pick ${S.pick===shortId(od.id)?'is-picked':''}"><input type="radio" name="pick" value="${shortId(od.id)}" ${S.pick===shortId(od.id)?'checked':''}><span><span class="strong"><span class="mono">${shortId(od.id)}</span> · ${esc(od.customer_full_name)}</span> ${lifeChip(od)}<span class="block small muted">${esc(CAKES[od.cake][0])} · ${dayShort(od.date)}, ${od.slot} · ${money(od.total)}</span></span></label>`).join('')}</fieldset>
  <p class="small muted">This list can’t show whether an order is already in someone’s account. If it is, adding it is refused and nothing changes.</p>`}
+function evidenceCard(){const od=picked();if(!needsCheck()||!pending||!od||savedNow())return '';
+ const first=name?esc(name.split(' ')[0]):'';
+ const msg=`Hello${first?' '+first:''}! To add your order to your GK Cake London account, please email ${BUSINESS_EMAIL} from the email address you used for the order, and include your request reference ${shortId(cl.id)} (you’ll find it in your account under “Your requests”). I’ll add it as soon as it arrives.`;
+ return `<section class="card card-alert" aria-labelledby="ev-h"><h2 id="ev-h" class="card-h">${icon('alert')}Before adding: confirm it’s theirs</h2>
+ <p class="small">A website order’s reference isn’t secret: it’s on the order page, in screenshots and anywhere the buyer shared it. Their profile isn’t proof either. Confirm from the order’s contact email before you add it.</p>
+ ${facts([['Contact email on this order',`<span class="mono">${esc(od.contact_email)}</span> <span class="chip-s chip-neutral">chef only</span>`],['Their request reference',`<span class="mono">${shortId(cl.id)}</span> <span class="small muted">(shown only in their account)</span>`]])}
+ <ol class="steps small"><li>Ask them to email <span class="mono">${BUSINESS_EMAIL}</span> from <span class="mono">${esc(od.contact_email)}</span>, quoting request <span class="mono">${shortId(cl.id)}</span>. That shows they control the order’s address <em>and</em> this account.</li><li>When it arrives from that address with that reference, add the order and note how you confirmed.</li><li>If they can’t use that address (mistyped, shared, no longer theirs), don’t add it: decline, or leave it waiting and talk to them.</li></ol>
+ <details class="draft"><summary class="btn btn-small">Show a message you can copy</summary><div class="draft-body"><p class="mail-body">${esc(msg)}</p><button class="btn btn-small" type="button" data-copy>Copy the message</button><p class="small muted">Prototype: nothing is copied or sent. Send it where you already talk to them.</p></div></details>
+ <p class="small muted">Once the order page’s “Add this order to my account” exists (GK-016), a request from there proves guest access instead (questions 3 and 6). Matching the address is your check, never automatic.</p></section>`}
 function decidedCard(){const od=cl.order_id&&orderById(cl.order_id);const [t,tone]=STATE_CHEF[cl.state];
  if(cl.state==='closed')return `<section class="card" aria-labelledby="out-h"><h2 id="out-h" class="card-h">Outcome</h2><p>${chip(t,tone)}</p><p>The customer deleted their account while this request was waiting, so it was closed and what they wrote was erased. Nothing was added.</p><p class="small muted">Closed requests don’t appear in any list (the list reads only waiting, added, couldn’t add and withdrawn). Only the proposed single-request read could show this page; without it the request simply disappears from Waiting.</p></section>`;
  return `<section class="card" aria-labelledby="out-h"><h2 id="out-h" class="card-h">Outcome</h2><p>${chip(t,tone)}${cl.account_deleted?' '+chip('Account deleted since','warn'):''}</p>${facts([[cl.state==='withdrawn'?'Withdrawn':'Decided',`${when(cl.decided_at)}${cl.state==='withdrawn'?' by the customer':` by ${decidedBy(cl)}`}`],cl.state==='approved'&&od?['Order added',`<a class="mono" href="order.html?id=${shortId(od.id)}">${shortId(od.id)}</a> · ${esc(orderLine(od))}`]:null,cl.state==='approved'||cl.state==='declined'?['Your internal note',cl.erased?'<span class="muted">Erased with the account</span>':cl.decision_note?esc(cl.decision_note):'<span class="muted">None</span>']:null,['The customer sees',cl.erased?'<span class="muted">Nothing: the account was deleted</span>':CUSTOMER_SEES[cl.state]]])}
@@ -84,10 +100,13 @@ function decidedCard(){const od=cl.order_id&&orderById(cl.order_id);const [t,ton
  ${cl.state==='approved'&&!cl.account_deleted?'<p class="small muted">When it was added, guest access to that order stopped working; they see it by signing in. Removing an order from an account isn’t built.</p>':''}${cl.state==='withdrawn'?'<p class="small muted">Nothing was added. A withdrawn request can’t be decided.</p>':''}</section>`}
 
 // ---------- right column: the decision
-const noteField=(ph)=>`<label class="field">Internal note (optional) · only you see it, never the customer<input name="note" value="${esc(S.note)}" autocomplete="off" aria-describedby="note-count note-err" placeholder="${ph}"></label><p class="small muted counter" id="note-count">${NOTE_MAX-noteLen(S.note)} characters left · one line</p><p class="small bad-text" id="note-err" role="alert"></p>`;
-function confirmApprove(od){return `<form class="confirm-box" data-approve novalidate aria-labelledby="ca-h"><p id="ca-h" class="strong" tabindex="-1" data-focus>Add order <span class="mono">${shortId(od.id)}</span> to ${theirAccount}?</p>
- <ul class="small list-tight"><li>The order appears in their account, in their order list.</li><li>${esc(GUEST_GONE)}</li><li>Their request shows “Added to your account”.</li><li>If the order is already in their account, it’s just marked added; nothing else changes.</li><li>There’s no undo here: removing an order from an account isn’t built.</li></ul>
- ${noteField('e.g. Name and date match; confirmed by phone')}
+const noteField=(ph,label='Internal note (optional) · only you see it, never the customer')=>`<label class="field">${label}<input name="note" value="${esc(S.note)}" autocomplete="off" aria-describedby="note-count note-err" placeholder="${ph}"></label><p class="small muted counter" id="note-count">${NOTE_MAX-noteLen(S.note)} characters left · one line</p><p class="small bad-text" id="note-err" role="alert"></p>`;
+const wrongPerson=od=>`If this is the wrong person, they see the order in their account, including the name${od?` and contact email (${esc(od.contact_email)})`:' and contact email'} on it and the handover details; the real buyer’s guest access stops; and there’s no undo here (removing an order from an account isn’t built).`;
+function confirmApprove(od){const chk=needsCheck();return `<form class="confirm-box" data-approve novalidate aria-labelledby="ca-h"><p id="ca-h" class="strong" tabindex="-1" data-focus>Add order <span class="mono">${shortId(od.id)}</span> to ${theirAccount}?</p>
+ <ul class="small list-tight"><li>The order appears in their account, in their order list.</li><li>${esc(GUEST_GONE)}</li><li>Their request shows “Added to your account”.</li><li>If the order is already in their account, it’s just marked added; nothing else changes.</li></ul>
+ <p class="small wrong-person">${icon('alert','note-icon')}<span>${wrongPerson(od)}</span></p>
+ ${chk?`<label class="check"><input type="checkbox" name="confirmed" ${S.confirmed?'checked':''} aria-describedby="conf-err"><span>I confirmed from the order’s contact email (<span class="mono">${esc(od.contact_email)}</span>) that this customer placed it</span></label><p class="small bad-text" id="conf-err" role="alert"></p>`:`<p class="small muted">They asked from the order’s guest page, which shows they had guest access.</p>`}
+ ${chk?noteField(`e.g. Email from ${esc(od.contact_email)} on 6 Nov quoting request ${shortId(cl.id)}`,'How you confirmed (required) · internal note, never shown to the customer'):noteField('e.g. Asked from the order page; name matches')}
  <div class="actions"><button class="btn btn-primary" type="submit">Yes, add to their account</button><button class="btn btn-quiet" type="button" data-go="review">Not yet</button></div></form>`}
 function declineForm(){return `<form class="confirm-box" data-decline novalidate aria-labelledby="cd-h"><p id="cd-h" class="strong" tabindex="-1" data-focus>Decline request <span class="mono">${shortId(cl.id)}</span>?</p>
  <ul class="small list-tight"><li>Nothing is added to their account.</li><li>They see only “Couldn’t add”, with “from the details given” and a request to contact us: no reason, and nothing about any order.</li>${isLink?`<li>${esc(GUEST_KEPT)}</li>`:''}</ul>
@@ -107,11 +126,11 @@ function resultBlock(){const a=answerFor(),od=picked(),dec=S.decision;
  if(a==='paused')return B('warn','clock',`<p><strong>Adding orders to accounts is paused for a moment</strong> while the data is being restored. Nothing changed.</p><p class="small">Try again in a few minutes.</p><div class="actions">${retry}</div>`);
  return B('warn','alert',`<p><strong>We couldn’t tell whether it was saved:</strong> the connection dropped before the answer arrived.</p><p class="small">Try again. It’s safe: the same decision is never applied twice.</p><div class="actions">${retry}</div>`)}
 function decisionCard(){
- if(!pending)return `<section class="card decision sticky" aria-labelledby="dec-h"><h2 id="dec-h" class="card-h">Decision</h2><p class="small">${cl.state==='withdrawn'?'The customer withdrew this request.':cl.state==='closed'?'Closed when the customer deleted their account.':`Already decided: “${esc(STATE_CHEF[cl.state][0])}”.`} Nothing to decide.</p><a class="btn btn-small" href="requests.html${cl.state==='closed'?'':`?tab=${cl.state}`}">Back to the list</a></section>`;
+ if(!pending)return `<section class="card decision sticky" aria-labelledby="dec-h"><h2 id="dec-h" class="card-h">Decision</h2><p class="small">${cl.state==='withdrawn'?'The customer withdrew this request.':cl.state==='closed'?'Closed when the customer deleted their account.':`Already decided: “${esc(STATE_CHEF[cl.state][0])}”.${cl.account_deleted?' The customer has since deleted their account, so the order is in no account.':''}`} Nothing to decide.</p><a class="btn btn-small" href="requests.html${cl.state==='closed'?'':`?tab=${cl.state}`}">Back to the list</a></section>`;
  let inner='';const od=picked();
  if(S.step==='review'){
   const add=isLink||od?`<button class="btn btn-primary" type="button" data-go="approve" data-focus>${isLink?'Add to their account':`Add order ${shortId(od.id)} to their account`}</button>`:`<button class="btn btn-primary" type="button" disabled aria-describedby="need-pick">Add to their account</button><p id="need-pick" class="small muted">Choose an order under “Find the order” first.</p>`;
-  inner=`${!isLink&&od?`<p class="small">Chosen: ${esc(orderLine(od))} · name on the order <strong>${esc(od.customer_full_name)}</strong></p>`:''}<div class="actions stack">${add}<button class="btn" type="button" data-go="decline">Decline</button></div><p class="small muted">Not sure? Leave it waiting and <a href="requests.html">go back</a>; nothing changes.</p>`}
+  inner=`${!isLink&&od?`<p class="small">Chosen: ${esc(orderLine(od))} · name on the order <strong>${esc(od.customer_full_name)}</strong> · contact email <span class="mono">${esc(od.contact_email)}</span></p><p class="small warn-text">Confirm from that address before adding (see “Before adding”).</p>`:''}<div class="actions stack">${add}<button class="btn" type="button" data-go="decline">Decline</button></div><p class="small muted">Not sure? Leave it waiting and <a href="requests.html">go back</a>; nothing changes.</p>`}
  if(S.step==='approve')inner=od?confirmApprove(od):'<p class="small bad-text">Choose an order first.</p>';
  if(S.step==='decline')inner=declineForm();
  if(S.step==='busy')inner=`<div class="actions stack"><button class="btn ${S.decision==='approve'?'btn-primary':'btn-danger'}" type="button" disabled aria-busy="true"><span class="spinner light" aria-hidden="true"></span>${S.decision==='approve'?'Adding…':'Declining…'}</button></div><p class="small" role="status" tabindex="-1" data-focus>${S.decision==='approve'?'Adding the order to their account…':'Declining the request…'}</p>`;
@@ -124,18 +143,19 @@ const h1=cl.erased?'Request (details erased)':name?`${esc(name)} ${verb} to add 
 const savedNow=()=>pending&&S.step==='done'&&answerFor()==='ok';
 function leftColumn(){if(!pending)return decidedCard()+sentCard('card-later')+whoCard('card-later');
  if(savedNow()){const od=picked();const added=S.decision==='approve'&&od?`<section class="card" aria-labelledby="ad-h"><h2 id="ad-h" class="card-h">The order you added</h2>${orderCard(od)}</section>`:'';return added+sentCard('card-later')+whoCard('card-later')}
- return isLink?linkOrderCard()+sentCard('card-later')+whoCard('card-later'):sentCard()+whoCard('card-later')+findCard()}
+ return isLink?linkOrderCard()+sentCard('card-later')+whoCard('card-later'):sentCard()+whoCard('card-later')+findCard()+`<div id="evidence-slot">${evidenceCard()}</div>`}
 function headState(){if(savedNow())return S.decision==='approve'?'approved':'declined';return cl.state}
 const futureBanner=()=>isLink?`<div class="banner banner-warn future-banner">${icon('clock','banner-icon')}<div><p><strong>Future state.</strong> ${esc(FUTURE_NOTE)}</p></div></div>`:'';
 function render(focus){const hs=headState();mount(shell(`<a class="back" href="requests.html${pending||cl.state==='closed'?'':`?tab=${cl.state}`}">${icon('back')} Requests to add orders</a>
-<header class="page-head"><div><p class="eyebrow">Request <span class="mono ref">${shortId(cl.id)}</span> · ${hs==='pending'?esc(waitText(cl.created_at).toLowerCase()):esc(STATE_CHEF[hs][0].toLowerCase())}</p><h1>${h1}</h1></div>${chip(STATE_CHEF[hs][0],STATE_CHEF[hs][1])}</header>
+<header class="page-head"><div><p class="eyebrow">Request <span class="mono ref">${shortId(cl.id)}</span> · ${hs==='pending'?esc(waitText(cl.created_at).toLowerCase()):cl.account_deleted?'added · account deleted since':esc(STATE_CHEF[hs][0].toLowerCase())}</p><h1>${h1}</h1></div>${cl.account_deleted?chip('Added · account deleted since','warn'):chip(STATE_CHEF[hs][0],STATE_CHEF[hs][1])}</header>
 ${futureBanner()}<div class="claim-grid"><div class="claim-main">${leftColumn()}</div><div class="claim-side">${decisionCard()}</div></div>`,'claims',groups));
  keepUrl();if(focus){const f=document.querySelector('[data-focus]');if(f)f.focus()}}
 render(false);
 
 function go(step,decision){if(decision)S.decision=decision;S.step=step;render(true)}
 const main=()=>document.querySelector('#main');
-document.addEventListener('click',e=>{const b=e.target.closest('[data-go],[data-fill]');if(!b||!main().contains(b))return;
+document.addEventListener('click',e=>{const cp=e.target.closest('[data-copy]');if(cp){toast('Prototype: nothing is copied or sent.');return}
+ const b=e.target.closest('[data-go],[data-fill]');if(!b||!main().contains(b))return;
  if(b.dataset.fill!==undefined){S.term=b.dataset.fill;render(false);const i=document.querySelector('[data-find] input[name=q]');i.focus();say();return}
  const g=b.dataset.go;
  if(g==='review'){S.step='review';render(true);return}
@@ -144,8 +164,13 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-go],[data-
  if(g==='approve-yes'||g==='decline-yes'){S.decision=g==='approve-yes'?'approve':'decline';busyThen()}});
 document.addEventListener('submit',e=>{const f=e.target;if(f.matches('[data-find]')){e.preventDefault();return}
  if(!f.matches('[data-decline],[data-approve]'))return;e.preventDefault();const v=f.note.value.trim().replace(/\s+/g,' ');
- if(noteLen(v)>NOTE_MAX){f.note.setAttribute('aria-invalid','true');document.getElementById('note-err').textContent=`The note can be up to ${NOTE_MAX} characters; it has ${noteLen(v)}.`;f.note.focus();return}
- S.note=v;S.decision=f.matches('[data-approve]')?'approve':'decline';busyThen()});
+ const approve=f.matches('[data-approve]'),chk=approve&&needsCheck();
+ const confErr=chk&&!f.confirmed.checked?'Confirm from the order’s contact email first, or choose “Not yet”.':'';
+ const noteErr=noteLen(v)>NOTE_MAX?`The note can be up to ${NOTE_MAX} characters; it has ${noteLen(v)}.`:chk&&!v?'Say how you confirmed (kept as your internal note).':'';
+ if(chk){document.getElementById('conf-err').textContent=confErr;if(confErr)f.confirmed.setAttribute('aria-invalid','true');else f.confirmed.removeAttribute('aria-invalid')}
+ document.getElementById('note-err').textContent=noteErr;if(noteErr)f.note.setAttribute('aria-invalid','true');else f.note.removeAttribute('aria-invalid');
+ if(confErr||noteErr){(confErr?f.confirmed:f.note).focus();return}
+ if(chk)S.confirmed=true;S.note=v;S.decision=f.matches('[data-approve]')?'approve':'decline';busyThen()});
 function busyThen(){S.step='busy';render(true);setTimeout(()=>{S.step='done';render(true);toast('Prototype: nothing is saved.');
  // A retry after "answer lost" or "paused" succeeds in this preview (same key, same decision).
  if(S.answer==='lost'||S.answer==='paused')S.answer='ok'},900)}
@@ -153,5 +178,5 @@ function say(){const c=document.getElementById('find-count');if(c){const t=c.tex
 document.addEventListener('input',e=>{const f=e.target.closest('[data-find]');if(f&&e.target.name==='q'){S.term=e.target.value;document.getElementById('find-out').innerHTML=results();keepUrl()}
  if(e.target.closest('[data-decline],[data-approve]')&&e.target.name==='note'){S.note=e.target.value;const left=NOTE_MAX-noteLen(S.note);const c=document.getElementById('note-count');c.textContent=left>=0?`${left} characters left · one line`:`${-left} characters too many`;c.classList.toggle('bad-text',left<0)}});
 document.addEventListener('change',e=>{const f=e.target.closest('[data-find]');if(f&&(e.target.name==='from'||e.target.name==='to')){S[e.target.name]=e.target.value;const sp=monthsSpan(S.from,S.to);document.getElementById('find-out').innerHTML=sp<1||sp>3?`<p class="bad-text small" role="alert">Choose up to 3 months, with “to” on or after “from”.</p>`:results();const u=new URL(location.href);u.searchParams.set('from',S.from);u.searchParams.set('to',S.to);history.replaceState(null,'',u.pathname.split('/').pop()+u.search)}
- if(e.target.name==='pick'){S.pick=e.target.value;if(S.step!=='review')S.step='review';document.querySelectorAll('.pick').forEach(l=>l.classList.toggle('is-picked',l.querySelector('input').checked));document.querySelector('.decision').outerHTML=decisionCard();keepUrl()}});
+ if(e.target.name==='pick'){S.pick=e.target.value;if(S.step!=='review')S.step='review';document.querySelectorAll('.pick').forEach(l=>l.classList.toggle('is-picked',l.querySelector('input').checked));document.querySelector('.decision').outerHTML=decisionCard();document.getElementById('evidence-slot').innerHTML=evidenceCard();keepUrl()}});
 })();

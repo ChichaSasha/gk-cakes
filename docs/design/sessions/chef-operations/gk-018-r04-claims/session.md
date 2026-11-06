@@ -1,10 +1,16 @@
-# GK-018 r04b-claims — chef side of adding orders to customer accounts
+# GK-018 r04c-claims — chef side of adding orders to customer accounts
 
-Status: **r04b — Proposal — not approved.** r04 (a338fd2) was drafted on 2026-11-06 while the Creator (Sasha) was
-away. The planning master pushed it as **draft PR #59**. A fresh independent design reviewer (gk-plan-review)
-returned **REVISE** on a338fd2 (3 major, 10 minor, nits). r04b, in the same folder, addresses every finding; see
-[Review round 1 changes](#review-round-1-changes). r04b still needs a fresh re-review and the Creator's
-exact-version approval. No implementation ticket may treat it as approved.
+Status: **r04c — Proposal — not approved.** r04 (a338fd2) was drafted on 2026-11-06 while the Creator (Sasha) was
+away. The planning master pushed it as **draft PR #59**.
+
+- **Round 1.** A fresh independent design reviewer (gk-plan-review) returned **REVISE** on a338fd2 (3 major, 10
+  minor, nits). r04b (b085103) addressed every finding; see [Review round 1 changes](#review-round-1-changes).
+- **Round 2.** A fresh reviewer returned **REVISE** on b085103: all round-1 findings resolved; one new major (adding
+  a guest website order on the strength of its reference alone), 2 minors and 3 nits. r04c, in the same folder,
+  addresses them; see [Review round 2 changes](#review-round-2-changes).
+
+r04c still needs a fresh re-review and the Creator's exact-version approval. No implementation ticket may treat it
+as approved.
 
 Example data only: every name, phone number, Instagram name and ID is made up. The prototype saves, sends and
 links nothing, and it makes no network calls.
@@ -27,45 +33,63 @@ I didn't verify these myself: this run has no Trello access. `../gk-018-r03/sess
 approved", from before that approval.
 
 Customers can ask to add an older order on staging (GK-029, from the Creator-approved GK-016 r02b sketch), so the
-chef needs a way to answer. r04b designs that chef side in r03b2's visual language: unchanged tokens (GK-015 r12),
+chef needs a way to answer. r04c designs that chef side in r03b2's visual language: unchanged tokens (GK-015 r12),
 Geist fonts, sidebar, cards, chips and wording style, in the "GK Cake London" workspace. `../gk-018-r01/`,
 `../gk-018-r02/` and `../gk-018-r03/` are unchanged.
 
 ## Execution check
 
 ```text
-Role/task: GK-018 r04b-claims / design worker (round 1 revision of a bounded proposal sketch; Creator asleep)
-Model requested/effort: card policy for bounded feature design is gpt-5.6-sol / high; the brief named none
+Role/task: GK-018 r04c-claims / design worker (round 2 revision of a bounded proposal sketch; Creator asleep)
+Model requested/effort: the routing row that applies is "Payment/refund, authorisation or capacity-race
+       decisions": gpt-6-astra, high or xhigh, fresh worker with the relevant shared contracts. (The r04/r04b
+       record used the bounded-feature row, gpt-5.6-sol/high; round 2 showed the evidence step is an
+       authorisation decision.) The brief named no model
 Model observed/effort: claude-opus-5-5 (host-reported: llmplatform/claude-opus-5-5) / effort not exposed
-Model evidence/status: host system environment / mismatch with the card policy; the user's host selection takes precedence
-History: continued author session (r04 then r04b); no subagents. Review findings read from pr59-round1.md
+Model evidence/status: host system environment / mismatch with the authorisation row; not a fresh worker
+History: continued author session (r04, r04b, r04c); no subagents. Findings read from pr59-round1.md, pr59-round2.md
 Inputs: sufficient for a proposal sketch; not sufficient for implementation (open questions, API follow-ups)
 Input revision: origin/main f0f2b5a; chef frame from origin/sasha-chycha/chef-ui-2 a559e5d (unmerged, see Gaps)
-Independence: not-applicable (author). Round 1 was an independent review; a fresh re-review of r04b is pending
+Independence: not-applicable (author). Rounds 1 and 2 were independent reviews; a fresh re-review of r04c is pending
 Writes: only docs/design/sessions/chef-operations/gk-018-r04-claims/ on sasha-chycha/gk-018-r04-claims-design
 Tools: local files, git (read and local commit), headless Chrome, python3 http.server on 127.0.0.1:4196.
        No push, PR edit, GitHub comment, Trello, Glean, Slack, Jira, Grafana or Snoocode GitHub tools
 ```
 
-**Why this model is suitable here (review finding 10).** The work touches an authorisation boundary (who may link
-an order to an account), so model suitability matters:
+**Measured against the authorisation row (round 2).** The evidence step decides what the chef relies on before
+linking an order to an account, so it is an authorisation decision. Under `execution-check.md`, a mismatch means
+"the master chooses an available suitable alternative and records the reason". So this record makes no claim to
+settle the decision:
+
+- The evidence step and the two routes (reference + contact-email confirmation now, or waiting for the order-page
+  button) are drafted as **options with a recommendation** in questions 3 and 6, for the Creator, with the
+  master's routing check.
+- Acceptance needs the master to confirm the model choice for this decision, or to route it to a qualified worker
+  or reviewer, plus an independent re-review.
+- Nothing here is implementation-ready until then.
+
+**Why the draft is still useful (review finding 10, round 1).** The work touches an authorisation boundary (who
+may link an order to an account):
 
 - **No new rule is decided.** Every authorisation rule shown is reused from accepted sources: K00, the GK-016 r02b
   answers, and the live API's chef-only routes and error codes, all read at the hashes below. Every change to a
   rule (option B, a website choice, new API fields) is put to the Creator or the master as a question.
 - **Track record.** The same host model authored the GK-016 r02b and GK-018 r03b2 sketches, which passed
   independent review and Creator approval. That is evidence for this role, not proof.
-- **Independent check.** Round 1 was independent, and a re-review of r04b is still required.
+- **Independent check.** Rounds 1 and 2 were independent, and a re-review of r04c is still required.
 
-The card's gpt-5.6-sol/high wasn't selectable in this host session. The mismatch is recorded, not hidden.
+Neither gpt-5.6-sol nor gpt-6-astra was selectable in this host session. The mismatch is recorded, not hidden.
 
 Readback:
 
-- **Outcome.** A chef queue of requests to add orders, a decision page for older-order requests (today) and
-  order-page requests (future, labelled), and a proposal for the chef adding an order herself.
+- **Outcome.** A chef queue of requests to add orders, a decision page for older-order requests (today, with a
+  contact-email confirmation step for website orders) and order-page requests (future, labelled), and a proposal
+  for the chef adding an order herself.
 - **Rules (K00).** Nothing is linked automatically: not by email, payer, address, name or Instagram. Only the
   chef approves. A waiting request reveals no order details to the customer, and a decline is generic. Approving
-  revokes the order's guest capabilities: today that's the order page in the browser that placed it. Requests are
+  revokes the order's guest capabilities: today that's the order page in the tab that placed it, if that tab is
+  still open (the capability is kept only in that tab's sessionStorage). K00 also says "historical claim requires
+  verified account + order evidence + chef confirmation; reject insufficient proof". Requests are
   chef only (fulfilment and technical support get 403).
 - **Profile data (K02, K09).** The profile's Instagram name and phone are private plain text, not proof. The
   chef's internal note is never customer text.
@@ -76,7 +100,8 @@ Readback:
 
 | Input | Hash |
 | --- | --- |
-| Review findings `pr59-round1.md` (round 1, REVISE on a338fd2) | 8bba039551095f32 |
+| Review findings `pr59-round1.md` (round 1, REVISE on a338fd2) / `pr59-round2.md` (round 2, REVISE on b085103) | 8bba039551095f32 / 2fd838b963aef899 |
+| ui/src/lib/guest.ts (guest capability: this tab's sessionStorage only, gone when the tab closes) | 11f61ce0ae207e2c |
 | AGENTS.md | d357f39d8b39ec72 |
 | skills/gk-feature/SKILL.md / references/design-sessions.md | b5a68cb7c520cf1f / 915e72b29842e6b4 |
 | skills/gk-plan/references/execution-check.md | 97d49fb1ad2ec4c2 |
@@ -86,7 +111,7 @@ Readback:
 | discovery-account/gk-016-r02/session.md (r02b; states 31–42, answers 1 and 6) | af41729299f910b6 |
 | ui/src/routes/account/older/+page.svelte / account/requests/[id]/+page.svelte | 66dee1152ac6cd39 / 1af03f7700d81475 |
 | ui/src/lib/account/claims.ts / older.ts | 6a02cd7ac048814a / 97c223297d3d8da2 |
-| ui/src/routes/orders/[id]/+page.svelte (the guest order page shows "Order reference: {full order ID}"); ui/README.md lines 339–340 ("website orders are added from their order page later") | read at f0f2b5a |
+| ui/src/routes/orders/[id]/+page.svelte (the guest order page shows "Order reference: {full order ID}" and the order's contact email, lines 318–321, 347); ui/README.md lines 339–340 ("website orders are added from their order page later") | read at f0f2b5a |
 | api/README.md (whole) / "Customer accounts (GK-016 r02b)" (lines 2471–2717) / "Staff order reads" (2198–2277) | 8f029c8665bd7992 / c8d0962fe16fb26e / 25c7239600bbe263 |
 | api/migrations/0033_customer_accounts.sql (order_claim, staff list, decide, owner_assign, deletion lines 1140–1162) | bb58871225007876 |
 | api/internal/checkout/checkout.go (409/422 codes); accounts.go `StaffClaims` (closed refused); httpapi/catalog.go (HTTP codes) | 5c89d5d7f5e633ff / read at f0f2b5a |
@@ -105,13 +130,24 @@ target (question 9).
 | poc/states.js / index.js / claims.css | e661e5cf3ede60c0 / 1788ef9512e1a692 / c2f74d8247e15bf9 |
 | check.html / shoot.sh | 0dfb7a8d3bd65efe / 65021a173e727b57 |
 
-The r04 screenshots are in a338fd2's tree; r04b replaces them (all re-shot, below).
+The r04 screenshots are in a338fd2's tree; r04b replaced them.
+
+### Previous outputs: r04b at b085103 (SHA-256, first 16 hex)
+
+| File | Hash |
+| --- | --- |
+| session.md | 43e47d1a16bbbdea |
+| poc/core.js / requests.js / request.js / order.js / today.js | db403f93c8c23998 / 50c8c902162a8833 / cd8b0ee846f8240a / a58e1f14f2e60a45 / 99503683c9710f7f |
+| poc/states.js / index.js / claims.css | 4f39b7262d61a792 / eb62173b5dd2edae / 6e4990e546d35ebe |
+| check.html / shoot.sh | 48ed3c3d79e96a73 / 2cea12e93050d91b |
+
+The r04b screenshots are in b085103's tree; r04c replaces them (all re-shot, below).
 
 ## Review round 1 changes
 
 | Finding | Change in r04b |
 | --- | --- |
-| **M1** Email-link path and order-email links shown as if they exist | Default data is today's: 5 waiting older-order requests, two of them guest website orders sent through "Add an older order" with the order reference (one full order ID, one short). Email-link requests appear only with "+ Future order-page requests" (review bar), tagged **Future** in the queue, with a future note above the list and a "Future state" banner on their pages: "Arrives once GK-016's 'Add this order to my account' (on the order page) and order emails (GK-031) exist. Customers can't send this kind of request today." Their states are grouped under "Future" in the index. Approve wording, true today: "Guest access to this order stops working: today that's the order page in the browser that placed it (and, once order emails exist, the links in them). They see the order by signing in." The same goes for the result, option B's confirmation and decided pages. Decline (future path): "Their guest access to the order keeps working as before." The queue's empty text and banner describe what customers can send today. Gaps updated; PR description text below. |
+| **M1** Email-link path and order-email links shown as if they exist | Default data is today's: 5 waiting older-order requests, two of them guest website orders sent through "Add an older order" with the order reference (one full order ID, one short). Email-link requests appear only with "+ Future order-page requests" (review bar), tagged **Future** in the queue, with a future note above the list and a "Future state" banner on their pages: "Arrives once GK-016's 'Add this order to my account' (on the order page) and order emails (GK-031) exist. Customers can't send this kind of request today." Their states are grouped under "Future" in the index. Approve wording, true today: "Guest access to this order stops working: today that's the order page in the browser that placed it (and, once order emails exist, the links in them). They see the order by signing in." (r04c narrows this to "the tab that placed it, if it's still open"; see round 2.) The same goes for the result, option B's confirmation and decided pages. Decline (future path): "Their guest access to the order keeps working as before." The queue's empty text and banner describe what customers can send today. Gaps updated; PR description text below. |
 | **M2a** No single-request read | Mapping: today the page finds a request by paging the four list states. The deep link, "Next waiting request", the same-order banner link, the order page's link and "Show the latest" need the proposed `GET /api/v1/admin/order-claims/{id}` (chef only, all states including closed). "Show the latest" says so. |
 | **M2b** `erased` invented | Marked in code and here as a **proposed** staff-row field (`erased`, or `erased_at`); today the chef sees null reference and note without knowing why. |
 | **M2c** Deletion closes waiting claims; the list refuses `closed` | New example: a request closed by account deletion. New simulated answer "Changed: account deleted" (S43): the stale message now reads "decided on another device, withdrawn by the customer, or closed because they deleted their account". New closed view (S44) explains that closed requests appear in no list, so without the proposed read the request just disappears from Waiting. STATE_CHEF gains "Closed · account deleted". |
@@ -133,15 +169,35 @@ The r04 screenshots are in a338fd2's tree; r04b replaces them (all re-shot, belo
 | Nit: mobile decision card at the very bottom; "Account requests" off-screen in the top bar | At one column the decision comes right after the main card ("Find the order" or the order they asked from), before "What they sent" and "Who's asking". On mobile the current section scrolls into view in the horizontal top bar. Both are checked by script. |
 | Nit: Today line described, not drawn | New `today.html` fragment (S45): the chef's "Needs you" line "5 requests to add orders to accounts · Oldest 3 days (Priya Shah)" with "Review requests". The rest of Today stays r03b2. The sidebar's Today now opens this fragment. |
 
-**For the PR #59 description** (the master edits it; I don't). r04b, still not approved:
+## Review round 2 changes
+
+| Finding | Change in r04c |
+| --- | --- |
+| **Major:** approving a guest website order from its reference alone (weak evidence under K00) | **(1) Evidence step.** When the chef chooses a website order for an older-order request, a "Before adding: confirm it's theirs" card appears (S20). It says the reference isn't secret (it's on the order page and in screenshots) and that the profile isn't proof. It shows the order's **contact email** (chef only; `contact_email` is already in the chef's staff order read, no new field) and the request reference, which the customer sees only in their account. Guidance: ask them to email `gk.cake.london@gmail.com` from that address, quoting the request reference, which shows control of the order's address *and* of this account; if they can't use that address, don't add it. There's a copyable message ("Prototype: nothing is copied or sent"). Contact emails appear only for the chosen order, never in the search list, and are never matched automatically. The decision column repeats "Confirm from that address before adding". **(2) Confirmation.** A red line: "If this is the wrong person, they see the order in their account, including the name and contact email (…) on it and the handover details; the real buyer's guest access stops; and there's no undo here." For a path c request the chef must tick "I confirmed from the order's contact email (…) that this customer placed it" and fill "How you confirmed (required) · internal note". Adding is refused with an alert and focus until both are given (S21 empty, S47 filled). The note goes into the existing `decision_note`; a structured evidence reference on claim approval is a **proposed follow-up**, because the API stores evidence only for the chef's direct add. Path a (future) keeps the wrong-person line, but needs no tick, since a request from the order's guest page shows guest access. **(3) Trade-off.** Questions 3 and 6 now set out "reference + contact-email confirmation now" against "wait for the order-page 'Add this order to my account' button (path a), which proves guest access". Option A's card and reply include the email confirmation. **(4) Execution check.** Measured against the authorisation row (gpt-6-astra, high/xhigh, fresh worker): mismatch recorded; the routes are options for the Creator, and acceptance needs the master's routing decision and a re-review. |
+| **Minor:** "the browser that placed it" overstates guest access | Now "the order page in the tab that placed it, if it's still open": the capability is kept only in that tab's sessionStorage (`ui/src/lib/guest.ts`). Changed in the approve wording, the readback, the screens, the mapping and the Gaps. |
+| **Minor:** personal data in prototype URLs | The prototype no longer writes the search term, the internal note or the tick back to the URL (review links may still open a state with `?q=`/`?note=`). Decisions and Gaps record that the live page keeps nothing personal in the URL, like the built Orders page. Checked by script. |
+| **Nit:** S33 header chip "Added to their account" vs "in no account" | Header chip "Added · account deleted since" (amber). Eyebrow "added · account deleted since". The decision card adds "the customer has since deleted their account, so the order is in no account". |
+| **Nit:** Today "Oldest 3 days" | "Oldest waiting 3 days (Priya Shah)". |
+| **Nit:** S21 placeholder "confirmed by phone" although Tom has no phone | The placeholder now comes from the order: "e.g. Email from tom.b@example.com on 6 Nov quoting request 9a3f2c71". |
+
+**For the PR #59 description** (the master edits it; I don't). r04c, still not approved:
 
 - Default example data = older-order requests, which is all customers can send today, including guest website
   orders sent through "Add an older order".
 - Order-page and order-email requests are shown only as labelled Future states.
-- Approving revokes guest access, which today is only the order page in the browser that placed the order.
+- **Adding a website order from a reference needs a contact-email confirmation step**:
+  - the order's contact email is shown to the chef only;
+  - the customer emails from it, quoting their request reference;
+  - the chef must tick "I confirmed…" and say how;
+  - a wrong-person warning shows what a wrong approval does.
+
+  The alternative, waiting for the order-page button, is put to the Creator (questions 3 and 6).
+- Approving revokes guest access, which today is only the order page in the tab that placed the order, if still
+  open.
 - API follow-ups proposed: a single-request read (including closed), an erased / account-deleted flag, newest-first
-  decided lists, and a chef-only "in an account" yes/no.
+  decided lists, a chef-only "in an account" yes/no, and an evidence reference on claim approval.
 - Option A needs a GK-016 wording change (question 6).
+- The execution check measures the evidence step against the authorisation routing row (mismatch recorded).
 
 ## How the prototype is organised
 
@@ -155,9 +211,9 @@ Open http://127.0.0.1:4196/gk-018-r04-claims/poc/index.html (the states index).
 
 | File | What it is |
 | --- | --- |
-| `poc/index.html`, `index.js`, `states.js` | States index: S01–S46, grouped, with a separate "Future" group. `states.js` is the single list, also used by `shoot.sh` and `check.html` |
+| `poc/index.html`, `index.js`, `states.js` | States index: S01–S47, grouped, with a separate "Future" group. `states.js` is the single list, also used by `shoot.sh` and `check.html` |
 | `poc/requests.html`, `requests.js` | Screen 1, **Requests to add orders**: tabs, table (cards on mobile), loading, error, empty and paging states |
-| `poc/request.html`, `request.js` | Screen 2, **decide a request**: older-order requests (today) and order-page requests (future), confirm with an optional note, decline, busy, results, refusals, closed |
+| `poc/request.html`, `request.js` | Screen 2, **decide a request**: older-order requests (today, with the contact-email evidence step) and order-page requests (future), confirm (wrong-person warning; tick and "how you confirmed" for path c), decline, busy, results, refusals, closed |
 | `poc/order.html`, `order.js` | Screen 3: the order page's **Customer account** card. Option A (recommended, needs GK-016 wording) and option B (needs a GK-016 change) |
 | `poc/today.html`, `today.js` | Today fragment: the new "Needs you" line only |
 | `poc/core.js` | Shared example data (today / future), words, the r03b2 shell with the new sidebar item, review bar |
@@ -217,6 +273,13 @@ from their profile", then **Find the order**:
   in someone's account".
 - **No match** ("No matching order in the system yet"): Decline (with the trade-off in the reviewer's words) or
   Leave it waiting.
+- **Before adding: confirm it's theirs** (once an order is chosen):
+  - The reference isn't secret and the profile isn't proof.
+  - The order's **contact email** is shown, chef only, with the request reference.
+  - Ask them to email `gk.cake.london@gmail.com` from that address, quoting the request reference. That shows
+    control of the order's address and of this account.
+  - If they can't use that address, don't add it.
+  - There's a copyable message. The search list never shows contact emails.
 
 **Order-page request (Future).** A Future banner, "The order they asked from" (summary and link), the same-order
 banner when two requests name it, then what they sent and who.
@@ -224,13 +287,16 @@ banner when two requests name it, then what they sent and who.
 **Approve.** The confirmation says, in plain words:
 
 - the order appears in their account;
-- guest access stops working (today, the order page in the browser that placed it; later also the order-email
-  links), and they see it by signing in;
+- guest access stops working (today, the order page in the tab that placed it, if still open; later also the
+  order-email links), and they see it by signing in;
 - their request shows "Added to your account";
 - if it's already in their account it's just marked added;
-- there's no undo here.
+- in red: if this is the wrong person, they see the order in their account, including the name and contact email
+  on it and the handover details; the real buyer's guest access stops; and there's no undo.
 
-There's an optional internal note.
+For a path c request, the chef must tick "I confirmed from the order's contact email (…) that this customer placed
+it" and fill "How you confirmed (required)" (stored as the internal note). On the future path the note is optional
+and no tick is needed.
 
 **Decline.** The confirmation says:
 
@@ -262,8 +328,9 @@ can't see any account identifier, and looking an account up by email is account 
 order page gets a **Customer account** card, tagged "proposal · not approved":
 
 - **A, recommended, but needs GK-016 wording:**
-  - The chef asks the customer to send the order's reference through "Add an older order", then adds it from the
-    request. There's a copyable reply: "Prototype: nothing is copied or sent".
+  - The chef asks the customer to send the order's reference through "Add an older order" **and** to email her
+    from the order's address quoting the request reference. She confirms (the evidence step), then adds it from
+    the request. There's a copyable reply: "Prototype: nothing is copied or sent".
   - A warning states the prerequisite: today's form is written for Instagram, email or in-person orders, with
     "Order reference from the chef (e.g. IG-0613)" and no website choice. Question 6 must be settled first.
   - Until then, the reply explains the workaround ("Email, phone or in person", plus the "Order reference" from
@@ -302,8 +369,9 @@ today).
 | S17 Instagram, no match | Find the order (May–Jul 2026): none; guidance with the decline trade-off | Decline; go back | S14 / S01 | `GET /admin/orders?from&to` (all pages, empty) |
 | S18 Guest website order | Their reference is a full order ID; orders Sep–Nov listed | Search for … | S19/S20 | `GET /admin/orders` (all pages) |
 | S19 Two matches | "8b2" finds 8b2a1f03 and 8b20d4e6 | choose one | S20 | browser filter |
-| S20 Chosen | "Chosen: Raspberry ribbons · Sat 17 Oct …" | Add order 8b20d4e6…; Decline | S21 | — |
-| S21 Confirm add | Consequences true today + optional note | Yes, add…; Not yet | busy → S22 | — |
+| S20 Chosen + evidence step | "Chosen: … · contact email tom.b@example.com"; "Before adding: confirm it's theirs" (contact email, chef only; request reference; steps; message to copy) | Add order 8b20d4e6…; Decline; Show a message you can copy | S21 | `GET /admin/orders` row incl. chef-only `contact_email` |
+| S21 Confirm add | Consequences true today; red wrong-person line; required tick and "How you confirmed" | Yes, add…; Not yet | alert + focus if missing; busy → S22 | — |
+| S47 Confirm add, filled in | Tick ticked; "Email from tom.b@example.com on 6 Nov quoting request 9a3f2c71" | Yes, add… | busy → S22 | `decision: approve, order_id, note` |
 | S22 Added | "The order you added" + result | Next waiting request | — | `decision: approve, order_id` → 200 |
 | S23 In another account | Refusal (Daniel Okafor, a41c09e7) | Choose another order; Decline | — | 409 `ORDER_OWNED` |
 | S24 In another account (choose another) | Refusal | Choose another order; Decline | S19 / S14 | 409 `ORDER_OWNED` |
@@ -315,7 +383,7 @@ today).
 | S30 Answer lost | Couldn't tell if saved; retry is safe | Try again | busy → S22 | network loss; same key replays |
 | S31 Decided · added | Outcome, internal note, customer sees | Back to the list | S06 | approved row |
 | S32 Decided · couldn't add | Outcome, internal note, the exact customer words | Back to the list | S07 | declined row |
-| S33 Added, account deleted since | "The order is no longer in any account"; note erased; customer sees nothing | Back to the list | S06 | approved row + proposed `erased`/`account_deleted` |
+| S33 Added, account deleted since | Header "Added · account deleted since"; "the order is no longer in any account"; note erased; customer sees nothing | Back to the list | S06 | approved row + proposed `erased`/`account_deleted` |
 | S34 Chef add · A | Steps, copyable reply, GK-016 prerequisite warning | Show a reply; Copy | — | none (uses S17–S22) |
 | S35 Chef add · B form | Account ID + required evidence (separate errors) | Add to their account | S36 | — |
 | S36 Chef add · B confirm | Consequences (guest access); "can't show whose account" | Yes, add…; Not yet | S37 | `POST /admin/orders/{id}/owner {expected_version, account_subject, evidence}` |
@@ -327,7 +395,7 @@ today).
 | S42 **F** Queue with future rows | 8 waiting; 3 tagged Future, with a note | Review | S10/S16 | path a rows |
 | S43 Changed: account deleted | Same stale message | Show the latest | S44 | 409 `STALE_VERSION` (claim closed by deletion) |
 | S44 Closed | "Closed · account deleted"; nothing added; not in any list | Back to the list | S01 | proposed `GET /admin/order-claims/{id}` (state closed) |
-| S45 Today fragment | "5 requests to add orders to accounts · Oldest 3 days" | Review requests | S01 | the first queue page |
+| S45 Today fragment | "5 requests to add orders to accounts · Oldest waiting 3 days" | Review requests | S01 | the first queue page |
 | S46 Guest website order (upcoming) | Reference a41c09e7 flagged; orders Oct–Dec | Search for … | S23 path | `GET /admin/orders` |
 
 ## Screen-to-API mapping
@@ -343,7 +411,9 @@ today).
 | "by you" | `decided_by` (an account ID) = the signed-in chef | No staff-name lookup |
 | Order summary (future path) | `GET /api/v1/admin/orders/{id}` (chef detail) | |
 | Find the order | `GET /api/v1/admin/orders?from&to` (≤93 days, 100 a page): load every page (up to 10, like the built Orders page), then filter by ID prefix or `customer_full_name` | Over 1,000 orders: ask to narrow the months (the built page's rule) |
-| Approve | `POST /api/v1/admin/order-claims/{id}/decision {expected_version, decision: "approve", order_id, note?}` + Idempotency-Key → 200 `{claim_id, state, order_id}` | Links the order, bumps its version, revokes every guest capability (today, the placing browser's), audit `order.owner_linked`. Already in the claimant's account: approved, nothing revoked |
+| Evidence step: contact email | `contact_email` in the same chef row (chef view only; technical support's view omits it) | Shown only for the chosen order; never matched automatically |
+| Evidence record | `decision_note` (1–500, one line) on approve: "How you confirmed" | **Proposed:** a structured evidence reference on claim approval (the API's `order_owner_event.evidence` exists only for the chef's direct add) |
+| Approve | `POST /api/v1/admin/order-claims/{id}/decision {expected_version, decision: "approve", order_id, note?}` + Idempotency-Key → 200 `{claim_id, state, order_id}` | Links the order, bumps its version, revokes every guest capability (today, the placing tab's, if still open), audit `order.owner_linked`. Already in the claimant's account: approved, nothing revoked |
 | Decline | the same with `decision: "decline", note?` | Nothing linked. `decision_note` 1–500, one line; internal; erased on account deletion |
 | Refusals | 409 `ORDER_OWNED`, `ACCOUNT_UNAVAILABLE`, `STALE_VERSION` (includes a claim closed by deletion or withdrawn), `CONFLICT`; 422 `INVALID_INPUT` (`order_id`, `note`); 503 `UNAVAILABLE`; 404; 403 | `KEY_REUSED` shouldn't happen (keys below) |
 | "Is this order in an account?" (order page, find list) | not in staff views (`added_by` only in the customer summary) | **Proposed:** chef-only yes/no plus how and when, never whose (question 8) |
@@ -378,6 +448,14 @@ key is made when the decision, the chosen order or the note changes.
 - **One column order:** main card, then the decision, then the secondary cards.
 - **Partial pages.** The order page and Today are fragments; the rest stays r03b2.
 - **"Leave it waiting"** is a real option with no API call.
+- **Evidence before adding a website order from a reference** (round 2): the contact-email confirmation step, a
+  required tick and "how you confirmed", and the wrong-person warning. It's drafted as the recommended option, not
+  settled (questions 3 and 6; execution check).
+- **Contact email only for the chosen order.** It's not listed for every order in the search, which limits
+  exposure and avoids inviting email matching.
+- **Nothing personal in URLs.** The live page must not put the search term, internal note or customer details in
+  the URL, like the built Orders page. The prototype doesn't write them back; it only reads them so review links
+  can open a state.
 
 ## Accessibility
 
@@ -385,7 +463,8 @@ key is made when the decision, the chosen order or the note changes.
   labelled cards on mobile. Tabs are links with `aria-current`.
 - Focus moves to the confirmation heading, the busy status and the result. Results use live regions: alert for
   refusals, status for success. The note counter isn't live; over-long notes raise an alert on submit.
-- Option B's errors are tied to their own fields.
+- Option B's errors, and the tick and "how you confirmed" errors on approve, are tied to their own fields
+  (`aria-describedby`, `aria-invalid`, focus to the first). The tick's label is a 44 px target.
 - Chips always carry words. Contrast: "how" chip 10.9:1, inactive tab count 7.4:1, internal note 9.3:1, warning
   text and Future tag 6.1:1, muted text 5.9:1, sidebar count 12.9:1.
 - Reduced motion stops the spinner.
@@ -394,8 +473,14 @@ key is made when the decision, the chosen order or the note changes.
 
 - **The built chef frame isn't on main.** It's on the unmerged `sasha-chycha/chef-ui-2` (a559e5d).
 - **Path a doesn't exist for customers yet.** No UI route sends `X-Order-Capability` with a claim; the order-page
-  button (GK-016) and order emails (GK-031) come first. The guest capability lives only in the browser that placed
-  the order, so approving today revokes that page's access only.
+  button (GK-016) and order emails (GK-031) come first. The guest capability lives only in the sessionStorage of the
+  tab that placed the order, gone when it closes, so approving today revokes that page's access only, if still
+  open.
+- **The contact-email check is manual and imperfect.** The address may be mistyped, shared or no longer the
+  buyer's. The workspace doesn't store the account's email, so the check rests on the customer quoting their
+  request reference from that address. It's recorded only as free text in `decision_note` (structured evidence
+  reference proposed).
+- **Personal data in URLs.** The prototype still accepts `?q=`/`?note=` for review states; the live page must not.
 - **No single-request read.** Deep links and "Show the latest" depend on it (proposed).
 - **No erased / account-deleted flag** in staff rows (proposed). Today an erased request shows empty fields
   without saying why.
@@ -419,12 +504,25 @@ key is made when the decision, the chosen order or the note changes.
    by the customer, not proof"; it's the only contact detail the chef has. Note the difference between display
    and data: the API sends name, phone and Instagram on every row whatever the UI shows. Hiding them in the list
    is a display choice only; minimising the data needs an API change.
-3. **Chef-initiated add: A or B?** Recommended: **A**, but A means changing live customer wording (a GK-016
-   amendment). Today the "Add an older order" form is written for Instagram, email or in-person orders, asks for
-   the "Order reference from the chef (e.g. IG-0613)" and offers no website choice, while its side panel promises
-   "She can add an order for you". Question 6 is a prerequisite of A. B (a customer-visible account ID) is a
-   bigger GK-016 change, and it puts a 36-character ID in customer messages. Looking an account up by email is not
-   proposed.
+3. **How should guest website orders get into accounts, and with what evidence?** This is an authorisation
+   decision; see the execution check.
+   - **(i) Now, by reference + contact-email confirmation** (r04c's design). The customer sends the order reference
+     through "Add an older order" and emails the chef from the order's contact address, quoting their request
+     reference. The chef ticks "I confirmed…" and says how.
+     - *For:* it works today, and it's the only route while order emails and the order-page button don't exist.
+     - *Against:* it's manual work for the chef and the customer; the address can be mistyped, shared or stale; the
+       evidence is free text; and a wrong approval shows the order (with its contact email) to the wrong person,
+       with no undo.
+   - **(ii) Wait for the order-page "Add this order to my account" button (path a).** The request itself proves
+     guest access.
+     - *For:* stronger, automatic evidence and no chef work.
+     - *Against:* until order emails exist it only works in the tab that placed the order, while still open.
+       Customers who closed that tab can't use it, so they'd be told to contact the chef.
+
+   **Recommended: (i) with the required confirmation**, never on a reference alone. Switch to (ii) as the main
+   route once it exists. Then, for the chef's own adds: **A** (via such a request) rather than B (a
+   customer-visible account ID, a bigger GK-016 change). A means changing live customer wording (question 6 is a
+   prerequisite). Looking an account up by email is not proposed.
 4. **Instagram and offline requests before older orders exist: decline now, or leave them waiting?** Recommended:
    decline, with an internal note. The trade-off: the customer sees "The chef couldn't add an order from the
    details given…", which can read as if their details were wrong, and once GK-027/GK-038 exist they'd have to
@@ -433,9 +531,11 @@ key is made when the decision, the chosen order or the note changes.
    copy)? Recommended: yes.
 5. **Keep the chef's internal note, on both approve and decline?** Recommended: yes, optional on both. The API
    stores it for either decision, it's never shown to the customer, and it's erased if the account is deleted.
-6. **Prerequisite of A: add "On this website (as a guest)" to the customer form** with the order reference, and
-   reword the title and hint for website orders? The API already accepts that channel on path c. Recommended: yes,
-   as a small GK-016 amendment, until the order-page button exists.
+6. **Prerequisite of A and of route (i): add "On this website (as a guest)" to the customer form** with the order
+   reference, reword the title and hint for website orders, and tell the customer about the confirmation email
+   ("We'll ask you to email us from the address you used for the order")? The API already accepts that channel on
+   path c. Recommended: yes, as a small GK-016 amendment, if question 3 picks (i). If it picks (ii), keep the form
+   for Instagram and offline orders and point guest website orders to "contact us" until the button exists.
 7. **Two accounts asking for the same order** (future path)? Recommended: no automatic rule. The chef decides one;
    adding it for the other is refused with `ORDER_OWNED`, and she declines it.
 8. **Should the chef (only) see whether an order is already in an account** (yes/no, how and when, never whose)?
@@ -446,42 +546,33 @@ key is made when the decision, the chosen order or the note changes.
     sees your profile name, phone and Instagram with this request." A GK-016 wording change.
 
 The API follow-ups (a single-request read, the erased / account-deleted flag, newest-first decided lists, the
-in-an-account yes/no) are for the planning master to schedule, not Creator questions.
+in-an-account yes/no, an evidence reference on claim approval) are for the planning master to schedule, not
+Creator questions.
 
-## Checks run (r04b, 2026-11-06)
+## Checks run (r04c, 2026-11-06)
 
 - `node --check` passes on every `poc/*.js` (core, requests, request, order, today, index, states).
-- **Rendering.** Headless Chrome (`--dump-dom` with console logging) rendered the 46 states plus the index as the
-  chef, fulfilment and technical support: 141 page loads. Every load had exactly one `h1`, no duplicate IDs and no
+- **Rendering.** Headless Chrome (`--dump-dom` with console logging) rendered the 47 states plus the index as the
+  chef, fulfilment and technical support: 144 page loads. Every load had exactly one `h1`, no duplicate IDs and no
   script or console errors.
-- **`check.html`** (same-origin iframe, chef, data=today unless named), 90 checks, all PASS:
-  - **Data.** Today data has 5 older-order rows and no email-link rows; references that look like an order ID are
-    flagged. Future data tags 3 rows with the note, and order-page requests carry the Future banner.
-  - **Approve.** The confirmation names the order and account and takes focus. Its wording is true today and
-    doesn't say "emails stop working". A note over 500 code points is counted and refused with an alert and
-    `aria-invalid`. Then "Adding…", the result echoing the note with focus on it, the header showing "Added", the
-    prototype label, and "staff account" wording.
-  - **Instagram request.** The no-match guidance includes the trade-off. The decline counter works and isn't a
-    live region, and the declined result echoes the note.
-  - **Find the order.** Add is disabled until an order is chosen; "8b2" finds two; choosing one enables Add with
-    its ID; "their reference" (a full order ID) finds the one order; more than 3 months is refused.
-  - **Refusals.** `ORDER_OWNED`. A lost answer, then a retry that succeeds. The stale message names account
-    deletion, and "Show the latest" shows closed.
-  - **Decided and paging.** Added-then-deleted shows the order in no account. Paging adds 3 rows.
-  - **Roles.** Technical support gets no item and a role note.
-  - **Order page.** An order in an account hides the how-to; option A states its GK-016 prerequisite. Option B
-    puts the missing-evidence error on the evidence field (`aria-describedby`, `aria-invalid`), refuses an empty
-    account ID, and confirms.
-  - **Today.** The fragment line shows.
-  - **Sizes and layout.** Controls are at least 44 px on the queue, find and order pages. At 390 px the decision
-    follows "Find the order", before the profile, and "Account requests" is scrolled into view in the top bar. All
-    46 states have no horizontal overflow at 390 px.
-- **Screenshots.** `shoot.sh` with headless Chrome took 33 states (desktop + mobile, 66 JPEGs), all re-shot because
-  the review bar changed on every page. Looked at: S00, S01, S10 (desktop and mobile), S17 (mobile), S21, S33,
-  S34, S44, S45 (desktop and mobile) and S46 (mobile). Fixes after looking:
-  - the Future banner said "Future" twice;
-  - the closed view said "Already decided" and linked to an invalid tab;
-  - the Today design note touched the card.
+- **`check.html`** (same-origin iframe, chef, data=today unless named), 102 checks, all PASS. They cover every r04b
+  check plus these new ones (round 2):
+  - **Evidence step.** It shows the order's contact email and the request reference, and appears when an order is
+    chosen. Contact emails are never listed in search results.
+  - **Wrong approval.** The confirmation says what a wrong approval does (wrong person sees the order and its
+    contact email; no undo).
+  - **Required confirmation.** Adding without the contact-email tick is refused, with an alert, `aria-invalid` and
+    focus on the tick, and nothing is sent. "How you confirmed" is required, with focus on the note.
+  - **Future path.** No tick (guest access is shown), and the wrong-person line is kept.
+  - **Guest access wording.** "Tab that placed it, if it's still open".
+  - **URLs.** No search term, note or tick is written to the URL.
+  - **Nits.** S33's header chip says "account deleted since"; Today reads "Oldest waiting 3 days".
+  - **Overflow.** All 47 states have no horizontal overflow at 390 px. A first run found the S21/S47 confirmation
+    overflowing, because the email inside the tick label couldn't wrap; fixed by wrapping the label text.
+- **Screenshots.** `shoot.sh` with headless Chrome took 35 states (desktop + mobile, 70 JPEGs), all re-shot because
+  the review bar reads r04c on every page. Looked at: S20 (desktop), S21 (desktop), S47 (mobile), S33 (desktop),
+  S34 (desktop) and S45 (mobile). One fix after looking: S33's eyebrow and decision card still said "Added to their
+  account" only. Re-shot.
 - `python3 scripts/check_planning_kit.py` passes (run before the commit).
 
 ## Screenshots (`screenshots/`)
@@ -490,7 +581,7 @@ in-an-account yes/no) are for the planning master to schedule, not Creator quest
 
 - S00 index;
 - S01–S07, S09, S42 (queue), S45 (Today);
-- S46, S17, S19, S21, S22, S14, S15 (older-order requests);
+- S46, S17, S19, S20, S21, S47, S22, S14, S15 (older-order requests);
 - S23, S25, S28–S30, S44 (refusals and closed);
 - S32, S33 (decided);
 - S34–S36, S38, S41 (chef add);
@@ -500,7 +591,7 @@ The other states are reachable from the index.
 
 ## Not done
 
-- No Creator review or approval; the re-review of r04b is pending.
+- No Creator review or approval; the re-review of r04c is pending.
 - PR #59 (draft, pushed by the master) isn't edited by me; suggested description text is above.
 - No Trello change.
 - No customer-side changes (questions 3, 4, 6, 10 would be GK-016 amendments).

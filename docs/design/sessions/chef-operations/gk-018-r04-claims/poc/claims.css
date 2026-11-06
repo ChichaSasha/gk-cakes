@@ -78,3 +78,9 @@
 .need-claims{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}.need-claims .need-dot{background:var(--accent)}
 .need-muted{opacity:.6}.need-muted .need-dot{background:#c9cdd3}
 .main>.design-note{margin:0 0 14px}
+/* r04c: evidence step */
+.wrong-person{display:flex;gap:6px;align-items:flex-start;margin:8px 0;padding:8px 10px;border-radius:10px;background:var(--bad-bg);color:#6d1820}
+.confirm-box .check{min-height:44px;align-items:center;margin:8px 0 2px;padding:6px 10px;border:1px solid var(--line);border-radius:12px;background:#fff}
+.confirm-box .check input{width:18px;height:18px;margin:0;flex:none}
+#conf-err:empty{margin:0}
+.confirm-box .check .mono,.wrong-person .mono,.claim-facts .mono{overflow-wrap:anywhere}

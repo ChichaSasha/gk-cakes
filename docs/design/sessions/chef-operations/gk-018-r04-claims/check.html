@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><title>running</title></head><body>
-<!-- Design-review tooling only (GK-018 r04b-claims): drives the prototype in a same-origin iframe and writes PASS/FAIL lines.
+<!-- Design-review tooling only (GK-018 r04c-claims): drives the prototype in a same-origin iframe and writes PASS/FAIL lines.
      Run: Chrome --headless=new --virtual-time-budget=60000 --dump-dom http://127.0.0.1:4196/gk-018-r04-claims/check.html -->
 <iframe id="f" title="Prototype under test" style="width:1440px;height:900px;border:0"></iframe><pre id="out"></pre>
 <script src="poc/states.js"></script>
@@ -24,10 +24,14 @@ const btn=(d,re,sel='button')=>[...d.querySelectorAll(sel)].find(b=>re.test(b.te
  log(d.querySelectorAll('h1').length===1,'one h1 on the older-order request');
  click(btn(d,/Add order 8b20d4e6/));log(/Add order 8b20d4e6 to Tom Becker’s account\?/.test(txt(d,'#ca-h')),'confirm names the order and account');
  log(d.activeElement&&d.activeElement.id==='ca-h','focus moves to the confirm heading');
- log(/browser that placed it/.test(txt(d,'[data-approve]'))&&!/emails stop working/.test(txt(d,'[data-approve]')),'approve wording is true today (guest access in the placing browser)');
+ log(/tab that placed it, if it’s still open/.test(txt(d,'[data-approve]'))&&!/emails stop working/.test(txt(d,'[data-approve]')),'approve wording is true today (guest access in the placing tab, if open)');
+ log(/wrong person/.test(txt(d,'.wrong-person'))&&/tom\.b@example\.com/.test(txt(d,'.wrong-person'))&&/no undo/.test(txt(d,'.wrong-person')),'confirmation says what a wrong approval does');
+ submit($(d,'[data-approve]'));log(/Confirm from the order’s contact email/.test(txt(d,'#conf-err'))&&$(d,'[name=confirmed]').getAttribute('aria-invalid')==='true'&&d.activeElement===$(d,'[name=confirmed]'),'adding without the contact-email tick is refused, focus on the tick');
+ log(!/Adding…/.test(txt(d,'.decision')),'nothing is sent while the check is missing');
+ $(d,'[name=confirmed]').checked=true;submit($(d,'[data-approve]'));log(/Say how you confirmed/.test(txt(d,'#note-err'))&&d.activeElement===$(d,'[name=note]'),'“how you confirmed” is required for a reference-only request');
  set($(d,'[data-approve] [name=note]'),'x'.repeat(501));log(/1 characters too many/.test(txt(d,'#note-count')),'note counter counts over the limit');
  submit($(d,'[data-approve]'));log(/up to 500 characters/.test(txt(d,'#note-err'))&&$(d,'[name=note]').getAttribute('aria-invalid')==='true','a note over 500 characters is refused');
- set($(d,'[data-approve] [name=note]'),'Name and date match');submit($(d,'[data-approve]'));log(/Adding…/.test(txt(d,'.decision')),'busy label Adding…');
+ set($(d,'[data-approve] [name=note]'),'Name and date match');log(!/note=|q=|confirmed=/.test(f.contentWindow.location.search),'no search term, note or tick in the URL');submit($(d,'[data-approve]'));log(/Adding…/.test(txt(d,'.decision')),'busy label Adding…');
  await wait(1300);log(/Added to Tom Becker’s account/.test(txt(d,'.result'))&&/Name and date match/.test(txt(d,'.result')),'added, with the internal note echoed');
  log(d.activeElement&&d.activeElement.classList.contains('result'),'focus on the result');
  log(/Added to their account/.test(txt(d,'.page-head')),'header shows Added after saving');
@@ -44,15 +48,21 @@ const btn=(d,re,sel='button')=>[...d.querySelectorAll(sel)].find(b=>re.test(b.te
  log(/Add order 8b20d4e6 to their account/.test(txt(d,'.decision')),'choosing an order enables Add with its ID');
  click(btn(d,/their reference/));log(d.querySelectorAll('.pick').length===1,'“their reference” (the full order ID) finds the one order');
  set($(d,'[data-find] [name=from]'),'2026-01','change');log(/up to 3 months/i.test(txt(d,'#find-out')),'more than 3 months is refused');
- d=await open('request.html?id=5c1e7a02&q=a41c09e7&pick=a41c09e7&answer=order_owned');click(btn(d,/Add order a41c09e7/));submit($(d,'[data-approve]'));await wait(1300);
+ d=await open('request.html?id=5c1e7a02&q=a41c09e7&pick=a41c09e7&answer=order_owned');click(btn(d,/Add order a41c09e7/));$(d,'[name=confirmed]').checked=true;set($(d,'[name=note]'),'Email from d.o@example.com');submit($(d,'[data-approve]'));await wait(1300);
  log(/already in another customer’s account/.test(txt(d,'.result')),'ORDER_OWNED refusal');
- d=await open('request.html?id=9a3f2c71'+P+'&answer=lost&step=approve');submit($(d,'[data-approve]'));await wait(1300);
+ d=await open('request.html?id=9a3f2c71'+P+'&answer=lost&step=approve&confirmed=1&note=Email%20checked');submit($(d,'[data-approve]'));await wait(1300);
  log(/couldn’t tell whether it was saved/.test(txt(d,'.result')),'answer lost');click(btn(d,/Try again/,'.result button'));await wait(1300);
  log(/Added to Tom Becker’s account/.test(txt(d,'.result')),'retry after a lost answer succeeds (same decision)');
  d=await open('request.html?id=9a3f2c71'+P+'&answer=stale_closed&step=done&decision=approve');log(/deleted their account/.test(txt(d,'.result')),'stale message names account deletion');
  click(btn(d,/Show the latest/,'.result a'));await wait(700);d=f.contentDocument;
  log(/Closed · account deleted/.test(txt(d,'.page-head'))&&/don’t appear in any list/.test(txt(d,'main')),'Show the latest: closed, explained');
  d=await open('request.html?id=e41a7b2c');log(/no longer in any account/.test(txt(d,'main'))&&/Nothing: the account was deleted/.test(txt(d,'main')),'added then account deleted: order in no account');
+ d=await open('request.html?id=9a3f2c71'+P);log(/Before adding: confirm it’s theirs/.test(txt(d,'#evidence-slot'))&&/tom\.b@example\.com/.test(txt(d,'#evidence-slot'))&&/9a3f2c71/.test(txt(d,'#evidence-slot')),'evidence step shows the order’s contact email and the request reference');
+ d=await open('request.html?id=9a3f2c71');log(!/@example\.com/.test(txt(d,'#find-out'))&&!txt(d,'#evidence-slot').trim(),'contact emails are not listed in search results; only for the chosen order');
+ set($(d,'[data-find] [name=q]'),'Tom');log(!/Tom/.test(f.contentWindow.location.search),'search term not written to the URL');
+ const r2=[...d.querySelectorAll('[name=pick]')].find(x=>x.value==='8b20d4e6');r2.checked=true;r2.dispatchEvent(new Event('change',{bubbles:true}));log(/tom\.b@example\.com/.test(txt(d,'#evidence-slot')),'choosing an order shows its evidence step');
+ d=await open('request.html?id=c7e1a904&data=future&step=approve');log(!$(d,'[name=confirmed]')&&/guest access/.test(txt(d,'[data-approve]'))&&/wrong person/.test(txt(d,'[data-approve]')),'future path: no contact-email tick (guest access shown), wrong-person line kept');
+ d=await open('request.html?id=e41a7b2c');log(/Added · account deleted since/.test(txt(d,'.page-head')),'S33 header chip says account deleted since');
  d=await open('requests.html?state=more');click($(d,'[data-more]'));log(d.querySelectorAll('#rows tr').length===8,'Show the next requests adds the next page');
  d=await open('requests.html?role=support');log(!d.querySelector('a[href="requests.html"] .nav-count')&&/Elina’s \(chef\) only/.test(txt(d,'.role-note')),'technical support: no item, role note');
  d=await open('order.html?id=92e6b3d1');log(/in a customer’s account/.test(txt(d,'#account-card'))&&!d.querySelector('#account-card .steps'),'order in an account: how-to steps hidden');
@@ -62,7 +72,7 @@ const btn=(d,re,sel='button')=>[...d.querySelectorAll(sel)].find(b=>re.test(b.te
  set($(d,'[name=acct]'),'');submit($(d,'[data-assign]'));log($(d,'[name=acct]').getAttribute('aria-invalid')==='true','option B: empty account ID refused');
  set($(d,'[name=acct]'),'0f6d1a2b-3c4d-4e5f-8a9b-0c1d2e3f4a5b');set($(d,'[name=evidence]'),'Asked by DM');submit($(d,'[data-assign]'));
  log(/Add order e5d2b817 to account 0f6d1a2b…\?/.test(txt(d,'#cb-h')),'option B: confirm');
- d=await open('today.html');log(/5 requests to add orders/.test(txt(d,'.need-claims')),'Today fragment shows the line');
+ d=await open('today.html');log(/5 requests to add orders/.test(txt(d,'.need-claims'))&&/Oldest waiting 3 days/.test(txt(d,'.need-claims')),'Today fragment shows the line (“Oldest waiting 3 days”)');
  for(const p of ['requests.html','request.html?id=1d5e88b0','order.html?id=e5d2b817']){d=await open(p);const small=[...d.querySelectorAll('#main button,#main a.btn,#main input,#main select')].filter(e=>e.offsetParent&&e.getBoundingClientRect().height<44&&e.type!=='radio');log(!small.length,`${p}: controls at least 44 px tall${small.length?' ('+small.map(e=>e.textContent.trim()||e.name).join(', ')+')':''}`)}
  f.style.width='390px';
  d=await open('request.html?id=1d5e88b0');const order=['find-h','dec-h','who-h'].map(id=>d.getElementById(id).getBoundingClientRect().top);log(order[0]<order[1]&&order[1]<order[2],'390 px: decision follows Find the order, before the profile');
