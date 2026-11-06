@@ -20,6 +20,7 @@ import (
 // fakeIdentity maps tokens to actors or errors and records calls.
 type fakeIdentity struct {
 	actors        map[string]identity.Actor
+	deleted       map[string]identity.Actor // deleted accounts: actor with ErrDeleted
 	authErr       map[string]error
 	sessionErr    error
 	listErr       error
@@ -27,6 +28,9 @@ type fakeIdentity struct {
 }
 
 func (f *fakeIdentity) Authenticate(_ context.Context, token string) (identity.Actor, error) {
+	if a, ok := f.deleted[token]; ok {
+		return a, identity.ErrDeleted
+	}
 	if err, ok := f.authErr[token]; ok {
 		return identity.Actor{}, err
 	}

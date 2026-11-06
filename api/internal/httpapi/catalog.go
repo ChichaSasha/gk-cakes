@@ -495,6 +495,15 @@ var conflictMessages = map[string]string{
 	"delivery_not_paid":      "The delivery for this order is not paid or waived yet, so it can't be sent out.",
 	"handover_not_due":       "The handover time hasn't started yet, so this can't be recorded as not collected.",
 	"transition_not_allowed": "This step isn't possible for the order in its current state.",
+	// Customer accounts (GK-016 r02b).
+	"account_deletion_blocked": "You can't delete your account yet: some orders still have money to settle. Please contact us.",
+	"claim_limit":              "You already have 5 requests waiting for the chef. Please wait for her answer.",
+	"claim_pending":            "You've already asked to add this order. The chef will check it.",
+	"already_yours":            "This order is already in your account.",
+	"order_owned":              "This order is already in another account.",
+	"account_unavailable":      "This account can't be used for this.",
+	"staff_account":            "A staff account can't be deleted here. Please ask for staff access to be removed first.",
+	"deletion_preview_stale":   "Your orders or requests changed since you reviewed the deletion, or the review expired. Please review it again.",
 }
 
 // catalogError maps catalog errors to K00 responses without SQL detail.
@@ -571,6 +580,22 @@ func catalogError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, e
 			code = "HANDOVER_NOT_DUE"
 		case "transition_not_allowed":
 			code = "TRANSITION_NOT_ALLOWED"
+		case "account_deletion_blocked":
+			code = "ACCOUNT_DELETION_BLOCKED"
+		case "claim_limit":
+			code = "CLAIM_LIMIT"
+		case "claim_pending":
+			code = "CLAIM_PENDING"
+		case "already_yours":
+			code = "ALREADY_IN_ACCOUNT"
+		case "order_owned":
+			code = "ORDER_OWNED"
+		case "account_unavailable":
+			code = "ACCOUNT_UNAVAILABLE"
+		case "staff_account":
+			code = "STAFF_ACCOUNT"
+		case "deletion_preview_stale":
+			code = "DELETION_PREVIEW_STALE"
 		}
 		writeError(w, r, http.StatusConflict, code, msg, false)
 	case errors.As(err, &inv):
