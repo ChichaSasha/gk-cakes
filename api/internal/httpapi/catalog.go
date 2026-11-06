@@ -503,6 +503,8 @@ var conflictMessages = map[string]string{
 	"order_owned":              "This order is already in another account.",
 	"account_unavailable":      "This account can't be used for this.",
 	"staff_account":            "A staff account can't be deleted here. Please ask for staff access to be removed first.",
+	// Late-payment agreement (GK-017 r02b Q6).
+	"offer_not_current": "This offer is no longer open. Please reload your order to see the chef's current answer.",
 }
 
 // catalogError maps catalog errors to K00 responses without SQL detail.
@@ -593,6 +595,8 @@ func catalogError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, e
 			code = "ACCOUNT_UNAVAILABLE"
 		case "staff_account":
 			code = "STAFF_ACCOUNT"
+		case "offer_not_current":
+			code = "OFFER_NOT_CURRENT"
 		}
 		writeError(w, r, http.StatusConflict, code, msg, false)
 	case errors.As(err, &inv):

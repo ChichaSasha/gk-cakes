@@ -37,6 +37,8 @@ type Checkout interface {
 	ChangeAppointment(ctx context.Context, subject, key, id string, in checkout.AppointmentInput) (checkout.Moved, error)
 	Transition(ctx context.Context, subject, key, id string, in checkout.TransitionInput) (checkout.Transitioned, error)
 	LatePayment(ctx context.Context, subject, key, id string, in checkout.LatePaymentInput) (catalog.Result, error)
+	OfferLatePayment(ctx context.Context, subject, key, id string, in checkout.LatePaymentOfferInput) (catalog.Result, error)
+	AnswerLatePayment(ctx context.Context, id, subject string, digest []byte, key string, in checkout.LatePaymentAnswerInput) (catalog.Result, error)
 	RecordRefund(ctx context.Context, subject, key, id string, in checkout.RefundInput) (catalog.Result, error)
 	ResolveObservation(ctx context.Context, subject, key, orderID, observationID string, in checkout.ResolveObservationInput) (catalog.Result, error)
 	DecideOperation(ctx context.Context, subject, key, orderID, operationID string, in checkout.DecideOperationInput) (catalog.Result, error)
@@ -299,7 +301,32 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 		res, err := co.MovePickup(r.Context(), r.PathValue("id"), a.Subject, digest, key, in)
 		respondMove(w, r, logger, res, err, "move_pending")
 	}
+	// K04 Q2 / GK-017 r02b Q6: the customer's answer to the chef's offer on
+	// a late-paid order (owner, or a guest capability with "cancel"): 202
+	// while its K11 protection runs; 409 SLOT_UNAVAILABLE when the offered
+	// time can no longer take the order (the offer lapsed).
+	postLatePaymentAnswer := func(w http.ResponseWriter, r *http.Request) {
+		a, digest, ok := orderActor(w, r)
+		if !ok {
+			return
+		}
+		var in checkout.LatePaymentAnswerInput
+		key, ok := readCommand(w, r, &in)
+		if !ok {
+			return
+		}
+		res, err := co.AnswerLatePayment(r.Context(), r.PathValue("id"), a.Subject, digest, key, in)
+		if errors.Is(err, checkout.ErrOrdersFrozen) {
+			writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Order changes are temporarily unavailable", true)
+			return
+		}
+		respondCommand(w, r, logger, http.StatusAccepted, res, err, func() (any, error) {
+			return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: "answer_pending",
+				PollAfterSeconds: checkout.PollAfterSeconds}, nil
+		})
+	}
 	if checkoutEnabled {
+		mux.HandleFunc("POST /api/v1/orders/{id}/late-payment/answer", postLatePaymentAnswer)
 		mux.HandleFunc("POST /api/v1/orders/{id}/pickup", postPickup)
 		mux.HandleFunc("POST /api/v1/checkouts", postCheckout)
 		mux.HandleFunc("POST /api/v1/orders/{id}/free-confirmation", postFreeConfirm)
@@ -429,6 +456,24 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 			respondCommand(w, r, logger, http.StatusAccepted, res, err, func() (any, error) {
 				return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: "decision_pending",
 					PollAfterSeconds: checkout.PollAfterSeconds}, nil
+			})
+		}))
+		// GK-017 r02b Q6: the chef's offer (the requested time or another
+		// one) that the customer answers on the order page. Synchronous and
+		// versioned; 200 {order_id, offer_id}.
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/late-payment/offer", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+			var in checkout.LatePaymentOfferInput
+			key, ok := readCommand(w, r, &in)
+			if !ok {
+				return
+			}
+			res, err := co.OfferLatePayment(r.Context(), a.Subject, key, r.PathValue("id"), in)
+			if errors.Is(err, checkout.ErrOrdersFrozen) {
+				writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Order changes are temporarily unavailable", true)
+				return
+			}
+			respondCommand(w, r, logger, http.StatusOK, res, err, func() (any, error) {
+				return map[string]string{"order_id": r.PathValue("id"), "offer_id": res.ID}, nil
 			})
 		}))
 		// K05 chef refunds: an agreed partial refund with allocations, and
