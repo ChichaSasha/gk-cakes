@@ -499,6 +499,9 @@ func TestOnlyTheAPIRecordsEvents(t *testing.T) {
 		"business.order_fulfillment_transition(uuid, uuid, text, text, integer, text, text, timestamp with time zone)",
 		"business.order_get(uuid, uuid, bytea)",
 		"business.order_handover_request(uuid, uuid, text, text, integer, text, text, timestamp with time zone)",
+		// Late-payment agreement (0034): the customer's answer and the chef's offer.
+		"business.order_late_payment_answer(uuid, bytea, uuid, text, text, integer, uuid, text, text, timestamp with time zone)",
+		"business.order_late_payment_offer(uuid, uuid, text, text, integer, text, date, uuid, timestamp with time zone)",
 		"business.order_late_payment_request(uuid, uuid, text, text, integer, text, text, timestamp with time zone, text, text, timestamp with time zone)",
 		"business.order_owner_assign(uuid, text, text, uuid, integer, uuid, uuid, text, timestamp with time zone)",
 		"business.order_pickup_move_request(uuid, bytea, uuid, text, text, integer, uuid, text, timestamp with time zone)",
