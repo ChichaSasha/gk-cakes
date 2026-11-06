@@ -677,8 +677,11 @@ variable (API, worker, dispatcher and settings).
 The copy is the agent's draft for Creator review; changing it needs a new
 template revision (a new migration replacing `order_notice_render`). Gaps:
 guests have no emailed access to their order page until account claims exist;
-GK delivery wording is a placeholder until GK delivery agreements exist; date
-moves (K06) are not reflected (the original handover is shown); the chef's
+GK delivery wording is a placeholder until GK delivery agreements exist; since
+0031 every notice renders the order's current appointment
+(`order_handover_at`), so a secured move, chef amendment or accepted
+late-payment date is what later emails show (moves get their own
+`pickup_moved` / `appointment_changed` notice); the chef's
 address email (about two days before collection) is not automated here; nor
 is a "the chef offered a date" email for a late payment (GK-017 r02b Q6, see
 "Late-payment agreement on the order page").
@@ -1892,8 +1895,13 @@ K11.
   `late_payment_returned`, goal 100% of the actual paid aggregate, source
   `customer`; it reads like the chef's full return, `cancellation.requested_by`
   `customer`). `order_page` is accepted only here; the chef's `/late-payment`
-  route keeps its channel list. The feasibility recorder on the decision row
-  is the chef who made the offer. `business.late_payment_answer` keeps the
+  route keeps its channel list. The decision row's `recorded_by` (NOT NULL,
+  and a guest has no account) is the chef who made the offer, i.e. the
+  feasibility recorder; the real actor of an order-page answer, including a
+  decline, is the `order_command` (actor kind, account or guest capability)
+  and `late_payment_answer` (also a column comment in 0034). The chef route's
+  idempotent replay matches only staff `late_payment` commands, so a staff
+  member who owns the order never replays their own customer answer there. `business.late_payment_answer` keeps the
   offer, answer, receipt instant and the access used (account ID or guest
   capability ID; never tokens or personal data). Accepting a `requested` offer
   after the original handover is 409 `HONOUR_TOO_LATE` and records nothing
@@ -1906,7 +1914,8 @@ K11.
   (the replay too); nothing else changes and the chef must offer again. The
   commit re-checks under the day locks (days by date, after the order) and
   either moves the appointment and day place (the old day's allocation
-  released, the new day's committed `standard`) together with the honour
+  released, the new day's committed `standard`, reusing a released row of
+  that day; on the same day the place is not touched) together with the honour
   (`confirmed`), or refuses `slot_unavailable` (the offer lapses) /
   `holds_changed` / `order_changed` with only the version changed. Until the
   outcome is secured the order reads `confirmation_pending` on its requested
@@ -1915,9 +1924,19 @@ K11.
 - **Read models.** `GET /orders/{id}` (and the chef's staff detail) adds
   `late_payment` on a `paid_awaiting_agreement` order: `{state: "waiting" |
   "offered" | "processing", offer: {id, kind, date, slot_id, start, end,
-  offered_at} | null, answer: {offer_id, answer, received_at, state:
-  "processing" | "lapsed" | "refused", reason} | null}` (`answer` is the
-  latest offer's answer while it has not resolved the order), and `agreed:
+  offered_at, accept_until, acceptable} | null, answer: {offer_id, answer,
+  received_at, state: "processing" | "lapsed" | "refused", reason} | null,
+  paid_minor, currency}`. `processing` means a protected command of the order
+  is unresolved: the customer's own answer (its offer is shown, not
+  acceptable) or the chef's `/late-payment` decision or another change (no
+  offer: nothing can be answered then, both buttons would be 409 `CONFLICT`).
+  `accept_until` is when accepting stops being possible (the original handover
+  for `requested`, the offered start for `other`); `acceptable` is computed by
+  the API at its clock (`offered` and now before `accept_until`); declining
+  has no such limit. `paid_minor` is the actual paid aggregate a decline
+  returns in full (server-computed, for "No, refund everything · £90").
+  `answer` is the latest offer's answer while it has not resolved the order;
+  and `agreed:
   {at, kind, date, start, end, offer_id}` once an acceptance is secured
   (null otherwise). Staff detail: `late_payment_offers` (every offer with its
   state `open` | `withdrawn` | `processing` | `accepted` | `declined` |
@@ -1937,7 +1956,22 @@ K11.
   `internal/httpapi` `TestLatePaymentAgreementRoutes`, and the exact `gk_api`
   allowlist in `internal/notifications`.
 
+Creator decisions to review (built as described, not confirmed):
+
+- **New schedule versions lapse open offers.** Slot IDs derive from the
+  schedule version (as for 0031 moves), so publishing a new schedule version
+  makes an open `other` offer unpublished: accepting it then lapses (409
+  `SLOT_UNAVAILABLE`) and the chef offers again.
+- **No feasibility note and no chef_extra on offers.** An `other` offer carries
+  no feasibility note (unlike the chef's appointment change) and must fit the
+  day's standard limit; it can never use a `chef_extra` place. Offering a full
+  day needs the chef to raise the day limit first (or use the appointment
+  change after confirmation).
+
 Follow-ups (not implemented):
+
+- **`GET /me/orders` summaries** do not carry `late_payment.state` yet (only the
+  order page does); a "the chef answered" badge in the account list needs it.
 
 - **"The chef offered a date" email** (and a reminder while an offer is open):
   needs Creator-approved wording and a new template revision; today the
