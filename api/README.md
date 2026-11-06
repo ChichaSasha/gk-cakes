@@ -679,7 +679,9 @@ template revision (a new migration replacing `order_notice_render`). Gaps:
 guests have no emailed access to their order page until account claims exist;
 GK delivery wording is a placeholder until GK delivery agreements exist; date
 moves (K06) are not reflected (the original handover is shown); the chef's
-address email (about two days before collection) is not automated here.
+address email (about two days before collection) is not automated here; nor
+is a "the chef offered a date" email for a late payment (GK-017 r02b Q6, see
+"Late-payment agreement on the order page").
 
 ## Database backups (K11, GK-034)
 
@@ -1842,6 +1844,112 @@ unchanged goal); an HTTP route for the delivery failure and delivery
 collections from checkout; returning a sold ready cake to stock on
 cancellation; staff order reads; cancellation, production and refund emails;
 the UI (B2/B3).
+
+### Late-payment agreement on the order page (GK-017 r02b Q6)
+
+Migration `0034_late_payment_agreement.sql` (expand only), store
+`internal/checkout/late_payment.go`. Creator decision Q6 (2026-11-05, design
+`docs/design/sessions/checkout-recovery/gk-017-r02/session.md` state 10):
+"Paid late: the customer agrees or declines on the order page; the buttons
+record explicit agreement as evidence. The chef may propose a different date,
+only as an offer the customer must accept." Contracts K04 Q2 (a requested
+date, not a promise; silence is never agreement), K05 (anchors), K08, K09,
+K11.
+
+| Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
+| --- | --- | --- |
+| `POST /api/v1/admin/orders/{id}/late-payment/offer` | chef | `{expected_version, kind: "requested"}` or `{expected_version, kind: "other", target_date, target_slot_id}` (the chef appointment change's slot input) with Idempotency-Key; 200 `{order_id, offer_id}` (`Idempotent-Replayed: true` for the same key, also during a restore freeze) |
+| `POST /api/v1/orders/{id}/late-payment/answer` | the owner (bearer) or the guest (`X-Order-Capability` with `cancel`, the cancellation's access) | `{expected_version, offer_id, answer: "accept" \| "decline"}` with Idempotency-Key; 202 `{order_id, operation_id, state: "answer_pending", poll_after_seconds}` |
+
+- **Offer** (`business.order_late_payment_offer`). Only on a secured
+  `paid_awaiting_agreement` order with no unresolved K11 command (a pending
+  decision, answer or cancellation is 409 `CONFLICT`; any other lifecycle
+  too). `requested` offers the original appointment and is 409
+  `HONOUR_TOO_LATE` once the original handover is not after the receipt (the
+  honour rule). `other` offers a published start of the current schedule on
+  a non-closed day, after the receipt, within the ready cakes' shelf life (the
+  appointment change's validation), that can take the order: on another day
+  the other orders' committed standard cakes plus the order's must fit the
+  day's limit (an acceptance never creates a `chef_extra` place); otherwise
+  409 `SLOT_UNAVAILABLE`. The requested time itself as `other` is 422
+  (`target_slot_id`). The chef records feasibility, so the 192-hour lead time
+  does not apply. An offer holds no capacity and changes no commitment or
+  money: not a K11 command, but versioned (order version + 1), idempotent
+  (K00 command receipt), audited (`order.late_payment_offered`,
+  `order.late_payment_offer_withdrawn`: offer IDs and kind only) and 503
+  during a restore freeze. A newer offer withdraws the open one; offers
+  (`business.late_payment_offer`) and answers are immutable rows.
+- **Answer** (`business.order_late_payment_answer`). Only the current open
+  offer, else 409 `OFFER_NOT_CURRENT` (also while waiting: there is nothing
+  to answer, and a withdrawn, lapsed or answered offer cannot be taken up),
+  then 409 `STALE_VERSION`. The answer is the existing K11 order command
+  `late_payment` (prepared envelope before the commit, outcome envelope before
+  it is visible, one outcome, the same actor and key replay, another body is
+  `KEY_REUSED`, another answer while it is pending `CONFLICT`), with its
+  `late_payment_decision` row: `accept` = `honour` with agreement evidence
+  `{channel: "order_page", agreed_at: the receipt instant, evidence_ref: the
+  answer ID}`; `decline` = `full_return` (cancel_reason
+  `late_payment_returned`, goal 100% of the actual paid aggregate, source
+  `customer`; it reads like the chef's full return, `cancellation.requested_by`
+  `customer`). `order_page` is accepted only here; the chef's `/late-payment`
+  route keeps its channel list. The feasibility recorder on the decision row
+  is the chef who made the offer. `business.late_payment_answer` keeps the
+  offer, answer, receipt instant and the access used (account ID or guest
+  capability ID; never tokens or personal data). Accepting a `requested` offer
+  after the original handover is 409 `HONOUR_TOO_LATE` and records nothing
+  (declining stays possible). A restore freeze refuses new answers (503; the
+  same key replays) and defers the commit, as for the pickup move.
+- **Another date.** Accepting an `other` offer re-checks the slot and place at
+  the receipt; if the slot can no longer take the order the offer lapses
+  (an answer row without a command, order version + 1, audit
+  `order.late_payment_offer_lapsed`) and the answer is 409 `SLOT_UNAVAILABLE`
+  (the replay too); nothing else changes and the chef must offer again. The
+  commit re-checks under the day locks (days by date, after the order) and
+  either moves the appointment and day place (the old day's allocation
+  released, the new day's committed `standard`) together with the honour
+  (`confirmed`), or refuses `slot_unavailable` (the offer lapses) /
+  `holds_changed` / `order_changed` with only the version changed. Until the
+  outcome is secured the order reads `confirmation_pending` on its requested
+  date (`order_visible_appointment`). The original `full_refund_deadline_at`
+  and the production anchor (`paid_at` + 48 h) never move.
+- **Read models.** `GET /orders/{id}` (and the chef's staff detail) adds
+  `late_payment` on a `paid_awaiting_agreement` order: `{state: "waiting" |
+  "offered" | "processing", offer: {id, kind, date, slot_id, start, end,
+  offered_at} | null, answer: {offer_id, answer, received_at, state:
+  "processing" | "lapsed" | "refused", reason} | null}` (`answer` is the
+  latest offer's answer while it has not resolved the order), and `agreed:
+  {at, kind, date, start, end, offer_id}` once an acceptance is secured
+  (null otherwise). Staff detail: `late_payment_offers` (every offer with its
+  state `open` | `withdrawn` | `processing` | `accepted` | `declined` |
+  `lapsed` | `refused` | `closed` and its answer, access `account` |
+  `guest_link`) for the chef and technical support; technical support also
+  gets `late_payment` and `agreed` (no money in either); fulfilment none.
+- **Notices.** No new template (wording needs Creator review): the confirmed
+  and cancelled notices fire once through `order_command_secured` as for the
+  chef's decision (the confirmation renders the agreed appointment).
+- **Tests:** `internal/checkout/late_payment_integration_test.go` (waiting,
+  chef only, versions, replays, withdrawal, superseded offer, access by
+  read-only capability and another customer, accept with evidence and
+  production anchor, agreed block, staff redaction, audit without personal
+  data; another date with the K11 journal-down and outcome-down crash points,
+  moved place, one notice; lapse at the answer and at the commit (schedule
+  change, full day); decline 100%; `HONOUR_TOO_LATE`; freeze; owner),
+  `internal/httpapi` `TestLatePaymentAgreementRoutes`, and the exact `gk_api`
+  allowlist in `internal/notifications`.
+
+Follow-ups (not implemented):
+
+- **"The chef offered a date" email** (and a reminder while an offer is open):
+  needs Creator-approved wording and a new template revision; today the
+  customer learns of an offer only on the order page (and the chef's own
+  contact).
+- **Open question 22** (session.md): an accepted other date keeps the original
+  full-refund deadline (K05 "moves never change it"), as built; if the Creator
+  wants the deadline to follow the new date that is a K05 change.
+- The UI (state 10 variants), and a staff screen for offers.
+- A lapsed offer is visible on the order page (`answer.state` `lapsed`) but
+  the chef is not alerted beyond the audit trail and the order staying in the
+  `paid_awaiting_agreement` attention flag.
 
 ## Chef refunds and recovery (K05, GK-026 B2)
 
