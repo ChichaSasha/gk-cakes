@@ -5,7 +5,7 @@
 	// shows the day's start–end times with the current one marked; a refused
 	// choice keeps the old booking and shows fresh choices. Moving never
 	// changes the refund deadline.
-	import { tick } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
 	import { ApiError } from '../../api';
 	import {
 		moveBaseline,
@@ -52,6 +52,10 @@
 	 */
 	let baseline = $state<ChangeBaseline | null>(null);
 	const awaiting = $derived(baseline !== null);
+
+	// Removed while waiting (for example the order changed and the move
+	// control is no longer shown): the page stops waiting for this move.
+	onDestroy(() => onwaiting?.(false));
 
 	const mode = $derived(timeChange(order, who));
 	const moving = $derived(mode === 'moving' ? order.appointment_change : null);

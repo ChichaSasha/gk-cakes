@@ -329,3 +329,34 @@
 		grid-template-columns: 1fr;
 	}
 }
+
+/* Order page slice 2 (GK-030): the delivery choices as radio cards
+   (poc .r02-choices), the "What happens next" list (.r02-next) */
+.co-page .oc-choices {
+	display: grid;
+	gap: 10px;
+	margin: 0 0 16px;
+	padding: 0;
+	border: 0;
+	min-width: 0;
+}
+.co-page .oc-choices:focus-visible {
+	outline: 3px solid var(--focus);
+	outline-offset: 6px;
+	border-radius: 12px;
+}
+.co-page .oc-choices + .oc-times {
+	margin-bottom: 16px;
+}
+.co-page .oc-choices ~ .field-error {
+	margin: 12px 0 0;
+}
+.co-page .oc-next {
+	margin: 0;
+	padding-left: 22px;
+	font-size: 14px;
+	line-height: 1.6;
+}
+.co-page .oc-next li + li {
+	margin-top: 8px;
+}

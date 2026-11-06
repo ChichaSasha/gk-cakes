@@ -122,3 +122,68 @@ export const changesApi: OrderChangesApi = {
 			{ ...opts(who, 'X-Order-Capability'), idempotencyKey: key }
 		)
 };
+
+/** Body of the Q5 and failed-delivery choices (target_slot_id only for a time choice). */
+export interface ChoiceBody {
+	expected_version: number;
+	choice: string;
+	target_slot_id?: string;
+}
+
+/**
+ * The order page's slice 2 commands (GK-030): the late-payment answer, the
+ * delivery payment and the two delivery choices. Each is a 202 command with
+ * an Idempotency-Key; the page then reads the order.
+ */
+export interface OrderRecoveryApi {
+	order(id: string, who: Who): Promise<Order>;
+	latePaymentAnswer(
+		id: string,
+		body: { expected_version: number; offer_id: string; answer: 'accept' | 'decline' },
+		key: string,
+		who: Who
+	): Promise<Accepted>;
+	deliveryPayment(
+		id: string,
+		body: { expected_version: number; quote_id: string },
+		key: string,
+		who: Who
+	): Promise<Accepted>;
+	deliveryChoice(id: string, body: ChoiceBody, key: string, who: Who): Promise<Accepted>;
+	deliveryFailureChoice(id: string, body: ChoiceBody, key: string, who: Who): Promise<Accepted>;
+}
+
+const post = (id: string, path: string, body: object, key: string, who: Who) =>
+	apiPost<Accepted>(`/api/v1/orders/${encodeURIComponent(id)}/${path}`, body, {
+		...opts(who, 'X-Order-Capability'),
+		idempotencyKey: key
+	});
+
+const choiceBody = (b: ChoiceBody): ChoiceBody => ({
+	expected_version: b.expected_version,
+	choice: b.choice,
+	...(b.target_slot_id ? { target_slot_id: b.target_slot_id } : {})
+});
+
+export const recoveryApi: OrderRecoveryApi = {
+	order: (id, who) => api.order(id, who),
+	latePaymentAnswer: (id, b, key, who) =>
+		post(
+			id,
+			'late-payment/answer',
+			{ expected_version: b.expected_version, offer_id: b.offer_id, answer: b.answer },
+			key,
+			who
+		),
+	deliveryPayment: (id, b, key, who) =>
+		post(
+			id,
+			'delivery-payment',
+			{ expected_version: b.expected_version, quote_id: b.quote_id },
+			key,
+			who
+		),
+	deliveryChoice: (id, b, key, who) => post(id, 'delivery-choice', choiceBody(b), key, who),
+	deliveryFailureChoice: (id, b, key, who) =>
+		post(id, 'delivery-failure-choice', choiceBody(b), key, who)
+};
