@@ -2433,7 +2433,11 @@ BO-GK-001.ready_cancellation `93a75483…`.
   required before dispatch"; since migration 0035, see "GK delivery quote,
   payment and waiver" below). Since migration 0036 a dispatch after the
   chef recorded that GK can't deliver is 409 `DELIVERY_NOT_POSSIBLE` (see
-  "Q5 choice when GK can't deliver").
+  "Q5 choice when GK can't deliver"). Since migration 0037 a dispatch after
+  an our-side delivery failure waits for the customer's redelivery choice
+  and the chef's new time (409 `DELIVERY_FAILURE_OPEN` /
+  `REDELIVERY_TIME_NOT_SET`), and a GK delivery no-show needs a dispatch
+  that did not fail on our side (see "Failed GK delivery").
 - **Never rewound.** `completed` is terminal (orders_guard); a completed or
   no-show order accepts no further step, cancellation or appointment change
   (409 `TRANSITION_NOT_ALLOWED` / `CANCELLATION_NOT_ELIGIBLE` /
@@ -2467,9 +2471,10 @@ BO-GK-001.ready_cancellation `93a75483…`.
   no-show before a dispatch, `DELIVERY_NOT_PAID`, dispatch, exception,
   re-dispatch, handover), `internal/httpapi` `TestTransitionRoutes`.
 
-Not yet: courier status mapping (only a free-text reference); a GK-caused
-delivery failure route (`refund_delivery_failure_record` stays interim);
-chef screens (UI).
+Not yet: courier status mapping (only a free-text reference); chef screens
+(UI). The GK-caused delivery failure route is migration 0037 ("Failed GK
+delivery" below); `refund_delivery_failure_record` stays as an interim
+database function without a route (expand-only).
 
 ## GK delivery quote, payment and waiver (K03/K06)
 
@@ -2742,8 +2747,10 @@ Follow-ups (not implemented):
 - A free-confirmed cake cancelled (or not collected) while its only
   delivery money is a stray records no refund goal, so the stray stays
   flagged for the chef rather than being returned automatically.
-- The no-show notice's "Refund requested" amount includes a stray reserved
-  with the no-show, but it has no separate stray sentence yet.
+- ~~The no-show notice's "Refund requested" amount includes a stray reserved
+  with the no-show, but it has no separate stray sentence yet~~: since
+  migration 0037 the refund line states the 50% part and the stray has its
+  own sentence (see "Failed GK delivery").
 - `GET /me/orders` summaries and the staff list do not carry the delivery
   state yet; the UI (state 15) and a chef screen for quotes and waivers.
 
@@ -2989,10 +2996,343 @@ Follow-ups (not implemented):
 - An order with no quote at all never opens the choice by itself: the chef
   records "GK can't deliver".
 - No reversal of the chef's decision (a later "we can deliver after all")
-  and no redelivery choice (Q17 covers a failed delivery: state 19).
+  and no redelivery choice (Q17 covers a failed delivery after a dispatch:
+  state 19, built in migration 0037, see "Failed GK delivery" below).
 - A time choice sends no confirmation email (needs Creator-approved
   wording and a template revision); `GET /me/orders` summaries do not carry
   the block.
+
+## Failed GK delivery (GK-017 r02b state 19, Q17/Q18)
+
+Migration `0037_delivery_failure.sql` (expand only), store
+`internal/checkout/delivery_failure.go`, routes in
+`internal/httpapi/checkout.go`. Inputs (sha256 prefixes): design
+`docs/design/sessions/checkout-recovery/gk-017-r02/session.md` `e11d934591fa`
+state 19 ("Delivery failed · our side (choose, collection chosen, redelivery
+chosen)", "Delivery failed · nobody available") and its prototype
+`poc/r02.js` `f06788d3ef91` (`def('timeline'…)`: "Deliver it again — The chef
+confirms a new delivery time with you. Nothing more to pay."; "Collect it
+today · delivery refunded — St Katharine Docks, at any opening time still
+ahead today. Your £120 delivery payment comes back in full."; nobody
+available: "50% of the cake price back … requested automatically", "The
+delivery payment of £120 isn't refunded, because the delivery was
+attempted", money lane "Delivery payment kept"); Creator decisions Q17
+("GK-caused delivery failure: redelivery or collection, or 100% of the
+delivery back (K05)"; r02b reading: two choices, question 24 open), Q18
+("Customer-caused failure: treated like a no-show (50% of the cake; delivery
+payment kept)"), Q10 ("After a failed delivery: any opening time that day";
+state 19: the times still ahead today), Q19 (the no-show refund is requested
+when the chef records it); contracts `docs/design/contracts.md`
+`a2817cb743c8` K05 ("GK-caused unperformed delivery raises its target to
+100% delivery … explicit collection floor", no-show 50%, cumulative goal,
+delivery refunds), K06 ("GK Delivery responsibility through customer
+handover … Delivery failure is actionable, not automatic completed"), K00,
+K08, K09, K11.
+
+| Route (only with `CHECKOUT_ENABLED=true`) | Who | Input / answer |
+| --- | --- | --- |
+| `POST /api/v1/admin/orders/{id}/delivery-failed` | chef | `{expected_version, cause: "our_side" \| "nobody_available", reason?}` with Idempotency-Key. `our_side`: 200 `{order_id, failure_id}`. `nobody_available`: 202 `{order_id, operation_id (the no-show command), state: "no_show_pending", poll_after_seconds}`. The same key replays as the recorded cause answered (`Idempotent-Replayed: true`, also during a restore freeze) |
+| `POST /api/v1/orders/{id}/delivery-failure-choice` | the owner (bearer) or the guest (`X-Order-Capability` with `move_pickup`) | `{expected_version, choice: "redelivery" \| "collection", target_slot_id}` (`target_slot_id` for collection only) with Idempotency-Key; 202 `{order_id, operation_id, state: "choice_pending", poll_after_seconds}` |
+
+- **When a failure can be recorded.** Only while the GK delivery is on its
+  way: the order is `ready`, fulfilment `out_for_delivery` or `exception`
+  after a dispatch, and no our-side failure is recorded for its latest
+  dispatch yet, and the order was not rescheduled since that dispatch
+  (`business.delivery_on_its_way`); otherwise 409 `TRANSITION_NOT_ALLOWED`
+  (never dispatched, another mode, already failed on our side, rescheduled
+  and not dispatched again, completed). An order never visibly confirmed
+  (outside the fulfilment scope) is 404 for both causes. Chef only (403 for fulfilment, technical support
+  and customers): K00 gives fulfilment ready/dispatch/handover only, and a
+  recorded failure opens a money outcome (the delivery comes back in full,
+  or the no-show's 50%); fulfilment records what it saw as a
+  `delivery_exception`. `reason` is 1–500 characters on one line, the chef's
+  only (never audited, never in the customer's or technical support's view).
+- **Our side** (`business.order_delivery_failed`): a plain versioned command
+  (order version + 1, 409 `STALE_VERSION`; 409 `CONFLICT` while a K11
+  command is unresolved; 503 during a restore freeze, checked before any
+  outcome; K00 command receipt: the same key replays, another body is
+  `KEY_REUSED`). One immutable `business.delivery_failure` row: the
+  dispatch it ends (one per dispatch), the current quote, its paid matched
+  delivery collection and amount (the 100% obligation, K05), the reason,
+  the chef, the receipt; a fulfilment event `delivery_failed` (to
+  `exception`, so the history shows it); audit `delivery.failed`
+  `{failure_id, cause, quote_id, delivery_collection_id}`. It refunds nothing
+  and records no `business.refund_floor` (that row is immutable and unique
+  per collection, and a redelivery must leave no floor behind; the
+  obligation is on the failure row and becomes the floor only when the
+  customer collects). From then on, until the customer chose: no dispatch
+  (409 `DELIVERY_FAILURE_OPEN`), no no-show or second failure for that
+  dispatch (`TRANSITION_NOT_ALLOWED`), no chef appointment change (409
+  `MOVE_NOT_ELIGIBLE`: the chef agrees a redelivery time after the customer
+  chose it, and the collection times stay on the failed delivery's day), no
+  customer cancellation (below). A cancellation by the chef in that time, or
+  by the customer after a redelivery choice and before the redelivery is
+  dispatched, returns the paid delivery in full (below). The attention flag `delivery_failure_open`
+  shows the open case (no deadline, as Q8: the case stays open with the
+  chef until the customer decides; the Creator gave no deadline for this
+  choice).
+- **Nobody available** (Q18): the existing chef no-show K11 command with a
+  recorded cause. `business.order_handover_request` now calls
+  `business.order_handover_enqueue` (one implementation; plain handovers
+  and no-shows unchanged), which for this cause also requires a GK delivery,
+  records the `delivery_failure` row (cause `nobody_available`, the no-show
+  command, the paid delivery, the reason) and puts the cause and the kept
+  delivery in the command's payload. Every no-show rule applies: a delivery
+  on its way, at or after the appointment start (409 `HANDOVER_NOT_DUE`),
+  K11 protection (202, poll; the order reads `ready` with
+  `fulfillment.pending` `no_show` and no refund until secured), freeze,
+  idempotency. Its commit marks the paid matched delivery kept
+  (`business.delivery_kept`, unless the chef recorded a floor on it) and
+  records the no-show goal of 50% of the cake: the paid aggregate without
+  the kept delivery (`refund_goal_apply` reason `no_show`, half-up), and
+  `refund_shares` leaves a kept collection out of every allocation, so
+  nothing of the delivery is refunded or left pending for the chef (no
+  `delivery_pending_minor`). Lifecycle `completed`, fulfilment `no_show`, the
+  day place stays. Cake 10000p + delivery 12000p: goal 5000p from the cake,
+  delivery kept.
+- **The customer's choice** (`business.order_delivery_failure_choice_request`),
+  a K11 order command `delivery_failure_choice` (prepared envelope before the
+  commit, outcome envelope before it is visible, exactly one outcome, the
+  same actor and key replay, another body `KEY_REUSED`, another protected
+  change 409 `CONFLICT`, 503 during a restore freeze and the commit
+  deferred). Only while the choice is open (409 `CHOICE_NOT_OPEN`), at the
+  version shown (409 `STALE_VERSION`). The request stores
+  `business.delivery_failure_choice` (failure, choice, paid delivery, the GK
+  delivery appointment it replaces, the target and its schedule revision,
+  the access used, the receipt): the immutable history of the agreed mode
+  change (K06).
+  - `redelivery`: the order stays a GK delivery at its time; version + 1,
+    nothing else; nothing more to pay and nothing refunded (no floor
+    exists). The chef then agrees the new time with the customer through
+    the existing appointment change (`POST /admin/orders/{id}/appointment`,
+    0031: agreement evidence, feasibility note, any published future start,
+    another day allowed as the chef's decision; Creator question 25 is open).
+    **Dispatch gating:** a dispatch is accepted again once a chef
+    appointment change requested after the secured redelivery choice is
+    secured with outcome `moved` (`business.redelivery_time_set`); until then
+    409 `REDELIVERY_TIME_NOT_SET` and the attention flag
+    `redelivery_time_needed`. The delivery stays paid (the same quote; no new
+    quote, waiver or payment after a dispatch). Until the redelivery is
+    dispatched nothing can be recorded as a failed delivery or no-show (the
+    failed dispatch is not on its way). The re-dispatched delivery can be
+    handed over, fail again (a new failure for the new dispatch) or end in a
+    no-show.
+  - **A cancellation after an our-side failure and before the redelivery is
+    dispatched** (the customer's after a secured redelivery choice, or the
+    chef's at any time) returns the paid delivery in full beside the cake's
+    own rate (K05 "GK-caused unperformed delivery raises its target to 100%
+    delivery"; as 0036's floor after "GK can't deliver"): the cancellation's
+    terminal return records the 100% floor first
+    (`business.delivery_failure_floor_record`, reason `gk_delivery_failure`,
+    recorded by the chef who recorded the failure; the order is cancelled, so
+    no redelivery can follow it), and the preview and the request compute the
+    same amount and allocations with that floor recorded inside a block that
+    is rolled back (a preview records nothing). Cake 10000p + delivery 12000p
+    after the deadline: preview and refund 17000p (cake 5000p + delivery
+    12000p, both automatic, nothing pending for the chef); the cancelled
+    notice says "Refund requested: £170: 50% of the £100 you paid for your
+    cakes, … and your delivery payment of £120 in full, because we could not
+    deliver your order." Once the redelivery is dispatched the floor no
+    longer applies (the delivery is being performed again).
+  - `collection`: `target_slot_id` must be a published start of the current
+    schedule on the order's handover day (the failed delivery's day; the day
+    place stays), starting after the receipt instant, within the ready
+    cakes' shelf life, without the six-hour self-move cutoff (Q10), else 409
+    `SLOT_UNAVAILABLE`. The commit changes `fulfillment_mode` to collection
+    and the appointment; `original_handover_at`, the refund deadline and the
+    production anchor never move; the fulfilment state stays `exception`
+    (collection handover and no-show accept it). A paid delivery gets its
+    100% floor (`business.refund_floor`, reason `gk_delivery_failure`,
+    recorded by the chef who recorded the failure: the chef action K05 asks
+    for a delivery refund), the goal raised (reason `delivery_failure` when
+    new) and the refund reserved: the delivery comes back in full, once,
+    automatically; the cake is not refunded. A waived delivery returns
+    nothing.
+  - The commit re-checks the version, that this failure's choice is still
+    open, the paid delivery and the target slot (published, after the
+    persisted receipt instant, also when a freeze delayed the commit);
+    otherwise a refusal (`order_changed`, `not_open`, `slot_unavailable`;
+    version + 1 only) and the choice is open again.
+- **Order view.** `GET /orders/{id}` adds `delivery_failure` (the latest
+  failure; null when none): `{cause, at, state, open, pending, choices,
+  times: [{id, starts_at, ends_at}], delivery_paid_minor, chosen,
+  redelivery_time_set?, cake_refund_minor?, delivery_kept_minor?}`.
+  - Our side: `state` `recorded`; `open` while the choice is open and no
+    protected change is pending; `choices` `["redelivery", "collection"]`
+    and `times` (the handover day's published starts within shelf life,
+    server-computed: the API keeps only those starting after its own clock,
+    so "still ahead today" never follows the database clock) only while
+    open, else `[]`; when no opening time is left today at the API's clock,
+    `choices` is `["redelivery"]` alone (a collection request would be 409
+    `SLOT_UNAVAILABLE`); `delivery_paid_minor` the paid delivery at stake (null
+    when waived); `chosen` the latest choice `{choice, state: "processing" |
+    "chosen" | "refused", refusal_reason, requested_at, to: {fulfillment_mode,
+    date, id, starts_at, ends_at} | null, delivery_refund_minor (collection
+    with a paid delivery, only once secured)}`; `redelivery_time_set` once a
+    redelivery is secured.
+  - Nobody available: `state` `processing` | `no_show` | `refused` (the
+    no-show command's), `open` false, and once secured `cake_refund_minor`
+    (the no-show's 50% of the cake) and `delivery_kept_minor` (0 when the
+    delivery was waived).
+  - Timeline (state 19): "Delivery failed · our side" = `cause` our_side with
+    `open` (choose) or `chosen` (redelivery chosen: "We'll deliver your cake
+    again"; collection chosen: "You'll collect your cake today", "Delivery
+    refund of £120 requested" = `chosen.delivery_refund_minor` and the
+    `refund` block); "nobody available" = `cause` nobody_available,
+    "50% of the cake price back … requested automatically" =
+    `cake_refund_minor` and the `refund` block, "Delivery payment kept" =
+    `delivery_kept_minor`.
+  - K11: while a choice is not secured the order shows no `refund` block (also
+    in the staff list) and no `refund_returned` email is queued, even if the
+    reserved delivery refund already went back (`order_refund_hidden`); the
+    secured command's trigger then sends it once. While a collection is
+    committed but unsecured, `fulfillment_mode`, `slot` and `date` still show
+    the GK delivery (`order_visible_mode`, `order_visible_appointment`) and
+    the Q5 block still reads as before. After a secured collection the
+    `delivery` block reads `cancelled_by_choice` (as after a Q5 time choice:
+    the delivery is not happening; `paid_minor` stays) and the `refund` block
+    shows the delivery's full refund (reason `delivery_failure`).
+- **Staff views** (orders whose customer view has the block): the chef gets
+  it plus `history` (every failure oldest first with its reason, dispatch,
+  quote, delivery collection and amount, the no-show command, and its
+  choices with `command_id`, `access` and `from`); technical support the same
+  without money (`delivery_paid_minor`, `delivery_refund_minor`,
+  `cake_refund_minor`, `delivery_kept_minor`, the history's amounts) or the
+  reason (K00 no money; K09 necessary support only); fulfilment `{cause, at,
+  state, open, pending, chosen}` without money. `fulfillment_history` shows
+  the `delivery_failed` event. Attention flags `delivery_failure_open` and
+  `redelivery_time_needed` read no clock.
+- **Cancellation after a dispatch** (the UI worker's gap). The customer's
+  cancellation preview and request now refuse with 409
+  `CANCELLATION_NOT_ELIGIBLE` once a GK delivery is dispatched: out for
+  delivery, an exception after the dispatch, or an open or pending choice
+  after an our-side failure, until a secured redelivery choice returns the
+  order to waiting for a new dispatch (`business.delivery_dispatched`); a
+  re-dispatch refuses again. A secured chef appointment change after the
+  latest dispatch also returns the order to waiting for a new dispatch
+  (`business.order_rescheduled_since_dispatch`, in `delivery_on_its_way` and
+  `delivery_dispatched`); since 0037 the chef cannot make one while the
+  delivery is on its way (an exception after a dispatch: 409
+  `MOVE_NOT_ELIGIBLE`), only after recording the failure's cause (our side:
+  after the customer's redelivery choice), so this covers a reschedule made
+  before 0037. Contract basis: K06 keeps GK responsible
+  "through customer handover" and makes a delivery failure "actionable"
+  (state 19's chef record and choice), K05's 50% for a customer absence is
+  the no-show, and Creator decision Q18 keeps the delivery payment when the
+  delivery was attempted, which a customer cancellation (50% of everything,
+  the delivery share pending the chef) would override; the approved order
+  page (state 19) shows no cancel control once the delivery is on its way.
+  The chef's 100% cancellation stays available. After a secured redelivery
+  choice the customer's cancellation returns the delivery in full (above). A
+  collection chosen after a failure is an ordinary collection order again
+  (cancellable; the delivery's floor keeps it at 100%).
+- **Emails.** No new template. The existing no-show notice
+  (`order-no-show.v1`) for cause nobody_available says "Our terms return 50%
+  of the cake price when nobody is available to receive a delivery: £50 of
+  the £100 you paid for your cakes." and "Your delivery payment of £120 is
+  not refunded, because the delivery was attempted." (wording for Creator
+  review; other no-show notices render as before). When the no-show also
+  returns a stray delivery payment (0035), every no-show notice (nobody
+  available or the plain one) states the 50% part on its refund line and adds
+  the cancelled notice's sentence: "We are also returning in full a delivery
+  payment of £120 that could not be used for your order, so £170 is being
+  returned to you in total." (the outcome evidence carries `unmatched_minor`
+  only then, so notices without a stray render exactly as before). Our-side failures and
+  both choices send no email; after a collection the existing
+  `refund_returned` notice announces the returned delivery once it is back.
+- **Interplay.** Q5 (0036) is before dispatch: an order with "GK can't
+  deliver" is never dispatched, so no failure can be recorded on it, and an
+  order with a dispatch accepts no "GK can't deliver" (409 `CONFLICT`): an
+  order never has both an open Q5 choice and a failure choice. A stray
+  delivery payment (0035) is returned in full on top either way: collection
+  returns the paid delivery and the stray; nobody available returns 50% of
+  the cake and the stray while the matched delivery is kept.
+- **Clock audit.** No 0037 function reads the database clock for a decision
+  (`times` is filtered by the API; receipts are the API's; the redelivery
+  gating compares two rows' `created_at`, both database-clock values). The
+  tests use the API (test) clock only. Simulated with the database `now()`
+  and the Go process clock both shifted to 2027-06-01 in a scratch copy, the
+  0037 tests and the neighbouring Q5, fulfilment, no-show, cancellation,
+  notice and staff-view tests passed (re-run after the PR #62 review fixes).
+- **Tests:** `internal/checkout/delivery_failure_integration_test.go`
+  (rules: not before a dispatch, other modes, chef only, cause and reason
+  checks, stale version, freeze and replays, `KEY_REUSED`, one failure per
+  dispatch, no no-show after our side, view, no money moved, audit without
+  the reason, staff redaction and flag, dispatch / appointment change /
+  cancellation / Q5 refused, an exception after the dispatch; redelivery:
+  access by another guest or customer and a link without `move_pickup`,
+  inputs, stale, freeze and replay while frozen, pending conflict, no
+  refund or floor, the cancellation preview afterwards (cake 50% + delivery
+  100%, nothing recorded by the preview), `REDELIVERY_TIME_NOT_SET`, chef
+  appointment change to another day, no failure or no-show before the
+  re-dispatch, re-dispatch, cancellation refused again, handover; collection: times still ahead at the API clock, past /
+  other-day / unknown slots, K11 journal-down and outcome-envelope-down
+  crash points with nothing visible or emailed while unsecured, the
+  delivery returned once through its floor, the cake untouched,
+  `cancelled_by_choice`, one `refund_returned` email, envelopes once,
+  production anchor and day place kept, staff redaction, collected later;
+  nobody available: not before the appointment, freeze, replay, the no-show
+  command, pending view, 50% of the cake only, the delivery kept, notice
+  wording, staff redaction, audit; strays with collection and with nobody
+  available, both no-show notices with the stray sentence; Q5 orders refuse
+  a failure; cancellation refused after a dispatch and after an exception,
+  the chef's still allowed; an unconfirmed order is 404; no opening time left
+  today (redelivery alone); a reschedule after a dispatch refused, and a
+  pre-0037 one un-dispatching the order (cancellation back, nothing recorded
+  as failed until the new dispatch); a cancellation after a redelivery choice
+  returning cake 50% + delivery 100% with its notice; the choice's commit
+  refused (`slot_unavailable` after a new schedule version, `order_changed`)
+  with nothing moved and the choice reopened, and a commit delayed by a
+  freeze past the target's start decided by the receipt),
+  `delivery_failure_test.go` (inputs and the API clock), `internal/httpapi`
+  `TestDeliveryFailureRoutes`, and the exact `gk_api` allowlist in
+  `internal/notifications`.
+
+Decisions taken (small and reversible, for Creator review):
+
+- **Chef only** records a failure (both causes), as the no-show (K00).
+- **No floor at the our-side record**: the delivery's 100% obligation is
+  kept on the failure row and becomes the `refund_floor` when the customer
+  collects or the order is cancelled before the redelivery is dispatched; a
+  dispatched redelivery leaves nothing behind (refund floors are immutable
+  and one per collection). 0036 records its floor with the chef's decision
+  because every Q5 outcome returns the delivery; here redelivery does not.
+- **Cancellation before the redelivery is dispatched returns the delivery in
+  full** (K05; the delivery was GK's failure and not performed).
+- **`move_pickup` for both choices**: each decides how and when the cake is
+  handed over, like the same-day move; redelivery moves no money and keeps
+  the commitment, so it needs no stronger capability than collection.
+- **Redelivery time = the chef's appointment change**, and dispatch waits for
+  one requested after the secured choice (not for "any" earlier change).
+- **No chef appointment change while a GK delivery is on its way or the
+  choice is open** (409 `MOVE_NOT_ELIGIBLE`; `appointment_change_eligible` is
+  now STABLE): after an exception the chef records the failure's cause, so
+  the customer's Q17 choice or the Q18 no-show decide the money, rather
+  than a reschedule bypassing them.
+- **Collection keeps fulfilment `exception`** (the failed delivery stays in
+  the state and history; collection handover accepts it).
+- **No deadline** for the choice (mirrors Q8; Creator gave none).
+- **Customer cancellation refused after a dispatch** (above).
+- **Response shapes differ by cause** (200 for our side, 202 for nobody
+  available) because only the no-show is a K11 command.
+
+Follow-ups and open questions (not implemented):
+
+- **Creator questions 23–25** (r02b): collecting after a missed delivery
+  (and whether the 50% is then cancelled), a third option after an our-side
+  failure (own courier or a cake refund), redelivery on another day (the
+  chef's appointment change allows it today).
+- **The plain no-show on a GK delivery** (`POST /admin/orders/{id}/transitions`
+  `no_show`, 0032) keeps BO-GK-003.no_show (50% of everything, the delivery
+  share pending the chef). Q18 is applied through `delivery-failed`
+  `nobody_available`; whether the plain route should do the same for GK
+  deliveries is for the Creator.
+- An earlier refund on the kept delivery collection (for example a chef
+  exception before the no-show) pauses the automatic no-show allocation for
+  the chef (`refund_plan`'s skewed-actuals rule), as for any skew.
+- The UI (state 19) and a chef screen for recording failures; emails for the
+  our-side failure and the choices need Creator-approved wording.
+- `GET /me/orders` summaries and the staff list do not carry the block.
 
 ## Customer accounts (GK-016 r02b)
 

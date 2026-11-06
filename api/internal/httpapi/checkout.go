@@ -58,6 +58,8 @@ type Checkout interface {
 	StartDeliveryPayment(ctx context.Context, id, subject string, digest []byte, key string, in checkout.DeliveryPaymentInput) (catalog.Result, error)
 	RecordDeliveryNotPossible(ctx context.Context, subject, key, id string, in checkout.DeliveryNotPossibleInput) (catalog.Result, error)
 	ChooseDelivery(ctx context.Context, id, subject string, digest []byte, key string, in checkout.DeliveryChoiceInput) (catalog.Result, error)
+	RecordFailedDelivery(ctx context.Context, subject, key, id string, in checkout.DeliveryFailedInput) (checkout.DeliveryFailed, error)
+	ChooseAfterDeliveryFailure(ctx context.Context, id, subject string, digest []byte, key string, in checkout.DeliveryFailureChoiceInput) (catalog.Result, error)
 	CurrentPolicy(ctx context.Context) (checkout.Policy, error)
 	RecordPolicy(ctx context.Context, subject, key string, in checkout.PolicyInput) (catalog.Result, error)
 }
@@ -381,7 +383,32 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 				PollAfterSeconds: checkout.PollAfterSeconds}, nil
 		})
 	}
+	// GK-017 r02b state 19 (Q17): the customer's choice after an our-side
+	// delivery failure, redelivery or collection today (owner, or a guest
+	// capability with "move_pickup" for both): 202 while its K11 protection
+	// runs; poll the order.
+	postDeliveryFailureChoice := func(w http.ResponseWriter, r *http.Request) {
+		a, digest, ok := orderActor(w, r)
+		if !ok {
+			return
+		}
+		var in checkout.DeliveryFailureChoiceInput
+		key, ok := readCommand(w, r, &in)
+		if !ok {
+			return
+		}
+		res, err := co.ChooseAfterDeliveryFailure(r.Context(), r.PathValue("id"), a.Subject, digest, key, in)
+		if errors.Is(err, checkout.ErrOrdersFrozen) {
+			writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Order changes are temporarily unavailable", true)
+			return
+		}
+		respondCommand(w, r, logger, http.StatusAccepted, res, err, func() (any, error) {
+			return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: "choice_pending",
+				PollAfterSeconds: checkout.PollAfterSeconds}, nil
+		})
+	}
 	if checkoutEnabled {
+		mux.HandleFunc("POST /api/v1/orders/{id}/delivery-failure-choice", postDeliveryFailureChoice)
 		mux.HandleFunc("POST /api/v1/orders/{id}/delivery-choice", postDeliveryChoice)
 		mux.HandleFunc("POST /api/v1/orders/{id}/delivery-payment", postDeliveryPayment)
 		mux.HandleFunc("POST /api/v1/orders/{id}/late-payment/answer", postLatePaymentAnswer)
@@ -575,6 +602,32 @@ func checkoutRoutes(mux *http.ServeMux, co Checkout, id Identity, checkoutEnable
 			}
 			res, err := co.RecordDeliveryNotPossible(r.Context(), a.Subject, key, r.PathValue("id"), in)
 			chefDelivery(w, r, res, err, "decision_id")
+		}))
+		// GK-017 r02b state 19: the chef records a failed GK delivery after a
+		// dispatch. our_side (Q17): 200 {order_id, failure_id}, the customer
+		// then chooses; nobody_available (Q18): the no-show K11 command, 202
+		// no_show_pending. A replay answers as the recorded cause did.
+		mux.HandleFunc("POST /api/v1/admin/orders/{id}/delivery-failed", staff(id, logger, chef, func(w http.ResponseWriter, r *http.Request, a identity.Actor) {
+			var in checkout.DeliveryFailedInput
+			key, ok := readCommand(w, r, &in)
+			if !ok {
+				return
+			}
+			res, err := co.RecordFailedDelivery(r.Context(), a.Subject, key, r.PathValue("id"), in)
+			if errors.Is(err, checkout.ErrOrdersFrozen) {
+				writeError(w, r, http.StatusServiceUnavailable, "UNAVAILABLE", "Order changes are temporarily unavailable", true)
+				return
+			}
+			if err == nil && res.Cause == checkout.CauseNobodyAvailable {
+				respondCommand(w, r, logger, http.StatusAccepted, res.Result, nil, func() (any, error) {
+					return checkout.Confirming{OrderID: r.PathValue("id"), OperationID: res.ID, State: "no_show_pending",
+						PollAfterSeconds: checkout.PollAfterSeconds}, nil
+				})
+				return
+			}
+			respondCommand(w, r, logger, http.StatusOK, res.Result, err, func() (any, error) {
+				return map[string]string{"order_id": r.PathValue("id"), "failure_id": res.ID}, nil
+			})
 		}))
 		// K05 chef refunds: an agreed partial refund with allocations, and
 		// the pending delivery share of a cancellation (chef-only). 202 while
